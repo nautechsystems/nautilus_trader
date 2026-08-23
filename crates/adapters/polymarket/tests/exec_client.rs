@@ -1618,6 +1618,89 @@ async fn test_generate_order_status_reports_rejects_wrong_condition() {
 }
 
 #[rstest]
+#[case::zero("0.0000")]
+#[case::one("1.0000")]
+#[case::overprecision("0.50001")]
+#[tokio::test]
+async fn test_generate_order_status_reports_rejects_invalid_price(#[case] price: &str) {
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
+    order["price"] = json!(price);
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_order_status_reports(&GenerateOrderStatusReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            open_only: false,
+            instrument_id: Some(instrument_id),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("invalid selected order price must fail the complete operation");
+
+    assert!(
+        error.to_string().contains("price"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_reports_rejects_created_at_overflow() {
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
+    order["created_at"] = json!(u64::MAX);
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [order],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_order_status_reports(&GenerateOrderStatusReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            open_only: false,
+            instrument_id: Some(instrument_id),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("overflowing selected order created_at must fail the complete operation");
+
+    assert!(
+        error.to_string().contains("created_at"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_generate_order_status_reports_recovers_confirmed_rest_fill() {
     let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
@@ -2264,6 +2347,170 @@ async fn test_generate_fill_reports_rejects_invalid_rest_maker_side(
         .expect_err("invalid REST maker side must fail the complete operation");
 
     assert!(error.to_string().contains("side"));
+}
+
+#[rstest]
+#[case::taker(false, "size")]
+#[case::maker(true, "matched amount")]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_negative_selected_quantity(
+    #[case] maker: bool,
+    #[case] expected_error: &str,
+) {
+    let target_order_id = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    let state = TestServerState::default();
+    let mut trades = recovery_trades_response(target_order_id, "10.0000", "0.5000");
+    set_recovery_trade_role(&mut trades, target_order_id, maker);
+    let mut invalid = trades["data"][0].clone();
+    invalid["id"] = json!("trade-invalid-quantity");
+    if maker {
+        invalid["maker_orders"][0]["matched_amount"] = json!("-1.0000");
+    } else {
+        invalid["size"] = json!("-1.0000");
+    }
+    trades["data"]
+        .as_array_mut()
+        .expect("trade page data array")
+        .push(invalid);
+    *state.trades_response_override.lock().await = Some(trades);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: Some(VenueOrderId::from(target_order_id)),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("negative selected quantity must fail the complete fill operation");
+
+    assert!(
+        error.to_string().contains(expected_error),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
+#[case::taker_malformed(false, "not-a-timestamp")]
+#[case::taker_overflow(false, "999999999999")]
+#[case::maker_malformed(true, "not-a-timestamp")]
+#[case::maker_overflow(true, "999999999999")]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_invalid_selected_match_time(
+    #[case] maker: bool,
+    #[case] match_time: &str,
+) {
+    let target_order_id = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    let state = TestServerState::default();
+    let mut trades = recovery_trades_response(target_order_id, "10.0000", "0.5000");
+    set_recovery_trade_role(&mut trades, target_order_id, maker);
+    let mut invalid = trades["data"][0].clone();
+    invalid["id"] = json!("trade-invalid-match-time");
+    invalid["match_time"] = json!(match_time);
+    trades["data"]
+        .as_array_mut()
+        .expect("trade page data array")
+        .push(invalid);
+    *state.trades_response_override.lock().await = Some(trades);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: Some(VenueOrderId::from(target_order_id)),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("invalid selected match_time must fail the complete fill operation");
+
+    assert!(
+        error.to_string().contains("match_time"),
+        "unexpected error: {error}"
+    );
+}
+
+#[rstest]
+#[case::taker_zero(false, "0.0000")]
+#[case::taker_one(false, "1.0000")]
+#[case::taker_overprecision(false, "0.50001")]
+#[case::maker_zero(true, "0.0000")]
+#[case::maker_one(true, "1.0000")]
+#[case::maker_overprecision(true, "0.50001")]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_invalid_selected_price(
+    #[case] maker: bool,
+    #[case] price: &str,
+) {
+    let target_order_id = "0x1111111111111111111111111111111111111111111111111111111111111111";
+    let state = TestServerState::default();
+    let mut trades = recovery_trades_response(target_order_id, "10.0000", "0.5000");
+    set_recovery_trade_role(&mut trades, target_order_id, maker);
+    let mut invalid = trades["data"][0].clone();
+    invalid["id"] = json!("trade-invalid-price");
+    if maker {
+        invalid["maker_orders"][0]["price"] = json!(price);
+    } else {
+        invalid["price"] = json!(price);
+    }
+    trades["data"]
+        .as_array_mut()
+        .expect("trade page data array")
+        .push(invalid);
+    *state.trades_response_override.lock().await = Some(trades);
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: Some(VenueOrderId::from(target_order_id)),
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("invalid selected price must fail the complete fill operation");
+
+    assert!(
+        error.to_string().contains("price"),
+        "unexpected error: {error}"
+    );
 }
 
 #[rstest]
@@ -2939,6 +3186,8 @@ async fn test_generate_order_status_report_rejects_target_order_on_wrong_loaded_
 #[case::time_in_force("order_type", "FOK", "time in force")]
 #[case::quantity("original_size", "11.0000", "quantity")]
 #[case::price("price", "0.6000", "price")]
+#[case::negative_filled("size_matched", "-1.0000", "matched quantity")]
+#[case::overprecision_filled("size_matched", "0.00001", "matched quantity")]
 #[tokio::test]
 async fn test_generate_order_status_report_rejects_client_bound_economic_mismatch(
     #[case] field: &str,

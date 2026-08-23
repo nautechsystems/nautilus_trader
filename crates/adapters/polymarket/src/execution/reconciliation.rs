@@ -26,7 +26,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Currency, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -211,6 +211,103 @@ fn validate_instrument_binding(
     );
 
     Ok(())
+}
+
+fn validate_quantity_evidence(
+    value: Decimal,
+    precision: u8,
+    field: &str,
+    allow_zero: bool,
+) -> anyhow::Result<()> {
+    if allow_zero {
+        anyhow::ensure!(
+            value >= Decimal::ZERO,
+            "{field} {value} must be non-negative"
+        );
+    } else {
+        anyhow::ensure!(value > Decimal::ZERO, "{field} {value} must be positive");
+    }
+    let quantity = Quantity::from_decimal_dp(value, precision).with_context(|| {
+        format!("failed to represent {field} {value} with quantity precision {precision}")
+    })?;
+    anyhow::ensure!(
+        quantity.as_decimal() == value,
+        "{field} {value} is not exactly representable with quantity precision {precision}",
+    );
+    Ok(())
+}
+
+fn validate_price_evidence(value: Decimal, precision: u8, field: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        value > Decimal::ZERO && value < Decimal::ONE,
+        "{field} {value} must be greater than zero and less than one",
+    );
+    let price = Price::from_decimal_dp(value, precision).with_context(|| {
+        format!("failed to represent {field} {value} with price precision {precision}")
+    })?;
+    anyhow::ensure!(
+        price.as_decimal() == value,
+        "{field} {value} is not exactly representable with price precision {precision}",
+    );
+    Ok(())
+}
+
+fn validate_order_row_values(
+    order: &PolymarketOpenOrder,
+    price_precision: u8,
+    size_precision: u8,
+) -> anyhow::Result<()> {
+    validate_quantity_evidence(
+        order.original_size,
+        size_precision,
+        &format!("provider order {} quantity", order.id),
+        false,
+    )?;
+    validate_quantity_evidence(
+        order.size_matched,
+        size_precision,
+        &format!("provider order {} matched quantity", order.id),
+        true,
+    )?;
+    validate_price_evidence(
+        order.price,
+        price_precision,
+        &format!("provider order {} price", order.id),
+    )?;
+    order
+        .created_at
+        .checked_mul(NANOSECONDS_IN_SECOND)
+        .with_context(|| {
+            format!(
+                "provider order {} created_at seconds {} overflow Unix nanoseconds",
+                order.id, order.created_at,
+            )
+        })?;
+    Ok(())
+}
+
+fn validate_trade_values(
+    quantity: Decimal,
+    price: Decimal,
+    price_precision: u8,
+    size_precision: u8,
+    quantity_field: &str,
+    price_field: &str,
+) -> anyhow::Result<()> {
+    validate_quantity_evidence(quantity, size_precision, quantity_field, false)?;
+    validate_price_evidence(price, price_precision, price_field)
+}
+
+fn require_trade_timestamp(
+    ts_event: Option<UnixNanos>,
+    trade: &PolymarketTradeReport,
+) -> anyhow::Result<UnixNanos> {
+    ts_event.with_context(|| {
+        format!(
+            "confirmed trade {} has invalid match_time {}",
+            trade.id, trade.match_time,
+        )
+    })
 }
 
 fn resolve_target_instrument(
@@ -407,6 +504,11 @@ fn build_order_report_from_order(
     }
 
     validate_instrument_binding(&instrument, order.market.as_str(), order.outcome)?;
+    validate_order_row_values(
+        order,
+        instrument.price_precision(),
+        instrument.size_precision(),
+    )?;
     let (client_order_id, cached_order) = match scope {
         OrderEvidenceScope::Collection { .. } => (None, None),
         OrderEvidenceScope::Target {
@@ -661,6 +763,14 @@ pub(crate) fn build_fill_reports_from_trades(
                     order_side,
                     &format!("target maker order {}", mo.order_id),
                 )?;
+                validate_trade_values(
+                    mo.matched_amount,
+                    mo.price,
+                    instrument.price_precision(),
+                    instrument.size_precision(),
+                    &format!("maker order {} matched amount", mo.order_id),
+                    &format!("maker order {} price", mo.order_id),
+                )?;
                 selected_maker_orders.push((mo, instrument));
             }
 
@@ -682,7 +792,7 @@ pub(crate) fn build_fill_reports_from_trades(
             ) {
                 continue;
             }
-            let ts_event = ts_event.unwrap_or_else(|| ctx.clock.get_time_ns());
+            let ts_event = require_trade_timestamp(ts_event, trade)?;
 
             for (mo, instrument) in selected_maker_orders {
                 let instrument_id = instrument.id();
@@ -763,6 +873,14 @@ pub(crate) fn build_fill_reports_from_trades(
             }
 
             validate_instrument_binding(&instrument, trade.market.as_str(), trade.outcome)?;
+            validate_trade_values(
+                trade.size,
+                trade.price,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                &format!("taker trade {} size", trade.id),
+                &format!("taker trade {} price", trade.id),
+            )?;
             let ts_event = parse_timestamp(&trade.match_time);
             let in_load_ids_scope = instrument_in_load_ids_scope(instrument_id, load_ids);
 
@@ -775,6 +893,7 @@ pub(crate) fn build_fill_reports_from_trades(
             ) {
                 continue;
             }
+            require_trade_timestamp(ts_event, trade)?;
             let price_prec = instrument.price_precision();
             let size_prec = instrument.size_precision();
             let taker_fee_rate = instrument_taker_fee(&instrument);

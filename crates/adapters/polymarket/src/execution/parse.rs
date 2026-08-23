@@ -626,9 +626,10 @@ pub fn calculate_market_price(
 pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
     if let Ok(n) = ts_str.parse::<u64>() {
         return if n > 1_000_000_000_000 {
-            Some(UnixNanos::from(n * NANOSECONDS_IN_MILLISECOND))
+            n.checked_mul(NANOSECONDS_IN_MILLISECOND)
+                .map(UnixNanos::from)
         } else {
-            Some(UnixNanos::from(n * NANOSECONDS_IN_SECOND))
+            n.checked_mul(NANOSECONDS_IN_SECOND).map(UnixNanos::from)
         };
     }
     let dt = ts_str.parse::<Timestamp>().ok()?;
