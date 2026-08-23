@@ -34,8 +34,8 @@ impl RelativeVolatilityIndex {
 
     fn __repr__(&self) -> String {
         format!(
-            "RelativeVolatilityIndex({},{},{},{})",
-            self.period, self.ma_type, self.scalar, self.ma_type,
+            "RelativeVolatilityIndex({},{},{})",
+            self.period, self.scalar, self.ma_type,
         )
     }
 
