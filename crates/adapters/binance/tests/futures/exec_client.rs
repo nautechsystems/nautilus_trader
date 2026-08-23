@@ -2960,6 +2960,7 @@ async fn test_explicit_open_order_scope_classification() {
             None,
             None,
             None,
+            None,
         ))
         .await
         .unwrap();
