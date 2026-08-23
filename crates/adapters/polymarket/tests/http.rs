@@ -4671,6 +4671,67 @@ async fn test_get_positions_paginates_distinct_pages_with_offset() {
 
 #[rstest]
 #[tokio::test]
+async fn test_get_positions_fails_closed_at_offset_ceiling() {
+    let state = TestServerState::default();
+    let pages = (0..=100).map(|page| {
+        let start = page * 100;
+        Value::Array((start..start + 100).map(make_data_api_position).collect())
+    });
+    state.data_api_position_pages.lock().await.extend(pages);
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let error = client.get_positions(TEST_ADDRESS).await.unwrap_err();
+    let queries = state.data_api_position_query_log.lock().await;
+
+    assert_eq!(
+        error.to_string(),
+        "decode error: /positions pagination exhausted the maximum supported offset 10000",
+    );
+    assert_eq!(queries.len(), 101);
+    assert_eq!(
+        queries
+            .last()
+            .and_then(|query| query.get("offset"))
+            .map(String::as_str),
+        Some("10000"),
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_positions_accepts_partial_page_at_offset_ceiling() {
+    let state = TestServerState::default();
+    let full_pages = (0..100).map(|page| {
+        let start = page * 100;
+        Value::Array((start..start + 100).map(make_data_api_position).collect())
+    });
+    state
+        .data_api_position_pages
+        .lock()
+        .await
+        .extend(full_pages.chain([Value::Array(vec![make_data_api_position(10_000)])]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_data_api_client(&addr);
+
+    let positions = client.get_positions(TEST_ADDRESS).await.unwrap();
+    let queries = state.data_api_position_query_log.lock().await;
+
+    assert_eq!(positions.len(), 10_001);
+    assert_eq!(queries.len(), 101);
+    assert_eq!(
+        queries
+            .last()
+            .and_then(|query| query.get("offset"))
+            .map(String::as_str),
+        Some("10000"),
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_get_positions_rejects_repeated_identities_with_changed_values() {
     let state = TestServerState::default();
     let first = Value::Array((0..100).map(make_data_api_position).collect());
