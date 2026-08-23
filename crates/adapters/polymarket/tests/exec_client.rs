@@ -4756,6 +4756,46 @@ async fn test_generate_active_order_report_rejects_target_fill_contradiction(
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_generate_venue_only_active_order_report_rejects_target_fill_side_contradiction() {
+    let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+    let state = TestServerState::default();
+    let mut order = load_json("http_open_order.json");
+    order["id"] = json!(venue_order_id_str);
+    order["status"] = json!("MATCHED");
+    order["original_size"] = json!("10.0000");
+    order["size_matched"] = json!("10.0000");
+    *state.single_order_response.lock().await = Some(order);
+
+    let mut trades = recovery_trades_response(venue_order_id_str, "10.0000", "0.5000");
+    trades["data"][0]["side"] = json!("SELL");
+    *state.trades_response_override.lock().await = Some(trades);
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_order_status_report(&GenerateOrderStatusReport {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            client_order_id: None,
+            venue_order_id: Some(VenueOrderId::from(venue_order_id_str)),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect_err("admitted venue-only order side must constrain target fill evidence");
+
+    assert!(error.to_string().contains("known order side"));
+}
+
+#[rstest]
 #[case::matching("BUY", false)]
 #[case::wrong_known_side("SELL", true)]
 #[tokio::test]

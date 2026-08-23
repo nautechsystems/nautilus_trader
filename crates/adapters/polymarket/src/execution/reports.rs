@@ -455,7 +455,7 @@ impl PolymarketExecutionClient {
                             &token_instruments,
                             GetTradesParams::default(),
                             FillReportScope::new(Some(instrument_id), Some(venue_order_id))
-                                .with_expected_order_side(Some(cached_order.order_side())),
+                                .with_expected_order_side(Some(report.order_side)),
                             clock.get_time_ns(),
                             load_ids.as_deref(),
                         )
@@ -548,7 +548,7 @@ impl PolymarketExecutionClient {
                     &self.shared_token_instruments,
                     GetTradesParams::default(),
                     FillReportScope::new(Some(instrument_id), Some(venue_order_id))
-                        .with_expected_order_side(authority.order_side),
+                        .with_expected_order_side(Some(report.order_side)),
                     self.clock.get_time_ns(),
                     self.config.reconciliation_load_ids(),
                 )
