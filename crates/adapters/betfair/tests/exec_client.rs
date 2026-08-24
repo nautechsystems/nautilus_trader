@@ -30,9 +30,12 @@ use std::{
 };
 
 use nautilus_betfair::{
-    common::consts::{
-        BETFAIR_CLIENT_ID, BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_LIST_CURRENT_ORDERS,
-        METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
+    common::{
+        consts::{
+            BETFAIR_CLIENT_ID, BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_LIST_CURRENT_ORDERS,
+            METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
+        },
+        parse::make_customer_order_ref,
     },
     config::BetfairExecConfig,
     execution::BetfairExecutionClient,
@@ -60,8 +63,8 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::Data,
-    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
-    events::{OrderDeniedReason, OrderEventAny},
+    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    events::{OrderDeniedReason, OrderEventAny, OrderUpdated},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
     },
@@ -895,6 +898,104 @@ fn make_submit_order_cmd(order: &OrderAny) -> SubmitOrder {
         UUID4::new(),
         UnixNanos::default(),
     )
+}
+
+fn make_price_modify_order_cmd(
+    instrument_id: &str,
+    client_order_id: &str,
+    venue_order_id: &str,
+    price: &str,
+) -> ModifyOrder {
+    make_modify_order_cmd(
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        None,
+        Some(Price::from(price)),
+    )
+}
+
+fn make_quantity_modify_order_cmd(
+    instrument_id: &str,
+    client_order_id: &str,
+    venue_order_id: &str,
+    quantity: &str,
+) -> ModifyOrder {
+    make_modify_order_cmd(
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        Some(Quantity::from(quantity)),
+        None,
+    )
+}
+
+fn make_modify_order_cmd(
+    instrument_id: &str,
+    client_order_id: &str,
+    venue_order_id: &str,
+    quantity: Option<Quantity>,
+    price: Option<Price>,
+) -> ModifyOrder {
+    ModifyOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*BETFAIR_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from(instrument_id),
+        ClientOrderId::from(client_order_id),
+        Some(VenueOrderId::from(venue_order_id)),
+        quantity,
+        price,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    )
+}
+
+async fn submit_and_await_accept(
+    client: &BetfairExecutionClient,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    order: &OrderAny,
+    venue_order_id: &str,
+) {
+    client.submit_order(make_submit_order_cmd(order)).unwrap();
+
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Accepted(accepted)))) => {
+                assert_eq!(accepted.client_order_id, order.client_order_id());
+                assert_eq!(accepted.venue_order_id, VenueOrderId::from(venue_order_id));
+                break;
+            }
+            Ok(Some(_)) => {}
+            other => panic!("order was not accepted before modify: {other:?}"),
+        }
+    }
+}
+
+async fn drain_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    settle: Duration,
+) -> Vec<ExecutionEvent> {
+    let mut events = Vec::new();
+
+    while let Ok(Some(event)) = tokio::time::timeout(settle, rx.recv()).await {
+        events.push(event);
+    }
+
+    events
+}
+
+fn order_updates(events: &[ExecutionEvent]) -> Vec<&OrderUpdated> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => Some(updated),
+            _ => None,
+        })
+        .collect()
 }
 
 #[rstest]
@@ -3885,6 +3986,1120 @@ async fn test_modify_price_cancelled_not_placed_emits_canceled_once() {
             .await
             .is_err(),
         "partial replace failure must cancel exactly once",
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_price_ambiguous_5xx_resolves_from_reconciliation() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-MOD-PX-RECON";
+    let old_bet_id = "228302937743";
+    let new_bet_id = "240808766933";
+    let unrelated_bet_id = "228059760965";
+    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+    submit_and_await_accept(&client, &mut rx, &order, old_bet_id).await;
+
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_REPLACE_ORDERS.to_string(), 502);
+
+    client
+        .modify_order(make_price_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            old_bet_id,
+            "3.00",
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_REPLACE_ORDERS) >= 2 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let quiet = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        quiet.is_empty(),
+        "ambiguous replace must stay in flight without events, found: {quiet:?}",
+    );
+    assert_eq!(
+        betting_method_count(&state, METHOD_REPLACE_ORDERS),
+        2,
+        "a customerRef makes the replace idempotent, so one 502 retries exactly once",
+    );
+
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .remove(METHOD_REPLACE_ORDERS);
+
+    let mut old_leg = load_json_fixture("rest/list_current_orders_harness_canceled.json")["result"]
+        ["currentOrders"][0]
+        .clone();
+    old_leg["betId"] = Value::from(old_bet_id);
+    old_leg["marketId"] = Value::from("1.179082386");
+    old_leg["selectionId"] = Value::from(235);
+    old_leg["priceSize"]["price"] = Value::from(2.58);
+    old_leg["customerOrderRef"] = Value::from(client_order_id);
+
+    let executable = load_json_fixture("rest/list_current_orders_executable.json");
+    let mut new_leg = executable["result"]["currentOrders"][0].clone();
+    new_leg["betId"] = Value::from(new_bet_id);
+    new_leg["marketId"] = Value::from("1.179082386");
+    new_leg["selectionId"] = Value::from(235);
+    new_leg["priceSize"]["price"] = Value::from(3.0);
+    new_leg["customerOrderRef"] = Value::from(client_order_id);
+
+    let mut unrelated_leg = executable["result"]["currentOrders"][1].clone();
+    unrelated_leg["betId"] = Value::from(unrelated_bet_id);
+    unrelated_leg["customerOrderRef"] = Value::from("O-SOMEONE-ELSE");
+
+    // List the superseded leg first to exercise order-independent resolution
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        serde_json::json!({
+            "currentOrders": [old_leg, new_leg, unrelated_leg],
+            "moreAvailable": false,
+        }),
+    );
+
+    let reconcile = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&reconcile)
+        .await
+        .unwrap();
+
+    let reported_bet_ids: HashSet<String> = reports
+        .iter()
+        .map(|report| report.venue_order_id.to_string())
+        .collect();
+    assert_eq!(
+        reported_bet_ids,
+        HashSet::from([unrelated_bet_id.to_string()]),
+        "the resolving pass must withhold both replace legs and nothing else",
+    );
+
+    let events = drain_events(&mut rx, Duration::from_millis(300)).await;
+    let updates = order_updates(&events);
+    assert_eq!(
+        updates.len(),
+        1,
+        "reconciliation must promote the replacement exactly once, found: {events:?}",
+    );
+    let updated = updates[0];
+    assert_eq!(
+        updated.client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(updated.venue_order_id, Some(VenueOrderId::from(new_bet_id)));
+    assert_eq!(updated.price, Some(Price::from("3.00")));
+    assert_eq!(updated.quantity, Quantity::from("10"));
+    assert_eq!(
+        updated.instrument_id,
+        InstrumentId::from("1.179082386-235.BETFAIR")
+    );
+    assert!(updated.reconciliation);
+
+    let repeated = client
+        .generate_order_status_reports(&reconcile)
+        .await
+        .unwrap();
+    let repeated_bet_ids: HashSet<String> = repeated
+        .iter()
+        .map(|report| report.venue_order_id.to_string())
+        .collect();
+    assert_eq!(
+        repeated_bet_ids,
+        HashSet::from([new_bet_id.to_string(), unrelated_bet_id.to_string()]),
+        "once resolved, only the superseded leg stays withheld",
+    );
+
+    let settled = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        settled.is_empty(),
+        "a resolved replace must not be promoted twice, found: {settled:?}",
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_price_reconciliation_keeps_in_flight_request_pending() {
+    let (addr, state) = start_mock_http().await;
+    state
+        .betting_response_delays
+        .lock()
+        .unwrap()
+        .insert(METHOD_REPLACE_ORDERS.to_string(), Duration::from_secs(1));
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-MOD-PX-INFLIGHT";
+    let old_bet_id = "228302937743";
+    let new_bet_id = "240808766933";
+    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+    submit_and_await_accept(&client, &mut rx, &order, old_bet_id).await;
+
+    let mut unchanged =
+        load_json_fixture("rest/list_current_orders_executable.json")["result"]["currentOrders"][0]
+            .clone();
+    unchanged["betId"] = Value::from(old_bet_id);
+    unchanged["marketId"] = Value::from("1.179082386");
+    unchanged["selectionId"] = Value::from(235);
+    unchanged["priceSize"]["price"] = Value::from(2.58);
+    unchanged["customerOrderRef"] = Value::from(client_order_id);
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        serde_json::json!({
+            "currentOrders": [unchanged],
+            "moreAvailable": false,
+        }),
+    );
+
+    client
+        .modify_order(make_price_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            old_bet_id,
+            "3.00",
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_REPLACE_ORDERS) >= 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let reconcile = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&reconcile)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from(old_bet_id));
+    assert_eq!(reports[0].quantity, Quantity::from("10"));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), rx.recv())
+            .await
+            .is_err(),
+        "reconciliation must not resolve a replace whose HTTP request is still running",
+    );
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for the delayed replace response")
+        .expect("execution event channel closed");
+    let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = event else {
+        panic!("in-flight replace must resolve as an update: {event:?}");
+    };
+
+    assert_eq!(
+        updated.client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(updated.venue_order_id, Some(VenueOrderId::from(new_bet_id)));
+    assert_eq!(updated.price, Some(Price::from("3.00")));
+    assert_eq!(updated.quantity, Quantity::from("10"));
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_quantity_ambiguous_5xx_resolves_from_reconciliation() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-MOD-QTY-RECON";
+    let bet_id = "228302937743";
+    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+    submit_and_await_accept(&client, &mut rx, &order, bet_id).await;
+
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+
+    client
+        .modify_order(make_quantity_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            bet_id,
+            "4",
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_CANCEL_ORDERS) >= 2 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let quiet = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        quiet.is_empty(),
+        "ambiguous quantity reduction must stay in flight without events, found: {quiet:?}",
+    );
+
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .remove(METHOD_CANCEL_ORDERS);
+
+    let mut reduced =
+        load_json_fixture("rest/list_current_orders_executable.json")["result"]["currentOrders"][0]
+            .clone();
+    reduced["betId"] = Value::from(bet_id);
+    reduced["marketId"] = Value::from("1.179082386");
+    reduced["selectionId"] = Value::from(235);
+    reduced["priceSize"]["price"] = Value::from(2.58);
+    reduced["sizeCancelled"] = Value::from(6.0);
+    reduced["sizeRemaining"] = Value::from(4.0);
+    reduced["customerOrderRef"] = Value::from(client_order_id);
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        serde_json::json!({
+            "currentOrders": [reduced],
+            "moreAvailable": false,
+        }),
+    );
+
+    let reconcile = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&reconcile)
+        .await
+        .unwrap();
+    assert!(
+        reports.is_empty(),
+        "the resolving pass must leave the reduction to the direct event, found: {reports:?}",
+    );
+
+    let events = drain_events(&mut rx, Duration::from_millis(300)).await;
+    let updates = order_updates(&events);
+    assert_eq!(
+        updates.len(),
+        1,
+        "reconciliation must apply the reduction exactly once, found: {events:?}",
+    );
+    let updated = updates[0];
+    assert_eq!(
+        updated.client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(updated.venue_order_id, Some(VenueOrderId::from(bet_id)));
+    assert_eq!(updated.quantity, Quantity::from("4"));
+    assert_eq!(updated.price, None);
+    assert!(updated.reconciliation);
+
+    let repeated = client
+        .generate_order_status_reports(&reconcile)
+        .await
+        .unwrap();
+    assert_eq!(repeated.len(), 1);
+    assert_eq!(
+        repeated[0].client_order_id,
+        Some(ClientOrderId::from(client_order_id))
+    );
+    assert_eq!(repeated[0].venue_order_id, VenueOrderId::from(bet_id));
+    assert_eq!(
+        repeated[0].quantity,
+        Quantity::from("4"),
+        "the report must carry the reduced size, not the venue's original stake",
+    );
+    assert_eq!(repeated[0].price, Some(Price::from("2.58")));
+
+    let settled = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        settled.is_empty(),
+        "a resolved reduction must not update twice, found: {settled:?}",
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_quantity_ambiguous_5xx_resolves_from_ocm() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut subscription = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut subscription)
+            .await
+            .unwrap();
+
+        while let Some(line) = ocm_rx.recv().await {
+            tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-MOD-QTY-OCM";
+    let bet_id = "228302937743";
+    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+    submit_and_await_accept(&client, &mut rx, &order, bet_id).await;
+
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+
+    client
+        .modify_order(make_quantity_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            bet_id,
+            "4",
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_CANCEL_ORDERS) >= 2 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let quiet = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        quiet.is_empty(),
+        "ambiguous quantity reduction must stay in flight without events, found: {quiet:?}",
+    );
+
+    let mut ocm = load_json_fixture("stream/ocm_harness_open.json");
+    ocm["oc"][0]["id"] = Value::from("1.179082386");
+    ocm["oc"][0]["orc"][0]["id"] = Value::from(235);
+    let unmatched = &mut ocm["oc"][0]["orc"][0]["uo"][0];
+    unmatched["id"] = Value::from(bet_id);
+    unmatched["p"] = Value::from(2.58);
+    unmatched["side"] = Value::from("L");
+    unmatched["sr"] = Value::from(4.0);
+    unmatched["sc"] = Value::from(6.0);
+    unmatched["rfo"] = Value::from(client_order_id);
+    ocm_tx.send(ocm.to_string()).unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_millis(500)).await;
+    let updates = order_updates(&events);
+    assert_eq!(
+        updates.len(),
+        1,
+        "OCM must apply the reduction exactly once, found: {events:?}",
+    );
+    let updated = updates[0];
+    assert_eq!(
+        updated.client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(updated.venue_order_id, Some(VenueOrderId::from(bet_id)));
+    assert_eq!(updated.quantity, Quantity::from("4"));
+    assert_eq!(updated.price, None);
+
+    drop(ocm_tx);
+    client.disconnect().await.unwrap();
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_price_instruction_failure_rejects() {
+    let (addr, state) = start_mock_http().await;
+    let mut replace = load_json_fixture("rest/betting_replace_orders_success.json");
+    replace["result"]["status"] = Value::from("FAILURE");
+    replace["result"]["errorCode"] = Value::from("PROCESSED_WITH_ERRORS");
+    let instruction = &mut replace["result"]["instructionReports"][0];
+    instruction["status"] = Value::from("FAILURE");
+    instruction["errorCode"] = Value::from("INVALID_ODDS");
+    instruction
+        .as_object_mut()
+        .unwrap()
+        .remove("cancelInstructionReport");
+    instruction
+        .as_object_mut()
+        .unwrap()
+        .remove("placeInstructionReport");
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_REPLACE_ORDERS.to_string(), replace["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-MOD-PX-REJECT";
+    let venue_order_id = "123";
+    add_order_to_cache(
+        &cache,
+        make_test_order(instrument_id, client_order_id, "2.58", "10"),
+    );
+
+    client
+        .modify_order(make_price_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            "3.00",
+        ))
+        .unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_secs(1)).await;
+    let rejections: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => Some(rejected),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        rejections.len(),
+        1,
+        "a failed replace instruction must reject exactly once, found: {events:?}",
+    );
+    assert_eq!(
+        events.len(),
+        1,
+        "no other event may follow, found: {events:?}"
+    );
+    assert_eq!(
+        rejections[0].client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(
+        rejections[0].venue_order_id,
+        Some(VenueOrderId::from(venue_order_id))
+    );
+    assert_eq!(rejections[0].reason.as_str(), "InvalidOdds");
+    assert_eq!(betting_method_count(&state, METHOD_REPLACE_ORDERS), 1);
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_quantity_instruction_failure_rejects() {
+    let (addr, state) = start_mock_http().await;
+    let cancel = load_json_fixture("rest/betting_cancel_orders_error.json");
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-MOD-QTY-REJECT";
+    let venue_order_id = "1";
+    add_order_to_cache(
+        &cache,
+        make_test_order(instrument_id, client_order_id, "2.58", "10"),
+    );
+
+    client
+        .modify_order(make_quantity_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            "4",
+        ))
+        .unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_secs(1)).await;
+    let rejections: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => Some(rejected),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        rejections.len(),
+        1,
+        "a failed reduction instruction must reject exactly once, found: {events:?}",
+    );
+    assert_eq!(
+        events.len(),
+        1,
+        "no other event may follow, found: {events:?}"
+    );
+    assert_eq!(
+        rejections[0].client_order_id,
+        ClientOrderId::from(client_order_id)
+    );
+    assert_eq!(
+        rejections[0].venue_order_id,
+        Some(VenueOrderId::from(venue_order_id))
+    );
+    assert_eq!(rejections[0].reason.as_str(), "ErrorInOrder");
+    assert_eq!(betting_method_count(&state, METHOD_CANCEL_ORDERS), 1);
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reduction_success_after_a_terminal_stream_update_stays_silent() {
+    let (addr, state) = start_mock_http().await;
+    let mut cancel = load_json_fixture("rest/betting_cancel_orders_success.json");
+    cancel["result"]["instructionReports"][0]["sizeCancelled"] = Value::from(6.0);
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut subscription = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut subscription)
+            .await
+            .unwrap();
+
+        while let Some(line) = ocm_rx.recv().await {
+            tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-MOD-QTY-CLOSED";
+    let bet_id = "228302937743";
+    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+    submit_and_await_accept(&client, &mut rx, &order, bet_id).await;
+
+    let waiters = Arc::new(AtomicUsize::new(0));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+    *state.betting_response_gate.lock().unwrap() = Some(BettingResponseGate {
+        method: METHOD_CANCEL_ORDERS.to_string(),
+        waiters: Arc::clone(&waiters),
+        semaphore: Arc::clone(&semaphore),
+    });
+
+    client
+        .modify_order(make_quantity_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            bet_id,
+            "4",
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let waiters = Arc::clone(&waiters);
+            async move { waiters.load(Ordering::Relaxed) == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    // Lapse more than requested to close the bet at two matched
+    let mut ocm = load_json_fixture("stream/ocm_harness_cancel.json");
+    ocm["oc"][0]["id"] = Value::from("1.179082386");
+    ocm["oc"][0]["orc"][0]["id"] = Value::from(235);
+    let unmatched = &mut ocm["oc"][0]["orc"][0]["uo"][0];
+    unmatched["id"] = Value::from(bet_id);
+    unmatched["p"] = Value::from(2.58);
+    unmatched["side"] = Value::from("L");
+    unmatched["sm"] = Value::from(2.0);
+    unmatched["sr"] = Value::from(0.0);
+    unmatched["sc"] = Value::from(8.0);
+    unmatched["avp"] = Value::from(2.58);
+    unmatched["rfo"] = Value::from(client_order_id);
+    ocm_tx.send(ocm.to_string()).unwrap();
+
+    let stream_events = drain_events(&mut rx, Duration::from_millis(500)).await;
+    assert!(
+        stream_events
+            .iter()
+            .any(|event| matches!(event, ExecutionEvent::Order(OrderEventAny::Canceled(_)))),
+        "the closing stream update must end the order, found: {stream_events:?}",
+    );
+    assert!(
+        order_updates(&stream_events).is_empty(),
+        "an active size below the requested one is a lapse, not the reduction: {stream_events:?}",
+    );
+
+    semaphore.add_permits(1);
+    state.betting_response_gate.lock().unwrap().take();
+
+    let late_events = drain_events(&mut rx, Duration::from_millis(500)).await;
+    assert!(
+        late_events.is_empty(),
+        "a reduction success must not reopen a closed order: {late_events:?}",
+    );
+
+    drop(ocm_tx);
+    client.disconnect().await.unwrap();
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_quantity_reduction_survives_a_terminal_report() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut subscription = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut subscription)
+            .await
+            .unwrap();
+
+        while let Some(line) = ocm_rx.recv().await {
+            tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
+    let customer_order_ref = make_customer_order_ref(client_order_id);
+    let bet_id = "228302937743";
+    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+    submit_and_await_accept(&client, &mut rx, &order, bet_id).await;
+
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+
+    client
+        .modify_order(make_quantity_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            bet_id,
+            "4",
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_CANCEL_ORDERS) >= 2 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    state
+        .betting_status_overrides
+        .lock()
+        .unwrap()
+        .remove(METHOD_CANCEL_ORDERS);
+
+    let mut ocm = load_json_fixture("stream/ocm_harness_cancel.json");
+    ocm["oc"][0]["id"] = Value::from("1.179082386");
+    ocm["oc"][0]["orc"][0]["id"] = Value::from(235);
+    let unmatched = &mut ocm["oc"][0]["orc"][0]["uo"][0];
+    unmatched["id"] = Value::from(bet_id);
+    unmatched["p"] = Value::from(2.58);
+    unmatched["sm"] = Value::from(4.0);
+    unmatched["sr"] = Value::from(0.0);
+    unmatched["sc"] = Value::from(6.0);
+    unmatched["avp"] = Value::from(2.58);
+    unmatched["rfo"] = Value::from(customer_order_ref.as_str());
+    ocm_tx.send(ocm.to_string()).unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_millis(500)).await;
+    let updates = order_updates(&events);
+    assert_eq!(updates.len(), 1, "found: {events:?}");
+    assert_eq!(
+        updates[0].client_order_id,
+        ClientOrderId::from(client_order_id),
+    );
+    assert_eq!(updates[0].quantity, Quantity::from("4"));
+
+    // Cancel the unmatched six while `priceSize.size` retains the original ten
+    let mut closed =
+        load_json_fixture("rest/list_current_orders_executable.json")["result"]["currentOrders"][0]
+            .clone();
+    closed["betId"] = Value::from(bet_id);
+    closed["marketId"] = Value::from("1.179082386");
+    closed["selectionId"] = Value::from(235);
+    closed["priceSize"]["price"] = Value::from(2.58);
+    closed["status"] = Value::from("EXECUTION_COMPLETE");
+    closed["sizeMatched"] = Value::from(4.0);
+    closed["averagePriceMatched"] = Value::from(2.58);
+    closed["sizeRemaining"] = Value::from(0.0);
+    closed["sizeCancelled"] = Value::from(6.0);
+    closed["customerOrderRef"] = Value::from(customer_order_ref);
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        serde_json::json!({
+            "currentOrders": [closed],
+            "moreAvailable": false,
+        }),
+    );
+
+    let reconcile = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&reconcile)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from(bet_id));
+    assert_eq!(reports[0].order_status, OrderStatus::Canceled);
+    assert_eq!(
+        reports[0].quantity,
+        Quantity::from("4"),
+        "a terminal report must not restore the venue's original stake",
+    );
+    assert_eq!(reports[0].filled_qty, Quantity::from("4"));
+
+    let settled = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(settled.is_empty(), "found: {settled:?}");
+
+    drop(ocm_tx);
+    client.disconnect().await.unwrap();
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reduction_stream_before_rest_emits_updated_once() {
+    let (addr, state) = start_mock_http().await;
+    let mut cancel = load_json_fixture("rest/betting_cancel_orders_success.json");
+    cancel["result"]["instructionReports"][0]["sizeCancelled"] = Value::from(6.0);
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut subscription = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut subscription)
+            .await
+            .unwrap();
+
+        while let Some(line) = ocm_rx.recv().await {
+            tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-MOD-QTY-RACE";
+    let bet_id = "228302937743";
+    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+    submit_and_await_accept(&client, &mut rx, &order, bet_id).await;
+
+    // Hold the REST response so OCM resolves first
+    let waiters = Arc::new(AtomicUsize::new(0));
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
+    *state.betting_response_gate.lock().unwrap() = Some(BettingResponseGate {
+        method: METHOD_CANCEL_ORDERS.to_string(),
+        waiters: Arc::clone(&waiters),
+        semaphore: Arc::clone(&semaphore),
+    });
+
+    client
+        .modify_order(make_quantity_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            bet_id,
+            "4",
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let waiters = Arc::clone(&waiters);
+            async move { waiters.load(Ordering::Relaxed) == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let mut ocm = load_json_fixture("stream/ocm_harness_open.json");
+    ocm["oc"][0]["id"] = Value::from("1.179082386");
+    ocm["oc"][0]["orc"][0]["id"] = Value::from(235);
+    let unmatched = &mut ocm["oc"][0]["orc"][0]["uo"][0];
+    unmatched["id"] = Value::from(bet_id);
+    unmatched["p"] = Value::from(2.58);
+    unmatched["side"] = Value::from("L");
+    unmatched["sr"] = Value::from(4.0);
+    unmatched["sc"] = Value::from(6.0);
+    unmatched["rfo"] = Value::from(client_order_id);
+    ocm_tx.send(ocm.to_string()).unwrap();
+
+    let stream_events = drain_events(&mut rx, Duration::from_millis(500)).await;
+    let stream_updates = order_updates(&stream_events);
+    assert_eq!(
+        stream_updates.len(),
+        1,
+        "the stream must resolve the reduction once, found: {stream_events:?}",
+    );
+    assert_eq!(stream_updates[0].quantity, Quantity::from("4"));
+
+    semaphore.add_permits(1);
+    state.betting_response_gate.lock().unwrap().take();
+
+    let late_events = drain_events(&mut rx, Duration::from_millis(500)).await;
+    assert!(
+        late_events.is_empty(),
+        "the REST success duplicated the stream-resolved reduction: {late_events:?}",
+    );
+
+    drop(ocm_tx);
+    client.disconnect().await.unwrap();
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_modify_quantity_rejection_discards_the_pending_reduction() {
+    let (addr, state) = start_mock_http().await;
+    let cancel = load_json_fixture("rest/betting_cancel_orders_error.json");
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = "1.179082386-235-0.BETFAIR";
+    let client_order_id = "O-MOD-QTY-DISCARD";
+    let bet_id = "228302937743";
+    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
+    add_order_to_cache(&cache, order.clone());
+    submit_and_await_accept(&client, &mut rx, &order, bet_id).await;
+
+    client
+        .modify_order(make_quantity_modify_order_cmd(
+            instrument_id,
+            client_order_id,
+            bet_id,
+            "4",
+        ))
+        .unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_secs(1)).await;
+    assert!(
+        matches!(
+            events.as_slice(),
+            [ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))]
+        ),
+        "the reduction must be rejected once, found: {events:?}",
+    );
+
+    // Leave the same active size as the rejected reduction
+    let mut lapsed =
+        load_json_fixture("rest/list_current_orders_executable.json")["result"]["currentOrders"][0]
+            .clone();
+    lapsed["betId"] = Value::from(bet_id);
+    lapsed["marketId"] = Value::from("1.179082386");
+    lapsed["selectionId"] = Value::from(235);
+    lapsed["priceSize"]["price"] = Value::from(2.58);
+    lapsed["sizeRemaining"] = Value::from(5.0);
+    lapsed["sizeLapsed"] = Value::from(5.0);
+    lapsed["customerOrderRef"] = Value::from(client_order_id);
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        serde_json::json!({
+            "currentOrders": [lapsed],
+            "moreAvailable": false,
+        }),
+    );
+
+    let reconcile = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .build()
+        .unwrap();
+    let reports = client
+        .generate_order_status_reports(&reconcile)
+        .await
+        .unwrap();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from(bet_id));
+    assert_eq!(reports[0].quantity, Quantity::from("10"));
+
+    let settled = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        settled.is_empty(),
+        "a rejected reduction must not resolve from a later lapse, found: {settled:?}",
     );
 
     client.disconnect().await.unwrap();

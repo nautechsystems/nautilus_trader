@@ -10,6 +10,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed Betfair modify recovery after ambiguous REST outcomes and instruction failures
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
 
 ### Internal Improvements

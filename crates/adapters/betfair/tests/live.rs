@@ -42,7 +42,9 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Value;
 
-use crate::common::{BettingResponseGate, MockState, betting_api_error, load_fixture};
+use crate::common::{
+    BettingResponseGate, MockState, betting_api_error, load_fixture, load_json_fixture,
+};
 
 const DEADLINE: Duration = Duration::from_secs(5);
 
@@ -1453,6 +1455,350 @@ async fn modify_quantity_reduction_updates_qty() {
         Some(VenueOrderId::from("228302937743"))
     );
     assert_eq!(updated.status(), OrderStatus::Accepted);
+}
+
+#[rstest]
+#[tokio::test]
+async fn reduction_that_closes_the_bet_settles_on_the_reduced_size() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(&h.instrument_id, "O-1");
+
+    h.submit_via_risk(&order);
+    let accepted = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await;
+    assert!(accepted, "setup order did not reach Accepted");
+
+    h.mock_state
+        .betting_apply_then_status_one_shot_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+    set_timeout_report(
+        &h.mock_state,
+        METHOD_CANCEL_ORDERS,
+        "rest/betting_cancel_orders_success.json",
+    );
+
+    h.modify_via_risk(&order, None, Some(Quantity::from("4")));
+    wait_for_request_count(&h.mock_state, METHOD_CANCEL_ORDERS, 2).await;
+    h.pump_for(Duration::from_millis(300)).await;
+
+    // Cancel the unmatched six after four match
+    let mut closed =
+        load_json_fixture("rest/list_current_orders_harness_open.json")["result"]["currentOrders"]
+            [0]
+        .clone();
+    closed["status"] = Value::from("EXECUTION_COMPLETE");
+    closed["sizeMatched"] = Value::from(4.0);
+    closed["averagePriceMatched"] = Value::from(3.0);
+    closed["sizeRemaining"] = Value::from(0.0);
+    closed["sizeCancelled"] = Value::from(6.0);
+    h.mock_state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        serde_json::json!({
+            "currentOrders": [closed],
+            "moreAvailable": false,
+        }),
+    );
+
+    h.reconcile_from_venue().await;
+    let resolved = h
+        .pump_until(DEADLINE, |cache| {
+            cache
+                .order(&order.client_order_id())
+                .is_some_and(|cached| cached.quantity() == Quantity::from("4"))
+        })
+        .await;
+    assert!(resolved, "reconciliation did not apply the lost reduction");
+
+    // Reconcile the terminal record on the following pass
+    h.reconcile_from_venue().await;
+    h.pump_for(Duration::from_millis(300)).await;
+
+    let cache = h.cache.borrow();
+    let settled = cache.order(&order.client_order_id()).unwrap().clone();
+    assert_eq!(
+        settled.quantity(),
+        Quantity::from("4"),
+        "the terminal record must not restore the stake the order never had",
+    );
+    assert_eq!(settled.filled_qty(), Quantity::from("4"));
+    assert_eq!(settled.status(), OrderStatus::Filled);
+    assert_eq!(
+        event_count(&settled, |event| matches!(event, OrderEventAny::Updated(_))),
+        1,
+        "the reduction must resolve exactly once",
+    );
+    harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id);
+}
+
+#[rstest]
+#[tokio::test]
+async fn replace_apply_then_lost_response_resolves_from_reconciliation() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(&h.instrument_id, "O-1");
+
+    h.submit_via_risk(&order);
+    let accepted = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await;
+    assert!(accepted, "setup order did not reach Accepted");
+
+    h.mock_state
+        .betting_apply_then_status_one_shot_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_REPLACE_ORDERS.to_string(), 502);
+    set_timeout_report(
+        &h.mock_state,
+        METHOD_REPLACE_ORDERS,
+        "rest/betting_replace_orders_success.json",
+    );
+
+    h.modify_via_risk(&order, Some(Price::from("5.0")), None);
+    wait_for_request_count(&h.mock_state, METHOD_REPLACE_ORDERS, 2).await;
+    h.pump_for(Duration::from_millis(300)).await;
+
+    harness::invariants::assert_order_status(
+        &h.cache.borrow(),
+        &order.client_order_id(),
+        OrderStatus::PendingUpdate,
+    );
+
+    let old_bet_id = "228302937743";
+    let new_bet_id = "240808766933";
+    let mut old_leg = load_json_fixture("rest/list_current_orders_harness_canceled.json")["result"]
+        ["currentOrders"][0]
+        .clone();
+    old_leg["betId"] = Value::from(old_bet_id);
+    let mut new_leg =
+        load_json_fixture("rest/list_current_orders_harness_open.json")["result"]["currentOrders"]
+            [0]
+        .clone();
+    new_leg["betId"] = Value::from(new_bet_id);
+    new_leg["priceSize"]["price"] = Value::from(5.0);
+    h.mock_state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        serde_json::json!({
+            "currentOrders": [old_leg, new_leg],
+            "moreAvailable": false,
+        }),
+    );
+
+    let mass_status = h.reconcile_from_venue().await;
+    assert!(
+        mass_status.order_reports().is_empty(),
+        "the resolving pass must leave the promotion to the direct event: {:?}",
+        mass_status.order_reports(),
+    );
+
+    let promoted = h
+        .pump_until(DEADLINE, |cache| {
+            cache
+                .order(&order.client_order_id())
+                .and_then(|cached| cached.venue_order_id())
+                == Some(VenueOrderId::from(new_bet_id))
+        })
+        .await;
+    assert!(promoted, "reconciliation did not promote the replacement");
+    h.pump_for(Duration::from_millis(300)).await;
+
+    {
+        let cache = h.cache.borrow();
+        let updated = cache.order(&order.client_order_id()).unwrap().clone();
+        assert_eq!(updated.status(), OrderStatus::Accepted);
+        assert_eq!(updated.quantity(), Quantity::from("10"));
+        assert_eq!(updated.price(), Some(Price::from("5.0")));
+        assert_eq!(
+            updated.venue_order_id(),
+            Some(VenueOrderId::from(new_bet_id))
+        );
+        assert_eq!(
+            event_count(&updated, |event| matches!(event, OrderEventAny::Updated(_))),
+            1,
+            "the replace must resolve exactly once",
+        );
+        assert_eq!(
+            event_count(&updated, |event| matches!(
+                event,
+                OrderEventAny::Canceled(_)
+            )),
+            0,
+            "the superseded leg must not cancel the live order",
+        );
+        assert_eq!(
+            event_count(&updated, |event| matches!(
+                event,
+                OrderEventAny::Accepted(_)
+            )),
+            1,
+            "resolution must not re-accept the order",
+        );
+        harness::invariants::assert_tracked_used_events(&h.routed);
+        harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id);
+    }
+
+    let repeated = h.reconcile_from_venue().await;
+    let reported_bet_ids: Vec<String> = repeated
+        .order_reports()
+        .values()
+        .map(|report| report.venue_order_id.to_string())
+        .collect();
+    assert_eq!(reported_bet_ids, vec![new_bet_id.to_string()]);
+    h.pump_for(Duration::from_millis(300)).await;
+
+    let settled = h.cache.borrow();
+    let settled_order = settled.order(&order.client_order_id()).unwrap().clone();
+    assert_eq!(
+        event_count(&settled_order, |event| matches!(
+            event,
+            OrderEventAny::Updated(_)
+        )),
+        1,
+        "a resolved replace must not be promoted again",
+    );
+    assert_eq!(settled_order.status(), OrderStatus::Accepted);
+}
+
+#[rstest]
+#[tokio::test]
+async fn reduction_apply_then_lost_response_resolves_from_reconciliation() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(&h.instrument_id, "O-1");
+
+    h.submit_via_risk(&order);
+    let accepted = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Accepted)
+        })
+        .await;
+    assert!(accepted, "setup order did not reach Accepted");
+
+    h.mock_state
+        .betting_apply_then_status_one_shot_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), 502);
+    set_timeout_report(
+        &h.mock_state,
+        METHOD_CANCEL_ORDERS,
+        "rest/betting_cancel_orders_success.json",
+    );
+
+    h.modify_via_risk(&order, None, Some(Quantity::from("4")));
+    wait_for_request_count(&h.mock_state, METHOD_CANCEL_ORDERS, 2).await;
+    h.pump_for(Duration::from_millis(300)).await;
+
+    harness::invariants::assert_order_status(
+        &h.cache.borrow(),
+        &order.client_order_id(),
+        OrderStatus::PendingUpdate,
+    );
+    let inflight = h
+        .cache
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    assert_eq!(inflight.quantity(), Quantity::from("10"));
+    assert_eq!(
+        event_count(&inflight, |event| matches!(
+            event,
+            OrderEventAny::ModifyRejected(_)
+        )),
+        0,
+    );
+
+    let mut reduced =
+        load_json_fixture("rest/list_current_orders_harness_open.json")["result"]["currentOrders"]
+            [0]
+        .clone();
+    reduced["sizeRemaining"] = Value::from(4.0);
+    reduced["sizeCancelled"] = Value::from(6.0);
+    h.mock_state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        serde_json::json!({
+            "currentOrders": [reduced],
+            "moreAvailable": false,
+        }),
+    );
+
+    let mass_status = h.reconcile_from_venue().await;
+    assert!(
+        mass_status.order_reports().is_empty(),
+        "the resolving pass must leave the reduction to the direct event: {:?}",
+        mass_status.order_reports(),
+    );
+
+    let resolved = h
+        .pump_until(DEADLINE, |cache| {
+            cache
+                .order(&order.client_order_id())
+                .is_some_and(|cached| cached.quantity() == Quantity::from("4"))
+        })
+        .await;
+    assert!(resolved, "reconciliation did not apply the lost reduction");
+    h.pump_for(Duration::from_millis(300)).await;
+
+    {
+        let cache = h.cache.borrow();
+        let updated = cache.order(&order.client_order_id()).unwrap().clone();
+        assert_eq!(updated.quantity(), Quantity::from("4"));
+        assert_eq!(updated.status(), OrderStatus::Accepted);
+        assert_eq!(
+            updated.venue_order_id(),
+            Some(VenueOrderId::from("228302937743"))
+        );
+        assert_eq!(
+            event_count(&updated, |event| matches!(event, OrderEventAny::Updated(_))),
+            1,
+            "the reduction must resolve exactly once",
+        );
+        assert_eq!(
+            event_count(&updated, |event| matches!(
+                event,
+                OrderEventAny::ModifyRejected(_)
+            )),
+            0,
+        );
+        assert_eq!(
+            event_count(&updated, |event| matches!(
+                event,
+                OrderEventAny::Accepted(_)
+            )),
+            1,
+            "resolution must not re-accept the order",
+        );
+        harness::invariants::assert_tracked_used_events(&h.routed);
+        harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id);
+    }
+
+    let repeated = h.reconcile_from_venue().await;
+    let reports = repeated.order_reports();
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports.values().next().unwrap().quantity,
+        Quantity::from("4"),
+        "the report must carry the reduced size, not the venue's original stake",
+    );
+    h.pump_for(Duration::from_millis(300)).await;
+
+    let settled = h.cache.borrow();
+    let settled_order = settled.order(&order.client_order_id()).unwrap().clone();
+    assert_eq!(settled_order.quantity(), Quantity::from("4"));
+    assert_eq!(
+        event_count(&settled_order, |event| matches!(
+            event,
+            OrderEventAny::Updated(_)
+        )),
+        1,
+        "a resolved reduction must not update again",
+    );
 }
 
 #[rstest]

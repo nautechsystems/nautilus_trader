@@ -312,6 +312,33 @@ place its replacement. The adapter then emits `OrderCanceled` for the logical or
 order remains `CANCELED`. The same terminal outcome applies when the old-bet cancel OCM arrives
 while a replacement is pending and the REST call later returns any definitive replace failure.
 
+### Recovering an ambiguous modification
+
+When the REST response is lost or ambiguous, the adapter resolves the modification from the OCM
+stream, or from the next `listCurrentOrders` reconciliation when the stream stays silent:
+
+- A bet listed under the same `customerOrderRef` with a different Bet ID promotes the pending
+  replace and emits `OrderUpdated` carrying the new Bet ID, its price, and the original size.
+- A bet whose active size (matched plus remaining) has fallen to at least the requested size but
+  below the original emits `OrderUpdated` carrying the reduced size. A smaller active size is a
+  lapse or void rather than the requested reduction, and an unchanged one means Betfair has not
+  applied the reduction yet, so both leave the command in flight.
+
+Whichever channel resolves the modification first wins, and the others become no-ops, so a size
+reduction confirmed by the stream is not repeated when its REST response finally returns.
+
+A listing that still carries only the original bet proves nothing about a request that may still be
+running, so the order stays `PENDING_UPDATE`. A definitive modification failure discards the pending
+state, so a later lapse cannot be mistaken for the requested reduction.
+
+Reconciliation withholds two order status reports so the resolved state reaches the strategy once,
+through the order event rather than through a report:
+
+- The superseded replace leg, whose `CANCELED` report would otherwise cancel the live order.
+- The resolved order's own report on the pass that resolves it, because that order is still pending
+  locally while reconciliation runs. Later passes, including terminal reports, carry the reduced
+  size rather than Betfair's original stake.
+
 ## Order command failures and retries
 
 ### Request correlation

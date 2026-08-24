@@ -41,6 +41,14 @@
 //! re-login or mass-status request leaves the gate closed until a later reconnect succeeds or the
 //! client disconnects. A keep-alive failure other than explicit `LoginFailed` continues recovery
 //! with the retained session; the gate still reopens only after mass status is dispatched.
+//!
+//! # Modify reconciliation
+//!
+//! An ambiguous replace or quantity reduction remains pending until OCM or a fully paginated
+//! `listCurrentOrders` response confirms it. Reconciliation emits the resulting `OrderUpdated`
+//! directly and withholds reports that would reapply or contradict that update. For reductions,
+//! active quantity is matched plus remaining, and the confirmed quantity overrides Betfair's
+//! original stake in later reports, including terminal reports.
 
 use std::{
     fmt,
@@ -90,7 +98,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
-    types::{AccountBalance, Currency, MarginBalance},
+    types::{AccountBalance, Currency, MarginBalance, Price, Quantity},
 };
 use nautilus_network::{SocketState, SocketStateSink};
 use rust_decimal::Decimal;
@@ -811,6 +819,31 @@ impl BetfairExecutionClient {
                 .send_order_event(OrderEventAny::Updated(updated));
         }
 
+        if let Some((client_order_id, strategy_id, quantity)) =
+            Self::resolve_pending_reduction_from_stream(&mut state, tracked, uo)
+        {
+            let updated = OrderUpdated::new(
+                context.emitter.trader_id(),
+                strategy_id,
+                context.instrument_id,
+                client_order_id,
+                quantity,
+                UUID4::new(),
+                report.ts_last,
+                context.ts_init,
+                false,
+                Some(report.venue_order_id),
+                Some(context.account_id),
+                None,
+                None,
+                None,
+                false,
+            );
+            context
+                .emitter
+                .send_order_event(OrderEventAny::Updated(updated));
+        }
+
         let (fill, fill_voids) = Self::derive_fill_changes(&context, &mut state);
 
         if report.order_status == OrderStatus::Canceled
@@ -862,6 +895,18 @@ impl BetfairExecutionClient {
         }
 
         true
+    }
+
+    fn resolve_pending_reduction_from_stream(
+        state: &mut OcmState,
+        tracked: Option<(ClientOrderId, StrategyId)>,
+        order: &UnmatchedOrder,
+    ) -> Option<(ClientOrderId, StrategyId, Quantity)> {
+        let (client_order_id, strategy_id) = tracked?;
+        let active_quantity = stream_active_quantity(order)?;
+        let quantity =
+            state.confirm_pending_reduction(&client_order_id, &order.id, active_quantity)?;
+        Some((client_order_id, strategy_id, quantity))
     }
 
     fn derive_fill_changes(
@@ -1515,6 +1560,7 @@ impl ExecutionClient for BetfairExecutionClient {
                         reconnect_market_ids.clone(),
                         reconnect_lookback_mins,
                         &reconnect_ocm_state,
+                        &reconnect_emitter,
                         stream_session,
                         &mut session_refresh,
                     )
@@ -1755,6 +1801,7 @@ impl ExecutionClient for BetfairExecutionClient {
                 market_ids.clone(),
                 false,
                 &self.ocm_state,
+                &self.emitter,
                 stream_session,
                 &mut order_refresh,
             ),
@@ -1819,6 +1866,7 @@ impl ExecutionClient for BetfairExecutionClient {
             self.reconcile_market_ids(),
             cmd.open_only,
             &self.ocm_state,
+            &self.emitter,
             stream_session,
             &mut session_refresh,
         )
@@ -2391,8 +2439,10 @@ impl ExecutionClient for BetfairExecutionClient {
         } else if has_quantity_change {
             // Quantity reduction via partial cancel
             let order = self.core.get_order(&client_order_id)?;
-            let existing_qty = order.quantity().as_decimal();
-            let new_qty = cmd.quantity.unwrap().as_decimal();
+            let original_quantity = order.quantity();
+            let requested_quantity = cmd.quantity.unwrap();
+            let existing_qty = original_quantity.as_decimal();
+            let new_qty = requested_quantity.as_decimal();
 
             if new_qty >= existing_qty {
                 let ts_event = self.clock.get_time_ns();
@@ -2408,6 +2458,7 @@ impl ExecutionClient for BetfairExecutionClient {
             }
 
             let size_reduction = existing_qty - new_qty;
+            let reduction_bet_id = bet_id.clone();
             let params = CancelOrdersParams {
                 market_id: Some(market_id),
                 instructions: Some(vec![CancelInstruction {
@@ -2416,6 +2467,18 @@ impl ExecutionClient for BetfairExecutionClient {
                 }]),
                 customer_ref: Some(order_customer_ref()),
             };
+
+            // Register before sending so OCM can resolve before REST
+            if let Ok(mut state) = self.ocm_state.lock() {
+                state.register_pending_reduction(
+                    client_order_id,
+                    reduction_bet_id.clone(),
+                    original_quantity,
+                    requested_quantity,
+                );
+            }
+
+            let ocm_state = Arc::clone(&self.ocm_state);
 
             self.spawn_task("modify-order-quantity", async move {
                 let result: Result<CancelExecutionReport, _> = http_client
@@ -2429,6 +2492,13 @@ impl ExecutionClient for BetfairExecutionClient {
                                 "Ambiguous quantity reduction for {client_order_id}, awaiting reconciliation: {e}",
                             ),
                             CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {
+                                if let Ok(mut state) = ocm_state.lock() {
+                                    state.clear_pending_reduction(
+                                        &client_order_id,
+                                        &reduction_bet_id,
+                                    );
+                                }
+
                                 let ts_event = clock.get_time_ns();
                                 emitter.emit_order_modify_rejected_event(
                                     strategy_id,
@@ -2466,6 +2536,13 @@ impl ExecutionClient for BetfairExecutionClient {
                                 CommandFailure::NotSent(reason)
                                 | CommandFailure::VenueRejected(reason),
                             ) => {
+                                if let Ok(mut state) = ocm_state.lock() {
+                                    state.clear_pending_reduction(
+                                        &client_order_id,
+                                        &reduction_bet_id,
+                                    );
+                                }
+
                                 let ts_event = clock.get_time_ns();
                                 emitter.emit_order_modify_rejected_event(
                                     strategy_id,
@@ -2489,6 +2566,25 @@ impl ExecutionClient for BetfairExecutionClient {
                                     );
                                     return Ok(());
                                 };
+
+                                let newly_resolved = if let Ok(mut state) = ocm_state.lock() {
+                                    state.complete_pending_reduction(
+                                        &client_order_id,
+                                        &reduction_bet_id,
+                                        updated_quantity,
+                                    )
+                                } else {
+                                    true
+                                };
+
+                                if !newly_resolved {
+                                    log::debug!(
+                                        "Suppressing late reduction update for {client_order_id}: \
+                                         already resolved from another channel",
+                                    );
+                                    return Ok(());
+                                }
+
                                 let ts_event = clock.get_time_ns();
                                 let updated = OrderUpdated::new(
                                     emitter.trader_id(),
@@ -3103,6 +3199,7 @@ async fn fetch_order_status_reports_http(
     market_ids: Option<Vec<String>>,
     open_only: bool,
     ocm_state: &Arc<Mutex<OcmState>>,
+    emitter: &ExecutionEventEmitter,
     stream_session: StreamSession<'_>,
     session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<Vec<OrderStatusReport>> {
@@ -3113,6 +3210,7 @@ async fn fetch_order_status_reports_http(
     };
 
     let mut reports = Vec::new();
+    let mut active_quantities = AHashMap::new();
     let mut from_record: u32 = 0;
 
     loop {
@@ -3147,6 +3245,11 @@ async fn fetch_order_status_reports_http(
                     {
                         r.client_order_id = Some(full_id);
                     }
+
+                    if let Some(active_quantity) = current_order_active_quantity(order) {
+                        active_quantities.insert(order.bet_id.clone(), active_quantity);
+                    }
+
                     reports.push(r);
                 }
                 Err(e) => log::warn!("Failed to parse order report for {}: {e}", order.bet_id),
@@ -3160,7 +3263,120 @@ async fn fetch_order_status_reports_http(
         from_record += page_size;
     }
 
+    resolve_pending_modifies(&mut reports, &active_quantities, ocm_state, emitter);
+
     Ok(reports)
+}
+
+fn resolve_pending_modifies(
+    reports: &mut Vec<OrderStatusReport>,
+    active_quantities: &AHashMap<String, Quantity>,
+    ocm_state: &Arc<Mutex<OcmState>>,
+    emitter: &ExecutionEventEmitter,
+) {
+    let Ok(mut state) = ocm_state.lock() else {
+        log::error!("OcmState mutex poisoned");
+        return;
+    };
+
+    let mut resolved_bet_ids = AHashSet::new();
+
+    for report in reports.iter_mut() {
+        let bet_id = report.venue_order_id.to_string();
+
+        if let Some(quantity) = state.reduced_quantity(&bet_id) {
+            report.quantity = quantity;
+        }
+
+        let Some(client_order_id) = report.client_order_id else {
+            continue;
+        };
+
+        let Some(strategy_id) = state.order_strategy_id(&client_order_id) else {
+            continue;
+        };
+
+        if let Some(total_quantity) =
+            state.promote_pending_replace(&client_order_id, &bet_id, report.quantity)
+        {
+            emit_reconciled_update(
+                emitter,
+                report,
+                client_order_id,
+                strategy_id,
+                total_quantity,
+                report.price,
+            );
+            resolved_bet_ids.insert(bet_id);
+            continue;
+        }
+
+        if let Some(quantity) = resolve_pending_reduction_from_reconciliation(
+            &mut state,
+            active_quantities,
+            &client_order_id,
+            &bet_id,
+        ) {
+            emit_reconciled_update(
+                emitter,
+                report,
+                client_order_id,
+                strategy_id,
+                quantity,
+                None,
+            );
+            resolved_bet_ids.insert(bet_id.clone());
+        }
+    }
+
+    reports.retain(|report| {
+        let bet_id = report.venue_order_id.as_str();
+        !state.replaced_venue_order_ids.contains(bet_id) && !resolved_bet_ids.contains(bet_id)
+    });
+}
+
+fn resolve_pending_reduction_from_reconciliation(
+    state: &mut OcmState,
+    active_quantities: &AHashMap<String, Quantity>,
+    client_order_id: &ClientOrderId,
+    bet_id: &str,
+) -> Option<Quantity> {
+    let active_quantity = active_quantities.get(bet_id).copied()?;
+    state.confirm_pending_reduction(client_order_id, bet_id, active_quantity)
+}
+
+fn emit_reconciled_update(
+    emitter: &ExecutionEventEmitter,
+    report: &OrderStatusReport,
+    client_order_id: ClientOrderId,
+    strategy_id: StrategyId,
+    quantity: Quantity,
+    price: Option<Price>,
+) {
+    let updated = OrderUpdated::new(
+        emitter.trader_id(),
+        strategy_id,
+        report.instrument_id,
+        client_order_id,
+        quantity,
+        UUID4::new(),
+        report.ts_last,
+        report.ts_init,
+        true,
+        Some(report.venue_order_id),
+        Some(report.account_id),
+        price,
+        None,
+        None,
+        false,
+    );
+    emitter.send_order_event(OrderEventAny::Updated(updated));
+}
+
+fn current_order_active_quantity(order: &CurrentOrderSummary) -> Option<Quantity> {
+    let active =
+        order.size_matched.unwrap_or(Decimal::ZERO) + order.size_remaining.unwrap_or(Decimal::ZERO);
+    parse_betfair_quantity(active).ok()
 }
 
 /// Paginates `list_current_orders` into `FillReport`s without touching the
@@ -3314,6 +3530,7 @@ async fn fetch_post_reconnect_mass_status(
     market_ids: Option<Vec<String>>,
     lookback_mins: u64,
     ocm_state: &Arc<Mutex<OcmState>>,
+    emitter: &ExecutionEventEmitter,
     stream_session: StreamSession<'_>,
     session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<ExecutionMassStatus> {
@@ -3335,6 +3552,7 @@ async fn fetch_post_reconnect_mass_status(
         market_ids.clone(),
         false,
         ocm_state,
+        emitter,
         stream_session,
         session_refresh,
     )
@@ -3689,6 +3907,11 @@ fn single_instruction_report<T>(reports: Option<&[T]>) -> Option<&T> {
         [report] => Some(report),
         _ => None,
     }
+}
+
+fn stream_active_quantity(uo: &UnmatchedOrder) -> Option<Quantity> {
+    let active = uo.sm.unwrap_or(Decimal::ZERO) + uo.sr.unwrap_or(Decimal::ZERO);
+    parse_betfair_quantity(active).ok()
 }
 
 fn classify_execution_report<F>(
