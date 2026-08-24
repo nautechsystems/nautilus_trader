@@ -24,7 +24,7 @@ __all__ = [
     "OKXDataClientConfig",
     "OKXDataClientFactory",
     "OKXEnvironment",
-    "OKXExecClientConfig",
+    "OKXExecutionClientConfig",
     "OKXExecutionClientFactory",
 ]
 

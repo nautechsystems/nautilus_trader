@@ -32,7 +32,7 @@ from nautilus_trader.adapters.coinbase import COINBASE
 from nautilus_trader.adapters.coinbase import CoinbaseDataClientConfig
 from nautilus_trader.adapters.coinbase import CoinbaseDataClientFactory
 from nautilus_trader.adapters.coinbase import CoinbaseEnvironment
-from nautilus_trader.adapters.coinbase import CoinbaseExecClientConfig
+from nautilus_trader.adapters.coinbase import CoinbaseExecutionClientConfig
 from nautilus_trader.adapters.coinbase import CoinbaseExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
@@ -71,8 +71,9 @@ def main() -> None:
         )
         .add_exec_client(
             None,
-            CoinbaseExecutionClientFactory(TRADER_ID, ACCOUNT_ID),
-            CoinbaseExecClientConfig(
+            CoinbaseExecutionClientFactory(),
+            CoinbaseExecutionClientConfig(
+                account_id=ACCOUNT_ID,
                 environment=COINBASE_ENVIRONMENT,
                 account_type=ACCOUNT_TYPE,
                 retail_portfolio_id=RETAIL_PORTFOLIO_ID,

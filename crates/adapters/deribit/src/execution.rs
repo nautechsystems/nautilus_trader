@@ -53,7 +53,7 @@ use crate::{
         consts::{DERIBIT_VENUE, DERIBIT_WS_HEARTBEAT_SECS},
         enums::resolve_trigger_type,
     },
-    config::DeribitExecClientConfig,
+    config::DeribitExecutionClientConfig,
     http::{client::DeribitHttpClient, models::DeribitCurrency, query::GetOrderStateParams},
     websocket::{
         auth::DERIBIT_EXECUTION_SESSION_NAME,
@@ -68,7 +68,7 @@ use crate::{
 pub struct DeribitExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: DeribitExecClientConfig,
+    config: DeribitExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http_client: DeribitHttpClient,
     ws_client: DeribitWebSocketClient,
@@ -82,7 +82,10 @@ impl DeribitExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the client fails to initialize.
-    pub fn new(core: ExecutionClientCore, config: DeribitExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: DeribitExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
         let http_client = if config.has_api_credentials() {
             DeribitHttpClient::new_with_env(
                 config.api_key.clone(),

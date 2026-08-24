@@ -20,7 +20,7 @@ from nautilus_trader.adapters.coinbase import COINBASE
 from nautilus_trader.adapters.coinbase import CoinbaseDataClientConfig
 from nautilus_trader.adapters.coinbase import CoinbaseDataClientFactory
 from nautilus_trader.adapters.coinbase import CoinbaseEnvironment
-from nautilus_trader.adapters.coinbase import CoinbaseExecClientConfig
+from nautilus_trader.adapters.coinbase import CoinbaseExecutionClientConfig
 from nautilus_trader.adapters.coinbase import CoinbaseExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -36,11 +36,8 @@ coinbase_exec_tester = load_example_module("coinbase", "exec_tester")
 
 
 def test_coinbase_factories_expose_python_names() -> None:
-    trader_id = TraderId.from_str("TESTER-001")
-    account_id = AccountId.from_str("COINBASE-001")
-
     data_factory = CoinbaseDataClientFactory()
-    exec_factory = CoinbaseExecutionClientFactory(trader_id, account_id)
+    exec_factory = CoinbaseExecutionClientFactory()
 
     assert data_factory.name() == COINBASE
     assert exec_factory.name() == COINBASE
@@ -77,8 +74,9 @@ def test_live_node_builder_accepts_coinbase_exec_factory() -> None:
         )
         .add_exec_client(
             None,
-            CoinbaseExecutionClientFactory(trader_id, account_id),
-            CoinbaseExecClientConfig(
+            CoinbaseExecutionClientFactory(),
+            CoinbaseExecutionClientConfig(
+                account_id=account_id,
                 api_key=SMOKE_API_KEY,
                 api_secret=SMOKE_API_SECRET,
                 environment=CoinbaseEnvironment.LIVE,

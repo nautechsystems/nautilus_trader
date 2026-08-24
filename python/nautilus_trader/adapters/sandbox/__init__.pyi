@@ -16,7 +16,6 @@ class SandboxExecutionClientConfig:
         self,
         venue: model.Venue,
         starting_balances: typing.Sequence[model.Money],
-        trader_id: model.TraderId | None = None,
         account_id: model.AccountId | None = None,
         base_currency: model.Currency | None = None,
         oms_type: model.OmsType | None = None,
@@ -41,8 +40,6 @@ class SandboxExecutionClientConfig:
         oto_full_trigger: bool = False,
         price_protection_points: int | None = None,
     ) -> None: ...
-    @property
-    def trader_id(self) -> model.TraderId: ...
     @property
     def account_id(self) -> model.AccountId: ...
     @property

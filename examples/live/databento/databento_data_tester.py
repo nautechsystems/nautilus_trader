@@ -18,7 +18,7 @@ from nautilus_trader.adapters.databento import DATABENTO
 from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoLiveDataClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -46,7 +46,7 @@ instrument_ids = [
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(log_level="INFO", use_pyo3=True),
-    exec_engine=LiveExecEngineConfig(
+    exec_engine=LiveExecutionEngineConfig(
         reconciliation=False,  # Not applicable
     ),
     data_clients={

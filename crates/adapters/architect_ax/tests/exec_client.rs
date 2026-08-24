@@ -27,7 +27,7 @@ use nautilus_architect_ax::{
         consts::{AX_CLIENT_ID, AX_VENUE},
         enums::AxEnvironment,
     },
-    config::AxExecClientConfig,
+    config::AxExecutionClientConfig,
     execution::AxExecutionClient,
 };
 use nautilus_common::{
@@ -69,8 +69,8 @@ fn setup_exec_channel() -> tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent> 
     receiver
 }
 
-fn create_test_exec_config(addr: SocketAddr) -> AxExecClientConfig {
-    AxExecClientConfig {
+fn create_test_exec_config(addr: SocketAddr) -> AxExecutionClientConfig {
+    AxExecutionClientConfig {
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         environment: AxEnvironment::Sandbox,
@@ -136,7 +136,7 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
 #[rstest]
 #[tokio::test]
 async fn test_exec_config_creation() {
-    let config = AxExecClientConfig {
+    let config = AxExecutionClientConfig {
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         environment: AxEnvironment::Sandbox,
@@ -145,7 +145,6 @@ async fn test_exec_config_creation() {
 
     assert_eq!(config.api_key, Some("test_api_key".to_string()));
     assert_eq!(config.environment, AxEnvironment::Sandbox);
-    assert_eq!(config.trader_id, TraderId::from("TRADER-001"));
     assert_eq!(config.account_id, AccountId::from("AX-001"));
 }
 
@@ -291,7 +290,7 @@ async fn test_exec_client_get_account_returns_cached() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_config_url_overrides() {
-    let config = AxExecClientConfig {
+    let config = AxExecutionClientConfig {
         base_url_http: Some("http://custom:1234".to_string()),
         base_url_orders: Some("http://custom:5678".to_string()),
         base_url_ws_private: Some("ws://custom:9012/ws".to_string()),
@@ -306,7 +305,7 @@ async fn test_exec_config_url_overrides() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_config_sandbox_defaults() {
-    let config = AxExecClientConfig {
+    let config = AxExecutionClientConfig {
         environment: AxEnvironment::Sandbox,
         ..Default::default()
     };
@@ -319,7 +318,7 @@ async fn test_exec_config_sandbox_defaults() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_config_production_defaults() {
-    let config = AxExecClientConfig {
+    let config = AxExecutionClientConfig {
         environment: AxEnvironment::Production,
         ..Default::default()
     };

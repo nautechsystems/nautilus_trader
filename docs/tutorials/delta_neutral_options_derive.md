@@ -216,7 +216,8 @@ variables when the config fields are left unset. The example sets a fee cap and 
 protocol-constant overrides for local testing.
 
 ```rust
-let exec_config = DeriveExecClientConfig {
+let exec_config = DeriveExecutionClientConfig {
+    account_id,
     environment: derive_environment,
     max_fee_per_contract: Some(Decimal::from_str_exact("1000")?),
     domain_separator: env_override(
@@ -238,16 +239,6 @@ let exec_config = DeriveExecClientConfig {
 };
 ```
 
-Execution clients need `DeriveExecFactoryConfig`, which carries the trader and account IDs:
-
-```rust
-let exec_factory_config = DeriveExecFactoryConfig {
-    trader_id,
-    account_id,
-    config: exec_config,
-};
-```
-
 The node enables reconciliation so open orders, positions, balances, and reports are loaded before
 the strategy starts:
 
@@ -255,7 +246,7 @@ the strategy starts:
 let mut node = LiveNode::builder(trader_id, environment)?
     .with_name("DERIVE-DELTA-NEUTRAL-001".to_string())
     .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
-    .add_exec_client(None, Box::new(exec_factory), Box::new(exec_factory_config))?
+    .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
     .with_reconciliation(true)
     .with_delay_post_stop_secs(5)
     .build()?;

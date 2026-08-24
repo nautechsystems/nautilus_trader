@@ -80,7 +80,7 @@ use nautilus_lighter::{
         consts::{LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE},
         enums::LighterEnvironment,
     },
-    config::LighterExecClientConfig,
+    config::LighterExecutionClientConfig,
     execution::LighterExecutionClient,
 };
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
@@ -753,11 +753,10 @@ async fn start_server() -> (SocketAddr, Arc<TestServerState>) {
     (addr, state)
 }
 
-fn build_config(addr: SocketAddr) -> LighterExecClientConfig {
+fn build_config(addr: SocketAddr) -> LighterExecutionClientConfig {
     // Pin every credential field explicitly so a stray `LIGHTER_*` env var
     // cannot leak into a test.
-    LighterExecClientConfig {
-        trader_id: trader_id(),
+    LighterExecutionClientConfig {
         account_id: account_id(),
         account_index: Some(TEST_ACCOUNT_INDEX),
         api_key_index: Some(TEST_API_KEY_INDEX),
@@ -775,8 +774,8 @@ fn build_config(addr: SocketAddr) -> LighterExecClientConfig {
     }
 }
 
-fn build_config_no_credentials(addr: SocketAddr) -> LighterExecClientConfig {
-    LighterExecClientConfig {
+fn build_config_no_credentials(addr: SocketAddr) -> LighterExecutionClientConfig {
+    LighterExecutionClientConfig {
         private_key: None,
         account_index: None,
         api_key_index: None,
@@ -901,7 +900,7 @@ fn build_client_mainnet(
 }
 
 fn build_client_with(
-    config: LighterExecClientConfig,
+    config: LighterExecutionClientConfig,
 ) -> (
     LighterExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -912,7 +911,7 @@ fn build_client_with(
 }
 
 fn build_client_with_cache(
-    config: LighterExecClientConfig,
+    config: LighterExecutionClientConfig,
     cache: Rc<RefCell<Cache>>,
 ) -> (
     LighterExecutionClient,

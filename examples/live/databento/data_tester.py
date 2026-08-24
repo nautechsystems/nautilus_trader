@@ -27,8 +27,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoDataClientFactory
-from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import ClientId
@@ -52,7 +52,7 @@ def main() -> None:
         .add_data_client(
             None,
             DatabentoDataClientFactory(),
-            DatabentoLiveClientConfig(
+            DatabentoDataClientConfig(
                 api_key=os.getenv("DATABENTO_API_KEY", ""),
                 publishers_filepath=PUBLISHERS_FILEPATH,
                 use_exchange_as_venue=USE_EXCHANGE_AS_VENUE,

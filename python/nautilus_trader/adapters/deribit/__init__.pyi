@@ -16,7 +16,7 @@ __all__ = [
     "DeribitDataClientConfig",
     "DeribitDataClientFactory",
     "DeribitEnvironment",
-    "DeribitExecClientConfig",
+    "DeribitExecutionClientConfig",
     "DeribitExecutionClientFactory",
     "DeribitProductType",
     "DeribitUpdateInterval",
@@ -184,9 +184,7 @@ class DeribitDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class DeribitExecClientConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
+class DeribitExecutionClientConfig:
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -211,7 +209,6 @@ class DeribitExecClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
-        trader_id: model.TraderId,
         account_id: model.AccountId,
         product_types: typing.Sequence[DeribitProductType] | None = None,
         environment: DeribitEnvironment | None = None,

@@ -19,7 +19,7 @@ use std::any::Any;
 
 use nautilus_common::factories::ClientConfig;
 use nautilus_model::{
-    identifiers::{AccountId, TraderId},
+    identifiers::AccountId,
     types::{Currency, Money},
 };
 use rust_decimal::Decimal;
@@ -307,10 +307,7 @@ impl BetfairDataConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.betfair")
 )]
-pub struct BetfairExecConfig {
-    /// Trader ID for the client core.
-    #[builder(default = TraderId::from("TRADER-001"))]
-    pub trader_id: TraderId,
+pub struct BetfairExecutionClientConfig {
     /// Account ID for the client core.
     #[builder(default = AccountId::from("BETFAIR-001"))]
     pub account_id: AccountId,
@@ -376,8 +373,7 @@ pub struct BetfairExecConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(BetfairExecConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(BetfairExecutionClientConfig {
     account_id: AccountId,
     account_currency: String,
     username: Option<String>,
@@ -400,19 +396,19 @@ nautilus_core::impl_pyo3_config_getters!(BetfairExecConfig {
     stream_gap_recovery_lookback_mins: u64,
 });
 
-impl Default for BetfairExecConfig {
+impl Default for BetfairExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl ClientConfig for BetfairExecConfig {
+impl ClientConfig for BetfairExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
 }
 
-impl BetfairExecConfig {
+impl BetfairExecutionClientConfig {
     /// Returns the configured credentials or resolves them from the environment.
     ///
     /// # Errors
@@ -564,9 +560,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_default() {
-        let config = BetfairExecConfig::default();
-
-        assert_eq!(config.trader_id, TraderId::from("TRADER-001"));
+        let config = BetfairExecutionClientConfig::default();
         assert_eq!(config.account_id, AccountId::from("BETFAIR-001"));
         assert_eq!(config.account_currency, "GBP");
         assert_eq!(config.request_rate_per_second, 5);
@@ -584,7 +578,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_with_market_filter() {
-        let config = BetfairExecConfig {
+        let config = BetfairExecutionClientConfig {
             stream_market_ids_filter: Some(vec!["1.234567".to_string(), "1.890123".to_string()]),
             ..Default::default()
         };
@@ -596,7 +590,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_external_orders_ignored() {
-        let config = BetfairExecConfig {
+        let config = BetfairExecutionClientConfig {
             ignore_external_orders: true,
             ..Default::default()
         };
@@ -606,7 +600,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_account_state_disabled() {
-        let config = BetfairExecConfig {
+        let config = BetfairExecutionClientConfig {
             calculate_account_state: false,
             ..Default::default()
         };
@@ -616,7 +610,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_reconcile_market_ids() {
-        let config = BetfairExecConfig {
+        let config = BetfairExecutionClientConfig {
             reconcile_market_ids_only: true,
             reconcile_market_ids: Some(vec!["1.234567".to_string()]),
             ..Default::default()
@@ -628,7 +622,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_use_market_version() {
-        let config = BetfairExecConfig {
+        let config = BetfairExecutionClientConfig {
             use_market_version: true,
             ..Default::default()
         };
@@ -638,7 +632,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_validate_rejects_zero_order_rate_limit() {
-        let config = BetfairExecConfig {
+        let config = BetfairExecutionClientConfig {
             order_request_rate_per_second: 0,
             ..Default::default()
         };
@@ -656,7 +650,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_validate_rejects_invalid_currency() {
-        let config = BetfairExecConfig {
+        let config = BetfairExecutionClientConfig {
             account_currency: "INVALID".to_string(),
             ..Default::default()
         };
@@ -733,10 +727,8 @@ subscribe_cricket_data = true
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: BetfairExecConfig = toml::from_str("").unwrap();
-        let expected = BetfairExecConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
+        let config: BetfairExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = BetfairExecutionClientConfig::default();
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.account_currency, expected.account_currency);
         assert_eq!(

@@ -53,7 +53,7 @@ use nautilus_polymarket::{
         enums::SignatureType,
         models::PolymarketLabel,
     },
-    config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+    config::{PolymarketDataClientConfig, PolymarketExecutionClientConfig},
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
     filters::SearchFilter,
 };
@@ -151,8 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = PolymarketExecClientConfig {
-        trader_id,
+    let exec_config = PolymarketExecutionClientConfig {
         account_id,
         signature_type: SignatureType::PolyGnosisSafe,
         ..Default::default()

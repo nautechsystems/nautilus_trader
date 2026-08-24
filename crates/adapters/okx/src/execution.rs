@@ -81,7 +81,7 @@ use crate::{
             okx_instrument_type_from_symbol,
         },
     },
-    config::OKXExecClientConfig,
+    config::OKXExecutionClientConfig,
     http::{
         client::{AlgoOrderReportSweep, FillHistory, OKXHttpClient, ReportInstrumentScope},
         models::OKXCancelAlgoOrderRequest,
@@ -99,7 +99,7 @@ use crate::{
 pub struct OKXExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: OKXExecClientConfig,
+    config: OKXExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http_client: OKXHttpClient,
     ws_private: OKXWebSocketClient,
@@ -117,7 +117,10 @@ impl OKXExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the client fails to initialize.
-    pub fn new(core: ExecutionClientCore, config: OKXExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: OKXExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
         let http_client = OKXHttpClient::with_credentials(
             config.api_key.clone(),
             config.api_secret.clone(),
@@ -203,7 +206,7 @@ impl OKXExecutionClient {
 
     fn derive_default_trade_mode(
         account_type: AccountType,
-        config: &OKXExecClientConfig,
+        config: &OKXExecutionClientConfig,
     ) -> OKXTradeMode {
         let is_cross_margin = config.margin_mode == Some(OKXMarginMode::Cross);
 
@@ -3254,11 +3257,11 @@ mod tests {
     fn build_config(
         margin_mode: Option<OKXMarginMode>,
         use_spot_margin: bool,
-    ) -> OKXExecClientConfig {
-        OKXExecClientConfig {
+    ) -> OKXExecutionClientConfig {
+        OKXExecutionClientConfig {
             margin_mode,
             use_spot_margin,
-            ..OKXExecClientConfig::default()
+            ..OKXExecutionClientConfig::default()
         }
     }
 
@@ -3697,16 +3700,16 @@ mod tests {
     }
 
     fn build_test_exec_client() -> OKXExecutionClient {
-        let config = OKXExecClientConfig {
+        let config = OKXExecutionClientConfig {
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
             api_passphrase: Some("test_pass".to_string()),
-            ..OKXExecClientConfig::default()
+            ..OKXExecutionClientConfig::default()
         };
 
         let cache = Rc::new(RefCell::new(Cache::default()));
         let core = ExecutionClientCore::new(
-            config.trader_id,
+            TraderId::from("TESTER-001"),
             ClientId::from("OKX-TEST"),
             *OKX_VENUE,
             OmsType::Hedging,

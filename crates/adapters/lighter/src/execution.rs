@@ -88,7 +88,7 @@ use crate::{
         symbol::{MarketRegistry, product_type_from_instrument_id},
         urls::lighter_chain_id,
     },
-    config::LighterExecClientConfig,
+    config::LighterExecutionClientConfig,
     http::{
         client::{LIGHTER_REST_PAGE_SIZE, LighterHttpClient, LighterRawHttpClient},
         error::LighterHttpError,
@@ -182,7 +182,7 @@ const NONCE_CONNECTION_EPOCH_UNAVAILABLE: u64 = u64::MAX;
 pub struct LighterExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: LighterExecClientConfig,
+    config: LighterExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     credential: Option<Credential>,
     http_client: LighterHttpClient,
@@ -219,7 +219,10 @@ impl LighterExecutionClient {
     ///
     /// Returns an error if the HTTP client fails to initialize or if any
     /// supplied credential value cannot be parsed.
-    pub fn new(core: ExecutionClientCore, config: LighterExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: LighterExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
         let credential = Credential::resolve(
             config.private_key.clone(),
             config.account_index,
@@ -292,7 +295,7 @@ impl LighterExecutionClient {
 
     /// Returns a reference to the configuration.
     #[must_use]
-    pub fn config(&self) -> &LighterExecClientConfig {
+    pub fn config(&self) -> &LighterExecutionClientConfig {
         &self.config
     }
 
@@ -5634,9 +5637,8 @@ mod tests {
         Credential::new(TEST_API_KEY_INDEX, TEST_PRIVATE_KEY, TEST_ACCOUNT_INDEX).unwrap()
     }
 
-    fn test_config() -> LighterExecClientConfig {
-        LighterExecClientConfig {
-            trader_id: trader_id(),
+    fn test_config() -> LighterExecutionClientConfig {
+        LighterExecutionClientConfig {
             account_id: account_id(),
             account_index: Some(TEST_ACCOUNT_INDEX),
             api_key_index: Some(TEST_API_KEY_INDEX),
@@ -5684,7 +5686,7 @@ mod tests {
     }
 
     fn create_execution_client_with_config(
-        config: LighterExecClientConfig,
+        config: LighterExecutionClientConfig,
     ) -> (
         LighterExecutionClient,
         Rc<RefCell<Cache>>,

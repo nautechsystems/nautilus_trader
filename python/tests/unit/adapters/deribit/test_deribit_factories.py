@@ -21,7 +21,7 @@ from unit.adapters.example_modules import load_example_module
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
 from nautilus_trader.adapters.deribit import DeribitDataClientFactory
 from nautilus_trader.adapters.deribit import DeribitEnvironment
-from nautilus_trader.adapters.deribit import DeribitExecClientConfig
+from nautilus_trader.adapters.deribit import DeribitExecutionClientConfig
 from nautilus_trader.adapters.deribit import DeribitExecutionClientFactory
 from nautilus_trader.adapters.deribit import DeribitProductType
 from nautilus_trader.common import Environment
@@ -81,8 +81,7 @@ def test_live_node_builder_accepts_deribit_exec_factory() -> None:
         .add_exec_client(
             None,
             DeribitExecutionClientFactory(),
-            DeribitExecClientConfig(
-                trader_id=trader_id,
+            DeribitExecutionClientConfig(
                 account_id=account_id,
                 product_types=[DeribitProductType.FUTURE],
                 environment=DeribitEnvironment.TESTNET,

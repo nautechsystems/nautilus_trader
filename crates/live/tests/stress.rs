@@ -112,7 +112,7 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
-    config::{LiveExecEngineConfig, LiveNodeConfig},
+    config::{LiveExecutionEngineConfig, LiveNodeConfig},
     node::{LiveNode, LiveNodeHandle, RunnerMetricsDelta, RunnerMetricsSnapshot},
 };
 use nautilus_model::{
@@ -152,7 +152,7 @@ fn stress_config() -> LiveNodeConfig {
     LiveNodeConfig {
         environment: Environment::Live,
         trader_id: TraderId::from("STRESS-001"),
-        exec_engine: LiveExecEngineConfig {
+        exec_engine: LiveExecutionEngineConfig {
             reconciliation: false,
             ..Default::default()
         },

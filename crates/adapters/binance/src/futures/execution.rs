@@ -109,7 +109,7 @@ use crate::{
         symbol::{format_binance_symbol, format_instrument_id},
         urls::{get_usdm_ws_route_base_url, get_ws_private_base_url},
     },
-    config::BinanceExecClientConfig,
+    config::BinanceExecutionClientConfig,
     futures::{
         conversions::{
             determine_position_side, normalize_futures_asset, reduce_only_param,
@@ -207,7 +207,7 @@ fn create_algo_order_status_report(
 pub struct BinanceFuturesExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: BinanceExecClientConfig,
+    config: BinanceExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     dispatch_state: Arc<WsDispatchState>,
     product_type: BinanceProductType,
@@ -236,7 +236,10 @@ impl BinanceFuturesExecutionClient {
     ///
     /// Returns an error if the HTTP client fails to initialize, credentials are
     /// missing, or the product type is not a futures type (UsdM or CoinM).
-    pub fn new(core: ExecutionClientCore, config: BinanceExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: BinanceExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
         config.validate()?;
         let product_type = config.product_type;
         match product_type {

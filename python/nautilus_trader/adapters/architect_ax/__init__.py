@@ -26,7 +26,7 @@ __all__ = [
     "AxDataClientConfig",
     "AxDataClientFactory",
     "AxEnvironment",
-    "AxExecClientConfig",
+    "AxExecutionClientConfig",
     "AxExecutionClientFactory",
     "AxMarketDataLevel",
 ]

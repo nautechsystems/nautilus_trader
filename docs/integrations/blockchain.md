@@ -794,7 +794,6 @@ The `BlockchainExecutionClientConfig` fields, exposed to Python following the
 
 | Field                            | Default   | Description                                                          |
 | -------------------------------- | --------- | -------------------------------------------------------------------- |
-| `trader_id`                      | Required  | Trader ID for the client.                                            |
 | `client_id`                      | Required  | Account ID for the client.                                           |
 | `chain`                          | Required  | Blockchain chain configuration.                                      |
 | `wallet_address`                 | Required  | Wallet address for the execution client.                             |

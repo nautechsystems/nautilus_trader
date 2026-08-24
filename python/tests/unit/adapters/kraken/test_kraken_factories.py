@@ -20,7 +20,7 @@ from unit.adapters.example_modules import load_example_module
 
 from nautilus_trader.adapters.kraken import KrakenDataClientConfig
 from nautilus_trader.adapters.kraken import KrakenDataClientFactory
-from nautilus_trader.adapters.kraken import KrakenExecClientConfig
+from nautilus_trader.adapters.kraken import KrakenExecutionClientConfig
 from nautilus_trader.adapters.kraken import KrakenExecutionClientFactory
 from nautilus_trader.adapters.kraken import KrakenProductType
 from nautilus_trader.common import Environment
@@ -74,11 +74,10 @@ def test_live_node_builder_accepts_kraken_exec_factory() -> None:
         .add_exec_client(
             None,
             KrakenExecutionClientFactory(),
-            KrakenExecClientConfig(
-                trader_id,
-                account_id,
-                SMOKE_API_KEY,
-                SMOKE_API_SECRET,
+            KrakenExecutionClientConfig(
+                account_id=account_id,
+                api_key=SMOKE_API_KEY,
+                api_secret=SMOKE_API_SECRET,
                 product_type=KrakenProductType.FUTURES,
             ),
         )

@@ -52,7 +52,6 @@ def test_live_node_builder_accepts_sandbox_simulated_exec_factory() -> None:
             SandboxExecutionClientConfig(
                 venue=Venue.from_str(SANDBOX),
                 starting_balances=[Money(100000.0, Currency.from_str("USD"))],
-                trader_id=trader_id,
                 account_id=AccountId.from_str("SANDBOX-001"),
             ),
         )
@@ -75,7 +74,6 @@ def test_live_node_builder_accepts_sandbox_probability_price_fee_model() -> None
             SandboxExecutionClientConfig(
                 venue=Venue.from_str(SANDBOX),
                 starting_balances=[Money(100000.0, Currency.from_str("USD"))],
-                trader_id=trader_id,
                 account_id=AccountId.from_str("SANDBOX-001"),
                 fee_model=ProbabilityPriceFeeModel(),
             ),
@@ -109,7 +107,6 @@ def test_live_node_builder_accepts_sandbox_matching_knobs() -> None:
             SandboxExecutionClientConfig(
                 venue=Venue.from_str(SANDBOX),
                 starting_balances=[Money(100000.0, Currency.from_str("USD"))],
-                trader_id=trader_id,
                 account_id=AccountId.from_str("SANDBOX-001"),
                 fill_model=DefaultFillModel(prob_fill_on_limit=0.0),
                 queue_position=True,

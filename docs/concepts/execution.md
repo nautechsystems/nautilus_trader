@@ -143,7 +143,7 @@ reopen:
 | `False` (default)               | Keeps only current-cycle state, bounding the per-fill cost.    |
 | `True`                          | Keeps earlier fills correctable while position state can grow. |
 
-Live trading pins the option `True`: `LiveExecEngineConfig` always carries the replay log, so a venue
+Live trading pins the option `True`: `LiveExecutionEngineConfig` always carries the replay log, so a venue
 [`OrderFillVoided`](events/order_fill_voided.md) referencing an earlier cycle still resolves. The
 simulated venue never emits fill voids, so backtests take the bounded default. Enable it explicitly
 for a custom or external execution client that can correct a fill from a prior cycle; without the
@@ -589,12 +589,12 @@ a restart therefore produces the same `trade_id` and is deduplicated.
 
 ### Configuration
 
-For live trading, enable overfill tolerance in the `LiveExecEngineConfig`:
+For live trading, enable overfill tolerance in the `LiveExecutionEngineConfig`:
 
 ```python
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 
-config = LiveExecEngineConfig(
+config = LiveExecutionEngineConfig(
     allow_overfills=True,
 )
 ```

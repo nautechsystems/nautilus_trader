@@ -15,34 +15,9 @@
 
 //! Python bindings for BitMEX factory types.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
 use pyo3::prelude::*;
 
-use crate::{
-    config::BitmexExecClientConfig,
-    factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
-};
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BitmexExecFactoryConfig {
-    /// Configuration for creating BitMEX execution clients via factory.
-    ///
-    /// This wraps `BitmexExecClientConfig` with the additional trader and account
-    /// identifiers required by the `ExecutionClientCore`.
-    #[new]
-    fn py_new(trader_id: TraderId, account_id: AccountId, config: BitmexExecClientConfig) -> Self {
-        Self {
-            trader_id,
-            account_id,
-            config,
-        }
-    }
-
-    fn __repr__(&self) -> String {
-        stringify!(BitmexExecFactoryConfig).to_string()
-    }
-}
+use crate::factories::{BitmexDataClientFactory, BitmexExecutionClientFactory};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]

@@ -15,12 +15,13 @@
 
 //! Python bindings for Hyperliquid configuration.
 
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
     common::enums::HyperliquidEnvironment,
-    config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
+    config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig},
 };
 
 #[pymethods]
@@ -109,10 +110,11 @@ impl HyperliquidDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl HyperliquidExecClientConfig {
+impl HyperliquidExecutionClientConfig {
     /// Configuration for the Hyperliquid execution client.
     #[new]
     #[pyo3(signature = (
+        account_id = None,
         private_key = None,
         vault_address = None,
         account_address = None,
@@ -133,6 +135,7 @@ impl HyperliquidExecClientConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
+        account_id: Option<AccountId>,
         private_key: Option<String>,
         vault_address: Option<String>,
         account_address: Option<String>,
@@ -153,6 +156,7 @@ impl HyperliquidExecClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
+            account_id: account_id.unwrap_or(defaults.account_id),
             private_key,
             vault_address,
             account_address,
@@ -183,6 +187,6 @@ impl HyperliquidExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(HyperliquidExecClientConfig).to_string()
+        stringify!(HyperliquidExecutionClientConfig).to_string()
     }
 }

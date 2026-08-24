@@ -21,7 +21,7 @@ use pyo3::pymethods;
 
 use crate::{
     common::enums::{BybitEnvironment, BybitMarginMode, BybitProductType},
-    config::{BybitDataClientConfig, BybitExecClientConfig},
+    config::{BybitDataClientConfig, BybitExecutionClientConfig},
 };
 
 #[pymethods]
@@ -111,7 +111,7 @@ impl BybitDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BybitExecClientConfig {
+impl BybitExecutionClientConfig {
     /// Configuration for the Bybit live execution client.
     #[new]
     #[pyo3(signature = (
@@ -196,6 +196,6 @@ impl BybitExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(BybitExecClientConfig).to_string()
+        stringify!(BybitExecutionClientConfig).to_string()
     }
 }

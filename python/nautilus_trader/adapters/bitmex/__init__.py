@@ -26,8 +26,7 @@ __all__ = [
     "BitmexDataClientConfig",
     "BitmexDataClientFactory",
     "BitmexEnvironment",
-    "BitmexExecClientConfig",
-    "BitmexExecFactoryConfig",
+    "BitmexExecutionClientConfig",
     "BitmexExecutionClientFactory",
 ]
 

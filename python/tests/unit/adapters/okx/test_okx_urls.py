@@ -17,14 +17,13 @@ import pytest
 
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXEnvironment
-from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXExecutionClientConfig
 from nautilus_trader.adapters.okx import OKXRegion
 from nautilus_trader.adapters.okx import get_okx_http_base_url
 from nautilus_trader.adapters.okx import get_okx_ws_url_business
 from nautilus_trader.adapters.okx import get_okx_ws_url_private
 from nautilus_trader.adapters.okx import get_okx_ws_url_public
 from nautilus_trader.model import AccountId
-from nautilus_trader.model import TraderId
 
 
 @pytest.mark.parametrize(
@@ -91,8 +90,7 @@ def test_data_config_defaults_to_global_region() -> None:
 
 
 def test_exec_config_accepts_region() -> None:
-    config = OKXExecClientConfig(
-        trader_id=TraderId("TRADER-001"),
+    config = OKXExecutionClientConfig(
         account_id=AccountId("OKX-001"),
         region=OKXRegion.EEA,
     )

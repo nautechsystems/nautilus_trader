@@ -18,10 +18,10 @@ from nautilus_trader._libnautilus.databento import *  # noqa: F403 (undefined-lo
 
 
 __all__ = [
+    "DatabentoDataClientConfig",
     "DatabentoDataClientFactory",
     "DatabentoDataLoader",
     "DatabentoImbalance",
-    "DatabentoLiveClientConfig",
     "DatabentoPublisher",
     "DatabentoStatisticType",
     "DatabentoStatisticUpdateAction",

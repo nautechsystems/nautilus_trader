@@ -21,7 +21,7 @@ from unit.adapters.example_modules import load_example_module
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitDataClientFactory
 from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 from nautilus_trader.adapters.bybit import BybitExecutionClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.common import Environment
@@ -39,11 +39,8 @@ bybit_exec_tester = load_example_module("bybit", "exec_tester")
 
 
 def test_bybit_factories_expose_python_names() -> None:
-    trader_id = TraderId.from_str("TESTER-001")
-    account_id = AccountId.from_str("BYBIT-001")
-
     assert BybitDataClientFactory().name() == BYBIT
-    assert BybitExecutionClientFactory(trader_id, account_id).name() == BYBIT
+    assert BybitExecutionClientFactory().name() == BYBIT
 
 
 def test_live_node_builder_accepts_bybit_data_factory() -> None:
@@ -83,8 +80,8 @@ def test_live_node_builder_accepts_bybit_exec_factory() -> None:
         )
         .add_exec_client(
             None,
-            BybitExecutionClientFactory(trader_id, account_id),
-            BybitExecClientConfig(
+            BybitExecutionClientFactory(),
+            BybitExecutionClientConfig(
                 product_types=[BybitProductType.LINEAR],
                 environment=BybitEnvironment.MAINNET,
                 api_key=SMOKE_API_KEY,

@@ -15,7 +15,7 @@
 
 //! Configuration structures for the Deribit adapter.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -152,10 +152,7 @@ impl DeribitDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
 )]
-pub struct DeribitExecClientConfig {
-    /// The trader ID for this client.
-    #[builder(default)]
-    pub trader_id: TraderId,
+pub struct DeribitExecutionClientConfig {
     /// The account ID for this client.
     #[builder(default = AccountId::from("DERIBIT-001"))]
     pub account_id: AccountId,
@@ -196,8 +193,7 @@ pub struct DeribitExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(DeribitExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(DeribitExecutionClientConfig {
     account_id: AccountId,
     product_types: Vec<DeribitProductType>,
     environment: DeribitEnvironment,
@@ -211,13 +207,13 @@ nautilus_core::impl_pyo3_config_getters!(DeribitExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for DeribitExecClientConfig {
+impl Default for DeribitExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl DeribitExecClientConfig {
+impl DeribitExecutionClientConfig {
     /// Returns `true` when API credentials are available (in config or env vars).
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
@@ -321,10 +317,8 @@ auto_load_missing_instruments = true
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: DeribitExecClientConfig = toml::from_str("").unwrap();
-        let expected = DeribitExecClientConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
+        let config: DeribitExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = DeribitExecutionClientConfig::default();
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.product_types, expected.product_types);

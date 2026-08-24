@@ -29,7 +29,7 @@ use nautilus_okx::{
         consts::OKX,
         enums::{OKXEnvironment, OKXInstrumentType, OKXMarginMode},
     },
-    config::{OKXDataClientConfig, OKXExecClientConfig},
+    config::{OKXDataClientConfig, OKXExecutionClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
     python,
 };
@@ -123,8 +123,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        OKXExecClientConfig {
-            trader_id,
+        OKXExecutionClientConfig {
             account_id,
             environment: OKXEnvironment::Demo,
             api_key: Some(SMOKE_API_KEY.to_string()),
@@ -132,7 +131,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             api_passphrase: Some(SMOKE_API_PASSPHRASE.to_string()),
             instrument_types: vec![OKXInstrumentType::Swap],
             margin_mode: Some(OKXMarginMode::Cross),
-            ..OKXExecClientConfig::default()
+            ..OKXExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -147,11 +146,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let okx_config = extracted_config
         .as_any()
-        .downcast_ref::<OKXExecClientConfig>()
+        .downcast_ref::<OKXExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "OKX-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -159,8 +159,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), OKX);
-    assert_eq!(extracted_factory.config_type(), "OKXExecClientConfig");
-    assert_eq!(okx_config.trader_id, trader_id);
+    assert_eq!(extracted_factory.config_type(), "OKXExecutionClientConfig");
     assert_eq!(okx_config.account_id, account_id);
     assert_eq!(okx_config.environment, OKXEnvironment::Demo);
     assert_eq!(okx_config.instrument_types, [OKXInstrumentType::Swap]);

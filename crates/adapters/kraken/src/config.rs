@@ -18,10 +18,7 @@
 use std::fmt::Debug;
 
 use nautilus_core::string::secret::REDACTED;
-use nautilus_model::{
-    enums::AccountType,
-    identifiers::{AccountId, TraderId},
-};
+use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -184,9 +181,7 @@ impl KrakenDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
 )]
-pub struct KrakenExecClientConfig {
-    #[builder(default)]
-    pub trader_id: TraderId,
+pub struct KrakenExecutionClientConfig {
     #[builder(default = AccountId::from("KRAKEN-001"))]
     pub account_id: AccountId,
     #[builder(default)]
@@ -268,8 +263,7 @@ pub struct KrakenExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(KrakenExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(KrakenExecutionClientConfig {
     account_id: AccountId,
     product_type: KrakenProductType,
     environment: KrakenEnvironment,
@@ -288,16 +282,15 @@ nautilus_core::impl_pyo3_config_getters!(KrakenExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for KrakenExecClientConfig {
+impl Default for KrakenExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl Debug for KrakenExecClientConfig {
+impl Debug for KrakenExecutionClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(KrakenExecClientConfig))
-            .field("trader_id", &self.trader_id)
+        f.debug_struct(stringify!(KrakenExecutionClientConfig))
             .field("account_id", &self.account_id)
             .field("api_key", &REDACTED)
             .field("api_secret", &REDACTED)
@@ -325,7 +318,7 @@ impl Debug for KrakenExecClientConfig {
     }
 }
 
-impl KrakenExecClientConfig {
+impl KrakenExecutionClientConfig {
     /// Returns the HTTP base URL for the configured product type and environment.
     pub fn http_base_url(&self) -> String {
         self.base_url.clone().unwrap_or_else(|| {
@@ -401,7 +394,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_debug_redacts_credentials() {
-        let config = KrakenExecClientConfig {
+        let config = KrakenExecutionClientConfig {
             api_key: EXEC_API_KEY.to_string(),
             api_secret: EXEC_API_SECRET.to_string(),
             product_type: KrakenProductType::Futures,
@@ -423,7 +416,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_ws_trade_defaults() {
-        let cfg = KrakenExecClientConfig::default();
+        let cfg = KrakenExecutionClientConfig::default();
         assert!(cfg.use_ws_trade);
         assert_eq!(cfg.ws_request_timeout_secs, 5);
     }
@@ -461,10 +454,8 @@ validate_l3_checksum = false
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: KrakenExecClientConfig = toml::from_str("").unwrap();
-        let expected = KrakenExecClientConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
+        let config: KrakenExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = KrakenExecutionClientConfig::default();
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.product_type, expected.product_type);
         assert_eq!(config.environment, expected.environment);

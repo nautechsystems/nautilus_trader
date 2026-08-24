@@ -15,11 +15,11 @@
 
 //! Python bindings for Betfair configuration.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::AccountId;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
-use crate::config::{BetfairDataConfig, BetfairExecConfig};
+use crate::config::{BetfairDataConfig, BetfairExecutionClientConfig};
 
 fn stringify_ids(values: Option<Vec<u64>>) -> Option<Vec<String>> {
     values.map(|values| values.into_iter().map(|value| value.to_string()).collect())
@@ -129,11 +129,10 @@ impl BetfairDataConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BetfairExecConfig {
+impl BetfairExecutionClientConfig {
     /// Configuration for the Betfair live execution client.
     #[new]
     #[pyo3(signature = (
-        trader_id = None,
         account_id = None,
         account_currency = None,
         username = None,
@@ -160,7 +159,6 @@ impl BetfairExecConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
-        trader_id: Option<TraderId>,
         account_id: Option<AccountId>,
         account_currency: Option<String>,
         username: Option<String>,
@@ -186,7 +184,6 @@ impl BetfairExecConfig {
         stream_gap_recovery_lookback_mins: u64,
     ) -> Self {
         Self {
-            trader_id: trader_id.unwrap_or_else(|| TraderId::from("TRADER-001")),
             account_id: account_id.unwrap_or_else(|| AccountId::from("BETFAIR-001")),
             account_currency: account_currency.unwrap_or_else(|| "GBP".to_string()),
             username,
@@ -219,6 +216,6 @@ impl BetfairExecConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(BetfairExecConfig).to_string()
+        stringify!(BetfairExecutionClientConfig).to_string()
     }
 }

@@ -162,7 +162,7 @@ let data_config = BybitDataClientConfig {
     ..Default::default()
 };
 
-let exec_config = BybitExecClientConfig {
+let exec_config = BybitExecutionClientConfig {
     api_key: None,
     api_secret: None,
     product_types: vec![BybitProductType::Option, BybitProductType::Linear],

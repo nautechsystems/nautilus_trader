@@ -48,7 +48,7 @@ use nautilus_okx::{
         consts::OKX_CLIENT_ID,
         enums::{OKXEnvironment, OKXInstrumentType},
     },
-    config::{OKXDataClientConfig, OKXExecClientConfig},
+    config::{OKXDataClientConfig, OKXExecutionClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
 };
 use nautilus_trading::examples::strategies::delta_neutral_vol::{
@@ -92,8 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = OKXExecClientConfig {
-        trader_id,
+    let exec_config = OKXExecutionClientConfig {
         account_id,
         api_key: None,        // Will use 'OKX_API_KEY' env var
         api_secret: None,     // Will use 'OKX_API_SECRET' env var

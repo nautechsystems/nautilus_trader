@@ -513,7 +513,7 @@ from validator nodes.
 | ---------------------------- | ------- | --------------------------------------------------------------------- |
 | `grpc_rate_limit_per_second` | `4`     | Maximum gRPC broadcast requests per second. Set to `None` to disable. |
 
-This is a config-struct field, not a parameter of the Python `DydxExecClientConfig` constructor.
+This is a config-struct field, not a parameter of the Python `DydxExecutionClientConfig` constructor.
 
 ### Provider limits
 
@@ -537,7 +537,7 @@ notice. The execution config resolves that list in order:
 2. `grpc_endpoint`, as a single-URL list. Setting only this field gives up the fallback.
 3. The default public validator nodes for the selected network.
 
-Both fields are config-struct fields and are not parameters of the Python `DydxExecClientConfig`
+Both fields are config-struct fields and are not parameters of the Python `DydxExecutionClientConfig`
 constructor, so Python configs always get the network defaults with their built-in fallback.
 
 ## Price and size quantization
@@ -622,13 +622,11 @@ and risk management within a single wallet.
 Specify the subaccount number in the execution client config:
 
 ```python
-from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.adapters.dydx import DydxExecutionClientConfig
 from nautilus_trader.model import AccountId
-from nautilus_trader.model import TraderId
 
 
-exec_config = DydxExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+exec_config = DydxExecutionClientConfig(
     account_id=AccountId.from_str("DYDX-001"),
     subaccount_number=0,
 )
@@ -695,16 +693,14 @@ Set `network=DydxNetwork.TESTNET` on both data and execution clients:
 
 ```python
 from nautilus_trader.adapters.dydx import DydxDataClientConfig
-from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.adapters.dydx import DydxExecutionClientConfig
 from nautilus_trader.adapters.dydx import DydxNetwork
 from nautilus_trader.model import AccountId
-from nautilus_trader.model import TraderId
 
 
 data_config = DydxDataClientConfig(network=DydxNetwork.TESTNET)
 
-exec_config = DydxExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+exec_config = DydxExecutionClientConfig(
     account_id=AccountId.from_str("DYDX-001"),
     network=DydxNetwork.TESTNET,
     wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS
@@ -754,7 +750,6 @@ wallet credentials.
 
 | Option              | Default   | Description                                                                       |
 | ------------------- | --------- | --------------------------------------------------------------------------------- |
-| `trader_id`         | Required  | Nautilus trader ID for the client.                                                |
 | `account_id`        | Required  | Nautilus account ID for the client.                                               |
 | `network`           | `MAINNET` | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                   |
 | `private_key`       | `None`    | Hex-encoded signing key; falls back to the network-specific environment variable. |
@@ -764,7 +759,7 @@ wallet credentials.
 
 ### Basic setup
 
-Register `DydxDataClientConfig` with `DydxDataClientFactory` and `DydxExecClientConfig` with
+Register `DydxDataClientConfig` with `DydxDataClientFactory` and `DydxExecutionClientConfig` with
 `DydxExecutionClientFactory` on the node builder. The
 [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/dydx/)
 show the complete `LiveNode.builder(...)` wiring for both clients.
@@ -816,13 +811,11 @@ owner's wallet address as `DYDX_WALLET_ADDRESS`. The adapter detects the mismatc
 and automatically queries the chain for matching authenticator IDs.
 
 ```python
-from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.adapters.dydx import DydxExecutionClientConfig
 from nautilus_trader.model import AccountId
-from nautilus_trader.model import TraderId
 
 
-config = DydxExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+config = DydxExecutionClientConfig(
     account_id=AccountId.from_str("DYDX-001"),
     wallet_address="dydx1owner...",  # Owner account (holds margin)
     private_key="0xapikey...",  # API Trading Key private key

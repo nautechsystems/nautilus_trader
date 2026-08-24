@@ -27,10 +27,10 @@ use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_dydx::{
     common::{consts::DYDX_CLIENT_ID, enums::DydxNetwork},
-    config::{DydxDataClientConfig, DydxExecClientConfig},
+    config::{DydxDataClientConfig, DydxExecutionClientConfig},
     factories::{DydxDataClientFactory, DydxExecutionClientFactory},
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -64,8 +64,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = DydxExecClientConfig {
-        trader_id,
+    let exec_config = DydxExecutionClientConfig {
         account_id,
         network,
         ..Default::default()
@@ -78,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stdout_level: LevelFilter::Info,
         ..Default::default()
     };
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()

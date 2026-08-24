@@ -57,7 +57,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::var("ETHEREUM_RPC_HTTP_URL").expect("ETHEREUM_RPC_HTTP_URL must be set");
 
     let arbitrum_config = BlockchainExecutionClientConfig::builder()
-        .trader_id(trader_id)
         .client_id(account)
         .chain(arbitrum)
         .wallet_address(String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"))
@@ -87,7 +86,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .receipt_timeout_secs(60)
         .build();
     let ethereum_config = BlockchainExecutionClientConfig::builder()
-        .trader_id(trader_id)
         .client_id(account)
         .chain(ethereum)
         .wallet_address(String::from("0x49E96E255bA418d08E66c35b588E2f2F3766E1d0"))

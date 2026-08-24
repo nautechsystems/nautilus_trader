@@ -212,8 +212,9 @@ mod tests {
 
     use super::*;
     use crate::http::models::{
-        Cloid, HyperliquidExecAction, HyperliquidExecGrouping, HyperliquidExecLimitParams,
-        HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+        Cloid, HyperliquidExchangeAction, HyperliquidExchangeGrouping,
+        HyperliquidExchangeLimitParams, HyperliquidExchangeOrderKind,
+        HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
     };
 
     #[rstest]
@@ -373,24 +374,24 @@ mod tests {
         // json! produces: "grouping", "orders", "type" (alphabetical)
         // This causes hash mismatch!
         //
-        // When using typed structs (HyperliquidExecAction), serde follows declaration order.
+        // When using typed structs (HyperliquidExchangeAction), serde follows declaration order.
         // Let's test with the typed struct approach.
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
                 price: dec!(50000),
                 size: dec!(0.1),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: None,
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
 
@@ -490,21 +491,21 @@ mod tests {
         .unwrap();
         let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
                 price: dec!(50000),
                 size: dec!(0.1),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: None,
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
         let action_bytes = rmp_serde::to_vec_named(&typed_action).unwrap();
@@ -540,21 +541,21 @@ mod tests {
         .unwrap();
         let signer = HyperliquidEip712Signer::new(&private_key).unwrap();
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
                 price: dec!(50000),
                 size: dec!(0.1),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: None,
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
         let action_bytes = rmp_serde::to_vec_named(&typed_action).unwrap();
@@ -594,21 +595,21 @@ mod tests {
         let cloid = Cloid::from_hex("0x1234567890abcdef1234567890abcdef").unwrap();
         println!("Cloid hex: {}", cloid.to_hex());
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
                 price: dec!(50000),
                 size: dec!(0.1),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: Some(cloid),
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
 
@@ -705,21 +706,21 @@ mod tests {
         println!("ClientOrderId: {client_order_id}");
         println!("Cloid: {}", cloid.to_hex());
 
-        let typed_action = HyperliquidExecAction::Order {
-            orders: vec![HyperliquidExecPlaceOrderRequest {
+        let typed_action = HyperliquidExchangeAction::Order {
+            orders: vec![HyperliquidExchangePlaceOrderRequest {
                 asset: 3, // BTC on testnet
                 is_buy: true,
                 price: dec!(92572.0),
                 size: dec!(0.001),
                 reduce_only: false,
-                kind: HyperliquidExecOrderKind::Limit {
-                    limit: HyperliquidExecLimitParams {
-                        tif: HyperliquidExecTif::Gtc,
+                kind: HyperliquidExchangeOrderKind::Limit {
+                    limit: HyperliquidExchangeLimitParams {
+                        tif: HyperliquidExchangeTif::Gtc,
                     },
                 },
                 cloid: Some(cloid),
             }],
-            grouping: HyperliquidExecGrouping::Na,
+            grouping: HyperliquidExchangeGrouping::Na,
             builder: None,
         };
 

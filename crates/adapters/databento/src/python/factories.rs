@@ -23,14 +23,14 @@ use nautilus_model::identifiers::ClientId;
 use pyo3::prelude::*;
 
 use crate::{
-    data::DatabentoDataClient,
-    factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig},
+    data::{DatabentoDataClient, DatabentoDataClientConfig},
+    factories::DatabentoDataClientFactory,
 };
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl DatabentoLiveClientConfig {
-    /// Configuration for Databento data clients used with `LiveNode`.
+impl DatabentoDataClientConfig {
+    /// Configuration for the Databento data client.
     #[new]
     #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true, venue_dataset_map=None))]
     fn py_new(

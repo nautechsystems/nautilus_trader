@@ -69,7 +69,6 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let config = Py::new(
         py,
         SandboxExecutionClientConfig {
-            trader_id,
             account_id,
             venue: Venue::new(SANDBOX),
             starting_balances: vec![Money::from("100_000 USD")],
@@ -92,7 +91,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
-        .create("SANDBOX-EXEC-EXTRACTED", extracted_config.as_ref(), cache)
+        .create(
+            trader_id,
+            "SANDBOX-EXEC-EXTRACTED",
+            extracted_config.as_ref(),
+            cache,
+        )
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), SANDBOX);
@@ -100,7 +104,6 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         extracted_factory.config_type(),
         "SandboxExecutionClientConfig"
     );
-    assert_eq!(sandbox_config.trader_id, trader_id);
     assert_eq!(sandbox_config.account_id, account_id);
     assert_eq!(client.client_id(), ClientId::from("SANDBOX-EXEC-EXTRACTED"));
     assert_eq!(client.account_id(), account_id);
@@ -122,7 +125,6 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
         let config = Py::new(
             py,
             SandboxExecutionClientConfig {
-                trader_id,
                 account_id,
                 venue: Venue::new(SANDBOX),
                 starting_balances: vec![Money::from("100_000 USD")],
@@ -151,7 +153,12 @@ fn test_sandbox_python_extract_preserves_matching_knobs() {
             .extract_sim_exec_factory(py, factory)
             .expect("simulated exec factory should extract");
         extracted_factory
-            .create("SANDBOX-EXEC-MATCHING", extracted_config.as_ref(), cache)
+            .create(
+                trader_id,
+                "SANDBOX-EXEC-MATCHING",
+                extracted_config.as_ref(),
+                cache,
+            )
             .expect("extracted factory should create exec client");
 
         assert!(sandbox_config.queue_position);

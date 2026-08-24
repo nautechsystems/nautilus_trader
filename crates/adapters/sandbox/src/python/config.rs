@@ -24,7 +24,7 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
-    identifiers::{AccountId, TraderId, Venue},
+    identifiers::{AccountId, Venue},
     types::{Currency, Money},
 };
 use pyo3::{Py, PyAny, Python, prelude::*};
@@ -37,12 +37,11 @@ use crate::config::SandboxExecutionClientConfig;
 impl SandboxExecutionClientConfig {
     /// Configuration for `SandboxExecutionClient` instances.
     #[new]
-    #[pyo3(signature = (venue, starting_balances, trader_id=None, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=true, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true, fee_model=None, fill_model=None, queue_position=false, liquidity_consumption=false, bar_adaptive_high_low_ordering=false, use_market_order_acks=false, oto_full_trigger=false, price_protection_points=None))]
+    #[pyo3(signature = (venue, starting_balances, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=true, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true, fee_model=None, fill_model=None, queue_position=false, liquidity_consumption=false, bar_adaptive_high_low_ordering=false, use_market_order_acks=false, oto_full_trigger=false, price_protection_points=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         venue: Venue,
         starting_balances: Vec<Money>,
-        trader_id: Option<TraderId>,
         account_id: Option<AccountId>,
         base_currency: Option<Currency>,
         oms_type: Option<OmsType>,
@@ -67,9 +66,7 @@ impl SandboxExecutionClientConfig {
         oto_full_trigger: bool,
         price_protection_points: Option<u32>,
     ) -> PyResult<Self> {
-        // Generate default IDs from venue if not provided
-        let trader_id =
-            trader_id.unwrap_or_else(|| TraderId::from(format!("{venue}-001").as_str()));
+        // Generate the default account ID from the venue
         let account_id =
             account_id.unwrap_or_else(|| AccountId::from(format!("{venue}-SANDBOX-001").as_str()));
         let fee_model: Option<FeeModelAny> = fee_model
@@ -80,7 +77,6 @@ impl SandboxExecutionClientConfig {
             .transpose()?;
 
         Ok(Self {
-            trader_id,
             account_id,
             venue,
             starting_balances,
@@ -108,11 +104,6 @@ impl SandboxExecutionClientConfig {
             oto_full_trigger,
             price_protection_points: price_protection_points.unwrap_or(0),
         })
-    }
-
-    #[getter]
-    fn trader_id(&self) -> TraderId {
-        self.trader_id
     }
 
     #[getter]

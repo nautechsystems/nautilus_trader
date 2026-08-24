@@ -19,8 +19,8 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_bitmex::{
     common::{consts::BITMEX, enums::BitmexEnvironment},
-    config::{BitmexDataClientConfig, BitmexExecClientConfig},
-    factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
+    config::{BitmexDataClientConfig, BitmexExecutionClientConfig},
+    factories::{BitmexDataClientFactory, BitmexExecutionClientFactory},
     python,
 };
 use nautilus_common::{
@@ -115,15 +115,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        BitmexExecFactoryConfig {
-            trader_id,
-            account_id,
-            config: BitmexExecClientConfig {
-                api_key: Some(SMOKE_API_KEY.to_string()),
-                api_secret: Some(SMOKE_API_SECRET.to_string()),
-                environment: BitmexEnvironment::Testnet,
-                ..BitmexExecClientConfig::default()
-            },
+        BitmexExecutionClientConfig {
+            api_key: Some(SMOKE_API_KEY.to_string()),
+            api_secret: Some(SMOKE_API_SECRET.to_string()),
+            environment: BitmexEnvironment::Testnet,
+            account_id: Some(account_id),
+            ..BitmexExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -138,11 +135,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let bitmex_config = extracted_config
         .as_any()
-        .downcast_ref::<BitmexExecFactoryConfig>()
+        .downcast_ref::<BitmexExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "BITMEX-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -150,9 +148,11 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), BITMEX);
-    assert_eq!(extracted_factory.config_type(), "BitmexExecFactoryConfig");
-    assert_eq!(bitmex_config.trader_id, trader_id);
-    assert_eq!(bitmex_config.account_id, account_id);
+    assert_eq!(
+        extracted_factory.config_type(),
+        "BitmexExecutionClientConfig"
+    );
+    assert_eq!(bitmex_config.account_id, Some(account_id));
     assert_eq!(client.client_id(), ClientId::from("BITMEX-EXEC-EXTRACTED"));
     assert_eq!(client.account_id(), account_id);
 }

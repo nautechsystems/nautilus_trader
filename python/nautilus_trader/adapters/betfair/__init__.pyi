@@ -11,7 +11,7 @@ __all__ = [
     "BETFAIR_VENUE",
     "BetfairDataClientFactory",
     "BetfairDataConfig",
-    "BetfairExecConfig",
+    "BetfairExecutionClientConfig",
     "BetfairExecutionClientFactory",
 ]
 
@@ -105,9 +105,7 @@ class BetfairDataConfig:
     def has_proxy_url(self) -> bool: ...
 
 @typing.final
-class BetfairExecConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
+class BetfairExecutionClientConfig:
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -150,7 +148,6 @@ class BetfairExecConfig:
     def stream_gap_recovery_lookback_mins(self) -> int: ...
     def __init__(
         self,
-        trader_id: model.TraderId | None = None,
         account_id: model.AccountId | None = None,
         account_currency: str | None = None,
         username: str | None = None,

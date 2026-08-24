@@ -14,8 +14,7 @@ __all__ = [
     "BitmexDataClientConfig",
     "BitmexDataClientFactory",
     "BitmexEnvironment",
-    "BitmexExecClientConfig",
-    "BitmexExecFactoryConfig",
+    "BitmexExecutionClientConfig",
     "BitmexExecutionClientFactory",
 ]
 
@@ -85,7 +84,7 @@ class BitmexDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class BitmexExecClientConfig:
+class BitmexExecutionClientConfig:
     @property
     def base_url_http(self) -> str | None: ...
     @property
@@ -154,18 +153,6 @@ class BitmexExecClientConfig:
     def has_submitter_proxy_urls(self) -> bool: ...
     @property
     def has_canceller_proxy_urls(self) -> bool: ...
-
-@typing.final
-class BitmexExecFactoryConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
-    @property
-    def account_id(self) -> model.AccountId: ...
-    @property
-    def config(self) -> BitmexExecClientConfig: ...
-    def __init__(
-        self, trader_id: model.TraderId, account_id: model.AccountId, config: BitmexExecClientConfig
-    ) -> None: ...
 
 @typing.final
 class BitmexExecutionClientFactory:

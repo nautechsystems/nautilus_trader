@@ -19,7 +19,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_coinbase::{
     common::{consts::COINBASE, enums::CoinbaseEnvironment},
-    config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
+    config::{CoinbaseDataClientConfig, CoinbaseExecutionClientConfig},
     factories::{CoinbaseDataClientFactory, CoinbaseExecutionClientFactory},
     python,
 };
@@ -115,19 +115,16 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
 fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let trader_id = TraderId::from("TRADER-001");
     let account_id = AccountId::from("COINBASE-001");
-    let factory = Py::new(
-        py,
-        CoinbaseExecutionClientFactory::new(trader_id, account_id),
-    )
-    .expect("factory should convert to Python object")
-    .into_any();
+    let factory = Py::new(py, CoinbaseExecutionClientFactory::new())
+        .expect("factory should convert to Python object")
+        .into_any();
     let config = Py::new(
         py,
-        CoinbaseExecClientConfig {
+        CoinbaseExecutionClientConfig {
             api_key: Some("organizations/test-org/apiKeys/test-key".to_string()),
             api_secret: Some("test-pem-placeholder".to_string()),
             account_type: AccountType::Cash,
-            ..CoinbaseExecClientConfig::default()
+            ..CoinbaseExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -142,11 +139,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let coinbase_config = extracted_config
         .as_any()
-        .downcast_ref::<CoinbaseExecClientConfig>()
+        .downcast_ref::<CoinbaseExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "COINBASE-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -154,7 +152,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), COINBASE);
-    assert_eq!(extracted_factory.config_type(), "CoinbaseExecClientConfig");
+    assert_eq!(
+        extracted_factory.config_type(),
+        "CoinbaseExecutionClientConfig"
+    );
     assert_eq!(coinbase_config.account_type, AccountType::Cash);
     assert_eq!(
         client.client_id(),

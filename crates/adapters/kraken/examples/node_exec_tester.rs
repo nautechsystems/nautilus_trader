@@ -30,10 +30,10 @@
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{
     common::{consts::KRAKEN_CLIENT_ID, credential::KrakenCredential, enums::KrakenProductType},
-    config::{KrakenDataClientConfig, KrakenExecClientConfig},
+    config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -94,8 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = KrakenExecClientConfig {
-        trader_id,
+    let exec_config = KrakenExecutionClientConfig {
         account_id,
         api_key,
         api_secret,
@@ -105,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = KrakenDataClientFactory::new();
     let exec_factory = KrakenExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()

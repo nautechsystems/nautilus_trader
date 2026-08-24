@@ -28,11 +28,11 @@
 use nautilus_common::enums::Environment;
 use nautilus_deribit::{
     common::{consts::DERIBIT_CLIENT_ID, enums::DeribitEnvironment},
-    config::{DeribitDataClientConfig, DeribitExecClientConfig},
+    config::{DeribitDataClientConfig, DeribitExecutionClientConfig},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
     http::models::DeribitProductType,
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -73,8 +73,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = DeribitExecClientConfig {
-        trader_id,
+    let exec_config = DeribitExecutionClientConfig {
         account_id,
         api_key: None,    // Will use env var
         api_secret: None, // Will use env var
@@ -85,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = DeribitDataClientFactory::new();
     let exec_factory = DeribitExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()

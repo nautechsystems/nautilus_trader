@@ -150,7 +150,7 @@ stream. `EQUS.MINI` is the lowest-cost consolidated US equities tier; richer
 tiers such as `EQUS.PLUS` need a separate Databento license and can be selected
 with the client's `venue_dataset_map` (for example `{"EQUS": "EQUS.PLUS"}`) once
 your account is entitled. The adapter resolves the `EQUS` venue from a publishers
-file: the example points `DatabentoLiveClientConfig` at the `publishers.json`
+file: the example points `DatabentoDataClientConfig` at the `publishers.json`
 bundled with the Databento adapter. See [Instrument IDs and symbology][databento-symbology]
 for the mapping rules.
 
@@ -206,14 +206,13 @@ let account_id = AccountId::from(ACCOUNT_ID);
 let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 let signal_instrument_id = InstrumentId::from(SIGNAL_INSTRUMENT_ID);
 
-let databento_api_key = get_env_var("DATABENTO_API_KEY")?;
+let api_key = get_env_var("DATABENTO_API_KEY")?;
 let databento_config =
-    DatabentoLiveClientConfig::new(databento_api_key, publishers_filepath, true, true);
+    DatabentoDataClientConfig::new(api_key, publishers_filepath, true, true);
 let lighter_data_config = LighterDataClientConfig::builder()
     .environment(lighter_environment)
     .build();
-let lighter_exec_config = LighterExecClientConfig::builder()
-    .trader_id(trader_id)
+let lighter_exec_config = LighterExecutionClientConfig::builder()
     .account_id(account_id)
     .environment(lighter_environment)
     .build();

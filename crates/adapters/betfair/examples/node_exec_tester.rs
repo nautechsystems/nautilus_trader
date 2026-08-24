@@ -30,13 +30,13 @@ use std::sync::Arc;
 
 use nautilus_betfair::{
     common::{consts::BETFAIR_CLIENT_ID, enums::RunnerStatus},
-    config::{BetfairDataConfig, BetfairExecConfig},
+    config::{BetfairDataConfig, BetfairExecutionClientConfig},
     factories::{BetfairDataClientFactory, BetfairExecutionClientFactory},
     http::client::BetfairHttpClient,
     provider::{BetfairInstrumentProvider, NavigationFilter},
 };
 use nautilus_common::{enums::Environment, providers::InstrumentProvider};
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     enums::TimeInForce,
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
@@ -85,8 +85,7 @@ async fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let exec_config = BetfairExecConfig {
-        trader_id,
+    let exec_config = BetfairExecutionClientConfig {
         account_id,
         account_currency,
         stream_market_ids_filter: Some(vec![market_id.clone()]),
@@ -98,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
 
     let data_factory = BetfairDataClientFactory::new();
     let exec_factory = BetfairExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()

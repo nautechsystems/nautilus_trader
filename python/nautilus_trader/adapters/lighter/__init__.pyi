@@ -13,7 +13,7 @@ __all__ = [
     "LighterDataClientConfig",
     "LighterDataClientFactory",
     "LighterEnvironment",
-    "LighterExecClientConfig",
+    "LighterExecutionClientConfig",
     "LighterExecutionClientFactory",
 ]
 
@@ -67,9 +67,7 @@ class LighterDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class LighterExecClientConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
+class LighterExecutionClientConfig:
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -96,7 +94,6 @@ class LighterExecClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
-        trader_id: model.TraderId,
         account_id: model.AccountId,
         account_index: int | None = None,
         api_key_index: int | None = None,

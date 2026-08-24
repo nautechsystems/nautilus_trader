@@ -43,7 +43,7 @@ use crate::{
         enums::LighterEnvironment,
         urls::lighter_chain_id,
     },
-    config::{LighterDataClientConfig, LighterExecClientConfig},
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
     factories::{LighterDataClientFactory, LighterExecutionClientFactory},
     http::{
         client::{LighterHttpClient, LighterRawHttpClient},
@@ -101,10 +101,10 @@ fn extract_lighter_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<LighterExecClientConfig>(py) {
+    match config.extract::<LighterExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract LighterExecClientConfig: {e}"
+            "Failed to extract LighterExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -187,7 +187,7 @@ pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(LIGHTER_VENUE), *LIGHTER_VENUE)?;
     m.add_class::<LighterEnvironment>()?;
     m.add_class::<LighterDataClientConfig>()?;
-    m.add_class::<LighterExecClientConfig>()?;
+    m.add_class::<LighterExecutionClientConfig>()?;
     m.add_class::<LighterDataClientFactory>()?;
     m.add_class::<LighterExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_revoke_lighter_integrator, m)?)?;
@@ -220,7 +220,7 @@ pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "LighterExecClientConfig".to_string(),
+        "LighterExecutionClientConfig".to_string(),
         extract_lighter_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

@@ -70,7 +70,6 @@ def main() -> None:
                 starting_balances=[
                     Money(float(STARTING_BALANCE), Currency.from_str(CURRENCY)),
                 ],
-                trader_id=TRADER_ID,
                 account_id=ACCOUNT_ID,
             ),
         )

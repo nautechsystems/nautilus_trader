@@ -494,15 +494,13 @@ The Python execution config selects trade modes as follows:
 | Derivative | `cross`    | `margin_mode=OKXMarginMode.CROSS`.                |
 
 ```python
-from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXExecutionClientConfig
 from nautilus_trader.adapters.okx import OKXInstrumentType
 from nautilus_trader.adapters.okx import OKXMarginMode
 from nautilus_trader.model import AccountId
-from nautilus_trader.model import TraderId
 
 
-exec_config = OKXExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+exec_config = OKXExecutionClientConfig(
     account_id=AccountId.from_str("OKX-001"),
     instrument_types=[OKXInstrumentType.SWAP],
     margin_mode=OKXMarginMode.CROSS,
@@ -771,7 +769,7 @@ Greeks.
 Option discovery requires at least one `instrument_families` value, for example `BTC-USD`.
 Pass it to `OKXDataClientConfig` when loading options from Python. The public Python execution
 config constructor does not expose this field, so selecting `OKXInstrumentType.OPTION` only on
-`OKXExecClientConfig` skips option loading and logs a warning.
+`OKXExecutionClientConfig` skips option loading and logs a warning.
 :::
 
 ## Event contracts
@@ -1109,7 +1107,6 @@ The OKX execution client provides the following Python configuration options.
 | ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `instrument_types`       | `[OKXInstrumentType.SPOT]` | Tradable OKX instrument types.                                                                          |
 | `load_spreads`           | `False`                    | Loads live spread instruments.                                                                          |
-| `trader_id`              | Required                   | Nautilus trader ID for the client.                                                                      |
 | `account_id`             | Required                   | Nautilus account ID for the client.                                                                     |
 | `base_url_http`          | `None`                     | Override for the OKX trading REST endpoint.                                                             |
 | `base_url_ws_private`    | `None`                     | Override for the private WebSocket URL.                                                                 |
@@ -1158,7 +1155,7 @@ does not derive a custom business WebSocket URL from the other override.
 See the [OKX EEA API documentation](https://my.okx.com/docs-v5/en/) for the current
 official endpoint list.
 
-Use `OKXDataClientConfig` with `OKXDataClientFactory` and `OKXExecClientConfig` with
+Use `OKXDataClientConfig` with `OKXDataClientFactory` and `OKXExecutionClientConfig` with
 `OKXExecutionClientFactory`. The Python examples show a complete
 `LiveNode.builder(...)` configuration for data and execution clients.
 

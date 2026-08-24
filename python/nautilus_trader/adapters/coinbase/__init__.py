@@ -24,7 +24,7 @@ __all__ = [
     "CoinbaseDataClientConfig",
     "CoinbaseDataClientFactory",
     "CoinbaseEnvironment",
-    "CoinbaseExecClientConfig",
+    "CoinbaseExecutionClientConfig",
     "CoinbaseExecutionClientFactory",
     "CoinbaseMarginType",
 ]

@@ -30,8 +30,8 @@
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_hyperliquid::{
-    HyperliquidDataClientConfig, HyperliquidDataClientFactory, HyperliquidExecClientConfig,
-    HyperliquidExecFactoryConfig, HyperliquidExecutionClientFactory,
+    HyperliquidDataClientConfig, HyperliquidDataClientFactory, HyperliquidExecutionClientConfig,
+    HyperliquidExecutionClientFactory,
     common::{consts::HYPERLIQUID_CLIENT_ID, enums::HyperliquidEnvironment},
 };
 use nautilus_live::node::LiveNode;
@@ -82,13 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = HyperliquidExecFactoryConfig {
-        trader_id,
+    let exec_config = HyperliquidExecutionClientConfig {
         account_id,
-        config: HyperliquidExecClientConfig {
-            environment: hl_environment,
-            ..Default::default()
-        },
+        environment: hl_environment,
+        ..Default::default()
     };
 
     let data_factory = HyperliquidDataClientFactory::new();

@@ -38,7 +38,7 @@ use nautilus_binance::{
         enums::{BinanceEnvironment, BinanceFuturesOrderType, BinanceProductType},
         symbol::format_binance_symbol,
     },
-    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    config::{BinanceDataClientConfig, BinanceExecutionClientConfig},
     factories::{BinanceDataClientFactory, BinanceExecutionClientFactory},
     futures::{
         BinanceFuturesHttpClient,
@@ -106,8 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = BinanceExecClientConfig {
-        trader_id,
+    let exec_config = BinanceExecutionClientConfig {
         account_id,
         product_type,
         environment,

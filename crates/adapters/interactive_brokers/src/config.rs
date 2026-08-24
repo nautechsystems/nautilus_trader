@@ -140,7 +140,7 @@ impl Default for InteractiveBrokersDataClientConfig {
         module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
-pub struct InteractiveBrokersExecClientConfig {
+pub struct InteractiveBrokersExecutionClientConfig {
     /// Host for IB Gateway/TWS.
     #[builder(default = DEFAULT_HOST.to_string())]
     pub host: String,
@@ -169,7 +169,7 @@ pub struct InteractiveBrokersExecClientConfig {
     pub instrument_provider: InteractiveBrokersInstrumentProviderConfig,
 }
 
-impl Default for InteractiveBrokersExecClientConfig {
+impl Default for InteractiveBrokersExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }

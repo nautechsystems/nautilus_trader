@@ -86,7 +86,7 @@ use crate::{
         },
         retry::{http_retry_config, is_write_outcome_ambiguous_ws},
     },
-    config::DeriveExecClientConfig,
+    config::DeriveExecutionClientConfig,
     http::{
         DeriveCredentials, DeriveHttpClient,
         models::{DeriveInstrument, DeriveOrder, DeriveReplaceOutcome, DeriveTrade},
@@ -127,7 +127,7 @@ const DERIVE_PRIVATE_PAGE_SIZE: u32 = 500;
 pub struct DeriveExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: DeriveExecClientConfig,
+    config: DeriveExecutionClientConfig,
     credential: DeriveCredential,
     emitter: ExecutionEventEmitter,
     http_client: DeriveHttpClient,
@@ -159,7 +159,10 @@ impl DeriveExecutionClient {
     /// - Required credentials are not provided via config or environment.
     /// - Signing constants are still placeholders or cannot be parsed as hex.
     /// - The HTTP or WebSocket client cannot be constructed.
-    pub fn new(core: ExecutionClientCore, config: DeriveExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: DeriveExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
         config.validate()?;
 
         let credential = DeriveCredential::resolve(
@@ -254,7 +257,7 @@ impl DeriveExecutionClient {
 
     /// Returns a reference to the resolved configuration.
     #[must_use]
-    pub fn config(&self) -> &DeriveExecClientConfig {
+    pub fn config(&self) -> &DeriveExecutionClientConfig {
         &self.config
     }
 
@@ -3032,8 +3035,8 @@ mod tests {
         )
     }
 
-    fn test_config() -> DeriveExecClientConfig {
-        DeriveExecClientConfig {
+    fn test_config() -> DeriveExecutionClientConfig {
+        DeriveExecutionClientConfig {
             wallet_address: Some(TEST_WALLET.to_string()),
             session_key: Some(TEST_SESSION_KEY.to_string()),
             subaccount_id: Some(TEST_SUBACCOUNT),
@@ -3046,7 +3049,7 @@ mod tests {
             ),
             trade_module_address: Some("0x000000000000000000000000000000000000bbbb".to_string()),
             max_fee_per_contract: Some(dec!(1000)),
-            ..DeriveExecClientConfig::default()
+            ..DeriveExecutionClientConfig::default()
         }
     }
 

@@ -127,7 +127,7 @@ use crate::{
         },
         types::{BetId, OrderSyncEntry, SelectionId},
     },
-    config::BetfairExecConfig,
+    config::BetfairExecutionClientConfig,
     data::custom_data_with_instrument,
     data_types::{BetfairOrderVoided, register_betfair_custom_data},
     http::{
@@ -163,7 +163,7 @@ pub struct BetfairExecutionClient {
     socket_control: Option<SocketControl>,
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
-    config: BetfairExecConfig,
+    config: BetfairExecutionClientConfig,
     currency: Currency,
     ocm_state: Arc<Mutex<OcmState>>,
     pending_resync: Arc<AtomicBool>,
@@ -184,7 +184,7 @@ impl BetfairExecutionClient {
         http_client: BetfairHttpClient,
         credential: BetfairCredential,
         stream_config: BetfairStreamConfig,
-        config: BetfairExecConfig,
+        config: BetfairExecutionClientConfig,
         currency: Currency,
     ) -> Self {
         let clock = get_atomic_clock_realtime();
@@ -5760,7 +5760,7 @@ mod tests {
             .borrow_mut()
             .add_order(order, None, Some(ClientId::from("BETFAIR-SYNC")), false)
             .unwrap();
-        let config = BetfairExecConfig::default();
+        let config = BetfairExecutionClientConfig::default();
         let core = ExecutionClientCore::new(
             trader_id,
             ClientId::from("BETFAIR-SYNC"),
@@ -5912,7 +5912,7 @@ mod tests {
             .parse::<Currency>()
             .expect("registered account currency");
 
-        let config = BetfairExecConfig {
+        let config = BetfairExecutionClientConfig {
             account_currency: currency_code.to_string(),
             calculate_account_state: false,
             ignore_external_orders: true,
@@ -5921,7 +5921,7 @@ mod tests {
         let stream_config = config.stream_config();
         let cache = Rc::new(RefCell::new(Cache::default()));
         let core = ExecutionClientCore::new(
-            config.trader_id,
+            TraderId::from("TESTER-001"),
             ClientId::from("BETFAIR-LIVE-SMOKE"),
             *BETFAIR_VENUE,
             OmsType::Netting,

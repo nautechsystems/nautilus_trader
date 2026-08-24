@@ -39,7 +39,7 @@ register adapter client factories before the node is built.
 
 ```python
 from nautilus_trader.common import Environment
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
@@ -48,7 +48,7 @@ from nautilus_trader.testkit import ExecTesterConfig
 node = (
     LiveNode.builder("TESTER-001", TraderId("TESTER-001"), Environment.SANDBOX)
     .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
-    .with_exec_engine_config(LiveExecEngineConfig(reconciliation=True))
+    .with_exec_engine_config(LiveExecutionEngineConfig(reconciliation=True))
     .add_exec_client(None, adapter_exec_client_factory, exec_client_config)
     .build()
 )

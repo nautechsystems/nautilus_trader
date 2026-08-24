@@ -41,7 +41,7 @@ pub mod twap;
 
 pub use core::{ExecutionAlgorithmCore, ExecutionAlgorithmNative, StrategyEventHandlers};
 
-pub use config::{ExecutionAlgorithmConfig, ImportableExecAlgorithmConfig};
+pub use config::{ExecutionAlgorithmConfig, ImportableExecutionAlgorithmConfig};
 use nautilus_common::{
     actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
     enums::ComponentState,

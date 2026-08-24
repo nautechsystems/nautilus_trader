@@ -14,7 +14,7 @@ __all__ = [
     "BybitDataClientConfig",
     "BybitDataClientFactory",
     "BybitEnvironment",
-    "BybitExecClientConfig",
+    "BybitExecutionClientConfig",
     "BybitExecutionClientFactory",
     "BybitMarginAction",
     "BybitMarginBorrowResult",
@@ -95,7 +95,7 @@ class BybitDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class BybitExecClientConfig:
+class BybitExecutionClientConfig:
     @property
     def product_types(self) -> list[BybitProductType]: ...
     @property
@@ -158,7 +158,7 @@ class BybitExecClientConfig:
 
 @typing.final
 class BybitExecutionClientFactory:
-    def __init__(self, trader_id: model.TraderId, account_id: model.AccountId) -> None: ...
+    def __init__(self) -> None: ...
     def name(self) -> str: ...
 
 @typing.final

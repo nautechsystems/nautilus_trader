@@ -25,7 +25,7 @@ __all__ = [
     "BETFAIR_VENUE",
     "BetfairDataClientFactory",
     "BetfairDataConfig",
-    "BetfairExecConfig",
+    "BetfairExecutionClientConfig",
     "BetfairExecutionClientFactory",
 ]
 

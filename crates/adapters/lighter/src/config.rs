@@ -18,7 +18,7 @@
 use std::fmt::Debug;
 
 use nautilus_core::string::secret::REDACTED;
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -199,10 +199,7 @@ fn ensure_readonly_ws_url(url: String) -> String {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.lighter")
 )]
-pub struct LighterExecClientConfig {
-    /// Trader identifier.
-    #[builder(default = TraderId::from("TRADER-001"))]
-    pub trader_id: TraderId,
+pub struct LighterExecutionClientConfig {
     /// Account identifier on the venue.
     #[builder(default = AccountId::from("LIGHTER-001"))]
     pub account_id: AccountId,
@@ -250,8 +247,7 @@ pub struct LighterExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(LighterExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(LighterExecutionClientConfig {
     account_id: AccountId,
     account_index: Option<u64>,
     api_key_index: Option<u8>,
@@ -266,16 +262,15 @@ nautilus_core::impl_pyo3_config_getters!(LighterExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for LighterExecClientConfig {
+impl Default for LighterExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl Debug for LighterExecClientConfig {
+impl Debug for LighterExecutionClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(LighterExecClientConfig))
-            .field("trader_id", &self.trader_id)
+        f.debug_struct(stringify!(LighterExecutionClientConfig))
             .field("account_id", &self.account_id)
             .field("account_index", &self.account_index)
             .field("api_key_index", &self.api_key_index)
@@ -294,7 +289,7 @@ impl Debug for LighterExecClientConfig {
     }
 }
 
-impl LighterExecClientConfig {
+impl LighterExecutionClientConfig {
     /// Returns `true` when all fields required to sign and submit
     /// authenticated transactions are configured.
     ///
@@ -411,8 +406,7 @@ mod tests {
 
     #[rstest]
     fn exec_config_debug_redacts_private_key() {
-        let config = LighterExecClientConfig {
-            trader_id: TraderId::from("TRADER-001"),
+        let config = LighterExecutionClientConfig {
             account_id: AccountId::from("LIGHTER-001"),
             api_key_index: Some(5),
             account_index: Some(12_345),
@@ -437,8 +431,7 @@ mod tests {
 
     #[rstest]
     fn exec_config_ws_url_keeps_regular_stream_url() {
-        let config = LighterExecClientConfig {
-            trader_id: TraderId::from("TRADER-001"),
+        let config = LighterExecutionClientConfig {
             account_id: AccountId::from("LIGHTER-001"),
             environment: LighterEnvironment::Mainnet,
             ..Default::default()

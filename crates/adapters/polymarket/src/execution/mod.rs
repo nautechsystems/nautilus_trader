@@ -79,7 +79,7 @@ use self::{
 };
 use crate::{
     common::{consts::POLYMARKET_VENUE, credential::Secrets, enums::SignatureType},
-    config::PolymarketExecClientConfig,
+    config::PolymarketExecutionClientConfig,
     http::{clob::PolymarketClobHttpClient, data_api::PolymarketDataApiHttpClient},
     signing::eip712::OrderSigner,
     websocket::{
@@ -92,7 +92,7 @@ use crate::{
 pub struct PolymarketExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: PolymarketExecClientConfig,
+    config: PolymarketExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http_client: PolymarketClobHttpClient,
     data_api_client: PolymarketDataApiHttpClient,
@@ -123,7 +123,7 @@ impl PolymarketExecutionClient {
     /// Returns an error if credentials cannot be resolved or clients fail to construct.
     pub fn new(
         core: ExecutionClientCore,
-        config: PolymarketExecClientConfig,
+        config: PolymarketExecutionClientConfig,
     ) -> anyhow::Result<Self> {
         let proxy_url = config.validated_proxy_url()?;
         let secrets = Secrets::resolve(

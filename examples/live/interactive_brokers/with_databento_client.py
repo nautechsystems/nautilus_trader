@@ -17,14 +17,13 @@ from _common import default_cl_future_instrument_id
 from _common import default_es_future_instrument_id
 from _common import env_bool
 from _common import env_int
-from _common import ib_account_id
 from _common import instrument_provider_config
 from _common import resolve_ib_endpoint
 from _common import schedule_node_stop
 
 from nautilus_trader.adapters import interactive_brokers
+from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoDataClientFactory
-from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
@@ -64,7 +63,7 @@ def main() -> None:
     builder = builder.add_data_client(
         "DATABENTO",
         DatabentoDataClientFactory(),
-        DatabentoLiveClientConfig(
+        DatabentoDataClientConfig(
             api_key=os.getenv("DATABENTO_API_KEY", "0" * 32),
             publishers_filepath=os.getenv(
                 "DATABENTO_PUBLISHERS_FILE",
@@ -77,8 +76,8 @@ def main() -> None:
         ib = interactive_brokers
         builder = builder.add_exec_client(
             None,
-            ib.InteractiveBrokersExecutionClientFactory(trader_id, ib_account_id(account_id)),
-            ib.InteractiveBrokersExecClientConfig(
+            ib.InteractiveBrokersExecutionClientFactory(),
+            ib.InteractiveBrokersExecutionClientConfig(
                 host=host,
                 port=port,
                 client_id=env_int("IB_V2_EXEC_CLIENT_ID", 1312),

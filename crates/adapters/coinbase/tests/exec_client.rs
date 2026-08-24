@@ -46,7 +46,7 @@ use nautilus_coinbase::{
         consts::{COINBASE_CLIENT_ID, COINBASE_VENUE},
         enums::CoinbaseEnvironment,
     },
-    config::CoinbaseExecClientConfig,
+    config::CoinbaseExecutionClientConfig,
     execution::CoinbaseExecutionClient,
     http::client::CoinbaseHttpClient,
 };
@@ -1689,12 +1689,12 @@ fn make_exec_client_with_events(
         cache,
     );
 
-    let config = CoinbaseExecClientConfig {
+    let config = CoinbaseExecutionClientConfig {
         api_key: Some(test_api_key()),
         api_secret: Some(test_pem_key()),
         base_url_rest: Some(format!("http://{addr}")),
         account_type,
-        ..CoinbaseExecClientConfig::default()
+        ..CoinbaseExecutionClientConfig::default()
     };
 
     (

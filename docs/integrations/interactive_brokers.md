@@ -39,7 +39,7 @@ Import the public configuration types from `nautilus_trader.adapters.interactive
 
 ```python
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientConfig
 from nautilus_trader.adapters.interactive_brokers import MarketDataType
 
 
@@ -50,7 +50,7 @@ data_config = InteractiveBrokersDataClientConfig(
     market_data_type=MarketDataType.DELAYED,
 )
 
-exec_config = InteractiveBrokersExecClientConfig(
+exec_config = InteractiveBrokersExecutionClientConfig(
     host="127.0.0.1",
     port=7497,
     client_id=101,

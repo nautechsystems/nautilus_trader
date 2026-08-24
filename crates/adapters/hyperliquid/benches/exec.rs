@@ -32,9 +32,10 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_hyperliquid::{
     common::{credential::EvmPrivateKey, parse::order_to_hyperliquid_request_with_asset},
     http::models::{
-        Cloid, HyperliquidExecAction, HyperliquidExecCancelByCloidRequest, HyperliquidExecGrouping,
-        HyperliquidExecLimitParams, HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
-        HyperliquidExecPlaceOrderRequest, HyperliquidExecTif,
+        Cloid, HyperliquidExchangeAction, HyperliquidExchangeCancelByCloidRequest,
+        HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
+        HyperliquidExchangeModifyOrderRequest, HyperliquidExchangeOrderKind,
+        HyperliquidExchangePlaceOrderRequest, HyperliquidExchangeTif,
     },
     signing::{HyperliquidActionType, HyperliquidEip712Signer, SignRequest, TimeNonce},
     websocket::dispatch::{WsDispatchState, dispatch_order_event, dispatch_order_fill},
@@ -150,10 +151,10 @@ fn stop_market_order(side: OrderSide) -> OrderAny {
     ))
 }
 
-// Builds a signed L1 request body from a HyperliquidExecAction, exactly as the
+// Builds a signed L1 request body from a HyperliquidExchangeAction, exactly as the
 // HTTP client does it on the order-submit path (skip the to_value step that
 // the perf patch removed).
-fn sign_action(signer: &HyperliquidEip712Signer, action: &HyperliquidExecAction) -> Vec<u8> {
+fn sign_action(signer: &HyperliquidEip712Signer, action: &HyperliquidExchangeAction) -> Vec<u8> {
     let action_bytes = rmp_serde::to_vec_named(action).unwrap();
     let sign_request = SignRequest {
         action: None,
@@ -184,9 +185,9 @@ fn bench_submit_market(c: &mut Criterion) {
                 50,
             )
             .unwrap();
-            let action = HyperliquidExecAction::Order {
+            let action = HyperliquidExchangeAction::Order {
                 orders: vec![req],
-                grouping: HyperliquidExecGrouping::Na,
+                grouping: HyperliquidExchangeGrouping::Na,
                 builder: None,
             };
             let bytes = sign_action(&signer, &action);
@@ -212,9 +213,9 @@ fn bench_submit_limit(c: &mut Criterion) {
                 50,
             )
             .unwrap();
-            let action = HyperliquidExecAction::Order {
+            let action = HyperliquidExchangeAction::Order {
                 orders: vec![req],
-                grouping: HyperliquidExecGrouping::Na,
+                grouping: HyperliquidExchangeGrouping::Na,
                 builder: None,
             };
             let bytes = sign_action(&signer, &action);
@@ -240,9 +241,9 @@ fn bench_submit_stop_market(c: &mut Criterion) {
                 50,
             )
             .unwrap();
-            let action = HyperliquidExecAction::Order {
+            let action = HyperliquidExchangeAction::Order {
                 orders: vec![req],
-                grouping: HyperliquidExecGrouping::Na,
+                grouping: HyperliquidExchangeGrouping::Na,
                 builder: None,
             };
             let bytes = sign_action(&signer, &action);
@@ -260,8 +261,8 @@ fn bench_cancel(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("cancel", |b| {
         b.iter(|| {
-            let action = HyperliquidExecAction::CancelByCloid {
-                cancels: vec![HyperliquidExecCancelByCloidRequest {
+            let action = HyperliquidExchangeAction::CancelByCloid {
+                cancels: vec![HyperliquidExchangeCancelByCloidRequest {
                     asset: BTC_ASSET_INDEX,
                     cloid,
                 }],
@@ -277,15 +278,15 @@ fn bench_cancel(c: &mut Criterion) {
 fn bench_modify(c: &mut Criterion) {
     let signer = signer();
     let cloid = Cloid::from_client_order_id(client_order_id("MOD"));
-    let replacement = HyperliquidExecPlaceOrderRequest {
+    let replacement = HyperliquidExchangePlaceOrderRequest {
         asset: BTC_ASSET_INDEX,
         is_buy: true,
         price: Decimal::from(92573),
         size: Decimal::new(1, 3),
         reduce_only: false,
-        kind: HyperliquidExecOrderKind::Limit {
-            limit: HyperliquidExecLimitParams {
-                tif: HyperliquidExecTif::Gtc,
+        kind: HyperliquidExchangeOrderKind::Limit {
+            limit: HyperliquidExchangeLimitParams {
+                tif: HyperliquidExchangeTif::Gtc,
             },
         },
         cloid: Some(cloid),
@@ -295,8 +296,8 @@ fn bench_modify(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("modify", |b| {
         b.iter(|| {
-            let action = HyperliquidExecAction::Modify {
-                modify: HyperliquidExecModifyOrderRequest {
+            let action = HyperliquidExchangeAction::Modify {
+                modify: HyperliquidExchangeModifyOrderRequest {
                     oid: 430_481_837_807.into(),
                     order: replacement.clone(),
                 },

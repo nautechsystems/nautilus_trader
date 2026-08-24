@@ -29,7 +29,7 @@ use std::path::PathBuf;
 
 use nautilus_common::enums::Environment;
 use nautilus_core::env::get_env_var;
-use nautilus_databento::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
+use nautilus_databento::{data::DatabentoDataClientConfig, factories::DatabentoDataClientFactory};
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    let databento_config = DatabentoLiveClientConfig::new(
+    let databento_config = DatabentoDataClientConfig::new(
         api_key,
         publishers_filepath,
         true, // use_exchange_as_venue
@@ -87,7 +87,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let starting_balance = Money::new(STARTING_BALANCE, usd);
 
     let sandbox_config = SandboxExecutionClientConfig {
-        trader_id,
         account_id,
         venue: xcme_venue,
         starting_balances: vec![starting_balance],

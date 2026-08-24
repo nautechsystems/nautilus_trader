@@ -37,7 +37,7 @@ use nautilus_betfair::{
         },
         parse::make_customer_order_ref,
     },
-    config::BetfairExecConfig,
+    config::BetfairExecutionClientConfig,
     execution::BetfairExecutionClient,
     stream::config::BetfairStreamConfig,
 };
@@ -81,7 +81,7 @@ use crate::common::*;
 fn create_test_execution_client_with_config(
     addr: SocketAddr,
     stream_port: u16,
-    config: BetfairExecConfig,
+    config: BetfairExecutionClientConfig,
 ) -> (
     BetfairExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -94,7 +94,7 @@ fn create_test_execution_client_with_config(
 fn create_test_execution_client_with_configs(
     addr: SocketAddr,
     stream_config: BetfairStreamConfig,
-    config: BetfairExecConfig,
+    config: BetfairExecutionClientConfig,
 ) -> (
     BetfairExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -148,7 +148,11 @@ fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     Rc<RefCell<Cache>>,
 ) {
-    create_test_execution_client_with_config(addr, stream_port, BetfairExecConfig::default())
+    create_test_execution_client_with_config(
+        addr,
+        stream_port,
+        BetfairExecutionClientConfig::default(),
+    )
 }
 
 async fn connect_execution_ready(client: &mut BetfairExecutionClient) {
@@ -3441,7 +3445,7 @@ async fn test_ocm_ignore_external_orders_skips_orders_without_rfo() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
 
-    let config = BetfairExecConfig::builder()
+    let config = BetfairExecutionClientConfig::builder()
         .ignore_external_orders(true)
         .build();
     let (mut client, mut rx, _data_rx, _cache) =
@@ -3533,7 +3537,7 @@ async fn test_ocm_ignore_external_orders_skips_empty_string_rfo() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
 
-    let config = BetfairExecConfig::builder()
+    let config = BetfairExecutionClientConfig::builder()
         .ignore_external_orders(true)
         .build();
     let (mut client, mut rx, _data_rx, _cache) =
@@ -3624,7 +3628,7 @@ async fn test_ocm_market_ids_filter_skips_unrelated_markets() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
 
-    let config = BetfairExecConfig::builder()
+    let config = BetfairExecutionClientConfig::builder()
         .stream_market_ids_filter(vec!["1.OTHER".to_string()])
         .build();
     let (mut client, mut rx, _data_rx, _cache) =
@@ -6295,7 +6299,7 @@ async fn test_active_replacement_stream_denies_submit_before_connection_message(
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client_with_configs(
         addr,
         stream_config,
-        BetfairExecConfig::default(),
+        BetfairExecutionClientConfig::default(),
     );
     let (replacement_active_tx, replacement_active_rx) = tokio::sync::oneshot::channel();
     let (send_connection_tx, send_connection_rx) = tokio::sync::oneshot::channel();

@@ -31,10 +31,10 @@ use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_lighter::{
     common::enums::LighterEnvironment,
-    config::{LighterDataClientConfig, LighterExecClientConfig},
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
     factories::{LighterDataClientFactory, LighterExecutionClientFactory},
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -69,8 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_config = LighterDataClientConfig::builder()
         .environment(lighter_environment)
         .build();
-    let exec_config = LighterExecClientConfig::builder()
-        .trader_id(trader_id)
+    let exec_config = LighterExecutionClientConfig::builder()
         .account_id(account_id)
         .environment(lighter_environment)
         .build();
@@ -82,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stdout_level: LevelFilter::Info,
         ..Default::default()
     };
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         reconciliation_lookback_mins: Some(60),
         reconciliation_instrument_ids: Some(vec![INSTRUMENT_ID.to_string()]),
         open_check_interval_secs: Some(10.0),

@@ -49,7 +49,7 @@ from nautilus_trader.common import Environment
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import LiveDataEngineConfig
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveNodeConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import LoggerConfig
@@ -65,7 +65,7 @@ config = LiveNodeConfig(
     msgbus=MessageBusConfig(),
     data_engine=LiveDataEngineConfig(),
     risk_engine=LiveRiskEngineConfig(),
-    exec_engine=LiveExecEngineConfig(),
+    exec_engine=LiveExecutionEngineConfig(),
     portfolio=PortfolioConfig(),
 )
 ```
@@ -297,9 +297,9 @@ node = (
 
 ## ExecutionEngine configuration
 
-`LiveExecEngineConfig` controls order processing, execution events, and
+`LiveExecutionEngineConfig` controls order processing, execution events, and
 venue reconciliation. For full details see the
-[API Reference](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecEngineConfig).
+[API Reference](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecutionEngineConfig).
 
 ### Reconciliation
 

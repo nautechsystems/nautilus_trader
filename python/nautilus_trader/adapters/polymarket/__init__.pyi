@@ -15,7 +15,7 @@ __all__ = [
     "PolymarketDataClientConfig",
     "PolymarketDataClientFactory",
     "PolymarketDataLoader",
-    "PolymarketExecClientConfig",
+    "PolymarketExecutionClientConfig",
     "PolymarketExecutionClientFactory",
     "PolymarketFeeModel",
     "PolymarketInstrumentProviderConfig",
@@ -116,9 +116,7 @@ class PolymarketDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class PolymarketExecClientConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
+class PolymarketExecutionClientConfig:
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -147,7 +145,6 @@ class PolymarketExecClientConfig:
     def instrument_config(self) -> PolymarketInstrumentProviderConfig | None: ...
     def __init__(
         self,
-        trader_id: str | None = None,
         account_id: str | None = None,
         private_key: str | None = None,
         api_key: str | None = None,

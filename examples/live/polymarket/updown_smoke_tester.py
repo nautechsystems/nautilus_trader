@@ -37,7 +37,7 @@ from typing import Any
 
 from nautilus_trader.adapters.polymarket import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
-from nautilus_trader.adapters.polymarket import PolymarketExecClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
 from nautilus_trader.adapters.polymarket import PolymarketUpDownEventSlugConfig
@@ -111,8 +111,7 @@ def main() -> None:
         .add_exec_client(
             None,
             PolymarketExecutionClientFactory(),
-            PolymarketExecClientConfig(
-                trader_id=str(TRADER_ID),
+            PolymarketExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 signature_type=SIGNATURE_TYPE,
             ),

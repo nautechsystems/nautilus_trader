@@ -343,14 +343,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = BitmexExecFactoryConfig::new(
-        trader_id,
-        BitmexExecClientConfig {
-            environment: BitmexEnvironment::Testnet,
-            deadmans_switch_timeout_secs: Some(60),
-            ..Default::default()
-        },
-    );
+    let exec_config = BitmexExecutionClientConfig {
+        environment: BitmexEnvironment::Testnet,
+        deadmans_switch_timeout_secs: Some(60),
+        ..Default::default()
+    };
 
     let data_factory = BitmexDataClientFactory::new();
     let exec_factory = BitmexExecutionClientFactory::new();
@@ -539,16 +536,13 @@ For production deployments, enable the submit broadcaster to provide
 redundant order submission across multiple HTTP connections:
 
 ```rust
-let exec_config = BitmexExecFactoryConfig::new(
-    trader_id,
-    BitmexExecClientConfig {
-        environment: BitmexEnvironment::Mainnet,
-        deadmans_switch_timeout_secs: Some(60),
-        submitter_pool_size: Some(2),
-        canceller_pool_size: Some(2),
-        ..Default::default()
-    },
-);
+let exec_config = BitmexExecutionClientConfig {
+    environment: BitmexEnvironment::Mainnet,
+    deadmans_switch_timeout_secs: Some(60),
+    submitter_pool_size: Some(2),
+    canceller_pool_size: Some(2),
+    ..Default::default()
+};
 ```
 
 With `submitter_pool_size=2`, each order submission fans out to two HTTP

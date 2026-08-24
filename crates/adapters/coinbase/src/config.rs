@@ -15,7 +15,7 @@
 
 //! Configuration structures for the Coinbase adapter.
 
-use nautilus_model::enums::AccountType;
+use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -134,7 +134,10 @@ impl CoinbaseDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.coinbase")
 )]
-pub struct CoinbaseExecClientConfig {
+pub struct CoinbaseExecutionClientConfig {
+    /// Account identifier for the execution client.
+    #[builder(default = AccountId::from("COINBASE-001"))]
+    pub account_id: AccountId,
     /// CDP API key name (falls back to `COINBASE_API_KEY` env var).
     pub api_key: Option<String>,
     /// CDP API secret in PEM format (falls back to `COINBASE_API_SECRET` env var).
@@ -181,7 +184,8 @@ pub struct CoinbaseExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(CoinbaseExecClientConfig {
+nautilus_core::impl_pyo3_config_getters!(CoinbaseExecutionClientConfig {
+    account_id: AccountId,
     base_url_rest: Option<String>,
     base_url_ws: Option<String>,
     environment: CoinbaseEnvironment,
@@ -196,13 +200,13 @@ nautilus_core::impl_pyo3_config_getters!(CoinbaseExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for CoinbaseExecClientConfig {
+impl Default for CoinbaseExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl CoinbaseExecClientConfig {
+impl CoinbaseExecutionClientConfig {
     /// Creates a new configuration with default settings.
     #[must_use]
     pub fn new() -> Self {
@@ -293,7 +297,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_defaults() {
-        let config = CoinbaseExecClientConfig::default();
+        let config = CoinbaseExecutionClientConfig::default();
         assert_eq!(config.environment, CoinbaseEnvironment::Live);
         assert_eq!(config.http_timeout_secs, 10);
         assert_eq!(config.max_retries, 3);
@@ -301,7 +305,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_ws_url_uses_user_endpoint() {
-        let config = CoinbaseExecClientConfig::default();
+        let config = CoinbaseExecutionClientConfig::default();
         assert!(config.ws_url().contains("user"));
     }
 
@@ -325,8 +329,8 @@ derivatives_poll_interval_secs = 60
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: CoinbaseExecClientConfig = toml::from_str("").unwrap();
-        let expected = CoinbaseExecClientConfig::default();
+        let config: CoinbaseExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = CoinbaseExecutionClientConfig::default();
 
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);

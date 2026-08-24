@@ -76,7 +76,7 @@ impl Default for ExecutionAlgorithmConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
 )]
-pub struct ImportableExecAlgorithmConfig {
+pub struct ImportableExecutionAlgorithmConfig {
     /// The fully qualified name of the execution algorithm class.
     pub exec_algorithm_path: String,
     /// The fully qualified name of the execution algorithm config class.

@@ -66,7 +66,7 @@ use nautilus_derive::{
         enums::DeriveEnvironment,
         parse::parse_derive_instrument_any,
     },
-    config::DeriveExecClientConfig,
+    config::DeriveExecutionClientConfig,
     execution::DeriveExecutionClient,
     http::models::DeriveInstrument,
 };
@@ -1054,8 +1054,9 @@ fn sample_subaccount_json() -> Value {
     })
 }
 
-fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecClientConfig {
-    DeriveExecClientConfig {
+fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecutionClientConfig {
+    DeriveExecutionClientConfig {
+        account_id: AccountId::from("DERIVE-001"),
         wallet_address: Some(TEST_WALLET.to_string()),
         session_key: Some(TEST_SESSION_KEY.to_string()),
         subaccount_id: Some(TEST_SUBACCOUNT),
@@ -1107,7 +1108,7 @@ async fn build_client_with_config(
     rest_state: RestState,
     ws_state: WsState,
     registry: Option<&SocketReconnectRegistry>,
-    configure: impl FnOnce(DeriveExecClientConfig) -> DeriveExecClientConfig,
+    configure: impl FnOnce(DeriveExecutionClientConfig) -> DeriveExecutionClientConfig,
 ) -> TestClient {
     let rest_addr = start_rest_server(rest_state).await;
     let ws_addr = start_ws_server(ws_state).await;

@@ -74,7 +74,7 @@ use crate::{
         },
         symbol::BybitSymbol,
     },
-    config::BybitExecClientConfig,
+    config::BybitExecutionClientConfig,
     http::{
         client::BybitHttpClient,
         error::{
@@ -98,7 +98,7 @@ use crate::{
 pub struct BybitExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: BybitExecClientConfig,
+    config: BybitExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http_client: BybitHttpClient,
     ws_private: BybitWebSocketClient,
@@ -117,7 +117,10 @@ impl BybitExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the client fails to initialize.
-    pub fn new(core: ExecutionClientCore, config: BybitExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: BybitExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
         let (key_var, secret_var) = credential_env_vars(config.environment);
         let api_key = get_or_env_var(config.api_key.clone(), key_var)?;
         let api_secret = get_or_env_var(config.api_secret.clone(), secret_var)?;
@@ -2201,7 +2204,7 @@ mod tests {
             None,
             cache.clone(),
         );
-        let config = BybitExecClientConfig {
+        let config = BybitExecutionClientConfig {
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
             ..Default::default()

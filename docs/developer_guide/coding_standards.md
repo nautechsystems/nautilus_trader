@@ -56,6 +56,27 @@ documentation feel natural to end-users.
 
 3. **Error messages and logs**: Use full words for clarity (e.g., "price precision" not "price prec"). The user should never see abbreviated terminology.
 
+4. **Execution terminology**: Use `Execution` in public, project-owned PascalCase type names, such
+   as `BinanceExecutionClientConfig`. Internal implementation types may retain established `Exec`
+   names. Also reserve `Exec` for the `ExecAlgorithmId` and `ExecTester` families, established
+   `exec_*` names, and venue or protocol terms such as `BitmexExecType`. Name protocol-specific
+   wire models after the venue concept, such as `HyperliquidExchangeAction`. Preserve shipped names
+   on legacy v1 compatibility surfaces, in historical release entries, and on the source side of
+   migration tables.
+
+5. **Runtime qualifiers**: Use `Live` when a type selects or configures real-time runtime semantics,
+   such as `LiveNode` versus `BacktestNode`, `LiveClock` versus `TestClock`, and the
+   `LiveDataEngineConfig`, `LiveRiskEngineConfig`, and `LiveExecutionEngineConfig` family versus
+   reusable core engine configs. Omit `Live` from the ordinary adapter client family because a
+   connected client is the default. Qualify alternate implementations by their behavior, such as
+   `SandboxExecutionClient` or `DatabentoHistoricalClient`. An explicit live/historical protocol
+   pair may retain `Live` to distinguish the two implementations.
+
+6. **Adapter factory configs**: Name the data and execution inputs `<Venue>DataClientConfig` and
+   `<Venue>ExecutionClientConfig`. Factories consume these client configs directly rather than a
+   separate factory config wrapper. `LiveNodeConfig` owns `trader_id`; venue-specific `account_id`
+   values belong on execution client configs.
+
 #### Data loading APIs
 
 Use free functions for stateless data ingestion. Use a class only when instances retain reusable

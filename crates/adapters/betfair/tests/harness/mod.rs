@@ -27,7 +27,7 @@ use std::{
 
 use nautilus_betfair::{
     common::consts::{BETFAIR_CLIENT_ID, BETFAIR_VENUE},
-    config::BetfairExecConfig,
+    config::BetfairExecutionClientConfig,
     execution::BetfairExecutionClient,
 };
 use nautilus_common::{
@@ -153,7 +153,7 @@ impl Harness {
             create_test_http_client(addr),
             test_credential(),
             plain_stream_config(stream_port),
-            BetfairExecConfig::default(),
+            BetfairExecutionClientConfig::default(),
             Currency::GBP(),
         );
         client.start().unwrap();

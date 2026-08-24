@@ -22,9 +22,9 @@ from strategies.backtest_surface import DoubleSpawnExecutionAlgorithm
 from strategies.backtest_surface import MarketDataAuditActor
 from strategies.backtest_surface import MarketDataAuditActorConfig
 from strategies.backtest_surface import OversizedSpawnExecutionAlgorithm
-from strategies.backtest_surface import RoutedOrderExecAlgorithm
-from strategies.backtest_surface import RoutedOrderExecAlgorithmConfig
+from strategies.backtest_surface import RoutedOrderDataActorExecutionAlgorithm
 from strategies.backtest_surface import RoutedOrderExecutionAlgorithm
+from strategies.backtest_surface import RoutedOrderExecutionAlgorithmConfig
 from strategies.backtest_surface import RoutedOrderProbe
 from strategies.backtest_surface import RoutedOrderProbeConfig
 from strategies.backtest_surface import StreamingWhipsaw
@@ -79,7 +79,7 @@ from nautilus_trader.trading import EmaCrossConfig
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import GridMarketMakerConfig
 from nautilus_trader.trading import ImportableControllerConfig
-from nautilus_trader.trading import ImportableExecAlgorithmConfig
+from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
 from tests.providers import TestInstrumentProvider
 from tests.unit.common.actor import ActorLifecycleController
@@ -525,7 +525,7 @@ def test_importable_strategy_routes_synthetic_bars_through_native_twap():
 
 
 def test_importable_strategy_routes_orders_through_importable_exec_algorithm():
-    RoutedOrderExecAlgorithm.reset_observations()
+    RoutedOrderDataActorExecutionAlgorithm.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
     algo_id = ExecAlgorithmId("PY-ROUTE")
@@ -538,9 +538,9 @@ def test_importable_strategy_routes_orders_through_importable_exec_algorithm():
     )
     engine.add_instrument(instrument)
     engine.add_exec_algorithm_from_config(
-        ImportableExecAlgorithmConfig(
-            exec_algorithm_path="strategies.backtest_surface:RoutedOrderExecAlgorithm",
-            config_path="strategies.backtest_surface:RoutedOrderExecAlgorithmConfig",
+        ImportableExecutionAlgorithmConfig(
+            exec_algorithm_path="strategies.backtest_surface:RoutedOrderDataActorExecutionAlgorithm",
+            config_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithmConfig",
             config={
                 "exec_algorithm_id": str(algo_id),
                 "log_events": False,
@@ -569,9 +569,11 @@ def test_importable_strategy_routes_orders_through_importable_exec_algorithm():
     assert result.total_orders == 1
     assert orders[0].exec_algorithm_id == algo_id
     assert orders[0].status == OrderStatus.INITIALIZED
-    assert RoutedOrderExecAlgorithm.received_client_order_ids == [str(orders[0].client_order_id)]
-    assert RoutedOrderExecAlgorithm.received_exec_algorithm_ids == [algo_id]
-    assert RoutedOrderExecAlgorithm.signal_values == [str(orders[0].client_order_id)]
+    assert RoutedOrderDataActorExecutionAlgorithm.received_client_order_ids == [
+        str(orders[0].client_order_id),
+    ]
+    assert RoutedOrderDataActorExecutionAlgorithm.received_exec_algorithm_ids == [algo_id]
+    assert RoutedOrderDataActorExecutionAlgorithm.signal_values == [str(orders[0].client_order_id)]
     engine.dispose()
 
 
@@ -589,9 +591,9 @@ def test_importable_strategy_routes_orders_through_importable_execution_algorith
     )
     engine.add_instrument(instrument)
     engine.add_exec_algorithm_from_config(
-        ImportableExecAlgorithmConfig(
+        ImportableExecutionAlgorithmConfig(
             exec_algorithm_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithm",
-            config_path="strategies.backtest_surface:RoutedOrderExecAlgorithmConfig",
+            config_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithmConfig",
             config={
                 "exec_algorithm_id": str(algo_id),
                 "log_events": False,
@@ -647,9 +649,9 @@ def test_execution_algorithm_spawn_reuses_cached_primary_order_state():
     )
     engine.add_instrument(instrument)
     engine.add_exec_algorithm_from_config(
-        ImportableExecAlgorithmConfig(
+        ImportableExecutionAlgorithmConfig(
             exec_algorithm_path="strategies.backtest_surface:DoubleSpawnExecutionAlgorithm",
-            config_path="strategies.backtest_surface:RoutedOrderExecAlgorithmConfig",
+            config_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithmConfig",
             config={
                 "exec_algorithm_id": str(algo_id),
                 "log_events": False,
@@ -691,9 +693,9 @@ def test_execution_algorithm_spawn_rejects_quantity_above_primary_leaves_qty():
     )
     engine.add_instrument(instrument)
     engine.add_exec_algorithm_from_config(
-        ImportableExecAlgorithmConfig(
+        ImportableExecutionAlgorithmConfig(
             exec_algorithm_path="strategies.backtest_surface:OversizedSpawnExecutionAlgorithm",
-            config_path="strategies.backtest_surface:RoutedOrderExecAlgorithmConfig",
+            config_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithmConfig",
             config={
                 "exec_algorithm_id": str(algo_id),
                 "log_events": False,
@@ -977,7 +979,7 @@ def test_add_strategy_with_constructed_instance_submits_orders():
 
 
 def test_add_exec_algorithm_and_strategy_instances_route_orders():
-    RoutedOrderExecAlgorithm.reset_observations()
+    RoutedOrderDataActorExecutionAlgorithm.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
     algo_id = ExecAlgorithmId("PY-ROUTE-INSTANCE")
@@ -990,8 +992,8 @@ def test_add_exec_algorithm_and_strategy_instances_route_orders():
     )
     engine.add_instrument(instrument)
 
-    algo = RoutedOrderExecAlgorithm(
-        RoutedOrderExecAlgorithmConfig(
+    algo = RoutedOrderDataActorExecutionAlgorithm(
+        RoutedOrderExecutionAlgorithmConfig(
             exec_algorithm_id=str(algo_id),
             log_events=False,
             log_commands=False,
@@ -1016,7 +1018,7 @@ def test_add_exec_algorithm_and_strategy_instances_route_orders():
     assert result.iterations == 3
     assert result.total_orders == 1
     assert orders[0].exec_algorithm_id == algo_id
-    assert RoutedOrderExecAlgorithm.received_exec_algorithm_ids == [algo_id]
+    assert RoutedOrderDataActorExecutionAlgorithm.received_exec_algorithm_ids == [algo_id]
     engine.dispose()
 
 

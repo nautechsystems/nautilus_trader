@@ -82,7 +82,7 @@ use nautilus_polymarket::{
         consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
         enums::SignatureType,
     },
-    config::{PolymarketExecClientConfig, PolymarketInstrumentProviderConfig},
+    config::{PolymarketExecutionClientConfig, PolymarketInstrumentProviderConfig},
     execution::PolymarketExecutionClient,
     http::models::PolymarketOrder,
     signing::eip712::order_hash,
@@ -326,15 +326,15 @@ fn constructed_order_response(status: &str) -> Value {
     })
 }
 
-fn create_test_exec_config(addr: SocketAddr) -> PolymarketExecClientConfig {
+fn create_test_exec_config(addr: SocketAddr) -> PolymarketExecutionClientConfig {
     create_test_exec_config_with_retries(addr, 0)
 }
 
 fn create_test_exec_config_with_retries(
     addr: SocketAddr,
     max_retries: u32,
-) -> PolymarketExecClientConfig {
-    PolymarketExecClientConfig {
+) -> PolymarketExecutionClientConfig {
+    PolymarketExecutionClientConfig {
         private_key: Some(TEST_PRIVATE_KEY.to_string()),
         api_key: Some("test_api_key".to_string()),
         api_secret: Some(TEST_API_SECRET_B64.to_string()),
@@ -349,7 +349,7 @@ fn create_test_exec_config_with_retries(
         // production backoff (defaults are 1000ms / 10000ms).
         retry_delay_initial_ms: 1,
         retry_delay_max_ms: 10,
-        ..PolymarketExecClientConfig::default()
+        ..PolymarketExecutionClientConfig::default()
     }
 }
 
@@ -377,7 +377,7 @@ fn create_test_execution_client_with_heartbeat(
 }
 
 fn create_test_execution_client_from_config(
-    config: PolymarketExecClientConfig,
+    config: PolymarketExecutionClientConfig,
 ) -> (
     PolymarketExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,

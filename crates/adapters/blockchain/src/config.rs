@@ -20,7 +20,7 @@ use nautilus_core::string::secret::REDACTED;
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
     defi::{Chain, DexType, SharedChain},
-    identifiers::{AccountId, TraderId},
+    identifiers::AccountId,
 };
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
@@ -147,8 +147,6 @@ const fn default_multicall_calls_per_rpc_request() -> u32 {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
 )]
 pub struct BlockchainExecutionClientConfig {
-    /// The trader ID for the client.
-    pub trader_id: TraderId,
     /// The account ID for the client.
     pub client_id: AccountId,
     /// The blockchain chain configuration.
@@ -207,7 +205,6 @@ pub struct BlockchainExecutionClientConfig {
 impl Debug for BlockchainExecutionClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BlockchainExecutionClientConfig))
-            .field("trader_id", &self.trader_id)
             .field("client_id", &self.client_id)
             .field("chain", &self.chain)
             .field("wallet_address", &self.wallet_address)
@@ -303,7 +300,6 @@ native_currency_decimals = 18
     fn test_execution_config_toml_minimal() {
         let config: BlockchainExecutionClientConfig = toml::from_str(
             r#"
-trader_id = "TRADER-001"
 client_id = "BLOCKCHAIN-001"
 wallet_address = "0x0000000000000000000000000000000000000000"
 http_rpc_url = "https://eth-mainnet.example.com"
@@ -374,7 +370,6 @@ native_currency_decimals = 18
     fn test_execution_config_toml_accepts_legacy_shape_without_transaction_limits() {
         let config: BlockchainExecutionClientConfig = toml::from_str(
             r#"
-trader_id = "TRADER-001"
 client_id = "BLOCKCHAIN-001"
 wallet_address = "0x0000000000000000000000000000000000000000"
 http_rpc_url = "https://eth-mainnet.example.com"
@@ -408,7 +403,6 @@ native_currency_decimals = 18
     fn test_execution_config_toml_rejects_unknown_fields() {
         let result: Result<BlockchainExecutionClientConfig, _> = toml::from_str(
             r#"
-trader_id = "TRADER-001"
 client_id = "BLOCKCHAIN-001"
 wallet_address = "0x0000000000000000000000000000000000000000"
 http_rpc_url = "https://eth-mainnet.example.com"
@@ -469,7 +463,6 @@ native_currency_decimals = 18
         const QUERY_SECRET: &str = "execution-http-query-secret";
         let http_rpc_url = format!("https://rpc.example.com/{PATH_SECRET}?api_key={QUERY_SECRET}");
         let config = BlockchainExecutionClientConfig::builder()
-            .trader_id(TraderId::from("TRADER-001"))
             .client_id(AccountId::from("BLOCKCHAIN-001"))
             .chain(chains::ETHEREUM.clone())
             .wallet_address("0x0000000000000000000000000000000000000000".to_string())

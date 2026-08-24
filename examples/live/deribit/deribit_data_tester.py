@@ -40,7 +40,7 @@ from nautilus_trader.adapters.deribit import DeribitEnvironment
 from nautilus_trader.adapters.deribit import DeribitLiveDataClientFactory
 from nautilus_trader.adapters.deribit import DeribitProductType
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -81,7 +81,7 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         use_pyo3=True,
     ),
-    exec_engine=LiveExecEngineConfig(
+    exec_engine=LiveExecutionEngineConfig(
         reconciliation=False,  # Not applicable for data-only
     ),
     data_clients={

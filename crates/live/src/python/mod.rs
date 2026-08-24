@@ -41,13 +41,13 @@ pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::config::LiveNodeConfig>()?;
     m.add_class::<crate::config::LiveDataEngineConfig>()?;
     m.add_class::<crate::config::LiveRiskEngineConfig>()?;
-    m.add_class::<crate::config::LiveExecEngineConfig>()?;
+    m.add_class::<crate::config::LiveExecutionEngineConfig>()?;
     m.add_class::<crate::config::PluginConfig>()?;
     m.add_class::<crate::config::QueueMonitorConfig>()?;
     m.add_class::<crate::config::RoutingConfig>()?;
     m.add_class::<crate::config::InstrumentProviderConfig>()?;
-    m.add_class::<crate::config::LiveDataClientConfig>()?;
-    m.add_class::<crate::config::LiveExecClientConfig>()?;
+    m.add_class::<crate::config::DataClientConfig>()?;
+    m.add_class::<crate::config::ExecutionClientConfig>()?;
     m.add_class::<PortfolioConfig>()?;
     Ok(())
 }

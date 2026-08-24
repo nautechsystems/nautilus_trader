@@ -25,8 +25,8 @@ use nautilus_common::{
 };
 use nautilus_derive::{
     common::{consts::DERIVE, enums::DeriveEnvironment},
-    config::{DeriveDataClientConfig, DeriveExecClientConfig},
-    factories::{DeriveDataClientFactory, DeriveExecFactoryConfig, DeriveExecutionClientFactory},
+    config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
+    factories::{DeriveDataClientFactory, DeriveExecutionClientFactory},
     python,
 };
 use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
@@ -121,17 +121,14 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        DeriveExecFactoryConfig {
-            trader_id,
+        DeriveExecutionClientConfig {
             account_id,
-            config: DeriveExecClientConfig {
-                wallet_address: Some(TEST_WALLET_ADDRESS.to_string()),
-                session_key: Some(TEST_SESSION_KEY.to_string()),
-                subaccount_id: Some(TEST_SUBACCOUNT_ID),
-                environment: DeriveEnvironment::Testnet,
-                max_fee_per_contract: Some(Decimal::ONE),
-                ..DeriveExecClientConfig::default()
-            },
+            wallet_address: Some(TEST_WALLET_ADDRESS.to_string()),
+            session_key: Some(TEST_SESSION_KEY.to_string()),
+            subaccount_id: Some(TEST_SUBACCOUNT_ID),
+            environment: DeriveEnvironment::Testnet,
+            max_fee_per_contract: Some(Decimal::ONE),
+            ..DeriveExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -146,11 +143,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let derive_config = extracted_config
         .as_any()
-        .downcast_ref::<DeriveExecFactoryConfig>()
+        .downcast_ref::<DeriveExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "DERIVE-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -158,10 +156,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), DERIVE);
-    assert_eq!(extracted_factory.config_type(), "DeriveExecFactoryConfig");
-    assert_eq!(derive_config.trader_id, trader_id);
+    assert_eq!(
+        extracted_factory.config_type(),
+        "DeriveExecutionClientConfig"
+    );
     assert_eq!(derive_config.account_id, account_id);
-    assert_eq!(derive_config.config.environment, DeriveEnvironment::Testnet);
+    assert_eq!(derive_config.environment, DeriveEnvironment::Testnet);
     assert_eq!(client.client_id(), ClientId::from("DERIVE-EXEC-EXTRACTED"));
     assert_eq!(client.account_id(), account_id);
 }

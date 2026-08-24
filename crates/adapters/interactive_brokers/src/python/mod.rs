@@ -22,7 +22,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::consts::IB,
-    config::{InteractiveBrokersDataClientConfig, InteractiveBrokersExecClientConfig},
+    config::{InteractiveBrokersDataClientConfig, InteractiveBrokersExecutionClientConfig},
     factories::{InteractiveBrokersDataClientFactory, InteractiveBrokersExecutionClientFactory},
 };
 
@@ -80,10 +80,10 @@ fn extract_interactive_brokers_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<InteractiveBrokersExecClientConfig>(py) {
+    match config.extract::<InteractiveBrokersExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract InteractiveBrokersExecClientConfig: {e}"
+            "Failed to extract InteractiveBrokersExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -136,7 +136,7 @@ pub fn interactive_brokers(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult
     m.add_class::<crate::error::ErrorCategory>()?;
     m.add_class::<crate::error::InteractiveBrokersErrorKind>()?;
     m.add_class::<crate::config::InteractiveBrokersDataClientConfig>()?;
-    m.add_class::<crate::config::InteractiveBrokersExecClientConfig>()?;
+    m.add_class::<crate::config::InteractiveBrokersExecutionClientConfig>()?;
     m.add_class::<crate::config::InteractiveBrokersInstrumentProviderConfig>()?;
     m.add_class::<crate::config::DockerizedIBGatewayConfig>()?;
     m.add_class::<crate::config::TradingMode>()?;
@@ -179,7 +179,7 @@ pub fn interactive_brokers(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "InteractiveBrokersExecClientConfig".to_string(),
+        "InteractiveBrokersExecutionClientConfig".to_string(),
         extract_interactive_brokers_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

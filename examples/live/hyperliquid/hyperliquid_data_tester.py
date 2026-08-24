@@ -19,7 +19,7 @@ from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
 from nautilus_trader.adapters.hyperliquid import HyperliquidLiveDataClientFactory
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -57,7 +57,7 @@ if __name__ == "__main__":
             # log_level_file="DEBUG",
             use_pyo3=True,
         ),
-        exec_engine=LiveExecEngineConfig(
+        exec_engine=LiveExecutionEngineConfig(
             reconciliation=False,  # Not required for data testing
         ),
         # cache=CacheConfig(

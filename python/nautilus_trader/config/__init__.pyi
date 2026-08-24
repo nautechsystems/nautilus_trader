@@ -14,11 +14,11 @@ from nautilus_trader.common import MessageBusConfig as MessageBusConfig
 from nautilus_trader.data import DataEngineConfig as DataEngineConfig
 from nautilus_trader.execution import ExecutionEngineConfig as ExecutionEngineConfig
 from nautilus_trader.execution import OrderEmulatorConfig as OrderEmulatorConfig
+from nautilus_trader.live import DataClientConfig as DataClientConfig
+from nautilus_trader.live import ExecutionClientConfig as ExecutionClientConfig
 from nautilus_trader.live import InstrumentProviderConfig as InstrumentProviderConfig
-from nautilus_trader.live import LiveDataClientConfig as LiveDataClientConfig
 from nautilus_trader.live import LiveDataEngineConfig as LiveDataEngineConfig
-from nautilus_trader.live import LiveExecClientConfig as LiveExecClientConfig
-from nautilus_trader.live import LiveExecEngineConfig as LiveExecEngineConfig
+from nautilus_trader.live import LiveExecutionEngineConfig as LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNodeConfig as LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig as LiveRiskEngineConfig
 from nautilus_trader.live import PluginConfig as PluginConfig
@@ -28,7 +28,9 @@ from nautilus_trader.portfolio import PortfolioConfig as PortfolioConfig
 from nautilus_trader.risk import RiskEngineConfig as RiskEngineConfig
 from nautilus_trader.trading import ExecutionAlgorithmConfig as ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableControllerConfig as ImportableControllerConfig
-from nautilus_trader.trading import ImportableExecAlgorithmConfig as ImportableExecAlgorithmConfig
+from nautilus_trader.trading import (
+    ImportableExecutionAlgorithmConfig as ImportableExecutionAlgorithmConfig,
+)
 from nautilus_trader.trading import ImportableStrategyConfig as ImportableStrategyConfig
 from nautilus_trader.trading import StrategyConfig as StrategyConfig
 
@@ -39,19 +41,19 @@ __all__ = [
     "BacktestVenueConfig",
     "CacheConfig",
     "DataActorConfig",
+    "DataClientConfig",
     "DataEngineConfig",
     "ExecutionAlgorithmConfig",
+    "ExecutionClientConfig",
     "ExecutionEngineConfig",
     "FileWriterConfig",
     "ImportableActorConfig",
     "ImportableControllerConfig",
-    "ImportableExecAlgorithmConfig",
+    "ImportableExecutionAlgorithmConfig",
     "ImportableStrategyConfig",
     "InstrumentProviderConfig",
-    "LiveDataClientConfig",
     "LiveDataEngineConfig",
-    "LiveExecClientConfig",
-    "LiveExecEngineConfig",
+    "LiveExecutionEngineConfig",
     "LiveNodeConfig",
     "LiveRiskEngineConfig",
     "LoggerConfig",

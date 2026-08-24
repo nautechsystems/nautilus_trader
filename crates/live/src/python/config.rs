@@ -32,9 +32,10 @@ use pyo3::{
 };
 
 use crate::config::{
-    InstrumentProviderConfig, LiveDataClientConfig, LiveDataEngineConfig, LiveExecClientConfig,
-    LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig, QueueMonitorConfig,
-    RoutingConfig, duration_from_secs_f64, parse_rate_limit, validate_max_notional_per_order,
+    DataClientConfig, ExecutionClientConfig, InstrumentProviderConfig, LiveDataEngineConfig,
+    LiveExecutionEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig,
+    QueueMonitorConfig, RoutingConfig, duration_from_secs_f64, parse_rate_limit,
+    validate_max_notional_per_order,
 };
 
 // Coerces a PyO3 input into `BarIntervalType`, accepting both the enum (modern Rust
@@ -386,7 +387,7 @@ impl LiveRiskEngineConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveExecEngineConfig {
+impl LiveExecutionEngineConfig {
     /// Configuration for live execution engines.
     #[new]
     #[expect(clippy::too_many_arguments)]
@@ -815,8 +816,8 @@ impl InstrumentProviderConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveDataClientConfig {
-    /// Configuration for live data clients.
+impl DataClientConfig {
+    /// Shared configuration for data clients registered with a live node.
     #[new]
     #[pyo3(signature = (handle_revised_bars=None, instrument_provider=None, routing=None))]
     fn py_new(
@@ -857,8 +858,8 @@ impl LiveDataClientConfig {
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
-impl LiveExecClientConfig {
-    /// Configuration for live execution clients.
+impl ExecutionClientConfig {
+    /// Shared configuration for execution clients registered with a live node.
     #[new]
     #[pyo3(signature = (instrument_provider=None, routing=None))]
     fn py_new(
@@ -1016,7 +1017,7 @@ impl LiveNodeConfig {
         loop_debug: Option<bool>,
         data_engine: Option<LiveDataEngineConfig>,
         risk_engine: Option<LiveRiskEngineConfig>,
-        exec_engine: Option<LiveExecEngineConfig>,
+        exec_engine: Option<LiveExecutionEngineConfig>,
         controller: Option<ImportableControllerConfig>,
         plugins: Option<Vec<PluginConfig>>,
     ) -> PyResult<Self> {
@@ -1195,7 +1196,7 @@ impl LiveNodeConfig {
 
     #[getter]
     #[pyo3(name = "exec_engine")]
-    fn py_exec_engine(&self) -> LiveExecEngineConfig {
+    fn py_exec_engine(&self) -> LiveExecutionEngineConfig {
         self.exec_engine.clone()
     }
 

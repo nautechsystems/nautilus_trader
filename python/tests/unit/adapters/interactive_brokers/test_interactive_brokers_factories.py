@@ -20,7 +20,7 @@ from unit.adapters.example_modules import load_example_module
 
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientFactory
-from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientFactory
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersInstrumentProviderConfig
@@ -29,7 +29,6 @@ from nautilus_trader.adapters.interactive_brokers import SymbologyMethod
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
-from nautilus_trader.model import AccountId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import TraderId
 
@@ -40,11 +39,8 @@ ib_exec_tester = load_example_module("interactive_brokers", "exec_tester")
 
 
 def test_interactive_brokers_factories_expose_python_names() -> None:
-    trader_id = TraderId.from_str("TESTER-001")
-    account_id = AccountId.from_str("IB-001")
-
     assert InteractiveBrokersDataClientFactory().name() == IB
-    assert InteractiveBrokersExecutionClientFactory(trader_id, account_id).name() == IB
+    assert InteractiveBrokersExecutionClientFactory().name() == IB
 
 
 def test_interactive_brokers_instrument_provider_config_and_empty_surface() -> None:
@@ -107,8 +103,6 @@ def test_live_node_builder_accepts_interactive_brokers_data_factory() -> None:
 
 def test_live_node_builder_accepts_interactive_brokers_exec_factory() -> None:
     trader_id = TraderId.from_str("TESTER-001")
-    account_id = AccountId.from_str("IB-001")
-
     node = (
         LiveNode.builder("IB-EXEC-PYTEST-001", trader_id, Environment.LIVE)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
@@ -122,8 +116,8 @@ def test_live_node_builder_accepts_interactive_brokers_exec_factory() -> None:
         )
         .add_exec_client(
             None,
-            InteractiveBrokersExecutionClientFactory(trader_id, account_id),
-            InteractiveBrokersExecClientConfig(client_id=101, account_id="U1234567"),
+            InteractiveBrokersExecutionClientFactory(),
+            InteractiveBrokersExecutionClientConfig(client_id=101, account_id="U1234567"),
         )
         .build()
     )

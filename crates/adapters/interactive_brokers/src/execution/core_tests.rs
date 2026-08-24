@@ -69,7 +69,7 @@ fn create_test_execution_client() -> (
     replace_exec_event_sender(tx);
     let client = InteractiveBrokersExecutionClient::new(
         core,
-        InteractiveBrokersExecClientConfig::default(),
+        InteractiveBrokersExecutionClientConfig::default(),
         instrument_provider,
     )
     .unwrap();

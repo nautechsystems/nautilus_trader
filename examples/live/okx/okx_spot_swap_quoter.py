@@ -35,13 +35,13 @@ from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXDataClientFactory
 from nautilus_trader.adapters.okx import OKXEnvironment
-from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXExecutionClientConfig
 from nautilus_trader.adapters.okx import OKXExecutionClientFactory
 from nautilus_trader.adapters.okx import OKXInstrumentType
 from nautilus_trader.adapters.okx import OKXMarginMode
 from nautilus_trader.common import Environment
 from nautilus_trader.common import LogColor
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.live import LiveNode
@@ -360,7 +360,7 @@ def main() -> None:
     node = (
         LiveNode.builder("OKX-SPOT-SWAP-QUOTER-001", TRADER_ID, Environment.LIVE)
         .with_exec_engine_config(
-            LiveExecEngineConfig(
+            LiveExecutionEngineConfig(
                 reconciliation_instrument_ids=[
                     str(SPOT_INSTRUMENT_ID),
                     str(SWAP_INSTRUMENT_ID),
@@ -386,8 +386,7 @@ def main() -> None:
         .add_exec_client(
             None,
             OKXExecutionClientFactory(),
-            OKXExecClientConfig(
-                trader_id=TRADER_ID,
+            OKXExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 instrument_types=INSTRUMENT_TYPES,
                 environment=OKX_ENVIRONMENT,

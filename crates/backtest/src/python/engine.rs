@@ -60,7 +60,7 @@ use nautilus_trading::examples::{
     },
 };
 use nautilus_trading::{
-    ImportableExecAlgorithmConfig, ImportableStrategyConfig,
+    ImportableExecutionAlgorithmConfig, ImportableStrategyConfig,
     algorithm::{TwapAlgorithm, TwapAlgorithmConfig},
     python::algorithm::PyExecutionAlgorithm,
 };
@@ -463,7 +463,7 @@ impl PyBacktestEngine {
     fn py_add_exec_algorithm_from_config(
         &mut self,
         _py: Python,
-        config: ImportableExecAlgorithmConfig,
+        config: ImportableExecutionAlgorithmConfig,
     ) -> PyResult<()> {
         self.ensure_can_add_exec_algorithm()?;
 
@@ -653,7 +653,7 @@ impl PyBacktestEngine {
     fn py_add_exec_algorithms_from_configs(
         &mut self,
         py: Python,
-        configs: Vec<ImportableExecAlgorithmConfig>,
+        configs: Vec<ImportableExecutionAlgorithmConfig>,
     ) -> PyResult<()> {
         for config in configs {
             self.py_add_exec_algorithm_from_config(py, config)?;
@@ -1219,10 +1219,10 @@ fn builtin_strategy_register(type_name: &str) -> Option<BuiltinStrategyRegister>
     }
 }
 
-type NativeExecAlgorithmRegister =
+type NativeExecutionAlgorithmRegister =
     for<'py> fn(&mut BacktestEngine, &Bound<'py, PyAny>) -> PyResult<()>;
 
-fn native_exec_algorithm_register(type_name: &str) -> Option<NativeExecAlgorithmRegister> {
+fn native_exec_algorithm_register(type_name: &str) -> Option<NativeExecutionAlgorithmRegister> {
     match type_name {
         "TwapAlgorithm" => Some(register_twap_algorithm),
         _ => None,

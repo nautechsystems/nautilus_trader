@@ -98,8 +98,8 @@ Ownership does not exclude these orders from position tracking or portfolio calc
 fills still follow the [bounded history safety](#bounded-history-safety) rules when applicable.
 :::
 
-For all live trading options, see the `LiveExecEngineConfig`
-[API reference](/docs/python-api-latest/config.html#nautilus_trader.live.LiveExecEngineConfig).
+For all live trading options, see the `LiveExecutionEngineConfig`
+[API reference](/docs/python-api-latest/config.html#nautilus_trader.live.LiveExecutionEngineConfig).
 
 ### Instrument availability
 

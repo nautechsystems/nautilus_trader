@@ -47,7 +47,7 @@ use nautilus_binance::{
         enums::BinanceProductType,
         parse::parse_usdm_instrument,
     },
-    config::{BinanceExecClientConfig, BinanceInstrumentProviderConfig},
+    config::{BinanceExecutionClientConfig, BinanceInstrumentProviderConfig},
     futures::{
         execution::{BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM, BinanceFuturesExecutionClient},
         http::models::BinanceFuturesUsdExchangeInfo,
@@ -1329,8 +1329,7 @@ fn create_test_execution_client_with_config(
         cache.clone(),
     );
 
-    let config = BinanceExecClientConfig {
-        trader_id,
+    let config = BinanceExecutionClientConfig {
         account_id,
         product_type: BinanceProductType::UsdM,
         base_url_http: Some(base_url_http),
@@ -1412,8 +1411,7 @@ fn test_client_creation_rejects_spot_product_type() {
         None,
         cache,
     );
-    let config = BinanceExecClientConfig {
-        trader_id,
+    let config = BinanceExecutionClientConfig {
         account_id,
         product_type: BinanceProductType::Spot,
         ..Default::default()
@@ -5858,8 +5856,7 @@ fn create_test_execution_client_with_ws_trading(
         cache.clone(),
     );
 
-    let config = BinanceExecClientConfig {
-        trader_id,
+    let config = BinanceExecutionClientConfig {
         account_id,
         product_type: BinanceProductType::UsdM,
         base_url_http: Some(base_url_http),

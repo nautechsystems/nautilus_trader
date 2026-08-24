@@ -9,6 +9,30 @@ Released on TBD (UTC).
 ### Breaking Changes
 
 - Changed `Strategy.cancel_all_orders` to strategy-associated orders; set `strategy_only=False` for broad scope (#4470)
+- Removed `BitmexExecFactoryConfig`, `DeriveExecFactoryConfig`, and
+  `HyperliquidExecFactoryConfig`; pass the corresponding `*ExecutionClientConfig` directly (Rust
+  and Python)
+- Removed `DatabentoLiveClientConfig`; pass `DatabentoDataClientConfig` directly to the factory
+  (Rust and Python)
+- Removed `trader_id` from adapter execution client configs and factory construction; the live node
+  now passes its `LiveNodeConfig.trader_id` to each execution factory (Rust and Python)
+- Renamed `ImportableExecAlgorithmConfig` to `ImportableExecutionAlgorithmConfig` (Rust and Python)
+- Renamed `LiveDataClientConfig` to `DataClientConfig` (Rust and Python)
+- Renamed `LiveExecClientConfig` to `ExecutionClientConfig` (Rust and Python)
+- Renamed `LiveExecEngineConfig` to `LiveExecutionEngineConfig` (Rust and Python)
+- Renamed `ExecFactoryExtractor` to `ExecutionFactoryExtractor` (Rust)
+- Renamed `SimExecFactoryExtractor` to `SimulatedExecutionFactoryExtractor` (Rust)
+- Renamed the Architect AX, Binance, BitMEX, Bybit, Coinbase, Deribit, Derive, dYdX, Hyperliquid,
+  Interactive Brokers, Kraken, Lighter, OKX, and Polymarket `*ExecClientConfig` types to
+  `*ExecutionClientConfig` (Rust and Python)
+- Renamed `BetfairExecConfig` to `BetfairExecutionClientConfig` (Rust and Python)
+- Changed BitMEX, Bybit, Coinbase, Derive, Hyperliquid, and Interactive Brokers execution account
+  configuration to use `account_id` on the execution client config instead of a factory
+  constructor or wrapper argument (Rust and Python)
+- Changed the Bybit, Coinbase, and Interactive Brokers execution factories to use no-argument
+  constructors (Rust and Python)
+- Changed the shared `ExecutionClientFactory::create` and
+  `SimulatedExecutionClientFactory::create` contracts to receive the node's `TraderId` (Rust)
 
 ### Security
 

@@ -96,13 +96,12 @@ fn instrument(crypto_perpetual_ethusdt: CryptoPerpetual) -> InstrumentAny {
 }
 
 fn create_config(
-    trader_id: TraderId,
+    _trader_id: TraderId,
     account_id: AccountId,
     venue: Venue,
 ) -> SandboxExecutionClientConfig {
     let usd = Currency::USD();
     SandboxExecutionClientConfig {
-        trader_id,
         account_id,
         venue,
         starting_balances: vec![Money::new(100_000.0, usd)],
@@ -173,7 +172,7 @@ fn create_test_context_with(
     customize(&mut config);
 
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -493,7 +492,7 @@ fn setup_binary_option_lifecycle_harness(
     let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
     let config = create_config(trader_id, account_id, venue);
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -572,7 +571,7 @@ fn setup_pending_resolution_harness(
     config.base_currency = Some(Currency::USDC());
     config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -744,7 +743,6 @@ fn setup_account_state_handler(cache: Rc<RefCell<Cache>>) {
 fn test_config_default() {
     let config = SandboxExecutionClientConfig::default();
 
-    assert_eq!(config.trader_id, TraderId::from("SANDBOX-001"));
     assert_eq!(config.account_id, AccountId::from("SANDBOX-001"));
     assert_eq!(config.venue, Venue::new("SANDBOX"));
     assert!(config.starting_balances.is_empty());
@@ -855,7 +853,7 @@ fn assert_fee_model_config_drives_sandbox_commission(
     config.fee_model = Some(fee_model);
 
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -907,18 +905,16 @@ fn assert_fee_model_config_drives_sandbox_commission(
 }
 
 #[rstest]
-fn test_config_builder(trader_id: TraderId, account_id: AccountId, venue: Venue) {
+fn test_config_builder(account_id: AccountId, venue: Venue) {
     let usd = Currency::USD();
     let starting_balances = vec![Money::new(50_000.0, usd)];
 
     let config = SandboxExecutionClientConfig::builder()
-        .trader_id(trader_id)
         .account_id(account_id)
         .venue(venue)
         .starting_balances(starting_balances)
         .build();
 
-    assert_eq!(config.trader_id, trader_id);
     assert_eq!(config.account_id, account_id);
     assert_eq!(config.venue, venue);
     assert_eq!(config.starting_balances.len(), 1);
@@ -926,12 +922,11 @@ fn test_config_builder(trader_id: TraderId, account_id: AccountId, venue: Venue)
 }
 
 #[rstest]
-fn test_config_builder_with_overrides(trader_id: TraderId, account_id: AccountId, venue: Venue) {
+fn test_config_builder_with_overrides(account_id: AccountId, venue: Venue) {
     let usd = Currency::USD();
     let starting_balances = vec![Money::new(50_000.0, usd)];
 
     let config = SandboxExecutionClientConfig::builder()
-        .trader_id(trader_id)
         .account_id(account_id)
         .venue(venue)
         .starting_balances(starting_balances)
@@ -2423,7 +2418,6 @@ fn test_instrument_close_sync_cleanup_handles_synchronous_position_closed_reentr
 
         let usd = Currency::USD();
         let config = SandboxExecutionClientConfig {
-            trader_id,
             account_id,
             venue,
             starting_balances: vec![Money::new(100_000.0, usd)],
@@ -2699,7 +2693,7 @@ fn test_paper_binary_option_multiple_instruments_close_settlement_via_data_engin
     config.base_currency = Some(Currency::USDC());
     config.starting_balances = vec![Money::new(100_000.0, Currency::USDC())];
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -3062,7 +3056,7 @@ fn test_process_bar_drops_precision_mismatch(
     config.bar_execution = true;
 
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -3110,7 +3104,7 @@ fn test_message_handler_drops_precision_mismatched_bar(
     config.bar_execution = true;
 
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        trader_id,
         ClientId::new("SANDBOX"),
         config.venue,
         config.oms_type,
@@ -3627,7 +3621,6 @@ fn test_submit_order_through_exec_engine_no_reentrant_panic(
     // Create and register the sandbox client (venue must match the instrument)
     let usd = Currency::USD();
     let config = SandboxExecutionClientConfig {
-        trader_id,
         account_id,
         venue,
         starting_balances: vec![Money::new(100_000.0, usd)],

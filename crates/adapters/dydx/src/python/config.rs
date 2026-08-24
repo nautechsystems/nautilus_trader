@@ -15,12 +15,12 @@
 
 //! Python bindings for dYdX configuration.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::AccountId;
 use pyo3::prelude::*;
 
 use crate::{
     common::enums::DydxNetwork,
-    config::{DydxDataClientConfig, DydxExecClientConfig},
+    config::{DydxDataClientConfig, DydxExecutionClientConfig},
 };
 
 #[pymethods]
@@ -49,11 +49,10 @@ impl DydxDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl DydxExecClientConfig {
+impl DydxExecutionClientConfig {
     /// Configuration for the dYdX execution client.
     #[new]
     #[pyo3(signature = (
-        trader_id,
         account_id,
         proxy_url=None,
         network=None,
@@ -62,7 +61,6 @@ impl DydxExecClientConfig {
         subaccount_number=0,
     ))]
     fn py_new(
-        trader_id: TraderId,
         account_id: AccountId,
         proxy_url: Option<String>,
         network: Option<DydxNetwork>,
@@ -71,7 +69,6 @@ impl DydxExecClientConfig {
         subaccount_number: u32,
     ) -> Self {
         Self {
-            trader_id,
             account_id,
             network: network.unwrap_or_default(),
             private_key,
@@ -88,6 +85,6 @@ impl DydxExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(DydxExecClientConfig).to_string()
+        stringify!(DydxExecutionClientConfig).to_string()
     }
 }

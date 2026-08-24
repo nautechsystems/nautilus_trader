@@ -20,7 +20,7 @@ from unit.adapters.example_modules import load_example_module
 
 from nautilus_trader.adapters.betfair import BetfairDataClientFactory
 from nautilus_trader.adapters.betfair import BetfairDataConfig
-from nautilus_trader.adapters.betfair import BetfairExecConfig
+from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
 from nautilus_trader.adapters.betfair import BetfairExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -86,8 +86,7 @@ def test_live_node_builder_accepts_betfair_exec_factory() -> None:
         .add_exec_client(
             None,
             BetfairExecutionClientFactory(),
-            BetfairExecConfig(
-                trader_id=trader_id,
+            BetfairExecutionClientConfig(
                 account_id=account_id,
                 account_currency="GBP",
                 username=SMOKE_USERNAME,

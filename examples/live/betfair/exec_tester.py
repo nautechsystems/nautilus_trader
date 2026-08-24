@@ -29,7 +29,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.betfair import BetfairDataClientFactory
 from nautilus_trader.adapters.betfair import BetfairDataConfig
-from nautilus_trader.adapters.betfair import BetfairExecConfig
+from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
 from nautilus_trader.adapters.betfair import BetfairExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
@@ -71,8 +71,7 @@ def main() -> None:
         .add_exec_client(
             None,
             BetfairExecutionClientFactory(),
-            BetfairExecConfig(
-                trader_id=TRADER_ID,
+            BetfairExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 account_currency=ACCOUNT_CURRENCY,
                 stream_market_ids_filter=[MARKET_ID],

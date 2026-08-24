@@ -20,7 +20,7 @@ from nautilus_trader.adapters.tardis import TardisDataClientConfig
 from nautilus_trader.adapters.tardis import TardisLiveDataClientFactory
 from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -60,7 +60,7 @@ instrument_provider_config = InstrumentProviderConfig(load_all=True, filters=fil
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(log_level="INFO", use_pyo3=True),
-    exec_engine=LiveExecEngineConfig(
+    exec_engine=LiveExecutionEngineConfig(
         reconciliation=False,  # Not applicable
         inflight_check_interval_ms=0,  # Not applicable
         # snapshot_orders=True,

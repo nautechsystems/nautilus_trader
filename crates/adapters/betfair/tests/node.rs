@@ -24,7 +24,7 @@
 //! routing fork in isolation on a `TestClock` with manual pumping; this exercises the same fork
 //! wrapped in the `ExecutionManager` bookkeeping that `LiveNode::run` adds (fill-dedup,
 //! post-dispatch close handling), at the cost of a wall-clock run loop. The factory injects the
-//! mock URLs because `BetfairExecConfig` has no HTTP base-URL override; everything else (the
+//! mock URLs because `BetfairExecutionClientConfig` has no HTTP base-URL override; everything else (the
 //! client, the engines, the run loop, the routing fork) is the production code path.
 //!
 //! Run with nextest for per-process logging isolation:
@@ -46,7 +46,7 @@ use std::{
 
 use nautilus_betfair::{
     common::consts::{BETFAIR, BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_PLACE_ORDERS},
-    config::BetfairExecConfig,
+    config::BetfairExecutionClientConfig,
     execution::BetfairExecutionClient,
 };
 use nautilus_common::{
@@ -60,7 +60,7 @@ use nautilus_common::{
 use nautilus_live::{
     ExecutionClientCore,
     builder::LiveNodeBuilder,
-    config::{LiveExecEngineConfig, LiveNodeConfig},
+    config::{LiveExecutionEngineConfig, LiveNodeConfig},
     node::{LiveNode, NodeState},
 };
 use nautilus_model::{
@@ -93,24 +93,24 @@ const RUN_TIMEOUT: Duration = Duration::from_secs(10);
 
 // Builds the real `BetfairExecutionClient` against the in-process mock by injecting the mock HTTP
 // and stream endpoints. Mirrors `BetfairExecutionClientFactory::create`; only the transport URLs
-// differ, since `BetfairExecConfig` has no HTTP base-URL override to point at the mock.
+// differ, since `BetfairExecutionClientConfig` has no HTTP base-URL override to point at the mock.
 #[derive(Debug)]
-struct MockBetfairExecFactory {
-    trader_id: TraderId,
+struct MockBetfairExecutionClientFactory {
     account_id: AccountId,
     http_addr: SocketAddr,
     stream_port: u16,
 }
 
-impl ExecutionClientFactory for MockBetfairExecFactory {
+impl ExecutionClientFactory for MockBetfairExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         _config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let core = ExecutionClientCore::new(
-            self.trader_id,
+            trader_id,
             ClientId::from(name),
             *BETFAIR_VENUE,
             OmsType::Netting,
@@ -124,7 +124,7 @@ impl ExecutionClientFactory for MockBetfairExecFactory {
             create_test_http_client(self.http_addr),
             test_credential(),
             plain_stream_config(self.stream_port),
-            BetfairExecConfig::default(),
+            BetfairExecutionClientConfig::default(),
             Currency::GBP(),
         );
         Ok(Box::new(client))
@@ -135,14 +135,14 @@ impl ExecutionClientFactory for MockBetfairExecFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        stringify!(MockBetfairExecConfig)
+        stringify!(MockBetfairExecutionClientConfig)
     }
 }
 
 #[derive(Debug)]
-struct MockBetfairExecConfig;
+struct MockBetfairExecutionClientConfig;
 
-impl ClientConfig for MockBetfairExecConfig {
+impl ClientConfig for MockBetfairExecutionClientConfig {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -273,7 +273,7 @@ fn build_node(name: &str, http_addr: SocketAddr, stream_port: u16) -> LiveNode {
     let config = LiveNodeConfig {
         environment: Environment::Live,
         trader_id,
-        exec_engine: LiveExecEngineConfig {
+        exec_engine: LiveExecutionEngineConfig {
             reconciliation: false,
             ..Default::default()
         },
@@ -281,8 +281,7 @@ fn build_node(name: &str, http_addr: SocketAddr, stream_port: u16) -> LiveNode {
         ..Default::default()
     };
 
-    let factory = MockBetfairExecFactory {
-        trader_id,
+    let factory = MockBetfairExecutionClientFactory {
         account_id: AccountId::from(ACCOUNT_ID),
         http_addr,
         stream_port,
@@ -291,7 +290,11 @@ fn build_node(name: &str, http_addr: SocketAddr, stream_port: u16) -> LiveNode {
     let node = LiveNodeBuilder::from_config(config)
         .unwrap()
         .with_name(name)
-        .add_exec_client(None, Box::new(factory), Box::new(MockBetfairExecConfig))
+        .add_exec_client(
+            None,
+            Box::new(factory),
+            Box::new(MockBetfairExecutionClientConfig),
+        )
         .unwrap()
         .build()
         .unwrap();

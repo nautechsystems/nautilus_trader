@@ -31,7 +31,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceDataClientFactory
 from nautilus_trader.adapters.binance import BinanceEnvironment
-from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance import BinanceExecutionClientConfig
 from nautilus_trader.adapters.binance import BinanceExecutionClientFactory
 from nautilus_trader.adapters.binance import BinanceProductType
 from nautilus_trader.common import Environment
@@ -72,8 +72,7 @@ def main() -> None:
         .add_exec_client(
             None,
             BinanceExecutionClientFactory(),
-            BinanceExecClientConfig(
-                trader_id=TRADER_ID,
+            BinanceExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 product_type=BinanceProductType.SPOT,
                 environment=BinanceEnvironment.LIVE,

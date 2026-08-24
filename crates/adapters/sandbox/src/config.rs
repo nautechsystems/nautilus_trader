@@ -22,7 +22,7 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
-    identifiers::{AccountId, InstrumentId, TraderId, Venue},
+    identifiers::{AccountId, InstrumentId, Venue},
     types::{Currency, Money},
 };
 use rust_decimal::Decimal;
@@ -43,9 +43,6 @@ use serde::{
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.sandbox")
 )]
 pub struct SandboxExecutionClientConfig {
-    /// The trader ID for this client.
-    #[builder(default = TraderId::from("SANDBOX-001"))]
-    pub trader_id: TraderId,
     /// The account ID for this client.
     #[builder(default = AccountId::from("SANDBOX-001"))]
     pub account_id: AccountId,
@@ -242,8 +239,6 @@ mod tests {
     fn test_exec_config_toml_empty_uses_defaults() {
         let config: SandboxExecutionClientConfig = toml::from_str("").unwrap();
         let expected = SandboxExecutionClientConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.venue, expected.venue);
         assert_eq!(config.oms_type, expected.oms_type);

@@ -21,11 +21,11 @@ from nautilus_trader.common import CacheConfig
 from nautilus_trader.common import LoggerConfig
 from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.core import UUID4
+from nautilus_trader.live import DataClientConfig
+from nautilus_trader.live import ExecutionClientConfig
 from nautilus_trader.live import InstrumentProviderConfig
-from nautilus_trader.live import LiveDataClientConfig
 from nautilus_trader.live import LiveDataEngineConfig
-from nautilus_trader.live import LiveExecClientConfig
-from nautilus_trader.live import LiveExecEngineConfig
+from nautilus_trader.live import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PluginConfig
@@ -76,8 +76,8 @@ def test_routing_config_explicit():
     assert config.venues == ["BINANCE", "BYBIT"]
 
 
-def test_live_data_client_config_defaults():
-    config = LiveDataClientConfig()
+def test_data_client_config_defaults():
+    config = DataClientConfig()
 
     assert config.handle_revised_bars is False
     assert isinstance(config.instrument_provider, InstrumentProviderConfig)
@@ -120,10 +120,10 @@ def test_queue_monitor_config_explicit():
     assert config.mean_dispatch_ns_clear == 150_000
 
 
-def test_live_data_client_config_explicit():
+def test_data_client_config_explicit():
     ip = InstrumentProviderConfig(load_all=True)
     rc = RoutingConfig(default=True)
-    config = LiveDataClientConfig(
+    config = DataClientConfig(
         handle_revised_bars=True,
         instrument_provider=ip,
         routing=rc,
@@ -193,31 +193,31 @@ def test_live_data_engine_config_rejects_unsupported_args():
         LiveDataEngineConfig(qsize=50_000)
 
 
-def test_live_exec_client_config_defaults():
-    config = LiveExecClientConfig()
+def test_execution_client_config_defaults():
+    config = ExecutionClientConfig()
 
     assert isinstance(config.instrument_provider, InstrumentProviderConfig)
     assert isinstance(config.routing, RoutingConfig)
 
 
-def test_live_exec_client_config_explicit():
+def test_execution_client_config_explicit():
     ip = InstrumentProviderConfig(load_all=True)
     rc = RoutingConfig(default=True)
-    config = LiveExecClientConfig(instrument_provider=ip, routing=rc)
+    config = ExecutionClientConfig(instrument_provider=ip, routing=rc)
 
     assert config.instrument_provider.load_all is True
     assert config.routing.default is True
 
 
 def test_live_exec_engine_config_defaults():
-    config = LiveExecEngineConfig()
+    config = LiveExecutionEngineConfig()
 
-    assert isinstance(config, LiveExecEngineConfig)
+    assert isinstance(config, LiveExecutionEngineConfig)
 
 
 def test_live_exec_engine_config_readback():
     client_id = ClientId("EXEC-001")
-    config = LiveExecEngineConfig(
+    config = LiveExecutionEngineConfig(
         load_cache=False,
         manage_own_order_books=True,
         snapshot_positions_interval_secs=1.5,
@@ -294,27 +294,27 @@ def test_live_exec_engine_config_readback():
 
 def test_live_exec_engine_config_rejects_unsupported_args():
     with pytest.raises(TypeError, match="snapshot_orders"):
-        LiveExecEngineConfig(snapshot_orders=True)
+        LiveExecutionEngineConfig(snapshot_orders=True)
 
     with pytest.raises(TypeError, match="snapshot_positions"):
-        LiveExecEngineConfig(snapshot_positions=True)
+        LiveExecutionEngineConfig(snapshot_positions=True)
 
     with pytest.raises(TypeError, match="purge_from_database"):
-        LiveExecEngineConfig(purge_from_database=True)
+        LiveExecutionEngineConfig(purge_from_database=True)
 
     with pytest.raises(TypeError, match="qsize"):
-        LiveExecEngineConfig(qsize=1)
+        LiveExecutionEngineConfig(qsize=1)
 
 
 def test_live_exec_engine_config_rejects_invalid_reconciliation_instrument_ids():
     expected_err = (
-        "invalid LiveExecEngineConfig.reconciliation_instrument_ids[0] reference instrument ID: "
+        "invalid LiveExecutionEngineConfig.reconciliation_instrument_ids[0] reference instrument ID: "
         "invalid `InstrumentId` value 'INVALID': "
         "missing '.' separator between symbol and venue components"
     )
 
     with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
-        LiveExecEngineConfig(reconciliation_instrument_ids=["INVALID"])
+        LiveExecutionEngineConfig(reconciliation_instrument_ids=["INVALID"])
 
     assert str(exc_info.value) == expected_err
 
@@ -322,7 +322,7 @@ def test_live_exec_engine_config_rejects_invalid_reconciliation_instrument_ids()
 @pytest.mark.parametrize("value", [-1.0, float("nan"), float("inf"), float("-inf")])
 def test_live_exec_engine_config_rejects_hostile_startup_delay(value):
     with pytest.raises(ValueError, match="reconciliation_startup_delay_secs"):
-        LiveExecEngineConfig(reconciliation_startup_delay_secs=value)
+        LiveExecutionEngineConfig(reconciliation_startup_delay_secs=value)
 
 
 @pytest.mark.parametrize(
@@ -340,7 +340,7 @@ def test_live_exec_engine_config_rejects_hostile_startup_delay(value):
 )
 def test_live_exec_engine_config_rejects_invalid_intervals(field, value):
     with pytest.raises(ValueError, match=field):
-        LiveExecEngineConfig(**{field: value})
+        LiveExecutionEngineConfig(**{field: value})
 
 
 def test_live_node_config_defaults():
@@ -390,7 +390,7 @@ def test_live_node_config_accepts_portfolio_config_argument():
     instance_id = UUID4()
     data_engine = LiveDataEngineConfig(debug=True)
     risk_engine = LiveRiskEngineConfig(bypass=True)
-    exec_engine = LiveExecEngineConfig(load_cache=False)
+    exec_engine = LiveExecutionEngineConfig(load_cache=False)
     config = LiveNodeConfig(
         logging=logging,
         instance_id=instance_id,

@@ -3743,7 +3743,7 @@ mod tests {
     fn test_publish_queue_state_transitions_reaches_typed_subscriber() {
         let config = LiveNodeConfig {
             trader_id: TraderId::from("QUEUE-001"),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -3804,7 +3804,7 @@ mod tests {
     fn test_process_socket_state_change_reaches_typed_subscriber() {
         let config = LiveNodeConfig {
             trader_id: TraderId::from("SOCKET-001"),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -3913,7 +3913,7 @@ mod tests {
         let trader_id = TraderId::from("SOCKET-001");
         let config = LiveNodeConfig {
             trader_id,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -3954,7 +3954,7 @@ mod tests {
     async fn test_start_publishes_socket_change_after_actor_subscribes() {
         let config = LiveNodeConfig {
             trader_id: TraderId::from("SOCKET-STARTUP-001"),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -4011,7 +4011,7 @@ mod tests {
                 mean_dispatch_ns_trigger: 1,
                 mean_dispatch_ns_clear: 0,
             }),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -4080,7 +4080,7 @@ mod tests {
     #[rstest]
     fn test_observe_exec_event_before_dispatch_skips_recent_fill_report() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -4119,7 +4119,7 @@ mod tests {
         #[case] expected_query_count: usize,
     ) {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 open_check_threshold_ms: 5_000,
                 single_order_query_delay_ms: 0,
@@ -4458,7 +4458,7 @@ mod tests {
     #[rstest]
     fn test_observe_exec_event_before_dispatch_accepted_batch_stamps_local_activity() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 open_check_threshold_ms: 5_000,
                 single_order_query_delay_ms: 0,
@@ -4515,7 +4515,7 @@ mod tests {
         use nautilus_model::{events::OrderPendingCancel, identifiers::ClientOrderId};
 
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 inflight_check_threshold_ms: 100,
                 inflight_check_retries: 1,
@@ -4629,7 +4629,7 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_risk_bound_command_does_not_register_inflight() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 inflight_check_threshold_ms: 100,
                 inflight_check_retries: 2,
@@ -4712,7 +4712,7 @@ mod tests {
                 bypass: true,
                 ..Default::default()
             },
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 inflight_check_threshold_ms: 100,
                 inflight_check_retries: 2,
@@ -4876,7 +4876,7 @@ mod tests {
         // and LiveNodeConfig defaults it to false.
         let builder = LiveNodeBuilder::new(TraderId::default(), Environment::Live)
             .unwrap()
-            .with_exec_engine_config(crate::config::LiveExecEngineConfig {
+            .with_exec_engine_config(crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             })
@@ -5474,7 +5474,7 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_run_reconciliation_checks_does_not_publish_open_order_queries() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 open_check_interval_secs: Some(1.0),
                 position_check_interval_secs: Some(1.0),
@@ -5591,7 +5591,7 @@ mod tests {
 
     fn recent_fill_test_fixture(name: &str) -> (LiveNode, OrderEventAny, InstrumentAny) {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
@@ -5738,7 +5738,7 @@ mod tests {
     #[tokio::test]
     async fn test_start_stop_request_aborts_startup_without_running() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5760,7 +5760,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn test_stop_processes_residual_exec_event_during_grace_period() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5829,7 +5829,7 @@ mod tests {
         let config = LiveNodeConfig {
             load_state: true,
             save_state: true,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5891,7 +5891,7 @@ mod tests {
         let (database, control) = TestCacheDatabaseControl::create();
         let config = LiveNodeConfig {
             save_state: true,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -5944,7 +5944,7 @@ mod tests {
     #[tokio::test]
     async fn test_stop_drains_queued_exec_event_after_zero_grace() {
         let config = LiveNodeConfig {
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6082,7 +6082,7 @@ mod tests {
     fn test_build_rejects_event_store_config_without_factory() {
         let config = LiveNodeConfig {
             event_store: Some(EventStoreConfig::default()),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6104,7 +6104,7 @@ mod tests {
     fn test_direct_build_rejects_event_store_config() {
         let config = LiveNodeConfig {
             event_store: Some(EventStoreConfig::default()),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6367,7 +6367,7 @@ mod tests {
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             msgbus: Some(msgbus_config),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6467,7 +6467,7 @@ mod tests {
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             msgbus: Some(MessageBusConfig::default()),
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6578,7 +6578,7 @@ mod tests {
         let ingress = CapturingExternalIngress::new(rx, closed.clone());
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6651,7 +6651,7 @@ mod tests {
         let ingress = CapturingExternalIngress::new(rx, closed.clone());
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -6708,7 +6708,7 @@ mod tests {
         let ingress = FailingExternalIngress::new(closed.clone());
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
-            exec_engine: crate::config::LiveExecEngineConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },

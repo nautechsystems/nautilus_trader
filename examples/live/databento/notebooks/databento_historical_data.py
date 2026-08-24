@@ -26,9 +26,9 @@ from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoLiveDataClientFactory
 from nautilus_trader.adapters.databento.data_utils import load_catalog
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.config import DataClientConfig
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LiveDataClientConfig
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
@@ -171,7 +171,7 @@ catalogs = [
     ),
 ]
 
-exec_engine = LiveExecEngineConfig(
+exec_engine = LiveExecutionEngineConfig(
     reconciliation=False,  # Not applicable
     inflight_check_interval_ms=0,  # Not applicable
 )
@@ -180,7 +180,7 @@ logging = LoggingConfig(
     log_level="INFO",
 )
 
-data_clients: dict[str, LiveDataClientConfig] = {
+data_clients: dict[str, DataClientConfig] = {
     DATABENTO: DatabentoDataClientConfig(
         http_gateway=None,
         instrument_provider=InstrumentProviderConfig(load_all=True),

@@ -247,11 +247,11 @@ impl DataActor for RecurringTimerShutdownActor {
     }
 }
 
-struct EmptyExecAlgorithm {
+struct EmptyExecutionAlgorithm {
     core: ExecutionAlgorithmCore,
 }
 
-impl EmptyExecAlgorithm {
+impl EmptyExecutionAlgorithm {
     fn new() -> Self {
         let config = ExecutionAlgorithmConfig {
             exec_algorithm_id: Some(ExecAlgorithmId::from("EMPTY-EXEC-001")),
@@ -263,15 +263,15 @@ impl EmptyExecAlgorithm {
     }
 }
 
-impl Debug for EmptyExecAlgorithm {
+impl Debug for EmptyExecutionAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(EmptyExecAlgorithm)).finish()
+        f.debug_struct(stringify!(EmptyExecutionAlgorithm)).finish()
     }
 }
 
-impl DataActor for EmptyExecAlgorithm {}
+impl DataActor for EmptyExecutionAlgorithm {}
 
-nautilus_execution_algorithm!(EmptyExecAlgorithm, {
+nautilus_execution_algorithm!(EmptyExecutionAlgorithm, {
     fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
         Ok(())
     }
@@ -927,7 +927,7 @@ mod defi {
 #[rstest]
 fn test_add_exec_algorithm_registers_exec_algorithm_with_trader_and_endpoint() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
-    let exec_algorithm = EmptyExecAlgorithm::new();
+    let exec_algorithm = EmptyExecutionAlgorithm::new();
     let exec_algorithm_id = exec_algorithm.id();
     let endpoint = format!("{exec_algorithm_id}.execute");
 
@@ -957,7 +957,7 @@ fn test_add_exec_algorithm_while_running_returns_error() {
         .unwrap();
     engine.kernel_mut().trader.borrow_mut().start().unwrap();
 
-    let result = engine.add_exec_algorithm(EmptyExecAlgorithm::new());
+    let result = engine.add_exec_algorithm(EmptyExecutionAlgorithm::new());
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().to_string(),

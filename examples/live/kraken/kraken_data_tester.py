@@ -20,7 +20,7 @@ from nautilus_trader.adapters.kraken import KrakenEnvironment
 from nautilus_trader.adapters.kraken import KrakenLiveDataClientFactory
 from nautilus_trader.adapters.kraken import KrakenProductType
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
@@ -63,7 +63,7 @@ config_node = TradingNodeConfig(
         # log_level_file="DEBUG",
         use_pyo3=True,
     ),
-    exec_engine=LiveExecEngineConfig(
+    exec_engine=LiveExecutionEngineConfig(
         reconciliation=False,  # Not applicable
     ),
     data_clients={

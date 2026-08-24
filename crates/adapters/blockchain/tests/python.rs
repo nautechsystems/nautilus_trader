@@ -28,7 +28,7 @@ use nautilus_common::{
 };
 use nautilus_model::{
     defi::{DexType, chain::chains},
-    identifiers::{AccountId, ClientId, TraderId},
+    identifiers::{AccountId, ClientId},
 };
 use nautilus_network::{python as network_python, websocket::TransportBackend};
 use nautilus_system::get_global_pyo3_registry;
@@ -171,7 +171,6 @@ fn assert_execution_config_constructs_from_python(
     let config = config_type
         .call(
             (
-                TraderId::from("TRADER-001"),
                 AccountId::from("BLOCKCHAIN-001"),
                 chains::ARBITRUM.clone(),
                 "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
@@ -271,7 +270,6 @@ fn assert_execution_legacy_config_constructs_from_python(
     let args = PyTuple::new(
         py,
         [
-            py_object(py, TraderId::from("TRADER-001")),
             py_object(py, AccountId::from("BLOCKCHAIN-001")),
             py_object(py, chains::ARBITRUM.clone()),
             py_object(py, "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),

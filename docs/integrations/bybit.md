@@ -19,7 +19,7 @@ This guide assumes a trader is setting up for both live market data feeds and tr
 The Bybit adapter includes multiple components, which can be used together or separately depending
 on the use case.
 
-- `BybitDataClientConfig` and `BybitExecClientConfig`: Live client configuration.
+- `BybitDataClientConfig` and `BybitExecutionClientConfig`: Live client configuration.
 - `BybitDataClientFactory` and `BybitExecutionClientFactory`: Trading node client factories.
 - `BybitDataClient`: A market data feed manager, built by the data client factory.
 - `BybitExecutionClient`: An account management and trade execution gateway, built by the execution
@@ -105,9 +105,9 @@ The default environment for live trading with real funds.
 
 ```python
 from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 
-config = BybitExecClientConfig(
+config = BybitExecutionClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
     environment=BybitEnvironment.MAINNET,
@@ -124,9 +124,9 @@ Create demo API keys from the
 
 ```python
 from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 
-config = BybitExecClientConfig(
+config = BybitExecutionClientConfig(
     api_key="YOUR_DEMO_API_KEY",
     api_secret="YOUR_DEMO_API_SECRET",
     environment=BybitEnvironment.DEMO,
@@ -151,9 +151,9 @@ A separate test network for development and integration testing.
 
 ```python
 from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 
-config = BybitExecClientConfig(
+config = BybitExecutionClientConfig(
     api_key="YOUR_TESTNET_API_KEY",
     api_secret="YOUR_TESTNET_API_SECRET",
     environment=BybitEnvironment.TESTNET,
@@ -562,9 +562,9 @@ on Spot instruments. This feature is disabled by default, so set
 **Example:**
 
 ```python
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 
-config = BybitExecClientConfig(
+config = BybitExecutionClientConfig(
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
     product_types=[BybitProductType.SPOT],
@@ -773,7 +773,7 @@ The product types for each client must be specified in the configurations.
 The compiled default is Sockudo when the `transport-sockudo` Cargo feature is enabled and
 Tungstenite otherwise.
 
-Use `BybitDataClientConfig` with `BybitDataClientFactory` and `BybitExecClientConfig` with
+Use `BybitDataClientConfig` with `BybitDataClientFactory` and `BybitExecutionClientConfig` with
 `BybitExecutionClientFactory`. The current Python examples show the complete
 `LiveNode.builder(...)` configuration for data and execution clients.
 

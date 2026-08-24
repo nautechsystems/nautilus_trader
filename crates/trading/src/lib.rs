@@ -114,7 +114,7 @@ pub mod examples;
 
 pub use algorithm::{
     ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, ExecutionAlgorithmNative,
-    ImportableExecAlgorithmConfig, TwapAlgorithm, TwapAlgorithmConfig,
+    ImportableExecutionAlgorithmConfig, TwapAlgorithm, TwapAlgorithmConfig,
 };
 pub use controller::ImportableControllerConfig;
 pub use strategy::{

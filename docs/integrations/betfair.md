@@ -155,7 +155,7 @@ at-the-open instruction.
 | Leverage control | -         | No leverage on a betting exchange.             |
 | Margin mode      | -         | No margin on a betting exchange.               |
 
-Set `position_check_interval_secs=None` on `LiveExecEngineConfig`, because Betfair reports no
+Set `position_check_interval_secs=None` on `LiveExecutionEngineConfig`, because Betfair reports no
 venue-side positions to check against.
 
 ### Order querying
@@ -638,7 +638,6 @@ receive every price update.
 
 | Option                              | Default       | Notes                                                              |
 | ----------------------------------- | ------------- | ------------------------------------------------------------------ |
-| `trader_id`                         | `TRADER-001`  | Trader ID for the client core.                                     |
 | `account_id`                        | `BETFAIR-001` | Account ID for the client core.                                    |
 | `account_currency`                  | `GBP`         | Betfair account currency.                                          |
 | `username`                          | `None`        | Falls back to `BETFAIR_USERNAME`.                                  |

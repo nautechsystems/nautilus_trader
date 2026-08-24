@@ -31,7 +31,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.kraken import KrakenDataClientConfig
 from nautilus_trader.adapters.kraken import KrakenDataClientFactory
-from nautilus_trader.adapters.kraken import KrakenExecClientConfig
+from nautilus_trader.adapters.kraken import KrakenExecutionClientConfig
 from nautilus_trader.adapters.kraken import KrakenExecutionClientFactory
 from nautilus_trader.adapters.kraken import KrakenProductType
 from nautilus_trader.common import Environment
@@ -70,11 +70,10 @@ def main() -> None:
         .add_exec_client(
             None,
             KrakenExecutionClientFactory(),
-            KrakenExecClientConfig(
-                TRADER_ID,
-                ACCOUNT_ID,
-                os.getenv("KRAKEN_API_KEY", ""),
-                os.getenv("KRAKEN_API_SECRET", ""),
+            KrakenExecutionClientConfig(
+                account_id=ACCOUNT_ID,
+                api_key=os.getenv("KRAKEN_API_KEY", ""),
+                api_secret=os.getenv("KRAKEN_API_SECRET", ""),
                 product_type=PRODUCT_TYPE,
             ),
         )

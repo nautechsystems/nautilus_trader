@@ -222,7 +222,7 @@ This closed-cycle archive differs from optional position state snapshots. Settin
 `snapshot_positions_interval_secs` periodically publishes all open positions. A cache with a
 backing database also persists these snapshots. The Rust live runtime has no cache database adapter,
 so it rejects `snapshot_positions=true`; the interval setting still publishes snapshots. See
-[`LiveExecEngineConfig`](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecEngineConfig)
+[`LiveExecutionEngineConfig`](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecutionEngineConfig)
 for the supported settings.
 :::
 

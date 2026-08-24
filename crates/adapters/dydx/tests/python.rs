@@ -25,7 +25,7 @@ use nautilus_common::{
 };
 use nautilus_dydx::{
     common::{consts::DYDX, enums::DydxNetwork},
-    config::{DydxDataClientConfig, DydxExecClientConfig},
+    config::{DydxDataClientConfig, DydxExecutionClientConfig},
     factories::{DydxDataClientFactory, DydxExecutionClientFactory},
     python,
 };
@@ -115,13 +115,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        DydxExecClientConfig {
-            trader_id,
+        DydxExecutionClientConfig {
             account_id,
             network: DydxNetwork::Testnet,
             wallet_address: Some(SMOKE_WALLET_ADDRESS.to_string()),
             private_key: Some(TEST_PRIVATE_KEY.to_string()),
-            ..DydxExecClientConfig::default()
+            ..DydxExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -136,11 +135,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let dydx_config = extracted_config
         .as_any()
-        .downcast_ref::<DydxExecClientConfig>()
+        .downcast_ref::<DydxExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "DYDX-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -148,8 +148,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), DYDX);
-    assert_eq!(extracted_factory.config_type(), "DydxExecClientConfig");
-    assert_eq!(dydx_config.trader_id, trader_id);
+    assert_eq!(extracted_factory.config_type(), "DydxExecutionClientConfig");
     assert_eq!(dydx_config.account_id, account_id);
     assert_eq!(
         dydx_config.wallet_address.as_deref(),

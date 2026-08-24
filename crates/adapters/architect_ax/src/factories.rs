@@ -26,7 +26,7 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
@@ -34,7 +34,7 @@ use crate::{
         consts::{AX, AX_VENUE},
         credential::Credential,
     },
-    config::{AxDataClientConfig, AxExecClientConfig},
+    config::{AxDataClientConfig, AxExecutionClientConfig},
     data::AxDataClient,
     execution::AxExecutionClient,
     http::client::AxHttpClient,
@@ -47,7 +47,7 @@ impl ClientConfig for AxDataClientConfig {
     }
 }
 
-impl ClientConfig for AxExecClientConfig {
+impl ClientConfig for AxExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -181,16 +181,17 @@ impl Default for AxExecutionClientFactory {
 impl ExecutionClientFactory for AxExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let ax_config = config
             .as_any()
-            .downcast_ref::<AxExecClientConfig>()
+            .downcast_ref::<AxExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for AxExecutionClientFactory. Expected AxExecClientConfig, was {config:?}",
+                    "Invalid config type for AxExecutionClientFactory. Expected AxExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -200,7 +201,7 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
         let account_type = AccountType::Margin;
 
         let core = ExecutionClientCore::new(
-            ax_config.trader_id,
+            trader_id,
             ClientId::from(name),
             *AX_VENUE,
             oms_type,
@@ -220,7 +221,7 @@ impl ExecutionClientFactory for AxExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "AxExecClientConfig"
+        "AxExecutionClientConfig"
     }
 }
 

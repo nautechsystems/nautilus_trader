@@ -56,7 +56,7 @@ use ustr::Ustr;
 
 use crate::algorithm::{
     ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, ExecutionAlgorithmNative,
-    ImportableExecAlgorithmConfig,
+    ImportableExecutionAlgorithmConfig,
 };
 
 /// Inner state of `PyExecutionAlgorithm`, shared by the Python and Rust registries.
@@ -684,7 +684,10 @@ impl PyExecutionAlgorithm {
 
     /// Returns an importable configuration for this execution algorithm.
     #[pyo3(name = "to_importable_config")]
-    fn py_to_importable_config(&self, py: Python<'_>) -> PyResult<ImportableExecAlgorithmConfig> {
+    fn py_to_importable_config(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<ImportableExecutionAlgorithmConfig> {
         let py_self = self
             .inner()
             .python_instance()?
@@ -692,7 +695,7 @@ impl PyExecutionAlgorithm {
         let exec_algorithm_path = py_type_path(py_self.bind(py))?;
 
         let Some(config) = self.inner().config.as_ref() else {
-            return Ok(ImportableExecAlgorithmConfig {
+            return Ok(ImportableExecutionAlgorithmConfig {
                 exec_algorithm_path,
                 config_path: String::new(),
                 config: HashMap::new(),
@@ -700,7 +703,7 @@ impl PyExecutionAlgorithm {
         };
         let config = config.bind(py);
 
-        Ok(ImportableExecAlgorithmConfig {
+        Ok(ImportableExecutionAlgorithmConfig {
             exec_algorithm_path,
             config_path: py_type_path(config)?,
             config: py_config_to_json(config)?,
@@ -1360,7 +1363,7 @@ impl ExecutionAlgorithmConfig {
 
 #[pyo3::pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl ImportableExecAlgorithmConfig {
+impl ImportableExecutionAlgorithmConfig {
     /// Configuration for creating execution algorithms from importable paths.
     #[new]
     #[expect(clippy::needless_pass_by_value)]

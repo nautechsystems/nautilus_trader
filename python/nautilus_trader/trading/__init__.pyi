@@ -20,7 +20,7 @@ __all__ = [
     "GridMarketMakerConfig",
     "HurstVpinDirectionalConfig",
     "ImportableControllerConfig",
-    "ImportableExecAlgorithmConfig",
+    "ImportableExecutionAlgorithmConfig",
     "ImportableStrategyConfig",
     "Strategy",
     "StrategyConfig",
@@ -305,7 +305,7 @@ class ImportableControllerConfig:
     def config(self) -> dict: ...
 
 @typing.final
-class ImportableExecAlgorithmConfig:
+class ImportableExecutionAlgorithmConfig:
     def __init__(self, exec_algorithm_path: str, config_path: str, config: dict) -> None: ...
     @property
     def exec_algorithm_path(self) -> str: ...
@@ -332,7 +332,7 @@ class ExecutionAlgorithm:
     def exec_algorithm_id(self) -> model.ExecAlgorithmId: ...
     @property
     def config(self) -> typing.Any | None: ...
-    def to_importable_config(self) -> ImportableExecAlgorithmConfig: ...
+    def to_importable_config(self) -> ImportableExecutionAlgorithmConfig: ...
     @property
     def clock(self) -> common.Clock | None: ...
     @property

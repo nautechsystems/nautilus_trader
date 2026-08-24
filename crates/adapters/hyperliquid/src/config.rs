@@ -17,6 +17,7 @@
 
 use std::fmt::Debug;
 
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -207,7 +208,10 @@ impl Debug for HyperliquidDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.hyperliquid")
 )]
-pub struct HyperliquidExecClientConfig {
+pub struct HyperliquidExecutionClientConfig {
+    /// Account identifier for the execution client.
+    #[builder(default = AccountId::from("HYPERLIQUID-001"))]
+    pub account_id: AccountId,
     /// Private key for signing transactions.
     ///
     /// If not provided, falls back to environment variable:
@@ -278,7 +282,8 @@ pub struct HyperliquidExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(HyperliquidExecClientConfig {
+nautilus_core::impl_pyo3_config_getters!(HyperliquidExecutionClientConfig {
+    account_id: AccountId,
     vault_address: Option<String>,
     account_address: Option<String>,
     environment: HyperliquidEnvironment,
@@ -296,13 +301,13 @@ nautilus_core::impl_pyo3_config_getters!(HyperliquidExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for HyperliquidExecClientConfig {
+impl Default for HyperliquidExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl HyperliquidExecClientConfig {
+impl HyperliquidExecutionClientConfig {
     /// Returns `true` when private key is populated and non-empty.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
@@ -328,10 +333,11 @@ impl HyperliquidExecClientConfig {
     }
 }
 
-impl Debug for HyperliquidExecClientConfig {
+impl Debug for HyperliquidExecutionClientConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
-            .debug_struct(stringify!(HyperliquidExecClientConfig))
+            .debug_struct(stringify!(HyperliquidExecutionClientConfig))
+            .field("account_id", &self.account_id)
             .field(
                 "private_key",
                 &self.private_key.as_ref().map(|_| "[REDACTED]"),
@@ -371,15 +377,15 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_default_account_address_is_none() {
-        let config = HyperliquidExecClientConfig::default();
+        let config = HyperliquidExecutionClientConfig::default();
         assert!(config.account_address.is_none());
     }
 
     #[rstest]
     fn test_exec_config_with_account_address() {
-        let config = HyperliquidExecClientConfig {
+        let config = HyperliquidExecutionClientConfig {
             account_address: Some("0x1234".to_string()),
-            ..HyperliquidExecClientConfig::default()
+            ..HyperliquidExecutionClientConfig::default()
         };
         assert_eq!(config.account_address.as_deref(), Some("0x1234"));
     }
@@ -432,8 +438,8 @@ stale_stream_max_targeted_resubscribes = 5
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: HyperliquidExecClientConfig = toml::from_str("").unwrap();
-        let expected = HyperliquidExecClientConfig::default();
+        let config: HyperliquidExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = HyperliquidExecutionClientConfig::default();
 
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
@@ -457,7 +463,7 @@ stale_stream_max_targeted_resubscribes = 5
 
     #[rstest]
     fn test_exec_config_toml_include_builder_attribution_false() {
-        let config: HyperliquidExecClientConfig =
+        let config: HyperliquidExecutionClientConfig =
             toml::from_str("include_builder_attribution = false").unwrap();
 
         assert!(!config.include_builder_attribution);
@@ -479,11 +485,11 @@ stale_stream_max_targeted_resubscribes = 5
 
     #[rstest]
     fn test_exec_config_debug_redacts_private_key() {
-        let config = HyperliquidExecClientConfig {
+        let config = HyperliquidExecutionClientConfig {
             private_key: Some(
                 "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
             ),
-            ..HyperliquidExecClientConfig::default()
+            ..HyperliquidExecutionClientConfig::default()
         };
         let debug = format!("{config:?}");
 

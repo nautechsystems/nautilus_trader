@@ -38,10 +38,10 @@ from nautilus_trader.adapters.lighter import LIGHTER
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
 from nautilus_trader.adapters.lighter import LighterDataClientFactory
 from nautilus_trader.adapters.lighter import LighterEnvironment
-from nautilus_trader.adapters.lighter import LighterExecClientConfig
+from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
 from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
 from nautilus_trader.common import Environment
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import AccountId
@@ -70,7 +70,7 @@ def main() -> None:
         LiveNode.builder("LIGHTER-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
         .with_reconciliation(True)
         .with_exec_engine_config(
-            LiveExecEngineConfig(
+            LiveExecutionEngineConfig(
                 reconciliation_lookback_mins=60,
                 reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
             ),
@@ -84,8 +84,7 @@ def main() -> None:
         .add_exec_client(
             None,
             LighterExecutionClientFactory(),
-            LighterExecClientConfig(
-                trader_id=TRADER_ID,
+            LighterExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 environment=LIGHTER_ENVIRONMENT,
             ),

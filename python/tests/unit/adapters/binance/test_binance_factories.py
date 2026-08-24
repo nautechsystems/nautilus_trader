@@ -21,7 +21,7 @@ from unit.adapters.example_modules import load_example_module
 from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceDataClientFactory
 from nautilus_trader.adapters.binance import BinanceEnvironment
-from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance import BinanceExecutionClientConfig
 from nautilus_trader.adapters.binance import BinanceExecutionClientFactory
 from nautilus_trader.adapters.binance import BinanceProductType
 from nautilus_trader.common import Environment
@@ -47,8 +47,7 @@ def test_binance_config_proxy_readback_exposes_presence_only() -> None:
     proxy_url = "http://user:password@proxy.example.test"
     data_config = BinanceDataClientConfig(proxy_url=proxy_url)
     data_config_without_proxy = BinanceDataClientConfig()
-    exec_config = BinanceExecClientConfig(
-        trader_id=TraderId("TRADER-001"),
+    exec_config = BinanceExecutionClientConfig(
         account_id=AccountId("BINANCE-001"),
         proxy_url=proxy_url,
     )
@@ -100,8 +99,7 @@ def test_live_node_builder_accepts_binance_exec_factory() -> None:
         .add_exec_client(
             None,
             BinanceExecutionClientFactory(),
-            BinanceExecClientConfig(
-                trader_id=trader_id,
+            BinanceExecutionClientConfig(
                 account_id=account_id,
                 product_type=BinanceProductType.SPOT,
                 environment=BinanceEnvironment.LIVE,

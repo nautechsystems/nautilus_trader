@@ -25,7 +25,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::consts::{BETFAIR, BETFAIR_CLIENT_ID, BETFAIR_VENUE},
-    config::{BetfairDataConfig, BetfairExecConfig},
+    config::{BetfairDataConfig, BetfairExecutionClientConfig},
     factories::{BetfairDataClientFactory, BetfairExecutionClientFactory},
 };
 
@@ -73,10 +73,10 @@ fn extract_betfair_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<BetfairExecConfig>(py) {
+    match config.extract::<BetfairExecutionClientConfig>(py) {
         Ok(config) => Ok(Box::new(config)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract BetfairExecConfig: {e}"
+            "Failed to extract BetfairExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -94,7 +94,7 @@ pub fn betfair(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(BETFAIR_CLIENT_ID), *BETFAIR_CLIENT_ID)?;
     m.add(stringify!(BETFAIR_VENUE), *BETFAIR_VENUE)?;
     m.add_class::<BetfairDataConfig>()?;
-    m.add_class::<BetfairExecConfig>()?;
+    m.add_class::<BetfairExecutionClientConfig>()?;
     m.add_class::<BetfairDataClientFactory>()?;
     m.add_class::<BetfairExecutionClientFactory>()?;
 
@@ -124,9 +124,10 @@ pub fn betfair(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         )));
     }
 
-    if let Err(e) = registry
-        .register_config_extractor("BetfairExecConfig".to_string(), extract_betfair_exec_config)
-    {
+    if let Err(e) = registry.register_config_extractor(
+        "BetfairExecutionClientConfig".to_string(),
+        extract_betfair_exec_config,
+    ) {
         return Err(to_pyruntime_err(format!(
             "Failed to register Betfair exec config extractor: {e}"
         )));

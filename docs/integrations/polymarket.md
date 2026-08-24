@@ -1087,7 +1087,7 @@ Unsubscribe before purging if you no longer want updates.
 
 The cache also exposes `purge_order`, `purge_position`, `purge_closed_orders`,
 `purge_closed_positions`, and `purge_account_events` for trimming closed execution state.
-For long-running Polymarket nodes, schedule the bulk purges from `LiveExecEngineConfig`
+For long-running Polymarket nodes, schedule the bulk purges from `LiveExecutionEngineConfig`
 (15 min interval, 60 min buffer is a sensible default). See
 [Cache: purging cached data](../concepts/cache.md#purging-cached-data) for the full set.
 
@@ -1286,11 +1286,10 @@ Class/struct: `PolymarketDataClientConfig`.
 
 ### Execution client options
 
-Class/struct: `PolymarketExecClientConfig`.
+Class/struct: `PolymarketExecutionClientConfig`.
 
 | Option                                              | Default               | Description                                                                                                           |
 | --------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `trader_id`                                         | default `TraderId`    | Trader identifier registered by the client.                                                                           |
 | `account_id`                                        | `POLYMARKET-001`      | Account identifier for this execution client.                                                                         |
 | `private_key`                                       | `POLYMARKET_PK`       | EIP-712 signing key.                                                                                                  |
 | `api_key`, `api_secret`, `passphrase`               | environment variables | CLOB L2 authentication credentials.                                                                                   |

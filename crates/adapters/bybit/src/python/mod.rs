@@ -36,7 +36,7 @@ use crate::{
         parse::{bar_spec_to_bybit_interval, extract_raw_symbol, resolve_position_idx},
         symbol::BybitSymbol,
     },
-    config::{BybitDataClientConfig, BybitExecClientConfig},
+    config::{BybitDataClientConfig, BybitExecutionClientConfig},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
 
@@ -149,10 +149,10 @@ fn extract_bybit_data_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<
 
 #[expect(clippy::needless_pass_by_value)]
 fn extract_bybit_exec_config(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<BybitExecClientConfig>(py) {
+    match config.extract::<BybitExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract BybitExecClientConfig: {e}"
+            "Failed to extract BybitExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -206,7 +206,7 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<params::BybitTickersParams>()?;
     m.add_class::<params::BybitNativeTpSlParams>()?;
     m.add_class::<BybitDataClientConfig>()?;
-    m.add_class::<BybitExecClientConfig>()?;
+    m.add_class::<BybitExecutionClientConfig>()?;
     m.add_class::<BybitDataClientFactory>()?;
     m.add_class::<BybitExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_bybit_extract_raw_symbol, m)?)?;
@@ -242,7 +242,7 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "BybitExecClientConfig".to_string(),
+        "BybitExecutionClientConfig".to_string(),
         extract_bybit_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

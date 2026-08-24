@@ -33,11 +33,11 @@
 
 use nautilus_architect_ax::{
     common::{consts::AX_CLIENT_ID, enums::AxEnvironment},
-    config::{AxDataClientConfig, AxExecClientConfig},
+    config::{AxDataClientConfig, AxExecutionClientConfig},
     factories::{AxDataClientFactory, AxExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -68,8 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = AxExecClientConfig {
-        trader_id,
+    let exec_config = AxExecutionClientConfig {
         account_id,
         environment: AX_ENVIRONMENT,
         ..Default::default()
@@ -77,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = AxDataClientFactory::new();
     let exec_factory = AxExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()

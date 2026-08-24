@@ -46,7 +46,7 @@ use nautilus_bybit::{
         consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
         enums::{BybitEnvironment, BybitMarginMode, BybitPositionMode, BybitProductType},
     },
-    config::BybitExecClientConfig,
+    config::BybitExecutionClientConfig,
     execution::BybitExecutionClient,
 };
 use nautilus_common::{
@@ -646,8 +646,8 @@ async fn start_test_server()
     Ok((addr, state))
 }
 
-fn create_test_exec_config(addr: SocketAddr) -> BybitExecClientConfig {
-    BybitExecClientConfig {
+fn create_test_exec_config(addr: SocketAddr) -> BybitExecutionClientConfig {
+    BybitExecutionClientConfig {
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         product_types: vec![BybitProductType::Linear],
@@ -673,7 +673,7 @@ fn create_test_exec_config(addr: SocketAddr) -> BybitExecClientConfig {
     }
 }
 
-fn create_test_demo_exec_config(addr: SocketAddr) -> BybitExecClientConfig {
+fn create_test_demo_exec_config(addr: SocketAddr) -> BybitExecutionClientConfig {
     let mut config = create_test_exec_config(addr);
     config.environment = BybitEnvironment::Demo;
     config.max_retries = 0;
@@ -1074,7 +1074,7 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
         cache,
     );
 
-    let config = BybitExecClientConfig {
+    let config = BybitExecutionClientConfig {
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         product_types: vec![BybitProductType::Linear],
@@ -1251,7 +1251,7 @@ async fn test_exec_client_submit_order_list_demo() {
         cache.clone(),
     );
 
-    let config = BybitExecClientConfig {
+    let config = BybitExecutionClientConfig {
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         product_types: vec![BybitProductType::Linear],
@@ -1868,7 +1868,7 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
         cache.clone(),
     );
 
-    let config = BybitExecClientConfig {
+    let config = BybitExecutionClientConfig {
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
         product_types: vec![BybitProductType::Linear],

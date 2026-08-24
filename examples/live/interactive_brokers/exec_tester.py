@@ -30,7 +30,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientFactory
-from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientConfig
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientFactory
 from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers import MarketDataType
@@ -84,8 +84,8 @@ def main() -> None:
         )
         .add_exec_client(
             None,
-            InteractiveBrokersExecutionClientFactory(TRADER_ID, ACCOUNT_ID),
-            InteractiveBrokersExecClientConfig(
+            InteractiveBrokersExecutionClientFactory(),
+            InteractiveBrokersExecutionClientConfig(
                 host=HOST,
                 port=PORT,
                 client_id=CLIENT_ID,

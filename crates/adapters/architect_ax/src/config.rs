@@ -15,7 +15,7 @@
 
 //! Configuration structures for the AX Exchange adapter.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
@@ -154,10 +154,7 @@ impl AxDataClientConfig {
 )]
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
-pub struct AxExecClientConfig {
-    /// The trader ID for the client.
-    #[builder(default = TraderId::from("TRADER-001"))]
-    pub trader_id: TraderId,
+pub struct AxExecutionClientConfig {
     /// The account ID for the client.
     #[builder(default = AccountId::from("AX-001"))]
     pub account_id: AccountId,
@@ -205,8 +202,7 @@ pub struct AxExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(AxExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(AxExecutionClientConfig {
     account_id: AccountId,
     environment: AxEnvironment,
     base_url_http: Option<String>,
@@ -222,13 +218,13 @@ nautilus_core::impl_pyo3_config_getters!(AxExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for AxExecClientConfig {
+impl Default for AxExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl AxExecClientConfig {
+impl AxExecutionClientConfig {
     /// Creates a configuration with default values.
     #[must_use]
     pub fn new() -> Self {
@@ -313,7 +309,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_sandbox_urls_match_consts() {
-        let config = AxExecClientConfig::builder()
+        let config = AxExecutionClientConfig::builder()
             .environment(AxEnvironment::Sandbox)
             .build();
         assert_eq!(config.http_base_url(), AX_HTTP_SANDBOX_URL);
@@ -323,7 +319,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_production_urls_match_consts() {
-        let config = AxExecClientConfig::builder()
+        let config = AxExecutionClientConfig::builder()
             .environment(AxEnvironment::Production)
             .build();
         assert_eq!(config.http_base_url(), AX_HTTP_URL);
@@ -333,13 +329,13 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_cancel_on_disconnect_default_false() {
-        let config = AxExecClientConfig::default();
+        let config = AxExecutionClientConfig::default();
         assert!(!config.cancel_on_disconnect);
     }
 
     #[rstest]
     fn test_exec_config_cancel_on_disconnect_enabled() {
-        let config = AxExecClientConfig::builder()
+        let config = AxExecutionClientConfig::builder()
             .cancel_on_disconnect(true)
             .build();
         assert!(config.cancel_on_disconnect);
@@ -350,7 +346,7 @@ mod tests {
         let data = AxDataClientConfig::default();
         assert_eq!(data.environment, AxEnvironment::Sandbox);
 
-        let exec = AxExecClientConfig::default();
+        let exec = AxExecutionClientConfig::default();
         assert_eq!(exec.environment, AxEnvironment::Sandbox);
     }
 
@@ -374,10 +370,8 @@ update_instruments_interval_mins = 5
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: AxExecClientConfig = toml::from_str("").unwrap();
-        let expected = AxExecClientConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
+        let config: AxExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = AxExecutionClientConfig::default();
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);

@@ -306,8 +306,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = DydxExecClientConfig {
-        trader_id,
+    let exec_config = DydxExecutionClientConfig {
         account_id,
         network,
         ..Default::default()

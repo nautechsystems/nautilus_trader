@@ -30,8 +30,8 @@ use pyo3::prelude::*;
 
 use crate::{
     common::consts::{BITMEX, BITMEX_CLIENT_ID, BITMEX_VENUE},
-    config::{BitmexDataClientConfig, BitmexExecClientConfig},
-    factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
+    config::{BitmexDataClientConfig, BitmexExecutionClientConfig},
+    factories::{BitmexDataClientFactory, BitmexExecutionClientFactory},
 };
 
 #[expect(clippy::needless_pass_by_value)]
@@ -78,10 +78,10 @@ fn extract_bitmex_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<BitmexExecFactoryConfig>(py) {
+    match config.extract::<BitmexExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract BitmexExecFactoryConfig: {e}"
+            "Failed to extract BitmexExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -102,8 +102,7 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::broadcast::submitter::SubmitBroadcaster>()?;
     m.add_class::<websocket::PyBitmexWebSocketClient>()?;
     m.add_class::<BitmexDataClientConfig>()?;
-    m.add_class::<BitmexExecClientConfig>()?;
-    m.add_class::<BitmexExecFactoryConfig>()?;
+    m.add_class::<BitmexExecutionClientConfig>()?;
     m.add_class::<BitmexDataClientFactory>()?;
     m.add_class::<BitmexExecutionClientFactory>()?;
 
@@ -135,7 +134,7 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "BitmexExecFactoryConfig".to_string(),
+        "BitmexExecutionClientConfig".to_string(),
         extract_bitmex_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

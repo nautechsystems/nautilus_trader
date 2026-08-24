@@ -31,8 +31,7 @@ from nautilus_trader.adapters.derive import DERIVE
 from nautilus_trader.adapters.derive import DeriveDataClientConfig
 from nautilus_trader.adapters.derive import DeriveDataClientFactory
 from nautilus_trader.adapters.derive import DeriveEnvironment
-from nautilus_trader.adapters.derive import DeriveExecClientConfig
-from nautilus_trader.adapters.derive import DeriveExecFactoryConfig
+from nautilus_trader.adapters.derive import DeriveExecutionClientConfig
 from nautilus_trader.adapters.derive import DeriveExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
@@ -58,7 +57,8 @@ MAX_FEE_PER_CONTRACT = "1000"
 
 
 def main() -> None:
-    exec_config = DeriveExecClientConfig(
+    exec_config = DeriveExecutionClientConfig(
+        account_id=ACCOUNT_ID,
         environment=DERIVE_ENVIRONMENT,
         max_fee_per_contract=Decimal(MAX_FEE_PER_CONTRACT),
     )
@@ -78,11 +78,7 @@ def main() -> None:
         .add_exec_client(
             None,
             DeriveExecutionClientFactory(),
-            DeriveExecFactoryConfig(
-                trader_id=TRADER_ID,
-                account_id=ACCOUNT_ID,
-                config=exec_config,
-            ),
+            exec_config,
         )
         .build()
     )

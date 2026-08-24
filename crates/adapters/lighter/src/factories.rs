@@ -26,12 +26,12 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
     common::consts::{LIGHTER, LIGHTER_VENUE},
-    config::{LighterDataClientConfig, LighterExecClientConfig},
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
     data::LighterDataClient,
     execution::LighterExecutionClient,
 };
@@ -42,7 +42,7 @@ impl ClientConfig for LighterDataClientConfig {
     }
 }
 
-impl ClientConfig for LighterExecClientConfig {
+impl ClientConfig for LighterExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -123,16 +123,17 @@ impl LighterExecutionClientFactory {
 impl ExecutionClientFactory for LighterExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let lighter_config = config
             .as_any()
-            .downcast_ref::<LighterExecClientConfig>()
+            .downcast_ref::<LighterExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for LighterExecutionClientFactory. Expected LighterExecClientConfig, was {config:?}",
+                    "Invalid config type for LighterExecutionClientFactory. Expected LighterExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -140,7 +141,7 @@ impl ExecutionClientFactory for LighterExecutionClientFactory {
         // Lighter is a perpetual futures DEX with margin accounts and one
         // position per market on the L2.
         let core = ExecutionClientCore::new(
-            lighter_config.trader_id,
+            trader_id,
             ClientId::from(name),
             *LIGHTER_VENUE,
             OmsType::Netting,
@@ -159,7 +160,7 @@ impl ExecutionClientFactory for LighterExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "LighterExecClientConfig"
+        "LighterExecutionClientConfig"
     }
 }
 
@@ -180,9 +181,8 @@ mod tests {
     const PRIVATE_KEY_HEX: &str =
         "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
 
-    fn exec_config() -> LighterExecClientConfig {
-        LighterExecClientConfig::builder()
-            .trader_id(TraderId::from("TRADER-001"))
+    fn exec_config() -> LighterExecutionClientConfig {
+        LighterExecutionClientConfig::builder()
             .account_id(AccountId::from("LIGHTER-001"))
             .account_index(12_345)
             .api_key_index(5)
@@ -201,7 +201,7 @@ mod tests {
     fn test_lighter_execution_client_factory_creation() {
         let factory = LighterExecutionClientFactory::new();
         assert_eq!(factory.name(), LIGHTER);
-        assert_eq!(factory.config_type(), "LighterExecClientConfig");
+        assert_eq!(factory.config_type(), "LighterExecutionClientConfig");
     }
 
     #[rstest]
@@ -210,7 +210,7 @@ mod tests {
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
         let downcasted = boxed_config
             .as_any()
-            .downcast_ref::<LighterExecClientConfig>();
+            .downcast_ref::<LighterExecutionClientConfig>();
 
         assert!(downcasted.is_some());
     }
@@ -222,7 +222,12 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("LIGHTER-TEST", &wrong_config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "LIGHTER-TEST",
+            &wrong_config,
+            cache.into(),
+        );
         assert!(result.is_err());
         assert!(
             result
@@ -240,7 +245,12 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let client = factory
-            .create("LIGHTER-TEST", &config, cache.into())
+            .create(
+                TraderId::from("TRADER-001"),
+                "LIGHTER-TEST",
+                &config,
+                cache.into(),
+            )
             .expect("expected client to construct");
 
         assert!(!client.is_connected());

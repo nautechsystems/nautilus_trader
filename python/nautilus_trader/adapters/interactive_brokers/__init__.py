@@ -26,7 +26,7 @@ __all__ = [
     "HistoricalInteractiveBrokersClient",
     "InteractiveBrokersDataClientConfig",
     "InteractiveBrokersDataClientFactory",
-    "InteractiveBrokersExecClientConfig",
+    "InteractiveBrokersExecutionClientConfig",
     "InteractiveBrokersExecutionClientFactory",
     "InteractiveBrokersInstrumentProvider",
     "InteractiveBrokersInstrumentProviderConfig",

@@ -34,7 +34,7 @@ use crate::{
         consts::{BYBIT, BYBIT_VENUE},
         enums::BybitProductType,
     },
-    config::{BybitDataClientConfig, BybitExecClientConfig},
+    config::{BybitDataClientConfig, BybitExecutionClientConfig},
     data::BybitDataClient,
     execution::BybitExecutionClient,
 };
@@ -45,7 +45,7 @@ impl ClientConfig for BybitDataClientConfig {
     }
 }
 
-impl ClientConfig for BybitExecClientConfig {
+impl ClientConfig for BybitExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -110,7 +110,7 @@ impl DataClientFactory for BybitDataClientFactory {
 }
 
 /// Factory for creating Bybit execution clients.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.adapters.bybit", from_py_object)
@@ -119,35 +119,30 @@ impl DataClientFactory for BybitDataClientFactory {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
 )]
-pub struct BybitExecutionClientFactory {
-    trader_id: TraderId,
-    account_id: AccountId,
-}
+pub struct BybitExecutionClientFactory;
 
 impl BybitExecutionClientFactory {
     /// Creates a new [`BybitExecutionClientFactory`] instance.
     #[must_use]
-    pub const fn new(trader_id: TraderId, account_id: AccountId) -> Self {
-        Self {
-            trader_id,
-            account_id,
-        }
+    pub const fn new() -> Self {
+        Self
     }
 }
 
 impl ExecutionClientFactory for BybitExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let bybit_config = config
             .as_any()
-            .downcast_ref::<BybitExecClientConfig>()
+            .downcast_ref::<BybitExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BybitExecutionClientFactory. Expected BybitExecClientConfig, was {config:?}",
+                    "Invalid config type for BybitExecutionClientFactory. Expected BybitExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -179,10 +174,12 @@ impl ExecutionClientFactory for BybitExecutionClientFactory {
             OmsType::Hedging
         };
 
-        let account_id = bybit_config.account_id.unwrap_or(self.account_id);
+        let account_id = bybit_config
+            .account_id
+            .unwrap_or_else(|| AccountId::from("BYBIT-001"));
 
         let core = ExecutionClientCore::new(
-            self.trader_id,
+            trader_id,
             ClientId::from(name),
             *BYBIT_VENUE,
             oms_type,
@@ -202,7 +199,7 @@ impl ExecutionClientFactory for BybitExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "BybitExecClientConfig"
+        "BybitExecutionClientConfig"
     }
 }
 
@@ -214,41 +211,35 @@ mod tests {
         cache::Cache,
         factories::{ClientConfig, ExecutionClientFactory},
     };
-    use nautilus_model::identifiers::{AccountId, TraderId};
+    use nautilus_model::identifiers::TraderId;
     use rstest::rstest;
 
     use super::*;
-    use crate::{common::enums::BybitProductType, config::BybitExecClientConfig};
+    use crate::{common::enums::BybitProductType, config::BybitExecutionClientConfig};
 
     #[rstest]
     fn test_bybit_execution_client_factory_creation() {
-        let factory = BybitExecutionClientFactory::new(
-            TraderId::from("TRADER-001"),
-            AccountId::from("BYBIT-001"),
-        );
+        let factory = BybitExecutionClientFactory::new();
         assert_eq!(factory.name(), BYBIT);
-        assert_eq!(factory.config_type(), "BybitExecClientConfig");
+        assert_eq!(factory.config_type(), "BybitExecutionClientConfig");
     }
 
     #[rstest]
     fn test_bybit_exec_client_config_implements_client_config() {
-        let config = BybitExecClientConfig::default();
+        let config = BybitExecutionClientConfig::default();
 
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
         let downcasted = boxed_config
             .as_any()
-            .downcast_ref::<BybitExecClientConfig>();
+            .downcast_ref::<BybitExecutionClientConfig>();
 
         assert!(downcasted.is_some());
     }
 
     #[rstest]
     fn test_bybit_execution_client_factory_creates_client_for_spot() {
-        let factory = BybitExecutionClientFactory::new(
-            TraderId::from("TRADER-001"),
-            AccountId::from("BYBIT-001"),
-        );
-        let config = BybitExecClientConfig {
+        let factory = BybitExecutionClientFactory::new();
+        let config = BybitExecutionClientConfig {
             product_types: vec![BybitProductType::Spot],
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
@@ -257,7 +248,12 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("BYBIT-TEST", &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "BYBIT-TEST",
+            &config,
+            cache.into(),
+        );
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -266,11 +262,8 @@ mod tests {
 
     #[rstest]
     fn test_bybit_execution_client_factory_creates_client_for_derivatives() {
-        let factory = BybitExecutionClientFactory::new(
-            TraderId::from("TRADER-001"),
-            AccountId::from("BYBIT-001"),
-        );
-        let config = BybitExecClientConfig {
+        let factory = BybitExecutionClientFactory::new();
+        let config = BybitExecutionClientConfig {
             product_types: vec![BybitProductType::Linear, BybitProductType::Inverse],
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
@@ -279,21 +272,28 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("BYBIT-DERIV", &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "BYBIT-DERIV",
+            &config,
+            cache.into(),
+        );
         result.unwrap();
     }
 
     #[rstest]
     fn test_bybit_execution_client_factory_rejects_wrong_config_type() {
-        let factory = BybitExecutionClientFactory::new(
-            TraderId::from("TRADER-001"),
-            AccountId::from("BYBIT-001"),
-        );
+        let factory = BybitExecutionClientFactory::new();
         let wrong_config = BybitDataClientConfig::default();
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("BYBIT-TEST", &wrong_config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "BYBIT-TEST",
+            &wrong_config,
+            cache.into(),
+        );
         assert!(result.is_err());
         assert!(
             result

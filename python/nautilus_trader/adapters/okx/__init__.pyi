@@ -14,7 +14,7 @@ __all__ = [
     "OKXDataClientConfig",
     "OKXDataClientFactory",
     "OKXEnvironment",
-    "OKXExecClientConfig",
+    "OKXExecutionClientConfig",
     "OKXExecutionClientFactory",
 ]
 
@@ -103,9 +103,7 @@ class OKXDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class OKXExecClientConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
+class OKXExecutionClientConfig:
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -138,7 +136,6 @@ class OKXExecClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
-        trader_id: model.TraderId,
         account_id: model.AccountId,
         instrument_types: typing.Sequence[OKXInstrumentType] | None = None,
         environment: OKXEnvironment | None = None,

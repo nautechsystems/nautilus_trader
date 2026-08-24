@@ -32,8 +32,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientFactory
 from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
-from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
-from nautilus_trader.adapters.hyperliquid import HyperliquidExecFactoryConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.config import LiveRiskEngineConfig
@@ -70,12 +69,9 @@ def main() -> None:
         .add_exec_client(
             None,
             HyperliquidExecutionClientFactory(),
-            HyperliquidExecFactoryConfig(
-                TRADER_ID,
-                ACCOUNT_ID,
-                HyperliquidExecClientConfig(
-                    environment=HyperliquidEnvironment.MAINNET,
-                ),
+            HyperliquidExecutionClientConfig(
+                account_id=ACCOUNT_ID,
+                environment=HyperliquidEnvironment.MAINNET,
             ),
         )
         .build()

@@ -25,7 +25,7 @@ use nautilus_common::{
 };
 use nautilus_lighter::{
     common::{consts::LIGHTER, enums::LighterEnvironment},
-    config::{LighterDataClientConfig, LighterExecClientConfig},
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
     factories::{LighterDataClientFactory, LighterExecutionClientFactory},
     python,
 };
@@ -122,8 +122,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        LighterExecClientConfig::builder()
-            .trader_id(trader_id)
+        LighterExecutionClientConfig::builder()
             .account_id(account_id)
             .environment(LighterEnvironment::Testnet)
             .account_index(12_345)
@@ -145,11 +144,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let lighter_config = extracted_config
         .as_any()
-        .downcast_ref::<LighterExecClientConfig>()
+        .downcast_ref::<LighterExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "LIGHTER-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -157,8 +157,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), LIGHTER);
-    assert_eq!(extracted_factory.config_type(), "LighterExecClientConfig");
-    assert_eq!(lighter_config.trader_id, trader_id);
+    assert_eq!(
+        extracted_factory.config_type(),
+        "LighterExecutionClientConfig"
+    );
     assert_eq!(lighter_config.account_id, account_id);
     assert_eq!(lighter_config.environment, LighterEnvironment::Testnet);
     assert_eq!(lighter_config.rest_quota_per_min, Some(24_000));

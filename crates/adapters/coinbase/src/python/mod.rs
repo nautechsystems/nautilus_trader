@@ -26,7 +26,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::consts::{COINBASE, COINBASE_CLIENT_ID, COINBASE_VENUE},
-    config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
+    config::{CoinbaseDataClientConfig, CoinbaseExecutionClientConfig},
     factories::{CoinbaseDataClientFactory, CoinbaseExecutionClientFactory},
 };
 
@@ -74,10 +74,10 @@ fn extract_coinbase_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<CoinbaseExecClientConfig>(py) {
+    match config.extract::<CoinbaseExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract CoinbaseExecClientConfig: {e}"
+            "Failed to extract CoinbaseExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -95,7 +95,7 @@ pub fn coinbase(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::CoinbaseEnvironment>()?;
     m.add_class::<crate::common::enums::CoinbaseMarginType>()?;
     m.add_class::<CoinbaseDataClientConfig>()?;
-    m.add_class::<CoinbaseExecClientConfig>()?;
+    m.add_class::<CoinbaseExecutionClientConfig>()?;
     m.add_class::<CoinbaseDataClientFactory>()?;
     m.add_class::<CoinbaseExecutionClientFactory>()?;
 
@@ -127,7 +127,7 @@ pub fn coinbase(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "CoinbaseExecClientConfig".to_string(),
+        "CoinbaseExecutionClientConfig".to_string(),
         extract_coinbase_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

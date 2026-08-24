@@ -12,7 +12,7 @@ __all__ = [
     "DYDX_VENUE",
     "DydxDataClientConfig",
     "DydxDataClientFactory",
-    "DydxExecClientConfig",
+    "DydxExecutionClientConfig",
     "DydxExecutionClientFactory",
     "DydxNetwork",
 ]
@@ -37,9 +37,7 @@ class DydxDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class DydxExecClientConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
+class DydxExecutionClientConfig:
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -50,7 +48,6 @@ class DydxExecClientConfig:
     def subaccount_number(self) -> int: ...
     def __init__(
         self,
-        trader_id: model.TraderId,
         account_id: model.AccountId,
         proxy_url: str | None = None,
         network: DydxNetwork | None = None,

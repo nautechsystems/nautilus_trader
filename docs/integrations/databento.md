@@ -39,7 +39,7 @@ The following adapter classes are available:
 - `DatabentoHistoricalClient`: Fetches historical market data and instrument definitions via the Databento HTTP API.
 - `DatabentoLiveClient`: Subscribes to real-time data feeds via Databento's raw TCP API.
 - `DatabentoDataClient`: Data client for live trading nodes, wrapping the historical and live clients.
-- `DatabentoDataClientFactory`: Builds the data client from a `DatabentoLiveClientConfig` for `LiveNode`.
+- `DatabentoDataClientFactory`: Builds the data client from a `DatabentoDataClientConfig` for `LiveNode`.
 
 :::info
 Most users configure a live trading node (covered below) and do not work with
@@ -795,17 +795,17 @@ from stored subscriptions so a reconnect never replays history a second time.
 
 ## Configuration
 
-Create `DatabentoLiveClientConfig` from the adapter's public Python module. The API key and
+Create `DatabentoDataClientConfig` from the adapter's public Python module. The API key and
 `publishers.json` path are required:
 
 ```python
 import os
 from pathlib import Path
 
-from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
+from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 
 
-config = DatabentoLiveClientConfig(
+config = DatabentoDataClientConfig(
     api_key=os.environ["DATABENTO_API_KEY"],
     publishers_filepath=Path("publishers.json"),
     use_exchange_as_venue=False,
@@ -824,7 +824,7 @@ and point `publishers_filepath` at the local copy.
 | `bars_timestamp_on_close` | `True`   | Timestamp bars on close instead of the interval open.   |
 | `venue_dataset_map`       | `None`   | Override venue-to-dataset mappings from publisher data. |
 
-Use `DatabentoLiveClientConfig` with `DatabentoDataClientFactory`. The current
+Use `DatabentoDataClientConfig` with `DatabentoDataClientFactory`. The current
 [Python example](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/databento/data_tester.py)
 shows the complete `LiveNode.builder(...)` configuration.
 
@@ -840,9 +840,9 @@ The live client reconnects automatically on:
 #### Reconnection strategy
 
 The factory-backed live client uses an internal 10-minute reconnection window with exponential
-backoff from 1 second, capped at 60 seconds. `DatabentoLiveClientConfig` does not expose a
-reconnection timeout. Once the window elapses without a successful session, the client gives up and
-reports an error rather than retrying indefinitely.
+backoff from 1 second, capped at 60 seconds. The Python `DatabentoDataClientConfig` constructor does
+not expose a reconnection timeout. Once the window elapses without a successful session, the client
+gives up and reports an error rather than retrying indefinitely.
 
 Stalled connections are detected by the upstream Databento client, which raises a heartbeat timeout
 when no data arrives within the heartbeat interval plus 5 seconds. The feed handler treats that as a

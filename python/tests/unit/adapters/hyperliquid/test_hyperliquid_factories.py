@@ -23,8 +23,7 @@ from unit.adapters.example_modules import load_example_module
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientFactory
 from nautilus_trader.adapters.hyperliquid import HyperliquidEnvironment
-from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
-from nautilus_trader.adapters.hyperliquid import HyperliquidExecFactoryConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientConfig
 from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientFactory
 from nautilus_trader.adapters.hyperliquid import HyperliquidHttpClient
 from nautilus_trader.adapters.hyperliquid import HyperliquidWebSocketClient
@@ -170,13 +169,10 @@ def test_live_node_builder_accepts_hyperliquid_exec_factory() -> None:
         .add_exec_client(
             None,
             HyperliquidExecutionClientFactory(),
-            HyperliquidExecFactoryConfig(
-                trader_id,
+            HyperliquidExecutionClientConfig(
                 account_id,
-                HyperliquidExecClientConfig(
-                    private_key=SMOKE_PRIVATE_KEY,
-                    environment=HyperliquidEnvironment.MAINNET,
-                ),
+                private_key=SMOKE_PRIVATE_KEY,
+                environment=HyperliquidEnvironment.MAINNET,
             ),
         )
         .build()

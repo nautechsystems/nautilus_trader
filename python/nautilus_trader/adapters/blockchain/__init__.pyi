@@ -105,7 +105,6 @@ class BlockchainExecutionClientConfig:
     def weth_address(self) -> str: ...
     def __init__(
         self,
-        trader_id: model.TraderId,
         client_id: model.AccountId,
         chain: model.Chain,
         wallet_address: str,
@@ -132,8 +131,6 @@ class BlockchainExecutionClientConfig:
     ) -> None: ...
     @property
     def allowed_token_pairs(self) -> list[tuple[str, str]] | None: ...
-    @property
-    def trader_id(self) -> model.TraderId: ...
     @property
     def client_id(self) -> model.AccountId: ...
     @property

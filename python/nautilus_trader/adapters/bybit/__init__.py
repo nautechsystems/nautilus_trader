@@ -26,7 +26,7 @@ __all__ = [
     "BybitDataClientConfig",
     "BybitDataClientFactory",
     "BybitEnvironment",
-    "BybitExecClientConfig",
+    "BybitExecutionClientConfig",
     "BybitExecutionClientFactory",
     "BybitMarginAction",
     "BybitMarginBorrowResult",

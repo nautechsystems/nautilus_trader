@@ -721,7 +721,6 @@ endpoints.
 
 | Option                      | Default       | Description                                              |
 | --------------------------- | ------------- | -------------------------------------------------------- |
-| `trader_id`                 | `TRADER-001`  | Nautilus trader identifier.                              |
 | `account_id`                | `LIGHTER-001` | Nautilus account identifier for the venue.               |
 | `account_index`             | `None`        | Lighter account index.                                   |
 | `api_key_index`             | `None`        | Lighter API key slot.                                    |
@@ -742,16 +741,15 @@ endpoints.
 ```rust
 use nautilus_lighter::{
     common::enums::LighterEnvironment,
-    config::{LighterDataClientConfig, LighterExecClientConfig},
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
 };
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::AccountId;
 
 let data_config = LighterDataClientConfig::builder()
     .environment(LighterEnvironment::Testnet)
     .build();
 
-let exec_config = LighterExecClientConfig::builder()
-    .trader_id(TraderId::from("TRADER-001"))
+let exec_config = LighterExecutionClientConfig::builder()
     .account_id(AccountId::from("LIGHTER-001"))
     .environment(LighterEnvironment::Testnet)
     .build();
@@ -759,7 +757,7 @@ let exec_config = LighterExecClientConfig::builder()
 
 The execution config resolves credentials from the matching testnet environment variables; set its
 credential fields directly to override them. Use
-`LiveExecEngineConfig.reconciliation_instrument_ids` to scope reconciliation and
+`LiveExecutionEngineConfig.reconciliation_instrument_ids` to scope reconciliation and
 `reconciliation_lookback_mins` to bound inactive order and fill replay.
 
 ## Official documentation

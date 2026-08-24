@@ -26,7 +26,7 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
@@ -34,7 +34,7 @@ use crate::{
         consts::{OKX, OKX_VENUE},
         enums::OKXInstrumentType,
     },
-    config::{OKXDataClientConfig, OKXExecClientConfig},
+    config::{OKXDataClientConfig, OKXExecutionClientConfig},
     data::OKXDataClient,
     execution::OKXExecutionClient,
 };
@@ -45,7 +45,7 @@ impl ClientConfig for OKXDataClientConfig {
     }
 }
 
-impl ClientConfig for OKXExecClientConfig {
+impl ClientConfig for OKXExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -138,16 +138,17 @@ impl Default for OKXExecutionClientFactory {
 impl ExecutionClientFactory for OKXExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let okx_config = config
             .as_any()
-            .downcast_ref::<OKXExecClientConfig>()
+            .downcast_ref::<OKXExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for OKXExecutionClientFactory. Expected OKXExecClientConfig, was {config:?}",
+                    "Invalid config type for OKXExecutionClientFactory. Expected OKXExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -173,7 +174,7 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
         };
 
         let core = ExecutionClientCore::new(
-            okx_config.trader_id,
+            trader_id,
             ClientId::from(name),
             *OKX_VENUE,
             oms_type,
@@ -193,7 +194,7 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "OKXExecClientConfig"
+        "OKXExecutionClientConfig"
     }
 }
 
@@ -209,13 +210,13 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{common::enums::OKXInstrumentType, config::OKXExecClientConfig};
+    use crate::{common::enums::OKXInstrumentType, config::OKXExecutionClientConfig};
 
     #[rstest]
     fn test_okx_execution_client_factory_creation() {
         let factory = OKXExecutionClientFactory::new();
         assert_eq!(factory.name(), OKX);
-        assert_eq!(factory.config_type(), "OKXExecClientConfig");
+        assert_eq!(factory.config_type(), "OKXExecutionClientConfig");
     }
 
     #[rstest]
@@ -226,15 +227,16 @@ mod tests {
 
     #[rstest]
     fn test_okx_exec_client_config_implements_client_config() {
-        let config = OKXExecClientConfig {
-            trader_id: TraderId::from("TRADER-001"),
+        let config = OKXExecutionClientConfig {
             account_id: AccountId::from("OKX-001"),
             instrument_types: vec![OKXInstrumentType::Spot],
             ..Default::default()
         };
 
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
-        let downcasted = boxed_config.as_any().downcast_ref::<OKXExecClientConfig>();
+        let downcasted = boxed_config
+            .as_any()
+            .downcast_ref::<OKXExecutionClientConfig>();
 
         assert!(downcasted.is_some());
     }
@@ -242,8 +244,7 @@ mod tests {
     #[rstest]
     fn test_okx_execution_client_factory_creates_client_for_spot() {
         let factory = OKXExecutionClientFactory::new();
-        let config = OKXExecClientConfig {
-            trader_id: TraderId::from("TRADER-001"),
+        let config = OKXExecutionClientConfig {
             account_id: AccountId::from("OKX-001"),
             instrument_types: vec![OKXInstrumentType::Spot],
             api_key: Some("test_key".to_string()),
@@ -254,7 +255,12 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("OKX-TEST", &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "OKX-TEST",
+            &config,
+            cache.into(),
+        );
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -264,8 +270,7 @@ mod tests {
     #[rstest]
     fn test_okx_execution_client_factory_creates_client_for_derivatives() {
         let factory = OKXExecutionClientFactory::new();
-        let config = OKXExecClientConfig {
-            trader_id: TraderId::from("TRADER-001"),
+        let config = OKXExecutionClientConfig {
             account_id: AccountId::from("OKX-001"),
             instrument_types: vec![OKXInstrumentType::Swap, OKXInstrumentType::Futures],
             api_key: Some("test_key".to_string()),
@@ -276,7 +281,12 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("OKX-DERIV", &config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "OKX-DERIV",
+            &config,
+            cache.into(),
+        );
         result.unwrap();
     }
 
@@ -287,7 +297,12 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create("OKX-TEST", &wrong_config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            "OKX-TEST",
+            &wrong_config,
+            cache.into(),
+        );
         assert!(result.is_err());
         assert!(
             result

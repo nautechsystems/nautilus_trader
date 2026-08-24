@@ -24,7 +24,7 @@ from nautilus_trader.adapters.architect_ax import AX
 from nautilus_trader.adapters.architect_ax import AxDataClientConfig
 from nautilus_trader.adapters.architect_ax import AxDataClientFactory
 from nautilus_trader.adapters.architect_ax import AxEnvironment
-from nautilus_trader.adapters.architect_ax import AxExecClientConfig
+from nautilus_trader.adapters.architect_ax import AxExecutionClientConfig
 from nautilus_trader.adapters.architect_ax import AxExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -82,8 +82,7 @@ def test_live_node_builder_accepts_architect_ax_exec_factory() -> None:
         .add_exec_client(
             None,
             AxExecutionClientFactory(),
-            AxExecClientConfig(
-                trader_id=trader_id,
+            AxExecutionClientConfig(
                 account_id=account_id,
                 api_key=SMOKE_API_KEY,
                 api_secret=SMOKE_API_SECRET,
@@ -152,8 +151,7 @@ def test_architect_ax_exec_tester_runs_live_orders(
     )
     assert isinstance(data_client_config, AxDataClientConfig)
     assert data_client_config.environment == AxEnvironment.SANDBOX
-    assert isinstance(exec_client_config, AxExecClientConfig)
-    assert exec_client_config.trader_id == TraderId.from_str("TESTER-001")
+    assert isinstance(exec_client_config, AxExecutionClientConfig)
     assert exec_client_config.account_id == AccountId.from_str("AX-001")
     assert exec_client_config.environment == AxEnvironment.SANDBOX
     assert 'reconciliation_instrument_ids: Some(["XAG-PERP.AX"])' in exec_engine_repr

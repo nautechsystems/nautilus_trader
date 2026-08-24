@@ -389,7 +389,7 @@ pub(crate) fn duration_from_secs_f64(field: &str, value: f64) -> ConfigResult<Du
 )]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
-pub struct LiveExecEngineConfig {
+pub struct LiveExecutionEngineConfig {
     /// If the cache should be loaded on initialization.
     #[builder(default = true)]
     pub load_cache: bool,
@@ -508,7 +508,7 @@ pub struct LiveExecEngineConfig {
     pub manage_own_order_books: bool,
 }
 
-impl Default for LiveExecEngineConfig {
+impl Default for LiveExecutionEngineConfig {
     fn default() -> Self {
         Self {
             open_check_lookback_mins: Some(60),
@@ -517,8 +517,8 @@ impl Default for LiveExecEngineConfig {
     }
 }
 
-impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
-    fn from(config: LiveExecEngineConfig) -> Self {
+impl From<LiveExecutionEngineConfig> for ExecutionEngineConfig {
+    fn from(config: LiveExecutionEngineConfig) -> Self {
         Self {
             load_cache: config.load_cache,
             manage_own_order_books: config.manage_own_order_books,
@@ -546,8 +546,8 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
     }
 }
 
-impl From<&LiveExecEngineConfig> for ExecutionManagerConfig {
-    fn from(config: &LiveExecEngineConfig) -> Self {
+impl From<&LiveExecutionEngineConfig> for ExecutionManagerConfig {
+    fn from(config: &LiveExecutionEngineConfig) -> Self {
         let filtered_client_order_ids: IndexSet<ClientOrderId> = config
             .filtered_client_order_ids
             .clone()
@@ -652,7 +652,7 @@ impl Default for InstrumentProviderConfig {
     }
 }
 
-/// Configuration for live data clients.
+/// Shared configuration for data clients registered with a live node.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
@@ -663,7 +663,7 @@ impl Default for InstrumentProviderConfig {
 )]
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
-pub struct LiveDataClientConfig {
+pub struct DataClientConfig {
     /// If `DataClient` will emit bar updates when a new bar opens.
     #[builder(default)]
     pub handle_revised_bars: bool,
@@ -675,7 +675,7 @@ pub struct LiveDataClientConfig {
     pub routing: RoutingConfig,
 }
 
-/// Configuration for live execution clients.
+/// Shared configuration for execution clients registered with a live node.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.live", from_py_object)
@@ -686,7 +686,7 @@ pub struct LiveDataClientConfig {
 )]
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
-pub struct LiveExecClientConfig {
+pub struct ExecutionClientConfig {
     /// The client's instrument provider configuration.
     #[builder(default)]
     pub instrument_provider: InstrumentProviderConfig,
@@ -812,13 +812,13 @@ pub struct LiveNodeConfig {
     pub risk_engine: LiveRiskEngineConfig,
     /// The live execution engine configuration.
     #[builder(default)]
-    pub exec_engine: LiveExecEngineConfig,
+    pub exec_engine: LiveExecutionEngineConfig,
     /// The data client configurations.
     #[builder(default)]
-    pub data_clients: HashMap<String, LiveDataClientConfig>,
+    pub data_clients: HashMap<String, DataClientConfig>,
     /// The execution client configurations.
     #[builder(default)]
-    pub exec_clients: HashMap<String, LiveExecClientConfig>,
+    pub exec_clients: HashMap<String, ExecutionClientConfig>,
     /// The importable controller configuration.
     pub controller: Option<ImportableControllerConfig>,
     /// The Rust-native plug-in instances to load before startup.
@@ -966,7 +966,7 @@ impl LiveRiskEngineConfig {
     }
 }
 
-impl LiveExecEngineConfig {
+impl LiveExecutionEngineConfig {
     pub(crate) fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
 
@@ -974,25 +974,25 @@ impl LiveExecEngineConfig {
         // `run()` path feeds this value straight in when reconciliation is enabled. Match
         // the legacy Python `PositiveFloat` semantics and reject hostile values at build.
         collector.collect(validate_non_negative_finite_f64(
-            "LiveExecEngineConfig.reconciliation_startup_delay_secs",
+            "LiveExecutionEngineConfig.reconciliation_startup_delay_secs",
             self.reconciliation_startup_delay_secs,
         ));
 
         for (field, value) in [
             (
-                "LiveExecEngineConfig.snapshot_positions_interval_secs",
+                "LiveExecutionEngineConfig.snapshot_positions_interval_secs",
                 self.snapshot_positions_interval_secs,
             ),
             (
-                "LiveExecEngineConfig.open_check_interval_secs",
+                "LiveExecutionEngineConfig.open_check_interval_secs",
                 self.open_check_interval_secs,
             ),
             (
-                "LiveExecEngineConfig.position_check_interval_secs",
+                "LiveExecutionEngineConfig.position_check_interval_secs",
                 self.position_check_interval_secs,
             ),
             (
-                "LiveExecEngineConfig.own_books_audit_interval_secs",
+                "LiveExecutionEngineConfig.own_books_audit_interval_secs",
                 self.own_books_audit_interval_secs,
             ),
         ] {
@@ -1003,31 +1003,31 @@ impl LiveExecEngineConfig {
 
         for (field, value) in [
             (
-                "LiveExecEngineConfig.open_check_lookback_mins",
+                "LiveExecutionEngineConfig.open_check_lookback_mins",
                 self.open_check_lookback_mins,
             ),
             (
-                "LiveExecEngineConfig.purge_closed_orders_interval_mins",
+                "LiveExecutionEngineConfig.purge_closed_orders_interval_mins",
                 self.purge_closed_orders_interval_mins,
             ),
             (
-                "LiveExecEngineConfig.purge_closed_positions_interval_mins",
+                "LiveExecutionEngineConfig.purge_closed_positions_interval_mins",
                 self.purge_closed_positions_interval_mins,
             ),
             (
-                "LiveExecEngineConfig.purge_account_events_interval_mins",
+                "LiveExecutionEngineConfig.purge_account_events_interval_mins",
                 self.purge_account_events_interval_mins,
             ),
             (
-                "LiveExecEngineConfig.purge_closed_orders_buffer_mins",
+                "LiveExecutionEngineConfig.purge_closed_orders_buffer_mins",
                 self.purge_closed_orders_buffer_mins,
             ),
             (
-                "LiveExecEngineConfig.purge_closed_positions_buffer_mins",
+                "LiveExecutionEngineConfig.purge_closed_positions_buffer_mins",
                 self.purge_closed_positions_buffer_mins,
             ),
             (
-                "LiveExecEngineConfig.purge_account_events_lookback_mins",
+                "LiveExecutionEngineConfig.purge_account_events_lookback_mins",
                 self.purge_account_events_lookback_mins,
             ),
         ] {
@@ -1042,36 +1042,36 @@ impl LiveExecEngineConfig {
 
         if let Some(instrument_ids) = &self.reconciliation_instrument_ids {
             collector.collect(validate_instrument_id_strings(
-                "LiveExecEngineConfig.reconciliation_instrument_ids",
+                "LiveExecutionEngineConfig.reconciliation_instrument_ids",
                 instrument_ids,
             ));
         }
 
         if let Some(client_order_ids) = &self.filtered_client_order_ids {
             collector.collect(validate_client_order_id_strings(
-                "LiveExecEngineConfig.filtered_client_order_ids",
+                "LiveExecutionEngineConfig.filtered_client_order_ids",
                 client_order_ids,
             ));
         }
 
         let default = Self::default();
         collector.collect(check_supported_field(
-            "LiveExecEngineConfig.snapshot_orders",
+            "LiveExecutionEngineConfig.snapshot_orders",
             self.snapshot_orders == default.snapshot_orders,
             RUST_RUNTIME_UNSUPPORTED,
         ));
         collector.collect(check_supported_field(
-            "LiveExecEngineConfig.snapshot_positions",
+            "LiveExecutionEngineConfig.snapshot_positions",
             self.snapshot_positions == default.snapshot_positions,
             RUST_RUNTIME_UNSUPPORTED,
         ));
         collector.collect(check_supported_field(
-            "LiveExecEngineConfig.purge_from_database",
+            "LiveExecutionEngineConfig.purge_from_database",
             self.purge_from_database == default.purge_from_database,
             RUST_RUNTIME_UNSUPPORTED,
         ));
         collector.collect(check_supported_field(
-            "LiveExecEngineConfig.qsize",
+            "LiveExecutionEngineConfig.qsize",
             self.qsize == default.qsize,
             RUST_RUNTIME_UNSUPPORTED,
         ));
@@ -1447,7 +1447,7 @@ mean_dispatch_ns_clear = 700
 
     #[rstest]
     fn test_live_exec_engine_config_converts_to_exec_engine_config() {
-        let config = LiveExecEngineConfig {
+        let config = LiveExecutionEngineConfig {
             load_cache: false,
             snapshot_positions_interval_secs: Some(30.0),
             filter_unclaimed_external_orders: true,
@@ -1477,7 +1477,7 @@ mean_dispatch_ns_clear = 700
 
     #[rstest]
     fn test_live_exec_engine_config_converts_to_execution_manager_config() {
-        let config = LiveExecEngineConfig {
+        let config = LiveExecutionEngineConfig {
             reconciliation: false,
             reconciliation_lookback_mins: Some(45),
             reconciliation_instrument_ids: Some(vec![
@@ -1596,7 +1596,7 @@ mean_dispatch_ns_clear = 700
     #[rstest]
     fn test_validate_runtime_support_rejects_exec_engine_snapshot_orders() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 snapshot_orders: true,
                 ..Default::default()
             },
@@ -1606,14 +1606,14 @@ mean_dispatch_ns_clear = 700
         let error = config.validate_runtime_support().unwrap_err();
         assert_eq!(
             error.to_string(),
-            "LiveExecEngineConfig.snapshot_orders is not supported by the Rust live runtime yet"
+            "LiveExecutionEngineConfig.snapshot_orders is not supported by the Rust live runtime yet"
         );
     }
 
     #[rstest]
     fn test_validate_runtime_support_rejects_overflowing_minute_fields() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 open_check_lookback_mins: Some(u32::MAX),
                 purge_closed_orders_interval_mins: Some(u32::MAX),
                 purge_closed_positions_interval_mins: Some(u32::MAX),
@@ -1629,19 +1629,19 @@ mean_dispatch_ns_clear = 700
             ConfigError::Multiple {
                 errors: vec![
                     ConfigError::range(
-                        "LiveExecEngineConfig.open_check_lookback_mins",
+                        "LiveExecutionEngineConfig.open_check_lookback_mins",
                         "4294967295 minutes (must fit in `u64` nanoseconds)",
                     ),
                     ConfigError::range(
-                        "LiveExecEngineConfig.purge_closed_orders_interval_mins",
+                        "LiveExecutionEngineConfig.purge_closed_orders_interval_mins",
                         "4294967295 minutes (must fit in `u64` nanoseconds)",
                     ),
                     ConfigError::range(
-                        "LiveExecEngineConfig.purge_closed_positions_interval_mins",
+                        "LiveExecutionEngineConfig.purge_closed_positions_interval_mins",
                         "4294967295 minutes (must fit in `u64` nanoseconds)",
                     ),
                     ConfigError::range(
-                        "LiveExecEngineConfig.purge_account_events_interval_mins",
+                        "LiveExecutionEngineConfig.purge_account_events_interval_mins",
                         "4294967295 minutes (must fit in `u64` nanoseconds)",
                     ),
                 ],
@@ -1654,7 +1654,7 @@ mean_dispatch_ns_clear = 700
     #[case(307_445_734)]
     fn test_validate_runtime_support_accepts_purge_retention_boundaries(#[case] mins: u32) {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 purge_closed_orders_buffer_mins: Some(mins),
                 purge_closed_positions_buffer_mins: Some(mins),
                 purge_account_events_lookback_mins: Some(mins),
@@ -1669,7 +1669,7 @@ mean_dispatch_ns_clear = 700
     #[rstest]
     fn test_validate_runtime_support_rejects_overflowing_purge_retention_minutes() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 purge_closed_orders_buffer_mins: Some(307_445_735),
                 purge_closed_positions_buffer_mins: Some(307_445_735),
                 purge_account_events_lookback_mins: Some(307_445_735),
@@ -1685,9 +1685,9 @@ mean_dispatch_ns_clear = 700
         assert_eq!(errors.len(), 3);
 
         for field in [
-            "LiveExecEngineConfig.purge_closed_orders_buffer_mins",
-            "LiveExecEngineConfig.purge_closed_positions_buffer_mins",
-            "LiveExecEngineConfig.purge_account_events_lookback_mins",
+            "LiveExecutionEngineConfig.purge_closed_orders_buffer_mins",
+            "LiveExecutionEngineConfig.purge_closed_positions_buffer_mins",
+            "LiveExecutionEngineConfig.purge_account_events_lookback_mins",
         ] {
             assert!(errors.iter().any(
                 |e| matches!(e, ConfigError::Range { field: error_field, .. } if error_field == field)
@@ -1761,7 +1761,7 @@ mean_dispatch_ns_clear = 700
     #[case(f64::NEG_INFINITY)]
     fn test_validate_runtime_support_rejects_hostile_startup_delay(#[case] value: f64) {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation_startup_delay_secs: value,
                 ..Default::default()
             },
@@ -1783,29 +1783,29 @@ mean_dispatch_ns_clear = 700
     fn test_validate_runtime_support_rejects_invalid_exec_intervals(#[case] value: f64) {
         let configs = [
             (
-                "LiveExecEngineConfig.snapshot_positions_interval_secs",
-                LiveExecEngineConfig {
+                "LiveExecutionEngineConfig.snapshot_positions_interval_secs",
+                LiveExecutionEngineConfig {
                     snapshot_positions_interval_secs: Some(value),
                     ..Default::default()
                 },
             ),
             (
-                "LiveExecEngineConfig.open_check_interval_secs",
-                LiveExecEngineConfig {
+                "LiveExecutionEngineConfig.open_check_interval_secs",
+                LiveExecutionEngineConfig {
                     open_check_interval_secs: Some(value),
                     ..Default::default()
                 },
             ),
             (
-                "LiveExecEngineConfig.position_check_interval_secs",
-                LiveExecEngineConfig {
+                "LiveExecutionEngineConfig.position_check_interval_secs",
+                LiveExecutionEngineConfig {
                     position_check_interval_secs: Some(value),
                     ..Default::default()
                 },
             ),
             (
-                "LiveExecEngineConfig.own_books_audit_interval_secs",
-                LiveExecEngineConfig {
+                "LiveExecutionEngineConfig.own_books_audit_interval_secs",
+                LiveExecutionEngineConfig {
                     own_books_audit_interval_secs: Some(value),
                     ..Default::default()
                 },
@@ -1824,7 +1824,7 @@ mean_dispatch_ns_clear = 700
 
     #[rstest]
     fn test_validate_runtime_support_accepts_valid_exec_intervals() {
-        let config = LiveExecEngineConfig {
+        let config = LiveExecutionEngineConfig {
             snapshot_positions_interval_secs: Some(1.25),
             open_check_interval_secs: Some(2.5),
             position_check_interval_secs: Some(3.75),
@@ -1864,7 +1864,7 @@ mean_dispatch_ns_clear = 700
     #[rstest]
     fn test_validate_runtime_support_rejects_invalid_reconciliation_instrument_id() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation_instrument_ids: Some(vec!["INVALID".to_string()]),
                 ..Default::default()
             },
@@ -1910,7 +1910,7 @@ mean_dispatch_ns_clear = 700
     #[rstest]
     fn test_validate_runtime_support_rejects_exec_engine_qsize() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 qsize: 1,
                 ..Default::default()
             },
@@ -1920,7 +1920,7 @@ mean_dispatch_ns_clear = 700
         let error = config.validate_runtime_support().unwrap_err();
         assert_eq!(
             error.to_string(),
-            "LiveExecEngineConfig.qsize is not supported by the Rust live runtime yet"
+            "LiveExecutionEngineConfig.qsize is not supported by the Rust live runtime yet"
         );
     }
 
@@ -2039,7 +2039,7 @@ mean_dispatch_ns_clear = 700
         reason = "asserts the exact configured default with no arithmetic involved"
     )]
     fn test_live_exec_engine_config_defaults() {
-        let config = LiveExecEngineConfig::default();
+        let config = LiveExecutionEngineConfig::default();
 
         assert!(config.load_cache);
         assert!(!config.snapshot_orders);
@@ -2111,8 +2111,8 @@ mean_dispatch_ns_clear = 700
     }
 
     #[rstest]
-    fn test_live_data_client_config_default() {
-        let config = LiveDataClientConfig::default();
+    fn test_data_client_config_default() {
+        let config = DataClientConfig::default();
 
         assert!(!config.handle_revised_bars);
         assert!(!config.instrument_provider.load_all);
@@ -2124,8 +2124,8 @@ mean_dispatch_ns_clear = 700
     }
 
     #[rstest]
-    fn test_live_data_client_config_rejects_unknown_field() {
-        let error = serde_json::from_str::<LiveDataClientConfig>(
+    fn test_data_client_config_rejects_unknown_field() {
+        let error = serde_json::from_str::<DataClientConfig>(
             r#"{"handle_revised_bars":true,"unexpected":true}"#,
         )
         .unwrap_err();
@@ -2134,8 +2134,8 @@ mean_dispatch_ns_clear = 700
     }
 
     #[rstest]
-    fn test_live_data_client_config_rejects_unknown_nested_field() {
-        let error = serde_json::from_str::<LiveDataClientConfig>(
+    fn test_data_client_config_rejects_unknown_nested_field() {
+        let error = serde_json::from_str::<DataClientConfig>(
             r#"{"instrument_provider":{"load_all":true,"instrument_provider":{"load_all":false}}}"#,
         )
         .unwrap_err();

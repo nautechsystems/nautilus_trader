@@ -520,6 +520,25 @@ The shared [`DataClient`](../../crates/common/src/clients/data.rs),
 Implement the supported methods and leave unsupported capabilities explicit in the integration
 guide.
 
+Name each client family symmetrically: `<Venue>DataClient`, `<Venue>DataClientConfig`, and
+`<Venue>DataClientFactory` for data; `<Venue>ExecutionClient`, `<Venue>ExecutionClientConfig`, and
+`<Venue>ExecutionClientFactory` for execution. Each factory consumes its corresponding client
+config directly. Do not add a separate factory config wrapper. The live node passes its
+`LiveNodeConfig.trader_id` to execution factories, while venue-specific values such as `account_id`
+belong on the execution client config.
+
+Do not prefix the ordinary client family with `Live`: a connected client is the default, while
+names such as `SandboxExecutionClient` and `DatabentoHistoricalClient` state alternate behavior.
+Retain `Live` only when it distinguishes explicit runtime or protocol siblings. Runtime types such
+as `LiveNode`, `LiveClock`, and the `Live*EngineConfig` family retain the qualifier.
+
+Do not shorten `Execution` in public, project-owned PascalCase type names. Internal implementation
+types may retain established `Exec` names. Also keep `Exec` where the
+[general naming convention](coding_standards.md#naming-conventions) allows it, including venue
+protocol terms such as `ExecType`. Name protocol-specific wire models after the venue concept, such
+as `HyperliquidExchangeAction`. Legacy v1 compatibility surfaces retain their shipped names; apply
+this convention to v2 and new APIs.
+
 Factories receive a downcast `ClientConfig` and a read-only
 [`CacheView`](../../crates/common/src/cache/mod.rs). Data factories also receive the shared clock.
 Use the view to resolve instruments and existing state. Engine cache writes stay in the engines:

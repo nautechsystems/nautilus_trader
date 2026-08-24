@@ -73,13 +73,13 @@ const DERIVE_PER_INSTRUMENT_RATE_KEY_PREFIX: &str = "derive:matching:instrument:
 
 /// Default matching-engine allowance for a Trader-tier account, in requests
 /// per second. Market Maker accounts negotiate higher limits via
-/// [`crate::config::DeriveExecClientConfig`]'s
+/// [`crate::config::DeriveExecutionClientConfig`]'s
 /// `max_matching_requests_per_second` field.
 pub const DERIVE_DEFAULT_MATCHING_TPS: u32 = 1;
 
 /// Default per-instrument matching allowance for a Trader-tier account, in
 /// requests per second. Market Maker accounts negotiate higher limits via
-/// [`crate::config::DeriveExecClientConfig`]'s
+/// [`crate::config::DeriveExecutionClientConfig`]'s
 /// `max_per_instrument_matching_requests_per_second` field. The account-wide
 /// override never inflates this bucket.
 pub const DERIVE_DEFAULT_PER_INSTRUMENT_MATCHING_TPS: u32 = 1;

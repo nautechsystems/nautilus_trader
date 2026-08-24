@@ -30,12 +30,12 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.polymarket import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
-from nautilus_trader.adapters.polymarket import PolymarketExecClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
 from nautilus_trader.adapters.polymarket import SignatureType
 from nautilus_trader.common import Environment
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import ClientId
@@ -71,7 +71,7 @@ def main() -> None:
         LiveNode.builder("POLYMARKET-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
         .with_reconciliation(True)
         .with_exec_engine_config(
-            LiveExecEngineConfig(
+            LiveExecutionEngineConfig(
                 reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
                 open_check_interval_secs=10,
                 position_check_interval_secs=30,
@@ -90,8 +90,7 @@ def main() -> None:
         .add_exec_client(
             None,
             PolymarketExecutionClientFactory(),
-            PolymarketExecClientConfig(
-                trader_id=str(TRADER_ID),
+            PolymarketExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 signature_type=SignatureType.PolyGnosisSafe,
                 instrument_config=instrument_config,
