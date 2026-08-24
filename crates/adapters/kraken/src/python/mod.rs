@@ -126,8 +126,8 @@ pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KrakenSpotWebSocketClient>()?;
     m.add_class::<KrakenFuturesWebSocketClient>()?;
     m.add_class::<KrakenDataClientConfig>()?;
-    m.add_class::<KrakenExecutionClientConfig>()?;
     m.add_class::<KrakenDataClientFactory>()?;
+    m.add_class::<KrakenExecutionClientConfig>()?;
     m.add_class::<KrakenExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_kraken_product_type_from_symbol, m)?)?;
 

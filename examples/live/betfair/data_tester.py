@@ -23,8 +23,8 @@ market immediately, logging all received data. No orders are placed.
 
 from __future__ import annotations
 
+from nautilus_trader.adapters.betfair import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair import BetfairDataClientFactory
-from nautilus_trader.adapters.betfair import BetfairDataConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import ClientId
@@ -49,7 +49,7 @@ def main() -> None:
     ).add_data_client(
         None,
         BetfairDataClientFactory(),
-        BetfairDataConfig(
+        BetfairDataClientConfig(
             account_currency=ACCOUNT_CURRENCY,
             market_ids=[MARKET_ID],
             stream_conflate_ms=STREAM_CONFLATE_MS,

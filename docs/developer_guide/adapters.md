@@ -527,6 +527,9 @@ config directly. Do not add a separate factory config wrapper. The live node pas
 `LiveNodeConfig.trader_id` to execution factories, while venue-specific values such as `account_id`
 belong on the execution client config.
 
+Within a Python module, order client-family `add_class` registrations alphabetically by exported
+type name so the data and execution families remain grouped.
+
 Do not prefix the ordinary client family with `Live`: a connected client is the default, while
 names such as `SandboxExecutionClient` and `DatabentoHistoricalClient` state alternate behavior.
 Retain `Live` only when it distinguishes explicit runtime or protocol siblings. Runtime types such

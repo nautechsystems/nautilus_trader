@@ -21,7 +21,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use nautilus_betfair::{
     common::consts::{BETFAIR_CLIENT_ID, BETFAIR_VENUE},
-    config::BetfairDataConfig,
+    config::BetfairDataClientConfig,
     data::BetfairDataClient,
     provider::NavigationFilter,
 };
@@ -62,7 +62,7 @@ fn create_test_data_client(
         http_client,
         test_credential(),
         plain_stream_config(stream_port),
-        BetfairDataConfig::default(),
+        BetfairDataClientConfig::default(),
         NavigationFilter::default(),
         currency,
         None,

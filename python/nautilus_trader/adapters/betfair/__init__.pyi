@@ -9,8 +9,8 @@ __all__ = [
     "BETFAIR",
     "BETFAIR_CLIENT_ID",
     "BETFAIR_VENUE",
+    "BetfairDataClientConfig",
     "BetfairDataClientFactory",
-    "BetfairDataConfig",
     "BetfairExecutionClientConfig",
     "BetfairExecutionClientFactory",
 ]
@@ -20,12 +20,7 @@ BETFAIR_CLIENT_ID: model.ClientId
 BETFAIR_VENUE: model.Venue
 
 @typing.final
-class BetfairDataClientFactory:
-    def __init__(self) -> None: ...
-    def name(self) -> str: ...
-
-@typing.final
-class BetfairDataConfig:
+class BetfairDataClientConfig:
     @property
     def account_currency(self) -> str: ...
     @property
@@ -103,6 +98,11 @@ class BetfairDataConfig:
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
+
+@typing.final
+class BetfairDataClientFactory:
+    def __init__(self) -> None: ...
+    def name(self) -> str: ...
 
 @typing.final
 class BetfairExecutionClientConfig:

@@ -176,8 +176,8 @@ pub fn architect_ax(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<AxEnvironment>()?;
     m.add_class::<AxMarketDataLevel>()?;
     m.add_class::<AxDataClientConfig>()?;
-    m.add_class::<AxExecutionClientConfig>()?;
     m.add_class::<AxDataClientFactory>()?;
+    m.add_class::<AxExecutionClientConfig>()?;
     m.add_class::<AxExecutionClientFactory>()?;
     m.add_class::<AxHttpClient>()?;
     m.add_class::<PyAxMdWebSocketClient>()?;

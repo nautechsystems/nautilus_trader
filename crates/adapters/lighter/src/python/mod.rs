@@ -187,8 +187,8 @@ pub fn lighter(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(LIGHTER_VENUE), *LIGHTER_VENUE)?;
     m.add_class::<LighterEnvironment>()?;
     m.add_class::<LighterDataClientConfig>()?;
-    m.add_class::<LighterExecutionClientConfig>()?;
     m.add_class::<LighterDataClientFactory>()?;
+    m.add_class::<LighterExecutionClientConfig>()?;
     m.add_class::<LighterExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_revoke_lighter_integrator, m)?)?;
 

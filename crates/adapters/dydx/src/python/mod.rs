@@ -105,8 +105,8 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<submitter::PyDydxOrderSubmitter>()?;
     m.add_class::<encoder::PyDydxClientOrderIdEncoder>()?;
     m.add_class::<DydxDataClientConfig>()?;
-    m.add_class::<DydxExecutionClientConfig>()?;
     m.add_class::<DydxDataClientFactory>()?;
+    m.add_class::<DydxExecutionClientConfig>()?;
     m.add_class::<DydxExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_urls, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_dydx_grpc_url, m)?)?;

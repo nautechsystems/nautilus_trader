@@ -25,7 +25,8 @@ Released on TBD (UTC).
 - Renamed the Architect AX, Binance, BitMEX, Bybit, Coinbase, Deribit, Derive, dYdX, Hyperliquid,
   Interactive Brokers, Kraken, Lighter, OKX, and Polymarket `*ExecClientConfig` types to
   `*ExecutionClientConfig` (Rust and Python)
-- Renamed `BetfairExecConfig` to `BetfairExecutionClientConfig` (Rust and Python)
+- Renamed `BetfairDataConfig` to `BetfairDataClientConfig` and `BetfairExecConfig` to
+  `BetfairExecutionClientConfig` (Rust and Python)
 - Changed BitMEX, Bybit, Coinbase, Derive, Hyperliquid, and Interactive Brokers execution account
   configuration to use `account_id` on the execution client config instead of a factory
   constructor or wrapper argument (Rust and Python)

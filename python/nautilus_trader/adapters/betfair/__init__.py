@@ -23,8 +23,8 @@ __all__ = [
     "BETFAIR",
     "BETFAIR_CLIENT_ID",
     "BETFAIR_VENUE",
+    "BetfairDataClientConfig",
     "BetfairDataClientFactory",
-    "BetfairDataConfig",
     "BetfairExecutionClientConfig",
     "BetfairExecutionClientFactory",
 ]

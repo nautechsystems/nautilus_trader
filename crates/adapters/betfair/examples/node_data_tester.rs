@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use nautilus_betfair::{
     common::consts::BETFAIR_CLIENT_ID,
-    config::BetfairDataConfig,
+    config::BetfairDataClientConfig,
     factories::BetfairDataClientFactory,
     http::client::BetfairHttpClient,
     provider::{BetfairInstrumentProvider, NavigationFilter},
@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     let node_name = NODE_NAME.to_string();
     let client_id = *BETFAIR_CLIENT_ID;
 
-    let data_config = BetfairDataConfig {
+    let data_config = BetfairDataClientConfig {
         account_currency,
         market_ids: Some(vec![market_id]),
         stream_conflate_ms: Some(0),
@@ -97,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn load_market_context(market_id: &str) -> anyhow::Result<(String, Vec<InstrumentAny>)> {
-    let credential = BetfairDataConfig::default().credential()?;
+    let credential = BetfairDataClientConfig::default().credential()?;
     let http_client = Arc::new(BetfairHttpClient::new(
         credential,
         None,

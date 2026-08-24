@@ -138,8 +138,8 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::OKXEnvironment>()?;
     m.add_class::<crate::common::enums::OKXRegion>()?;
     m.add_class::<OKXDataClientConfig>()?;
-    m.add_class::<OKXExecutionClientConfig>()?;
     m.add_class::<OKXDataClientFactory>()?;
+    m.add_class::<OKXExecutionClientConfig>()?;
     m.add_class::<OKXExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(urls::get_okx_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::get_okx_ws_url_public, m)?)?;

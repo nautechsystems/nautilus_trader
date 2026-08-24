@@ -507,10 +507,10 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketUpDownEventSlugConfig>()?;
     m.add_class::<PolymarketInstrumentProviderConfig>()?;
     m.add_class::<PolymarketDataClientConfig>()?;
-    m.add_class::<PolymarketExecutionClientConfig>()?;
-    m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<PolymarketDataClientFactory>()?;
+    m.add_class::<PolymarketExecutionClientConfig>()?;
     m.add_class::<PolymarketExecutionClientFactory>()?;
+    m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<loader::PyPolymarketDataLoader>()?;
     m.add_class::<PolymarketRtdsCryptoPrice>()?;
     m.add_class::<PolymarketRtdsEquityPrice>()?;

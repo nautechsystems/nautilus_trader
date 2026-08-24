@@ -235,8 +235,8 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_builder_fee_approve, m)?)?;
     m.add_function(wrap_pyfunction!(py_builder_fee_revoke, m)?)?;
     m.add_class::<HyperliquidDataClientConfig>()?;
-    m.add_class::<HyperliquidExecutionClientConfig>()?;
     m.add_class::<HyperliquidDataClientFactory>()?;
+    m.add_class::<HyperliquidExecutionClientConfig>()?;
     m.add_class::<HyperliquidExecutionClientFactory>()?;
     m.add_class::<HyperliquidAllDexsAssetCtxs>()?;
     m.add_class::<HyperliquidAllMids>()?;

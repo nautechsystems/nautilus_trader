@@ -18,8 +18,8 @@ from unit.adapters.example_modules import capture_data_tester_main
 from unit.adapters.example_modules import capture_exec_tester_main
 from unit.adapters.example_modules import load_example_module
 
+from nautilus_trader.adapters.betfair import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair import BetfairDataClientFactory
-from nautilus_trader.adapters.betfair import BetfairDataConfig
 from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
 from nautilus_trader.adapters.betfair import BetfairExecutionClientFactory
 from nautilus_trader.common import Environment
@@ -50,7 +50,7 @@ def test_live_node_builder_accepts_betfair_data_factory() -> None:
         .add_data_client(
             None,
             BetfairDataClientFactory(),
-            BetfairDataConfig(
+            BetfairDataClientConfig(
                 account_currency="GBP",
                 username=SMOKE_USERNAME,
                 password=SMOKE_PASSWORD,
@@ -75,7 +75,7 @@ def test_live_node_builder_accepts_betfair_exec_factory() -> None:
         .add_data_client(
             None,
             BetfairDataClientFactory(),
-            BetfairDataConfig(
+            BetfairDataClientConfig(
                 account_currency="GBP",
                 username=SMOKE_USERNAME,
                 password=SMOKE_PASSWORD,

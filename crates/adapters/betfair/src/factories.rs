@@ -31,7 +31,7 @@ use nautilus_model::{
 
 use crate::{
     common::consts::{BETFAIR, BETFAIR_VENUE},
-    config::{BetfairDataConfig, BetfairExecutionClientConfig},
+    config::{BetfairDataClientConfig, BetfairExecutionClientConfig},
     data::BetfairDataClient,
     execution::BetfairExecutionClient,
     http::client::BetfairHttpClient,
@@ -73,10 +73,10 @@ impl DataClientFactory for BetfairDataClientFactory {
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let betfair_config = config
             .as_any()
-            .downcast_ref::<BetfairDataConfig>()
+            .downcast_ref::<BetfairDataClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BetfairDataClientFactory. Expected BetfairDataConfig, was {config:?}",
+                    "Invalid config type for BetfairDataClientFactory. Expected BetfairDataClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -118,7 +118,7 @@ impl DataClientFactory for BetfairDataClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        stringify!(BetfairDataConfig)
+        stringify!(BetfairDataClientConfig)
     }
 }
 
@@ -227,10 +227,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::config::{BetfairDataConfig, BetfairExecutionClientConfig};
+    use crate::config::{BetfairDataClientConfig, BetfairExecutionClientConfig};
 
-    fn data_config() -> BetfairDataConfig {
-        BetfairDataConfig {
+    fn data_config() -> BetfairDataClientConfig {
+        BetfairDataClientConfig {
             username: Some("testuser".to_string()),
             password: Some("testpass".to_string()),
             app_key: Some("testappkey".to_string()),
@@ -251,7 +251,7 @@ mod tests {
     fn test_betfair_data_client_factory_creation() {
         let factory = BetfairDataClientFactory::new();
         assert_eq!(factory.name(), BETFAIR);
-        assert_eq!(factory.config_type(), "BetfairDataConfig");
+        assert_eq!(factory.config_type(), "BetfairDataClientConfig");
     }
 
     #[rstest]
@@ -263,9 +263,11 @@ mod tests {
 
     #[rstest]
     fn test_betfair_data_config_implements_client_config() {
-        let config = BetfairDataConfig::default();
+        let config = BetfairDataClientConfig::default();
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
-        let downcasted = boxed_config.as_any().downcast_ref::<BetfairDataConfig>();
+        let downcasted = boxed_config
+            .as_any()
+            .downcast_ref::<BetfairDataClientConfig>();
         assert!(downcasted.is_some());
     }
 
@@ -333,7 +335,7 @@ mod tests {
     #[rstest]
     fn test_betfair_data_client_factory_rejects_missing_credentials() {
         let factory = BetfairDataClientFactory::new();
-        let config = BetfairDataConfig {
+        let config = BetfairDataClientConfig {
             username: Some("testuser".to_string()),
             ..Default::default()
         };

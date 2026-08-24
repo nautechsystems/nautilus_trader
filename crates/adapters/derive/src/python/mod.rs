@@ -97,8 +97,8 @@ pub fn derive(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(DERIVE_VENUE), *DERIVE_VENUE)?;
     m.add_class::<DeriveEnvironment>()?;
     m.add_class::<DeriveDataClientConfig>()?;
-    m.add_class::<DeriveExecutionClientConfig>()?;
     m.add_class::<DeriveDataClientFactory>()?;
+    m.add_class::<DeriveExecutionClientConfig>()?;
     m.add_class::<DeriveExecutionClientFactory>()?;
 
     let registry = get_global_pyo3_registry();

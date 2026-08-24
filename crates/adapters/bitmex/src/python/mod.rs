@@ -102,8 +102,8 @@ pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::broadcast::submitter::SubmitBroadcaster>()?;
     m.add_class::<websocket::PyBitmexWebSocketClient>()?;
     m.add_class::<BitmexDataClientConfig>()?;
-    m.add_class::<BitmexExecutionClientConfig>()?;
     m.add_class::<BitmexDataClientFactory>()?;
+    m.add_class::<BitmexExecutionClientConfig>()?;
     m.add_class::<BitmexExecutionClientFactory>()?;
 
     let registry = get_global_pyo3_registry();

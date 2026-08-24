@@ -111,7 +111,7 @@ fn build_stream_config(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.betfair")
 )]
-pub struct BetfairDataConfig {
+pub struct BetfairDataClientConfig {
     /// Account currency code.
     #[builder(default = "GBP".to_string())]
     pub account_currency: String,
@@ -176,7 +176,7 @@ pub struct BetfairDataConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(BetfairDataConfig {
+nautilus_core::impl_pyo3_config_getters!(BetfairDataClientConfig {
     account_currency: String,
     username: Option<String>,
     request_rate_per_second: u32,
@@ -202,19 +202,19 @@ nautilus_core::impl_pyo3_config_getters!(BetfairDataConfig {
     subscribe_cricket_data: bool,
 });
 
-impl Default for BetfairDataConfig {
+impl Default for BetfairDataClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl ClientConfig for BetfairDataConfig {
+impl ClientConfig for BetfairDataClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
 }
 
-impl BetfairDataConfig {
+impl BetfairDataClientConfig {
     /// Returns the configured credentials or resolves them from the environment.
     ///
     /// # Errors
@@ -475,7 +475,7 @@ mod tests {
 
     #[rstest]
     fn test_data_config_default() {
-        let config = BetfairDataConfig::default();
+        let config = BetfairDataClientConfig::default();
 
         assert_eq!(config.account_currency, "GBP");
         assert_eq!(config.request_rate_per_second, 5);
@@ -490,7 +490,7 @@ mod tests {
 
     #[rstest]
     fn test_data_config_navigation_filter() {
-        let config = BetfairDataConfig {
+        let config = BetfairDataClientConfig {
             event_type_names: Some(vec!["Horse Racing".to_string()]),
             market_ids: Some(vec!["1.234567".to_string()]),
             ..Default::default()
@@ -507,7 +507,7 @@ mod tests {
 
     #[rstest]
     fn test_data_config_stream_config() {
-        let config = BetfairDataConfig {
+        let config = BetfairDataClientConfig {
             stream_host: Some("localhost".to_string()),
             stream_port: Some(9443),
             stream_heartbeat_secs: Some(3),
@@ -531,7 +531,7 @@ mod tests {
 
     #[rstest]
     fn test_data_config_stream_config_uses_defaults() {
-        let config = BetfairDataConfig::default();
+        let config = BetfairDataClientConfig::default();
 
         let stream_config = config.stream_config();
 
@@ -541,7 +541,7 @@ mod tests {
 
     #[rstest]
     fn test_data_config_credential_rejects_partial_credentials() {
-        let config = BetfairDataConfig {
+        let config = BetfairDataClientConfig {
             username: Some("testuser".to_string()),
             ..Default::default()
         };
@@ -669,7 +669,7 @@ mod tests {
 
     #[rstest]
     fn test_data_config_validate_rejects_bad_market_start_time() {
-        let config = BetfairDataConfig {
+        let config = BetfairDataClientConfig {
             min_market_start_time: Some("not-a-timestamp".to_string()),
             ..Default::default()
         };
@@ -687,7 +687,7 @@ mod tests {
 
     #[rstest]
     fn test_data_config_min_notional() {
-        let config = BetfairDataConfig {
+        let config = BetfairDataClientConfig {
             default_min_notional: Some(Decimal::new(2, 0)),
             ..Default::default()
         };
@@ -701,7 +701,7 @@ mod tests {
 
     #[rstest]
     fn test_data_config_toml_minimal() {
-        let config: BetfairDataConfig = toml::from_str(
+        let config: BetfairDataClientConfig = toml::from_str(
             r#"
 account_currency = "USD"
 request_rate_per_second = 10

@@ -19,7 +19,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use nautilus_betfair::{
     common::consts::BETFAIR,
-    config::{BetfairDataConfig, BetfairExecutionClientConfig},
+    config::{BetfairDataClientConfig, BetfairExecutionClientConfig},
     factories::{BetfairDataClientFactory, BetfairExecutionClientFactory},
     python,
 };
@@ -72,12 +72,12 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        BetfairDataConfig {
+        BetfairDataClientConfig {
             username: Some(SMOKE_USERNAME.to_string()),
             password: Some(SMOKE_PASSWORD.to_string()),
             app_key: Some(SMOKE_APP_KEY.to_string()),
             market_types: Some(vec!["MATCH_ODDS".to_string()]),
-            ..BetfairDataConfig::default()
+            ..BetfairDataClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -92,7 +92,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("data config should extract");
     let betfair_config = extracted_config
         .as_any()
-        .downcast_ref::<BetfairDataConfig>()
+        .downcast_ref::<BetfairDataClientConfig>()
         .expect("data config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let clock = Rc::new(RefCell::new(TestClock::new()));
@@ -106,7 +106,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create data client");
 
     assert_eq!(extracted_factory.name(), BETFAIR);
-    assert_eq!(extracted_factory.config_type(), "BetfairDataConfig");
+    assert_eq!(extracted_factory.config_type(), "BetfairDataClientConfig");
     assert_eq!(betfair_config.username.as_deref(), Some(SMOKE_USERNAME));
     assert_eq!(
         betfair_config.market_types.as_deref(),

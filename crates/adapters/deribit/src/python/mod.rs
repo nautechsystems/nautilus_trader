@@ -111,8 +111,8 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DeribitVolatilityIndex>()?;
     m.add_class::<DeribitBookSummary>()?;
     m.add_class::<DeribitDataClientConfig>()?;
-    m.add_class::<DeribitExecutionClientConfig>()?;
     m.add_class::<DeribitDataClientFactory>()?;
+    m.add_class::<DeribitExecutionClientConfig>()?;
     m.add_class::<DeribitExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(urls::py_get_deribit_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_deribit_ws_url, m)?)?;

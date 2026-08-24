@@ -206,8 +206,8 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<params::BybitTickersParams>()?;
     m.add_class::<params::BybitNativeTpSlParams>()?;
     m.add_class::<BybitDataClientConfig>()?;
-    m.add_class::<BybitExecutionClientConfig>()?;
     m.add_class::<BybitDataClientFactory>()?;
+    m.add_class::<BybitExecutionClientConfig>()?;
     m.add_class::<BybitExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_bybit_extract_raw_symbol, m)?)?;
     m.add_function(wrap_pyfunction!(py_bybit_bar_spec_to_interval, m)?)?;

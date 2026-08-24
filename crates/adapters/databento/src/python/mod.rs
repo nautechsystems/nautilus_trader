@@ -109,13 +109,13 @@ pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "live")]
     m.add_class::<crate::data::DatabentoDataClient>()?;
     #[cfg(feature = "live")]
-    m.add_class::<live::DatabentoLiveClient>()?;
-    #[cfg(feature = "live")]
-    m.add_class::<types::DatabentoSubscriptionAck>()?;
-    #[cfg(feature = "live")]
     m.add_class::<DatabentoDataClientConfig>()?;
     #[cfg(feature = "live")]
     m.add_class::<DatabentoDataClientFactory>()?;
+    #[cfg(feature = "live")]
+    m.add_class::<live::DatabentoLiveClient>()?;
+    #[cfg(feature = "live")]
+    m.add_class::<types::DatabentoSubscriptionAck>()?;
 
     #[cfg(feature = "live")]
     {

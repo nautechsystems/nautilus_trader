@@ -133,13 +133,13 @@ pub fn interactive_brokers(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult
     m.add_class::<crate::common::enums::IbTwapStrategyType>()?;
     m.add_class::<crate::common::enums::IbVolatilityType>()?;
     m.add_class::<crate::config::SymbologyMethod>()?;
-    m.add_class::<crate::error::ErrorCategory>()?;
-    m.add_class::<crate::error::InteractiveBrokersErrorKind>()?;
     m.add_class::<crate::config::InteractiveBrokersDataClientConfig>()?;
     m.add_class::<crate::config::InteractiveBrokersExecutionClientConfig>()?;
     m.add_class::<crate::config::InteractiveBrokersInstrumentProviderConfig>()?;
     m.add_class::<crate::config::DockerizedIBGatewayConfig>()?;
     m.add_class::<crate::config::TradingMode>()?;
+    m.add_class::<crate::error::ErrorCategory>()?;
+    m.add_class::<crate::error::InteractiveBrokersErrorKind>()?;
     m.add_class::<crate::factories::InteractiveBrokersDataClientFactory>()?;
     m.add_class::<crate::factories::InteractiveBrokersExecutionClientFactory>()?;
     m.add_class::<crate::historical::HistoricalInteractiveBrokersClient>()?;

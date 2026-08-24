@@ -27,8 +27,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.betfair import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair import BetfairDataClientFactory
-from nautilus_trader.adapters.betfair import BetfairDataConfig
 from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
 from nautilus_trader.adapters.betfair import BetfairExecutionClientFactory
 from nautilus_trader.common import Environment
@@ -62,7 +62,7 @@ def main() -> None:
         .add_data_client(
             None,
             BetfairDataClientFactory(),
-            BetfairDataConfig(
+            BetfairDataClientConfig(
                 account_currency=ACCOUNT_CURRENCY,
                 market_ids=[MARKET_ID],
                 stream_conflate_ms=0,

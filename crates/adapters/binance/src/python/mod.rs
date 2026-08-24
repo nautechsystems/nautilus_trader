@@ -167,11 +167,11 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m
     )?)?;
     m.add_class::<BinanceDataClientConfig>()?;
+    m.add_class::<BinanceDataClientFactory>()?;
     m.add_class::<BinanceExecutionClientConfig>()?;
+    m.add_class::<BinanceExecutionClientFactory>()?;
     m.add_class::<BinanceInstrumentProviderConfig>()?;
     m.add_class::<BinanceSpotMarketDataMode>()?;
-    m.add_class::<BinanceDataClientFactory>()?;
-    m.add_class::<BinanceExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(py_decode_binance_spot_client_order_id, m)?)?;
     m.add_function(wrap_pyfunction!(
         py_decode_binance_futures_client_order_id,

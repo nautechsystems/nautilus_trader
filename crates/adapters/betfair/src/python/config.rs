@@ -19,7 +19,7 @@ use nautilus_model::identifiers::AccountId;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
-use crate::config::{BetfairDataConfig, BetfairExecutionClientConfig};
+use crate::config::{BetfairDataClientConfig, BetfairExecutionClientConfig};
 
 fn stringify_ids(values: Option<Vec<u64>>) -> Option<Vec<String>> {
     values.map(|values| values.into_iter().map(|value| value.to_string()).collect())
@@ -27,7 +27,7 @@ fn stringify_ids(values: Option<Vec<u64>>) -> Option<Vec<String>> {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl BetfairDataConfig {
+impl BetfairDataClientConfig {
     /// Configuration for the Betfair live data client.
     #[new]
     #[pyo3(signature = (
@@ -123,7 +123,7 @@ impl BetfairDataConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(BetfairDataConfig).to_string()
+        stringify!(BetfairDataClientConfig).to_string()
     }
 }
 

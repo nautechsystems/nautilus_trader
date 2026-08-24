@@ -265,11 +265,12 @@ secrets in application-owned state if they must be reused.
 
 Betfair configuration moves and flattens in v2:
 
-- `BetfairDataClientConfig` becomes `BetfairDataConfig`, and `BetfairExecClientConfig` becomes `BetfairExecutionClientConfig`.
+- `BetfairDataClientConfig` remains the data factory input, while `BetfairExecClientConfig` becomes
+  `BetfairExecutionClientConfig`.
 - `BetfairInstrumentProviderConfig` no longer exists as a separate config. Its
   `account_currency`, `default_min_notional`, `event_type_ids`, `event_type_names`, `event_ids`,
   `market_ids`, `country_codes`, `market_types`, `min_market_start_time`, and
-  `max_market_start_time` fields move directly onto `BetfairDataConfig`.
+  `max_market_start_time` fields move directly onto `BetfairDataClientConfig`.
 - Execution reconciliation uses `BetfairExecutionClientConfig.reconcile_market_ids` directly.
   `reconcile_market_ids_only` still controls whether the filter applies.
 - `certs_dir` is removed because v2 uses interactive login. The HTTP keepalive interval is fixed
@@ -327,6 +328,7 @@ changes these public names:
 | v1 or earlier v2 name           | v2 name                              |
 | ------------------------------- | ------------------------------------ |
 | `<Venue>ExecClientConfig`       | `<Venue>ExecutionClientConfig`       |
+| `BetfairDataConfig`             | `BetfairDataClientConfig`            |
 | `BetfairExecConfig`             | `BetfairExecutionClientConfig`       |
 | `DatabentoLiveClientConfig`     | `DatabentoDataClientConfig`          |
 | `LiveDataClientConfig`          | `DataClientConfig`                   |

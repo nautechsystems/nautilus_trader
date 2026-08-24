@@ -2398,7 +2398,7 @@ def test_adapter_config_constructors_have_runtime_readback():
 
 def test_adapter_config_readback_returns_constructor_values(tmp_path):
     from nautilus_trader.adapters.architect_ax import AxDataClientConfig
-    from nautilus_trader.adapters.betfair import BetfairDataConfig
+    from nautilus_trader.adapters.betfair import BetfairDataClientConfig
     from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.bybit import BybitDataClientConfig
     from nautilus_trader.adapters.databento import DatabentoDataClientConfig
@@ -2409,7 +2409,7 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path):
         proxy_url="http://user:password@proxy.example.test",
         http_timeout_secs=17,
     )
-    betfair_config = BetfairDataConfig(
+    betfair_config = BetfairDataClientConfig(
         username="readback-user",
         password="readback-password",
         app_key="readback-app-key",
