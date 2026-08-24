@@ -108,6 +108,29 @@ venue = BacktestVenueConfig(
 )
 ```
 
+Sandbox paper trading uses the same matching-engine flags. Pass them on
+`SandboxExecutionClientConfig` (defaults remain off, matching current sandbox
+behavior):
+
+```python
+from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
+from nautilus_trader.model import BookType
+from nautilus_trader.model import Money
+from nautilus_trader.model import Venue
+
+config = SandboxExecutionClientConfig(
+    venue=Venue("BINANCE"),
+    starting_balances=[Money.from_str("10_000 USDT")],
+    book_type=BookType.L2_MBP,
+    trade_execution=True,
+    queue_position=True,
+    liquidity_consumption=True,
+)
+```
+
+The sandbox `venue` must match the data client's instrument venue, and the
+strategy must subscribe to trades (and L2/L3 deltas when using depth).
+
 ### Queue lifecycle
 
 1. On acceptance, a LIMIT order snapshots same-side displayed size at its price.
