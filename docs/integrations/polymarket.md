@@ -961,7 +961,8 @@ Symbol matching is case-insensitive, and published symbols are lowercase. Crypto
 `full_accuracy_value` when the venue supplies it and fall back to `value` for snapshots or updates
 that omit it. Crypto TWAP uses `crypto_prices_twap_thirty` or
 `crypto_prices_twap_sixty`, requires the frame's `window_s` to match the subscription, and exposes
-the exact signed-E18 `full_accuracy_value` as a `Decimal`; the display-only `value` is ignored.
+the exact signed-E18 `full_accuracy_value` as a Rust `Decimal`. Python receives the exact decimal
+string, which can be converted with `decimal.Decimal`; the display-only `value` is ignored.
 
 ### Runtime instrument loading
 

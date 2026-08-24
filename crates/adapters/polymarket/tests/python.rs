@@ -40,6 +40,7 @@ use nautilus_polymarket::{
     config::{
         PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
     },
+    data_types::PolymarketRtdsCryptoTwap,
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
     http::{
         models::GammaMarket,
@@ -50,7 +51,7 @@ use nautilus_polymarket::{
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{
     Py, Python,
-    types::{PyAnyMethods, PyModule},
+    types::{PyAnyMethods, PyModule, PyString},
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -95,6 +96,37 @@ fn test_polymarket_python_module_registers_data_loader() {
         );
         assert!(loader.getattr("from_market_slug").is_ok());
         assert!(loader.getattr("query_events").is_ok());
+    });
+}
+
+#[rstest]
+fn test_polymarket_crypto_twap_python_value_is_exact_decimal_string() {
+    Python::initialize();
+
+    Python::attach(|py| {
+        let twap = Py::new(
+            py,
+            PolymarketRtdsCryptoTwap::new(
+                "alpha/usd".to_string(),
+                60,
+                dec!(123.456789012345678901),
+                1_772_752_581_815,
+                1_772_752_582_004,
+                UnixNanos::from_millis(1_772_752_581_815),
+                UnixNanos::from_millis(1_772_752_582_005),
+            ),
+        )
+        .expect("PolymarketRtdsCryptoTwap should construct");
+        let value = twap
+            .bind(py)
+            .getattr("value")
+            .expect("TWAP value should be exposed");
+
+        assert!(value.is_instance_of::<PyString>());
+        assert_eq!(
+            value.extract::<String>().expect("exact decimal string"),
+            "123.456789012345678901"
+        );
     });
 }
 

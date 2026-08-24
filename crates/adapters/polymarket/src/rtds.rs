@@ -1102,6 +1102,7 @@ impl PolymarketRtdsFeed {
         let value =
             decimal_from_signed_e18("full_accuracy_value", payload.full_accuracy_value.as_str())?;
         let ts_event = unix_nanos_from_millis("payload.timestamp", payload.timestamp)?;
+        unix_nanos_from_millis("envelope.timestamp", envelope.timestamp)?;
         let Some(data_types) =
             self.admit_twap_observation(topic, &symbol_lower, payload.timestamp, value)?
         else {
@@ -2326,6 +2327,57 @@ mod tests {
     }
 
     #[rstest]
+    fn test_twap_replay_fingerprints_are_isolated_by_symbol() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("ALPHA/USD", 60))
+            .expect("track first 60-second TWAP");
+        feed.track_subscribe(crypto_twap_data_type("BETA/USD", 60))
+            .expect("track second 60-second TWAP");
+        let mut first: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        first["payload"]["symbol"] = json!("alpha/usd");
+        first["payload"]["full_accuracy_value"] = json!("1000000000000000000");
+        let first_timestamp = first["payload"]["timestamp"]
+            .as_u64()
+            .expect("fixture observation timestamp");
+        let mut second = first.clone();
+        second["payload"]["symbol"] = json!("beta/usd");
+        second["payload"]["timestamp"] = json!(first_timestamp - 1);
+        second["payload"]["full_accuracy_value"] = json!("2000000000000000000");
+
+        feed.handle_text_message(&first.to_string())
+            .expect("first TWAP update");
+        feed.handle_text_message(&second.to_string())
+            .expect("older second-symbol update must use an independent replay guard");
+
+        let mut observations = Vec::new();
+
+        for _ in 0..2 {
+            let DataEvent::Data(NautilusData::Custom(custom)) =
+                rx.try_recv().expect("custom data event")
+            else {
+                panic!("expected custom data event");
+            };
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketRtdsCryptoTwap>()
+                .expect("PolymarketRtdsCryptoTwap");
+            observations.push((payload.symbol.clone(), payload.observation_timestamp_ms));
+        }
+
+        assert_eq!(
+            observations,
+            vec![
+                ("alpha/usd".to_string(), first_timestamp),
+                ("beta/usd".to_string(), first_timestamp - 1),
+            ]
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_handle_crypto_twap_update_drops_equal_timestamp_redelivery() {
         let (feed, mut rx) = make_feed();
         feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
@@ -2761,6 +2813,36 @@ mod tests {
         feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
             .expect("a later valid update must not be suppressed");
 
+        let DataEvent::Data(NautilusData::Custom(_)) =
+            rx.try_recv().expect("valid custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_rejects_publisher_timestamp_overflow_without_advancing_guard()
+    {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("ALPHA/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut valid: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        valid["payload"]["symbol"] = json!("alpha/usd");
+        valid["payload"]["full_accuracy_value"] = json!("1234567890123456789");
+        let mut invalid = valid.clone();
+        invalid["timestamp"] = json!(u64::MAX);
+
+        let error = feed
+            .handle_text_message(&invalid.to_string())
+            .expect_err("overflowing publisher timestamp must fail visibly");
+        assert!(error.to_string().contains("envelope.timestamp"));
+        assert!(rx.try_recv().is_err());
+
+        feed.handle_text_message(&valid.to_string())
+            .expect("a later valid update must not be suppressed");
         let DataEvent::Data(NautilusData::Custom(_)) =
             rx.try_recv().expect("valid custom data event")
         else {
