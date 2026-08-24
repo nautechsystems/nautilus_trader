@@ -654,6 +654,19 @@ mod tests {
         .expect("valid Gamma market")
     }
 
+    fn gamma_market_with_distinct_crypto_config() -> GammaMarket {
+        let mut value = serde_json::to_value(gamma_market()).expect("serializable Gamma market");
+        value["cryptoMarketConfig"] = json!({
+            "id": "eth-15m-twap-negative-37",
+            "asset": "eth",
+            "duration": "15m",
+            "twapEnabled": true,
+            "twapLookbackSeconds": -37,
+        });
+
+        serde_json::from_value(value).expect("valid distinct crypto market config")
+    }
+
     fn clob_market() -> ClobMarketResponse {
         serde_json::from_value(json!({
             "condition_id": "0xcondition",
@@ -725,6 +738,82 @@ mod tests {
                     .expect("closed metadata")
                     .extract::<bool>()
                     .expect("closed bool"),
+            );
+        });
+    }
+
+    #[rstest]
+    fn build_loader_preserves_distinct_crypto_config_in_rust_and_python_instrument_info() {
+        let loader = build_loader_from_details(
+            gamma_market_with_distinct_crypto_config(),
+            &clob_market(),
+            0,
+            data_api(),
+        )
+        .expect("loader should build");
+        let info = loader.instrument.info.as_ref().expect("instrument info");
+        let expected = json!({
+            "id": "eth-15m-twap-negative-37",
+            "asset": "eth",
+            "duration": "15m",
+            "twapEnabled": true,
+            "twapLookbackSeconds": -37,
+        });
+
+        assert_eq!(info.get("crypto_market_config"), Some(&expected));
+
+        Python::initialize();
+        Python::attach(|py| {
+            let py_loader = Py::new(py, loader).expect("Python loader");
+            let instrument = py_loader
+                .getattr(py, "instrument")
+                .expect("instrument getter");
+            let info = instrument
+                .getattr(py, "info")
+                .expect("instrument info getter");
+            let config = info
+                .bind(py)
+                .get_item("crypto_market_config")
+                .expect("crypto market config");
+
+            assert_eq!(
+                config
+                    .get_item("id")
+                    .expect("config ID")
+                    .extract::<String>()
+                    .expect("config ID string"),
+                "eth-15m-twap-negative-37",
+            );
+            assert_eq!(
+                config
+                    .get_item("asset")
+                    .expect("config asset")
+                    .extract::<String>()
+                    .expect("config asset string"),
+                "eth",
+            );
+            assert_eq!(
+                config
+                    .get_item("duration")
+                    .expect("config duration")
+                    .extract::<String>()
+                    .expect("config duration string"),
+                "15m",
+            );
+            assert!(
+                config
+                    .get_item("twapEnabled")
+                    .expect("TWAP enabled")
+                    .extract::<bool>()
+                    .expect("TWAP enabled bool"),
+            );
+            assert_eq!(
+                config
+                    .get_item("twapLookbackSeconds")
+                    .expect("TWAP lookback")
+                    .extract::<i64>()
+                    .expect("TWAP lookback integer"),
+                -37,
             );
         });
     }
