@@ -362,6 +362,13 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         );
     }
 
+    if let Some(end_date) = &def.end_date {
+        map.insert(
+            "end_date".to_string(),
+            serde_json::Value::String(end_date.clone()),
+        );
+    }
+
     if let Some(neg_risk) = def.neg_risk {
         map.insert("neg_risk".to_string(), serde_json::Value::Bool(neg_risk));
     }
@@ -689,6 +696,7 @@ mod tests {
         };
         let info = binary.info.as_ref().expect("info should be Some");
 
+        assert_eq!(info.get_str("end_date"), Some("2026-08-22T16:05:00Z"));
         assert_eq!(
             info.get_str("resolution_source"),
             Some("https://data.chain.link/streams/btc-usd-twap-60s-streams")
