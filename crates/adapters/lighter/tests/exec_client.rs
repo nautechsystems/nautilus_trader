@@ -775,6 +775,16 @@ fn build_config(addr: SocketAddr) -> LighterExecClientConfig {
     }
 }
 
+fn build_mainnet_config(addr: SocketAddr) -> LighterExecClientConfig {
+    // The integrator auto-approval flow is mainnet-only (see
+    // `submit_integrator_auto_approval`); tests pinning it must not use the
+    // default testnet fixture.
+    LighterExecClientConfig {
+        environment: LighterEnvironment::Mainnet,
+        ..build_config(addr)
+    }
+}
+
 fn build_config_no_credentials(addr: SocketAddr) -> LighterExecClientConfig {
     LighterExecClientConfig {
         private_key: None,
@@ -1430,7 +1440,7 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_submits_l2_only_integrator_auto_approval() {
     let (addr, state) = start_server().await;
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_with(build_mainnet_config(addr));
 
     client.connect().await.expect("connect");
 
@@ -1476,7 +1486,7 @@ async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
         .lock()
         .await
         .push(i64::from(TEST_API_KEY_INDEX));
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_with(build_mainnet_config(addr));
 
     client.connect().await.expect("connect");
 
@@ -1495,7 +1505,7 @@ async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
         "code": 21149,
         "message": "integrator is not approved",
     }));
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_with(build_mainnet_config(addr));
 
     let err = client.connect().await.unwrap_err();
     let msg = format!("{err:#}");
@@ -1509,6 +1519,20 @@ async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
     assert_eq!(state.rest_send_txs().await.len(), 1);
     assert!(!client.is_connected());
     assert_eq!(*state.connection_count.lock().await, 0);
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_skips_integrator_auto_approval_on_testnet() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.connect().await.expect("connect");
+
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(state.rest_send_txs().await.len(), 0);
+
+    client.disconnect().await.expect("disconnect");
 }
 
 /// Pins the per-stream marker dispatch in the execution consumption loop.
