@@ -1339,7 +1339,13 @@ MODIFY_ORDER_PARAMETERS = (
 CANCEL_ORDER_PARAMETERS = ("client_order_id", "client_id", "params")
 CANCEL_GTD_EXPIRY_PARAMETERS = ("order",)
 CANCEL_ORDERS_PARAMETERS = ("client_order_ids", "client_id", "params")
-CANCEL_ALL_ORDERS_PARAMETERS = ("instrument_id", "order_side", "client_id", "params")
+CANCEL_ALL_ORDERS_PARAMETERS = (
+    "instrument_id",
+    "order_side",
+    "client_id",
+    "strategy_only",
+    "params",
+)
 CLOSE_POSITION_PARAMETERS = (
     "position",
     "client_id",
@@ -1543,6 +1549,12 @@ def test_strategy_execution_methods_expose_expected_signatures(method_name, para
     signature = inspect.signature(getattr(strategy, method_name))
 
     assert tuple(signature.parameters) == parameter_names
+
+
+def test_strategy_cancel_all_orders_defaults_to_strategy_only():
+    signature = inspect.signature(Strategy().cancel_all_orders)
+
+    assert signature.parameters["strategy_only"].default is True
 
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), DATA_SURFACE_SIGNATURES)

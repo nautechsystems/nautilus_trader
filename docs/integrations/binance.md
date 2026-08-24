@@ -248,13 +248,14 @@ then warns and sends `GTC`, while Nautilus cancels the order at its local expiry
 
 #### Cancel all orders behavior
 
-When calling `cancel_all_orders()` from a strategy, the adapter includes
-orders in both open and inflight (SUBMITTED) states so that the adapter also
-cancels orders not yet acknowledged by Binance.
+By default, `Strategy.cancel_all_orders()` sends individual cancels for orders associated with that
+strategy. When `strategy_only=False` is used, the strategy sends a broad `CancelAllOrders` command
+to the adapter. The adapter includes orders in both open and inflight (SUBMITTED) states so that it
+also cancels orders not yet acknowledged by Binance.
 
 **Multi-strategy safety**: When multiple strategies trade the same instrument,
-the adapter compares orders owned by the requesting strategy against all orders
-for that instrument. If the strategy owns all orders, a single cancel-all API
+the adapter compares orders associated with the requesting strategy against all orders
+for that instrument. If all orders are associated with the strategy, a single cancel-all API
 call is used. Otherwise, per-strategy cancels are sent (batch for regular
 orders, individual for algo orders) to avoid affecting other strategies.
 

@@ -564,6 +564,7 @@ class Strategy:
         instrument_id: model.InstrumentId,
         order_side: model.OrderSide | None = None,
         client_id: model.ClientId | None = None,
+        strategy_only: bool = True,
         params: dict | None = None,
     ) -> None: ...
     def close_position(

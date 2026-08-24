@@ -2056,7 +2056,7 @@ impl ExecTester {
                 }
             }
 
-            if let Err(e) = self.cancel_all_orders(instrument_id, None, client_id, None) {
+            if let Err(e) = self.cancel_all_orders(instrument_id, None, client_id, false, None) {
                 log::error!("Failed to cancel all orders: {e}");
             }
         }

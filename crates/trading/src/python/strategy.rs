@@ -2026,12 +2026,13 @@ impl PyStrategy {
     }
 
     #[pyo3(name = "cancel_all_orders")]
-    #[pyo3(signature = (instrument_id, order_side=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, order_side=None, client_id=None, strategy_only=true, params=None))]
     fn py_cancel_all_orders(
         &mut self,
         instrument_id: InstrumentId,
         order_side: Option<OrderSide>,
         client_id: Option<ClientId>,
+        strategy_only: bool,
         params: Option<Py<PyDict>>,
     ) -> PyResult<()> {
         let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
@@ -2045,6 +2046,7 @@ impl PyStrategy {
             instrument_id,
             order_side,
             client_id,
+            strategy_only,
             params_map,
         )
         .map_err(to_pyruntime_err)

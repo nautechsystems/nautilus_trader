@@ -783,19 +783,19 @@ impl DataActor for DeltaNeutralVol {
             if premium_entry_active {
                 self.unsubscribe_quotes(call_id, Some(client_id), None);
             }
-            self.cancel_all_orders(call_id, None, None, None)?;
+            self.cancel_all_orders(call_id, None, None, true, None)?;
         }
 
         if let Some(put_id) = self.put_instrument_id {
             if premium_entry_active {
                 self.unsubscribe_quotes(put_id, Some(client_id), None);
             }
-            self.cancel_all_orders(put_id, None, None, None)?;
+            self.cancel_all_orders(put_id, None, None, true, None)?;
         }
 
         let hedge_id = self.config.hedge_instrument_id;
         self.unsubscribe_quotes(hedge_id, None, None);
-        self.cancel_all_orders(hedge_id, None, None, None)?;
+        self.cancel_all_orders(hedge_id, None, None, true, None)?;
         self.hedge_pending = false;
 
         log::info!("Delta-neutral vol strategy stopped, positions left unchanged");

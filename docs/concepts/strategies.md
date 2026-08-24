@@ -566,8 +566,8 @@ Routing depends on the command and on the state of each order:
 - `cancel_order(...)` goes *firstly* to the `OrderEmulator` when the order is emulated, to the
   relevant `ExecutionAlgorithm` when the order has an `exec_algorithm_id` and is still active within
   the local system, and to the `ExecutionEngine` otherwise.
-- `cancel_all_orders(...)` fans out: open and in-flight orders go to the `ExecutionEngine`, emulated
-  orders go to the `OrderEmulator`, and every execution algorithm order is canceled individually.
+- `cancel_all_orders(...)` cancels each matching order associated with the strategy by default. Each
+  order follows the same routing as `cancel_order(...)`.
 - `cancel_orders(...)` always goes to the `ExecutionEngine` as a single `BatchCancelOrders` command.
 
 :::info
@@ -600,6 +600,15 @@ The following shows how to cancel all orders:
 ```python
 self.cancel_all_orders(self.instrument_id)
 ```
+
+:::warning
+Pass `strategy_only=False` to use the broad cancellation path. Matching open and in-flight orders
+produce a `CancelAllOrders` command for the execution engine, emulated orders produce one for the
+`OrderEmulator`, and execution algorithm orders are canceled individually. When the adapter uses a
+venue-native bulk endpoint, this can reduce cancel request volume for strategies with many matching
+venue orders. The broad commands can cancel matching orders associated with other strategies, so
+use this option only when that scope is intended.
+:::
 
 #### Modifying orders
 

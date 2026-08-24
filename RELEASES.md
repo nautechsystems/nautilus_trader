@@ -8,6 +8,8 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Changed `Strategy.cancel_all_orders` to strategy-associated orders; set `strategy_only=False` for broad scope (#4470)
+
 ### Security
 
 ### Fixes
