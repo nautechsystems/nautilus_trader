@@ -2466,6 +2466,23 @@ async fn test_block_height_reconnect_preserves_canonical_topic() {
     .await
     .unwrap();
 
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .filter(|(channel, success)| channel == "v4_block_height" && *success)
+                    .count()
+                    >= 2
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
     let replay_count = state
         .subscription_events()
         .await
