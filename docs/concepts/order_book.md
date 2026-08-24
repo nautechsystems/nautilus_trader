@@ -189,9 +189,9 @@ The `status` and `ts_accepted` fields drive the optional filters described in
 
 The `audit_open_orders` method reconciles an own book against a set of valid client order
 IDs. Any own-book order not in the provided set is removed and logged as an audit error.
-`Cache::audit_own_order_books` builds this set from open and in-flight orders so submitted
-orders are not removed during normal venue latency windows. Live systems can run this audit
-periodically through the own-books audit interval.
+`Cache::audit_own_order_books` builds this set from open, in-flight, and active-local orders so
+non-terminal entries remain during normal event-processing and venue-latency windows. Live systems
+can run this audit periodically through the own-books audit interval.
 
 ### Querying
 
