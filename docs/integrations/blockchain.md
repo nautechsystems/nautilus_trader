@@ -3,9 +3,9 @@
 ## Overview
 
 The blockchain adapter ingests DeFi data from EVM chains and exposes it through the
-NautilusTrader data model. It also has a fork-validated initial execution client for locally
-signed Uniswap V3 swaps, proven end to end on Arbitrum (see [Execution](#execution)). That
-capability is not production-ready Uniswap execution. The adapter uses three backends:
+NautilusTrader data model. It also includes an execution client for locally signed Uniswap V3
+market swaps. Fork tests exercise the supported path end to end on Arbitrum, but the execution
+client is not production-ready. See [Execution](#execution). The adapter uses three backends:
 
 - HyperSync: high-throughput historical blocks and contract logs. See the
   [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for query shape,
@@ -82,7 +82,7 @@ Uniswap V3 and compatible concentrated-liquidity pools also use:
 | `transport_backend`               | `Sockudo`                     | WebSocket transport backend.                           |
 
 :::note
-Pool snapshot requests currently require a Postgres cache database. The in-memory cache can hold
+Pool snapshot requests require a Postgres cache database. The in-memory cache can hold
 tokens and pools, but latest pool profiler bootstrap reads snapshot and event state through the
 cache database path.
 :::
@@ -137,8 +137,8 @@ Checked public HTTP endpoints (August 2026, no API key):
 | Arbitrum One | `https://arbitrum.gateway.tenderly.co` | Yes     |
 | Ethereum     | `https://ethereum-rpc.publicnode.com`  | No      |
 
-Free archive endpoints exist, but availability and limits change. Snapshot validation usually needs
-only a small number of `eth_call`s per pool, so a free archive endpoint can be enough to get
+Archive endpoint availability and limits change. Snapshot validation usually needs only a small
+number of `eth_call`s per pool, so an endpoint with historical state access can be enough to get
 `validation_state = on_chain`.
 
 Archive support affects validation, not whether event sync runs:
@@ -433,11 +433,11 @@ PancakeSwap V3 reuses the Uniswap V3 read contract because `slot0`, `ticks`, `po
 
 ## Execution
 
-:::note
-Execution support is under active development. `BlockchainExecutionClient` implements preflight,
+:::warning
+The execution client is not production-ready. `BlockchainExecutionClient` implements preflight,
 explicit WETH wrap and ERC-20 approval, local EIP-1559 signing, durable reconciliation, and one
-Uniswap V3 swap flow. Arbitrum Uniswap V3 is the only chain and DEX combination covered end to end.
-Other order operations fail closed with no on-chain or durable side effects.
+Uniswap V3 swap flow. Arbitrum Uniswap V3 is the only chain and DEX combination covered by
+end-to-end fork tests. Other order operations fail closed with no on-chain or durable side effects.
 :::
 
 ### Connection and account state
@@ -494,8 +494,9 @@ stablecoins are quote assets, wrapped native assets have the next priority, and 
 base assets against them. Equal `Token::get_token_priority` values are ambiguous and reject the
 order.
 
-The implementation admits Uniswap V3 on any configured chain whose venue matches. Only Arbitrum
-Uniswap V3 has end-to-end adapter coverage, including the fork test described below.
+Venue routing admits Uniswap V3 on any configured chain whose venue matches. Swap preparation also
+requires a registered Uniswap V3 deployment and factory for that chain. Only Arbitrum Uniswap V3
+has end-to-end adapter coverage, including the fork tests described below.
 
 Order lists deny each open order with `OrderDenied`; modify, cancel, and batch-cancel commands
 reject each referenced cached order with `OrderModifyRejected` or `OrderCancelRejected`; cancel-all
@@ -551,9 +552,9 @@ SELL orders do not use `quote_spend_limits`.
 
 `amountOutMinimum` is always derived, never caller-supplied:
 
-1. Require an active data-side subscription to the pool so the `PoolProfiler` in the shared engine
-   cache (`Cache::pool_profiler`) is live; without a live profiler no quote exists and the order
-   is rejected.
+1. Require an initialized `PoolProfiler` with a processed event watermark in the shared engine cache
+   (`Cache::pool_profiler`). Without that state, no quote exists and the order is rejected. A live
+   data-side subscription normally maintains it.
 1. Simulate the swap locally on that profiler. A SELL uses `swap_exact_in` on the base quantity and
    requires the simulation to consume the full input. A BUY uses `swap_exact_out` on the base
    quantity to derive the quote input, then submits that input as `exactInputSingle`. A BUY quote
@@ -863,10 +864,25 @@ Event publication and marker persistence are separate operations. A process cras
 therefore cause an event to be delivered again after restart. Consumers must handle order events
 idempotently; this adapter does not provide an atomic exactly-once delivery guarantee.
 
+### Signed transaction storage
+
+The `execution_transaction_hash` record retains each complete signed EIP-2718 transaction in
+plaintext so a durable `broadcast` intent can resend the exact authorized bytes after restart.
+Until the signer nonce is consumed, anyone holding those bytes can broadcast that transaction.
+
+:::warning
+Treat `execution_transaction_hash.raw_transaction`, dead tuples, WAL, point-in-time recovery
+archives, replicas, backups, snapshots, restores, and operational exports as broadcast-capable
+material. Debug output and execution RPC errors redact the signed bytes, but they do not protect
+database artifacts or server-side statement parameters. Each database enforces signer and nonce
+ownership independently. Do not run a restored database against a signer used by another
+deployment.
+:::
+
 ### Execution configuration
 
-The `BlockchainExecutionClientConfig` fields, exposed to Python following the
-`BlockchainDataClientConfig` pattern:
+`BlockchainExecutionClientConfig` follows the `BlockchainDataClientConfig` pattern and exposes
+these fields to Python:
 
 | Field                            | Default   | Description                                                              |
 | -------------------------------- | --------- | ------------------------------------------------------------------------ |
@@ -890,10 +906,10 @@ The `BlockchainExecutionClientConfig` fields, exposed to Python following the
 | `deadline_seconds`               | Required  | Swap deadline offset from the initial anchor timestamp.                  |
 | `max_quote_age_blocks`           | Required  | Maximum age of the local quote in blocks.                                |
 | `receipt_timeout_secs`           | Required  | Deadline for the receipt and finality polling loop.                      |
-| `tokens`                         | `None`    | ERC-20 addresses included in balance publication.                        |
+| `tokens`                         | `None`    | ERC-20 addresses read and published when the client connects.            |
 | `rpc_requests_per_second`        | `None`    | HTTP RPC rate limit.                                                     |
 | `postgres_cache_database_config` | `None`    | Durable execution store; transaction submission requires it.             |
-| `transport_backend`              | `Sockudo` | Compatibility field; the execution client currently does not use it.     |
+| `transport_backend`              | `Sockudo` | Compatibility field; unused by the execution client.                     |
 
 The first allowlisted router executes swaps, so preflight readiness requires allowance on that
 router. `receipt_timeout_secs` controls the polling deadline for swaps, wraps, and approvals. It is
@@ -980,19 +996,19 @@ The direct-client suite (`execution_fork`) runs these scenarios:
 Anvil does not reproduce Arbitrum ArbOS gas pricing. Mocked RPC tests cover gas estimation and fee
 policy.
 
-A second suite, `execution_livenode_fork`, proves the supported swap slice through the full node
+A second suite, `execution_livenode_fork`, exercises the supported swap slice through the full node
 path: `BlockchainExecutionClientFactory` registration, venue routing, and a strategy submitting a
 SELL or BUY market order through the risk and execution engines to a finalized fill with refreshed
 wallet account state. A second node then reconnects after finality with no nonce use, no new intent or
 transaction hash, and its terminal emission markers still in place, so restart reconciliation
 cannot re-emit order events; the direct-client suite's channel-level check covers duplicate event
-emission. Operator wrap and router approval run first through direct client construction, matching
-the `node_wallet` operator tooling, because those operations precede node routing. Its data client
-stub stands in for the HyperSync-backed adapter at the venue boundary only, because HyperSync
-serves the live chain rather than the fork's pinned state; the stub also derives a synthetic quote
-from the pool's on-chain price for market-order risk pricing. The engine-side pool, instrument,
-and profiler restoration it feeds is production code. The suite sets
-`inflight_check_interval_ms = 0` because venue probes cannot resolve a `Submitted` swap.
+emission. Operator wrap and router approval run first through direct client construction because
+those operations precede node routing. Its data client stub stands in for the HyperSync-backed
+adapter at the venue boundary only because HyperSync serves the live chain rather than the fork's
+pinned state; the stub also derives a synthetic quote from the pool's on-chain price for market-order
+risk pricing. The engine-side pool, instrument, and profiler restoration it feeds is production code.
+The suite sets `inflight_check_interval_ms = 0` because venue probes cannot resolve a `Submitted`
+swap.
 
 :::warning
 DeFi pool definitions and account-state updates publish on typed message-bus routers.
@@ -1020,40 +1036,10 @@ transaction ran.
 :::
 
 Once enabled, a missing RPC URL, unreachable Postgres, absent Anvil, or incompatible Anvil fails
-the tests. Each test removes its own stale evidence before it starts, and the two suites serialize
-against each other so they can share one invocation and one Postgres instance.
+the tests. Nextest serializes the two suites so they can share one invocation and one Postgres
+instance.
 
-#### Evidence packet
-
-Each fork suite writes `target/blockchain-fork-evidence/` with:
-
-- Commit, staged-patch SHA-256, and complete working-tree patch SHA-256.
-- Chain, fork block, Anvil version, and configured protections.
-- Transaction hashes, receipt status, block, gas use, and client order ID.
-- Observed asset deltas and file SHA-256 sums.
-
-The direct-client packet (`run.json`, verified by `SHA256SUMS`) additionally records the pre-trade
-denial cases; the node packet (`livenode-run.json`, verified by `SHA256SUMS.livenode`) additionally
-records the execution client factory, routing venue, reconnect outcome, and account-state event
-count.
-
-Verify a successful packet from its directory so the relative paths in the checksum files
-resolve:
-
-```bash
-(
-cd target/blockchain-fork-evidence
-if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum -c SHA256SUMS
-    sha256sum -c SHA256SUMS.livenode
-else
-    shasum -a 256 -c SHA256SUMS
-    shasum -a 256 -c SHA256SUMS.livenode
-fi
-)
-```
-
-## Smoke tests
+## Build and live validation
 
 ### HyperSync authentication
 
@@ -1119,7 +1105,8 @@ Expected result: one ignored test passes. This can take several minutes.
   [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for request shape and
   tuning details.
 - Use HTTP RPC for final contract state and validation.
-- Use a paid or high-limit RPC provider for large Uniswap V3 pools.
+- Use an RPC provider with sufficient archive access, payload, and request limits for large Uniswap
+  V3 pools.
 - Keep `ENVIO_API_TOKEN`, RPC keys, and Postgres credentials outside version control.
 - Use a separate Postgres database for repeatable DeFi test runs that write pool snapshots.
 - Treat failed `--snapshot-from-rpc` hydration as a hard failure.
@@ -1144,25 +1131,26 @@ A DEX can be registered for a chain yet lack the parsers a command needs. The CL
   correct.
 - DEXes that also parse `CollectProtocol` can replay protocol-fee balance withdrawals.
 
-Current command support:
+Command support:
 
-| Capability     | DEX                       | Chains                             |
-| -------------- | ------------------------- | ---------------------------------- |
-| Replay-ready   | Uniswap V3                | Ethereum, Base, Arbitrum, and BSC. |
-| Replay-ready   | PancakeSwap V3            | Ethereum, Base, Arbitrum, and BSC. |
-| Snapshot only  | Aerodrome Slipstream      | Base.                              |
-| Discovery only | Uniswap V2 and Uniswap V4 | Ethereum, Base, and Arbitrum.      |
-| Discovery only | Camelot V3 and Fluid DEX  | Arbitrum.                          |
-| Blocks only    | No DEX registrations      | Polygon.                           |
+| Capability     | DEX                       | Chains                                      |
+| -------------- | ------------------------- | ------------------------------------------- |
+| Replay-ready   | Uniswap V3                | Ethereum, Base, Arbitrum, and BSC.          |
+| Replay-ready   | PancakeSwap V3            | Ethereum, Base, Arbitrum, and BSC.          |
+| Analysis only  | Aerodrome Slipstream      | Base.                                       |
+| Discovery only | Uniswap V2 and Uniswap V4 | Ethereum, Base, and Arbitrum.               |
+| Discovery only | Camelot V3 and Fluid DEX  | Arbitrum.                                   |
+| Blocks only    | No DEX registrations      | Other configured chains, including Polygon. |
 
 Aerodrome Slipstream has no `PoolCreated` parser. Register its pools another way before running
-`analyze-pool(s)`. Other registered DEXes that lack the required parsers are omitted from command
-help and fail the capability check.
+`analyze-pool(s)`. Its replay-derived snapshots cannot be validated against on-chain state. Other
+registered DEXes that lack the required parsers are omitted from command help and fail the
+capability check.
 
-Polygon supports `sync-blocks`, but has no registered DEX integrations.
+Chains without DEX registrations can still use `sync-blocks`; Polygon is one example.
 
-`blockchain analyze-pool --help` and `blockchain sync-dex --help` print the current supported chain
-and DEX combinations, derived from the registered parsers.
+`blockchain analyze-pool --help` and `blockchain sync-dex --help` print the supported chain and DEX
+combinations derived from the registered parsers.
 
 #### Use checksummed pool addresses
 
@@ -1187,7 +1175,7 @@ HyperSync rate limits apply per token. See Envio's
 [HyperSync API token docs](https://docs.envio.dev/docs/HyperSync/api-tokens) for token and usage
 details.
 
-- Keep `--concurrency` low on free or low-quota tokens.
+- Keep `--concurrency` low when token quotas are restrictive.
 - A full first-time sync of a large old pool can need thousands of requests.
 - Use `--snapshot-from-rpc` when an exact checkpoint snapshot is enough and full swap storage is not
   needed.
@@ -1206,7 +1194,7 @@ A pool with no processed Mint/Burn events up to the target block has no state to
 line with `"status": "failure"`. Rely on the exit code for an overall pass/fail signal, and parse
 each result line's `status` for per-pool detail.
 
-## Runbook: live pool-sync smoke test
+## Runbook: live pool-sync validation
 
 Use this to check pool discovery, event parsing, and snapshot generation for one DEX on one chain.
 The example uses PancakeSwap V3 on Arbitrum.
@@ -1251,7 +1239,7 @@ fire.
 
 ### Gotchas
 
-- Free or low-quota Envio tokens can spend most time backing off on high-activity pools. Pick
+- Restrictive Envio token quotas can cause repeated backoff on high-activity pools. Pick
   short-history pools, lower `--concurrency`, or use `--snapshot-from-rpc`.
 - Development Postgres data can disappear mid-session while the schema remains. Run `sync-dex`
   immediately before `analyze-pool(s)` when in doubt.
@@ -1264,69 +1252,53 @@ fire.
 
 ## Extending the adapter
 
-The event model currently targets Uniswap V3 concentrated-liquidity pools:
+The event model exposes the Uniswap V3 concentrated-liquidity shape:
 
 - `PoolSwap` carries `sqrt_price_x96` and `tick`.
 - `PoolLiquidityUpdate` carries `tick_lower` and `tick_upper`.
-- Other `DexType` and `AmmType` families exist, but most are not wired beyond discovery.
+- DEX registration separates pool-discovery parsers from event-replay parsers and records the pool's
+  `AmmType`.
 
-### Adding an event or protocol family
+### Event integration points
 
-Design the taxonomy before writing a parser. Most families do not fit the V3 structs:
+Pool events pass through these integration points:
 
-- Uniswap V2 emits `Sync`.
-- Uniswap V4 uses `ModifyLiquidity` and `Donate`.
-- Curve and Balancer pools can hold more than two tokens.
+- Event struct.
+- HyperSync and RPC parsers.
+- `DexExtended` parser slot.
+- `DexPoolData` and `DefiData` variants.
+- Profiler apply method.
+- Event table and insert path.
+- `stream_pool_events` UNION arm and row mapper.
+- PyO3 binding.
 
-Adding events piecemeal tends to create optional fields, duplicate variants, and later renames.
+Parser round-trip, profiler apply, and parser-parity tests cover this path. Incremental sync resumes
+from each pool's last-synced block. Changing the modeled event set does not backfill stored history;
+run a reset sync from pool creation to populate the corresponding event table.
 
-The design pass should:
+### Chain registration boundary
 
-- Map the protocol's events and decide, per event, whether each reuses, extends, or adds a
-  `DexPoolData` variant.
-- Decide whether the family needs a new taxonomy axis. Singleton or `poolId` protocols (Uniswap V4,
-  Balancer) and multi-token pools (Curve) break the per-pool-address, token-pair assumptions.
-- Name events with the `<concept>_<verb>` convention, such as `fee_protocol_update`. Reserve the
-  literal on-chain event name for signatures and error labels.
+A chain integration consists of its `Chain` definition, RPC client, and per-DEX registrations.
+DEXes that reuse modeled events share the existing event path.
 
-Then wire each event through the full path, mirroring an existing one such as `fee_protocol_collect`:
-
-- Event struct
-- HyperSync and RPC parsers
-- `DexExtended` parser slot
-- `DexPoolData` and `DefiData` variants
-- Profiler apply method
-- Event table and its insert
-- `stream_pool_events` UNION arm and row mapper
-- PyO3 binding
-
-Cover it with a parser round-trip test, a profiler apply test, and the parser-parity test.
-
-Incremental sync resumes from each pool's last-synced block. Adding an event type does not backfill
-already-synced history; run a reset sync from creation to populate the new table.
-
-### Adding a chain
-
-A new chain is registration only if its DEXes reuse modeled events:
-
-- Add the `Chain`.
-- Add its RPC client.
-- Add per-DEX registrations.
-
-A new protocol family needs the design pass above.
-
-## Current limitations
+## Limitations
 
 - Order submission supports BUY and SELL market orders through a registered Uniswap V3 deployment
   on the client's chain. Order lists are denied, modify and cancel operations are rejected, and
   venue report probes return an error except mass status, which returns `Ok(None)`; all fail closed
   with no on-chain or durable side effects. LiveNode must disable in-flight checks and leave
-  open-order checks off.
-  Quote-denominated and multi-hop orders are not supported. See [Execution](#execution).
+  open-order checks off. Quote-denominated and multi-hop orders are not supported. See
+  [Execution](#execution).
+- The execution store retains complete signed transactions in plaintext. Protect database storage,
+  replicas, backups, and exports as broadcast-capable material. See
+  [Signed transaction storage](#signed-transaction-storage).
+- Recovery is not fully automated. A signed intent without a durable `broadcast` transition blocks
+  connect, and a same-nonce replacement search over 4,096 blocks requires an explicit recovery
+  decision. See [Persistence and reconciliation](#persistence-and-reconciliation).
 - Order event publication and its durable marker are separate writes, so the adapter does not
   guarantee atomic exactly-once event delivery across a process crash.
 - Very large Uniswap V3 pools can still hit provider payload, timeout, or rate limits during
   final-state Multicall hydration.
-- On-chain snapshot validation covers Uniswap V3 and PancakeSwap V3 (shared V3 pool read ABI). Forks
-  with a different pool ABI sync events and produce replay snapshots, but cannot reach
-  `validation_state = on_chain` until the final-state hydration covers their pool contracts.
+- On-chain snapshot validation supports Uniswap V3 and PancakeSwap V3 through their shared V3 pool
+  read ABI. Pools with a different ABI can sync events and produce replay snapshots, but cannot
+  reach `validation_state = on_chain`.
