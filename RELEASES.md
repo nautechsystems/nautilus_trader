@@ -4,6 +4,8 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added Polymarket quote ticks from `best_bid_ask` market events
+
 ### Breaking Changes
 
 ### Security
@@ -12,9 +14,11 @@ Released on TBD (UTC).
 
 - Fixed Betfair modify recovery after ambiguous REST outcomes and instruction failures
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
+- Fixed Polymarket user WebSocket subscriptions to cover all account orders and trades
 
 ### Internal Improvements
 
+- Optimized Polymarket quote parsing across WebSocket inputs
 - Upgraded Rust (MSRV) to 1.98.0
 - Upgraded `blake3` crate to v1.8.7
 - Upgraded `ruff` package (dev) to v0.16.3
@@ -26,6 +30,8 @@ Released on TBD (UTC).
 - Upgraded `parquet` crate to v59.2.0
 
 ### Documentation Updates
+
+- Documented Polymarket quote sources and order book feed interaction
 
 ### Deprecations
 

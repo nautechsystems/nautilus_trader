@@ -848,6 +848,59 @@ A single `price_change` payload can contain interleaved updates for several asse
 groups updates by instrument and publishes one atomic order book delta batch per instrument, while
 quote processing remains in the venue payload order.
 
+#### Quote ticks
+
+The adapter exposes one quote tick subscription type. It does not expose separate
+subscriptions for snapshot-derived, price-change-derived, and `best_bid_ask` quotes. Quote, book
+delta, and trade subscriptions for the same instrument share one asset-scoped `market` WebSocket
+subscription. A book delta subscription alone does not emit quote ticks; quote output remains gated
+by an active quote subscription.
+
+| Venue message  | Trigger                                      | Price source                      | Size source                                                 |
+| -------------- | -------------------------------------------- | --------------------------------- | ----------------------------------------------------------- |
+| `book`         | Book snapshot                                | Snapshot best bid and ask         | Snapshot best-level sizes                                   |
+| `price_change` | Subscribed level update                      | Message `best_bid` and `best_ask` | Changed best-level size; previous quote or zero otherwise   |
+| `best_bid_ask` | Top move with `subscribe_new_markets = true` | Direct message best bid and ask   | Maintained-book top or prior quote, depending on book state |
+
+```mermaid
+flowchart LR
+    Q[Quote tick subscription] --> W[Asset market WebSocket subscription]
+    W -->|book| S[Snapshot quote<br/>prices and sizes]
+    W -->|price_change| P[Incremental quote<br/>changed-side size]
+    W -->|best_bid_ask<br/>subscribe_new_markets=true| B[Direct top-price quote]
+    L[Maintained L2 book<br/>book-delta subscription + effective deltas] -. matching top sizes .-> B
+    S --> M[Validate and merge]
+    P --> M
+    B --> M
+    M --> D[Deduplicate prices and sizes]
+    D --> T[QuoteTick]
+```
+
+All three venue message paths converge on the same quote tick stream. Deduplication compares prices
+and sizes with the last emitted quote regardless of which message type produced it.
+
+##### `best_bid_ask` handling
+
+With `subscribe_new_markets` enabled, the venue also sends `best_bid_ask` events when an asset's top
+of book moves. Every market connection requests these asset-scoped events; only the primary
+connection forwards global new-market and resolution events. The payload carries prices only, so the
+adapter selects each side's size as follows:
+
+- With [effective deltas](#effective-deltas), an active book delta subscription, and book updates not
+  gated pending a valid snapshot, a side takes its size from the maintained local book when its top
+  price matches. Before the first snapshot, or when the top does not match, its size is zero.
+- Without a maintained local book, or while book updates are gated pending a valid snapshot, a side
+  keeps the previous quote size when its top price matches. A moved or unknown side has zero size.
+
+The adapter ignores events older than the last emitted quote or maintained local book. It also
+rejects locked, crossed, out-of-range, and off-grid events.
+
+An empty price, a bid at or below zero, or an ask at or above one is a missing side. By default,
+`drop_quotes_missing_side` drops the event. When missing sides are allowed, the missing price uses
+the current tick-relative venue bound and its size is zero.
+
+#### Book snapshot validation
+
 When a `book` snapshot includes a hash and its full preimage, the adapter reproduces it from the
 exact wire values and level order. It logs and rejects a mismatch before the snapshot can update
 local book state, emit snapshot-derived deltas or quotes, or resume gated book deltas.
@@ -868,7 +921,9 @@ snapshot batches (see [Data client options](#data-client-options)):
 - Without prior state, such as after a [tick size change](#tick-size-change-handling), the snapshot
   passes through unchanged to seed the new book epoch.
 - Incremental `price_change` batches remain unchanged and update the local comparison state.
-- The option changes only the order book delta stream; quotes and trades are unchanged.
+- When book deltas are subscribed, the maintained comparison book can supply matching sizes to
+  `best_bid_ask` quote ticks. This can change those quote sizes and their unchanged-quote
+  suppression, and the carried sizes can affect later `price_change` quotes. Trades are unchanged.
 
 #### RTDS custom data
 
@@ -1049,15 +1104,14 @@ unauthenticated `GET /version`. Startup continues only when the venue reports nu
 Any other version stops startup with an unsupported-version error; a missing, malformed, or errored
 response stops startup with a version-query failure.
 
-The execution adapter keeps a `user` channel connection for order and trade events and manages market
-subscriptions as needed for instruments seen during trading.
+The execution adapter subscribes once to an account-wide `user` channel for order and trade events.
+It does not open market-channel subscriptions for instruments seen during trading.
 
 The shared WebSocket client logs a peer close code and reason before reconnecting. Malformed payload
 warnings and venue rejection reasons use the same bounded text handling as HTTP responses. Order
 rejections received through WebSocket or reconciliation use the same exact post-only classification
 as submit responses.
 
-The adapter supports dynamic WebSocket subscribe and unsubscribe operations.
 Matched WebSocket fills and their corrections are restored from cached order history and
 deduplicated across reconnects. If a trade arrives before its instrument is available, the adapter
 leaves it out of the dedup state. A redelivered event or later REST reconciliation can apply it after
@@ -1214,7 +1268,7 @@ Class/struct: `PolymarketDataClientConfig`.
 | `http_timeout_secs`, `ws_timeout_secs` | `60`, `30` | HTTP and WebSocket timeout in seconds.                                                    |
 | `ws_max_subscriptions`                 | `200`      | Per-connection subscription cap; the market pool shards across connections at this bound. |
 | `update_instruments_interval_mins`     | `60`       | Instrument catalogue refresh interval; pass `None` to disable it.                         |
-| `subscribe_new_markets`                | `false`    | Subscribe to new-market discovery events.                                                 |
+| `subscribe_new_markets`                | `false`    | Subscribe to new-market discovery events; also enables `best_bid_ask` quote ticks.        |
 | `new_market_filter`                    | `None`     | Rust-only filter applied to newly discovered markets before instrument emission.          |
 | `new_market_fetch_max_concurrency`     | `8`        | Bound concurrent market fetches from discovery events.                                    |
 | `drop_quotes_missing_side`             | `true`     | Drop quotes that do not contain both a bid and an ask.                                    |

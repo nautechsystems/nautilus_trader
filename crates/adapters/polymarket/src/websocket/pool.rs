@@ -25,7 +25,9 @@
 //! current shards are full at subscribe time. A secondary shard closes once it owns
 //! no assets; the primary shard (which carries new-market discovery) always
 //! persists. Each shard replays only its own subscriptions on reconnect because
-//! that state lives inside its own [`PolymarketWebSocketClient`].
+//! that state lives inside its own [`PolymarketWebSocketClient`]. When custom
+//! features are enabled, every shard requests asset-scoped best-bid/ask events,
+//! while secondary shards discard global discovery and resolution events.
 
 use std::sync::{
     Arc, Mutex as StdMutex,
@@ -41,7 +43,7 @@ use ustr::Ustr;
 use super::{
     MARKET_STREAMS_ENDPOINT,
     client::{PolymarketWebSocketClient, WsSubscriptionHandle},
-    messages::PolymarketWsMessage,
+    messages::{MarketWsMessage, PolymarketWsMessage},
 };
 use crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS;
 
@@ -514,21 +516,21 @@ impl PoolInner {
             anyhow::bail!("Market connection pool is closed");
         }
 
-        let subscribe_new_markets = is_primary && self.subscribe_new_markets;
         let id = if is_primary {
             PRIMARY_SHARD_ID
         } else {
             let state = self.state.lock().expect("pool state mutex poisoned");
             available_shard_id(&state)
         };
-        let mut client = self.market_client(subscribe_new_markets, id);
+
+        let mut client = self.market_client(self.subscribe_new_markets, id);
         client.connect().await?;
 
         let handle = client.clone_subscription_handle();
         let rx = client
             .take_message_receiver()
             .ok_or_else(|| anyhow::anyhow!("Market shard receiver unavailable after connect"))?;
-        let forwarder = self.spawn_forwarder(rx);
+        let forwarder = self.spawn_forwarder(rx, is_primary);
 
         let mut state = self.state.lock().expect("pool state mutex poisoned");
         state.shards.insert(
@@ -578,6 +580,7 @@ impl PoolInner {
     fn spawn_forwarder(
         &self,
         mut rx: tokio::sync::mpsc::UnboundedReceiver<PolymarketWsMessage>,
+        is_primary: bool,
     ) -> tokio::task::JoinHandle<()> {
         let out_tx = self
             .out_tx
@@ -591,6 +594,10 @@ impl PoolInner {
             };
 
             while let Some(msg) = rx.recv().await {
+                if !should_forward_from_shard(&msg, is_primary) {
+                    continue;
+                }
+
                 if out_tx.send(msg).is_err() {
                     break;
                 }
@@ -612,6 +619,16 @@ impl PoolInner {
             .assignments
             .len()
     }
+}
+
+fn should_forward_from_shard(message: &PolymarketWsMessage, is_primary: bool) -> bool {
+    is_primary
+        || !matches!(
+            message,
+            PolymarketWsMessage::Market(
+                MarketWsMessage::NewMarket(_) | MarketWsMessage::MarketResolved(_)
+            )
+        )
 }
 
 fn smallest_shard_with_capacity(state: &PoolState, max_subscriptions: usize) -> Option<usize> {
@@ -750,6 +767,63 @@ mod tests {
             );
         }
         state
+    }
+
+    fn market_message(filename: &str) -> PolymarketWsMessage {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join(filename);
+        let json = std::fs::read_to_string(path).unwrap();
+        PolymarketWsMessage::Market(serde_json::from_str(&json).unwrap())
+    }
+
+    #[rstest]
+    #[case::primary_new_market("ws_market_new_market_msg.json", true, true)]
+    #[case::secondary_new_market("ws_market_new_market_msg.json", false, false)]
+    #[case::primary_resolution("ws_market_resolved_msg.json", true, true)]
+    #[case::secondary_resolution("ws_market_resolved_msg.json", false, false)]
+    #[case::secondary_best_bid_ask("ws_market_best_bid_ask_msg.json", false, true)]
+    fn shard_forwarding_keeps_global_events_on_primary(
+        #[case] filename: &str,
+        #[case] is_primary: bool,
+        #[case] expected: bool,
+    ) {
+        let message = market_message(filename);
+        assert_eq!(should_forward_from_shard(&message, is_primary), expected);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn secondary_forwarder_drops_global_events_and_keeps_best_bid_ask() {
+        let inner = PoolInner::new(None, TransportBackend::default(), true, 1);
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        *inner.out_tx.lock().expect("pool out_tx mutex poisoned") = Some(out_tx);
+        let (shard_tx, shard_rx) = tokio::sync::mpsc::unbounded_channel();
+        let forwarder = inner.spawn_forwarder(shard_rx, false);
+
+        shard_tx
+            .send(market_message("ws_market_new_market_msg.json"))
+            .unwrap();
+        shard_tx
+            .send(market_message("ws_market_resolved_msg.json"))
+            .unwrap();
+        shard_tx
+            .send(market_message("ws_market_best_bid_ask_msg.json"))
+            .unwrap();
+        drop(shard_tx);
+        forwarder.await.unwrap();
+
+        let forwarded = out_rx.try_recv().unwrap();
+        let PolymarketWsMessage::Market(MarketWsMessage::BestBidAsk(message)) = forwarded else {
+            panic!("unexpected forwarded message: {forwarded:?}");
+        };
+        assert_eq!(
+            message.asset_id,
+            Ustr::from(
+                "85354956062430465315924116860125388538595433819574542752031640332592237464430"
+            ),
+        );
+        assert!(out_rx.try_recv().is_err());
     }
 
     #[rstest]
