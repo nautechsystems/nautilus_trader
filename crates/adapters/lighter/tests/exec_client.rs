@@ -888,6 +888,18 @@ fn build_client(
     build_client_with(build_config(addr))
 }
 
+fn build_client_mainnet(
+    addr: SocketAddr,
+) -> (
+    LighterExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let mut config = build_config(addr);
+    config.environment = LighterEnvironment::Mainnet;
+    build_client_with(config)
+}
+
 fn build_client_with(
     config: LighterExecClientConfig,
 ) -> (
@@ -1430,7 +1442,7 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_submits_l2_only_integrator_auto_approval() {
     let (addr, state) = start_server().await;
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr);
 
     client.connect().await.expect("connect");
 
@@ -1469,6 +1481,24 @@ async fn connect_submits_l2_only_integrator_auto_approval() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn connect_omits_integrator_approval_on_testnet() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.connect().await.expect("connect");
+
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        state.maker_only_authorizations().await,
+        Vec::<String>::new()
+    );
+    assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
     let (addr, state) = start_server().await;
     state
@@ -1476,7 +1506,7 @@ async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
         .lock()
         .await
         .push(i64::from(TEST_API_KEY_INDEX));
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr);
 
     client.connect().await.expect("connect");
 
@@ -1495,7 +1525,7 @@ async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
         "code": 21149,
         "message": "integrator is not approved",
     }));
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr);
 
     let err = client.connect().await.unwrap_err();
     let msg = format!("{err:#}");
@@ -1732,10 +1762,20 @@ mod serial_tests {
 }
 
 #[rstest]
+#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
+#[case::mainnet(
+    LighterEnvironment::Mainnet,
+    json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_submit_limit_order_emits_submitted_and_signs_sendtx() {
+async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
+    #[case] environment: LighterEnvironment,
+    #[case] expected_attributes: Value,
+) {
     let (addr, state) = start_server().await;
-    let (mut client, mut rx, cache) = build_client(addr);
+    let mut config = build_config(addr);
+    config.environment = environment;
+    let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
     let order = make_limit_order(
@@ -1776,6 +1816,7 @@ async fn test_submit_limit_order_emits_submitted_and_signs_sendtx() {
     assert_eq!(info["IsAsk"], 0); // buys serialize as 0
     assert_eq!(info["Price"], 236_131); // 2361.31 * 100
     assert_eq!(info["BaseAmount"], 50); // 0.0050 * 10_000
+    assert_eq!(info["L2TxAttributes"], expected_attributes);
 
     client.disconnect().await.expect("disconnect");
 }
@@ -2838,10 +2879,20 @@ async fn test_cancel_order_venue_rejection_emits_cancel_rejected_for_pending_can
 }
 
 #[rstest]
+#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
+#[case::mainnet(
+    LighterEnvironment::Mainnet,
+    json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_signs_modify_sendtx() {
+async fn test_modify_order_signs_modify_sendtx(
+    #[case] environment: LighterEnvironment,
+    #[case] expected_attributes: Value,
+) {
     let (addr, state) = start_server().await;
-    let (mut client, _rx, cache) = build_client(addr);
+    let mut config = build_config(addr);
+    config.environment = environment;
+    let (mut client, _rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
     let order = make_limit_order(
@@ -2882,6 +2933,7 @@ async fn test_modify_order_signs_modify_sendtx() {
     assert_eq!(info["Index"], 281_476_929_510_111_i64);
     assert_eq!(info["BaseAmount"], 100);
     assert_eq!(info["Price"], 240_000);
+    assert_eq!(info["L2TxAttributes"], expected_attributes);
 
     client.disconnect().await.expect("disconnect");
 }

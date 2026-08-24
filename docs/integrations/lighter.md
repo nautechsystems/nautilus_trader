@@ -114,29 +114,81 @@ The suffix separates spot and perpetual listings. Outbound requests strip it and
 Use `LighterEnvironment::Mainnet` or `LighterEnvironment::Testnet` in data and execution
 configuration. URL overrides are available for private gateways or local test fixtures.
 
+## Testnet account setup
+
+Public market data does not require a Lighter account. To use private account streams or the
+execution client on testnet, create an account and a user API key:
+
+1. Open the official [Lighter testnet app](https://testnet.app.lighter.xyz/), connect an Ethereum
+   wallet, and select **Create Account**. Approve the requested wallet signatures.
+1. Follow Lighter's [account-index lookup](https://apidocs.lighter.xyz/docs/get-started#find-your-account-index),
+   using the testnet API and the same wallet address:
+
+   ```bash
+   curl -sS --get \
+     "https://testnet.zklighter.elliot.ai/api/v1/accountsByL1Address" \
+     --data-urlencode "l1_address=0xYOUR_ETHEREUM_ADDRESS"
+   ```
+
+   Read the `index` from the required entry in `sub_accounts`. A wallet can own a main account and
+   several sub-accounts, each with a separate account index and API keys. Select the account in the
+   testnet app before generating its key, and use that same account index in NautilusTrader.
+1. Open the testnet app's [API Keys](https://testnet.app.lighter.xyz/apikeys) page and select
+   **Generate API Key**. Choose an unused index from `4` through `254`; Lighter's
+   [API key documentation](https://apidocs.lighter.xyz/docs/api-keys) reserves indexes `0-3` for
+   its desktop and mobile interfaces, while `255` is an API query sentinel.
+1. Save the generated private key before closing the dialog. Lighter does not display it again.
+1. Export the account index, key index, and private key under the testnet-specific names:
+
+   ```bash
+   export LIGHTER_TESTNET_ACCOUNT_INDEX="123456"
+   export LIGHTER_TESTNET_API_KEY_INDEX="4"
+   export LIGHTER_TESTNET_API_SECRET="your-lighter-api-private-key"
+   ```
+
+1. Confirm that Lighter recognizes the selected account and key indexes:
+
+   ```bash
+   curl -sS --get \
+     "https://testnet.zklighter.elliot.ai/api/v1/apikeys" \
+     --data-urlencode "account_index=${LIGHTER_TESTNET_ACCOUNT_INDEX}" \
+     --data-urlencode "api_key_index=${LIGHTER_TESTNET_API_KEY_INDEX}"
+   ```
+
+   A successful response has `"code": 200` and lists the selected key. This public lookup confirms
+   the indexes, but it does not expose or validate the private key.
+
+:::warning
+Lighter API keys authorize trading, private account access, and some withdrawal operations. Store
+the private key in a secret manager or protected environment configuration. Do not commit it to a
+repository or share it in logs.
+:::
+
 ## Integrator attribution
 
-Create and modify transactions carry the NautilusTrader integrator account index in
-`L2TxAttributes` to measure adapter usage. Maker and taker integrator fees are zero. The execution
-client submits the required **zero-fee** `ApproveIntegrator` approval during startup when the API
-key is not maker-only.
+On mainnet, create and modify transactions carry the NautilusTrader integrator account index in
+`L2TxAttributes` to measure adapter usage. Maker and taker integrator fees are zero. The mainnet
+execution client submits the required **zero-fee** `ApproveIntegrator` approval during startup when
+the API key is not maker-only.
 
-Maker-only API keys cannot submit `ApproveIntegrator`. The execution client detects these keys and
-skips automatic approval. Approval is account-scoped, so a non-maker-only key on the same account
-must approve the integrator before a maker-only key can trade through the adapter.
+Testnet create and modify transactions leave `L2TxAttributes` empty. The testnet execution client
+also omits `ApproveIntegrator` during startup.
+
+On mainnet, maker-only API keys cannot submit `ApproveIntegrator`. The execution client detects
+these keys and skips automatic approval. Approval is account-scoped, so a non-maker-only key on the
+same account must approve the integrator before a maker-only key can trade through the adapter.
 
 ### Revoking the approval
 
-Use revocation as cleanup when leaving the adapter. It sends `ApproveIntegrator` with
-`approval_expiry = 0` and zero max fees. The next execution-client startup with a non-maker-only
-key records a new zero-fee approval.
+Use revocation as cleanup when leaving the adapter on mainnet. It sends `ApproveIntegrator` with
+`approval_expiry = 0` and zero max fees. The next mainnet execution-client startup with a
+non-maker-only key records a new zero-fee approval.
 
 ```bash
 export LIGHTER_API_KEY_INDEX=5
 export LIGHTER_API_SECRET=REPLACE_ME
 export LIGHTER_ACCOUNT_INDEX=123456
 cargo run -p nautilus-lighter --bin lighter-integrator-revoke           # mainnet
-cargo run -p nautilus-lighter --bin lighter-integrator-revoke testnet   # testnet
 ```
 
 Script source:
@@ -145,10 +197,8 @@ Script source:
 ```python
 # Python (PyO3 binding) - reads the same env vars as the Rust bin
 from nautilus_trader.adapters.lighter import revoke_lighter_integrator
-from nautilus_trader.adapters.lighter import LighterEnvironment
 
 await revoke_lighter_integrator()  # mainnet (default)
-await revoke_lighter_integrator(LighterEnvironment.TESTNET)  # testnet
 ```
 
 The Rust script prints a summary of the action and pauses for an Enter keypress before signing or

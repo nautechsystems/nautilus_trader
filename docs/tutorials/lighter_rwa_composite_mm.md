@@ -86,12 +86,14 @@ inside the same event-driven runtime.
 
 The example reads credentials from environment variables and keeps the strategy
 parameters as editable Rust constants. It defaults to
-`LighterEnvironment::Testnet`, so set the testnet Lighter credentials:
+`LighterEnvironment::Testnet`, so follow the
+[testnet account setup](../integrations/lighter.md#testnet-account-setup) and set the testnet
+Lighter credentials:
 
 ```bash
 export DATABENTO_API_KEY="your-databento-api-key"
 export LIGHTER_TESTNET_ACCOUNT_INDEX="123456"
-export LIGHTER_TESTNET_API_KEY_INDEX="0"
+export LIGHTER_TESTNET_API_KEY_INDEX="4"
 export LIGHTER_TESTNET_API_SECRET="your-lighter-api-secret"
 ```
 

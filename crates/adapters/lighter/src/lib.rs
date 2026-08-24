@@ -44,14 +44,15 @@
 //!
 //! # Integrator attribution
 //!
-//! Submitted create and modify order transactions carry the NautilusTrader integrator account index
-//! in Lighter's `L2TxAttributes`. This helps us gauge real usage of the integration and prioritize
-//! ongoing maintenance. Maker and taker integrator fees are set to zero, so attribution adds no
-//! trading cost.
+//! On mainnet, submitted create and modify order transactions carry the NautilusTrader integrator
+//! account index in Lighter's `L2TxAttributes`. This helps us gauge real usage of the integration
+//! and prioritize ongoing maintenance. Maker and taker integrator fees are set to zero, so
+//! attribution adds no trading cost. Testnet create and modify transactions leave
+//! `L2TxAttributes` empty.
 //!
 //! Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to
-//! orders. During startup, the execution client submits the required zero-fee approval for the
-//! configured L2 account. See the
+//! mainnet orders. During startup, the mainnet execution client submits the required zero-fee
+//! approval for the configured L2 account. The testnet client does not submit an approval. See the
 //! [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
 //! for approval and revocation details.
 

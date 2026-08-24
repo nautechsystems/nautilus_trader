@@ -43,25 +43,25 @@ trait surface.
 
 ## Integrator attribution
 
-Submitted create and modify order transactions carry the NautilusTrader integrator account index in
-Lighter's `L2TxAttributes`. This helps us gauge real usage of the integration and prioritize
-ongoing maintenance. Maker and taker integrator fees are set to zero, so attribution adds no trading
-cost.
+On mainnet, submitted create and modify order transactions carry the NautilusTrader integrator
+account index in Lighter's `L2TxAttributes`. This helps us gauge real usage of the integration and
+prioritize ongoing maintenance. Maker and taker integrator fees are set to zero, so attribution adds
+no trading cost. Testnet create and modify transactions leave `L2TxAttributes` empty.
 
 Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to orders.
-During startup, the execution client submits the required **zero-fee** approval for the configured
-L2 account. See the
+During startup, the mainnet execution client submits the required **zero-fee** approval for the
+configured L2 account. The testnet client does not submit an approval. See the
 [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
 for approval and revocation details.
 
 ### Maker-only API keys
 
-Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly orders, modifies on
-ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves. The execution
-client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the approval with
-a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any non-maker-only
+On mainnet, Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly orders,
+modifies on ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves. The
+execution client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the approval
+with a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any non-maker-only
 key on the same account permanently unlocks orders for every key on that account, including
-maker-only ones.
+maker-only ones. Testnet does not query `getMakerOnlyApiKeys` for integrator approval.
 
 ## L2 transaction signer
 
