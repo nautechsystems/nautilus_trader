@@ -81,8 +81,8 @@ use crate::{
         },
         credential::{Credential, scrub_auth},
         enums::{
-            LighterAccountTier, LighterPositionMarginMode, LighterProductType, LighterTxStatus,
-            LighterTxType,
+            LighterAccountTier, LighterEnvironment, LighterPositionMarginMode, LighterProductType,
+            LighterTxStatus, LighterTxType,
         },
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
         symbol::{MarketRegistry, product_type_from_instrument_id},
@@ -507,6 +507,15 @@ impl LighterExecutionClient {
         let Some(credential) = &self.credential else {
             return Ok(());
         };
+
+        if matches!(self.config.environment, LighterEnvironment::Testnet) {
+            log::info!(
+                "Skipping Lighter integrator auto-approval on testnet: the Nautilus \
+                 integrator account exists on mainnet only; orders are submitted \
+                 unattributed"
+            );
+            return Ok(());
+        }
 
         let mut maker_only_check_failed = false;
 
@@ -1736,7 +1745,7 @@ impl LighterExecutionClient {
             base_amount,
             price: price_ticks,
             trigger_price: trigger_price_ticks,
-            attributes: integrator_attributes(),
+            attributes: integrator_attributes(self.config.environment),
         };
 
         let signed = sign_tx(
@@ -2491,7 +2500,7 @@ impl FanoutDispatchContext {
                 trigger_price: plan.trigger_price,
                 order_expiry: plan.order_expiry,
             },
-            attributes: integrator_attributes(),
+            attributes: integrator_attributes(self.environment),
         };
         let signed = sign_tx(
             &tx,
@@ -3465,9 +3474,16 @@ fn rollback_tx_dispatch_indices(
     }
 }
 
-fn integrator_attributes() -> L2TxAttributes {
+fn integrator_attributes(environment: LighterEnvironment) -> L2TxAttributes {
+    // The Nautilus integrator account exists on mainnet only. Tagging testnet
+    // transactions with it fails at the venue (21100 on approval, 21149 on
+    // every order), so testnet transactions are submitted unattributed.
+    let integrator_account_index = match environment {
+        LighterEnvironment::Mainnet => LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+        LighterEnvironment::Testnet => 0,
+    };
     L2TxAttributes {
-        integrator_account_index: LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+        integrator_account_index,
         integrator_taker_fee: 0,
         integrator_maker_fee: 0,
         skip_nonce: 0,
@@ -8558,12 +8574,14 @@ mod tests {
     }
 
     #[rstest]
-    fn integrator_attributes_tags_nautilus_account_at_zero_fees() {
-        let attrs = integrator_attributes();
-        assert_eq!(
-            attrs.integrator_account_index,
-            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
-        );
+    #[case(LighterEnvironment::Mainnet, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX)]
+    #[case(LighterEnvironment::Testnet, 0)]
+    fn integrator_attributes_match_environment(
+        #[case] environment: LighterEnvironment,
+        #[case] expected_integrator: u64,
+    ) {
+        let attrs = integrator_attributes(environment);
+        assert_eq!(attrs.integrator_account_index, expected_integrator);
         assert_eq!(attrs.integrator_taker_fee, 0);
         assert_eq!(attrs.integrator_maker_fee, 0);
         assert_eq!(attrs.skip_nonce, 0);
@@ -11151,12 +11169,26 @@ mod tests {
     #[tokio::test]
     async fn integrator_approval_api_rejection_releases_reservation_and_nonce() {
         let mut config = test_config();
+        config.environment = LighterEnvironment::Mainnet;
         config.base_url_http = Some(spawn_integrator_approval_rejection_server().await);
         let (client, _cache, _rx) = create_execution_client_with_config(config);
 
         let err = client.submit_integrator_auto_approval().await.unwrap_err();
 
         assert!(format!("{err:#}").contains("invalid approval"));
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[tokio::test]
+    async fn integrator_auto_approval_skipped_on_testnet() {
+        let (client, _cache, _rx) = create_execution_client_with_config(test_config());
+
+        // test_config points HTTP at an unreachable address, so a returned Ok
+        // proves approval was skipped without any venue call.
+        client
+            .submit_integrator_auto_approval()
+            .await
+            .expect("testnet must skip approval without any venue call");
         assert_nonce_reusable(&client.dispatch);
     }
 

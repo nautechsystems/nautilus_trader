@@ -121,6 +121,9 @@ Create and modify transactions carry the NautilusTrader integrator account index
 client submits the required **zero-fee** `ApproveIntegrator` approval during startup when the API
 key is not maker-only.
 
+The integrator account exists on mainnet only. On testnet the adapter submits transactions
+unattributed and skips the startup approval entirely.
+
 Maker-only API keys cannot submit `ApproveIntegrator`. The execution client detects these keys and
 skips automatic approval. Approval is account-scoped, so a non-maker-only key on the same account
 must approve the integrator before a maker-only key can trade through the adapter.
