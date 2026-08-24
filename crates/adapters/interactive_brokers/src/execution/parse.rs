@@ -226,7 +226,7 @@ pub fn parse_order_status_to_report(
 
     // Map order type from IB order if available
     let order_type = order
-        .map(|order| map_ib_order_type(&order.order_type))
+        .map(|order| map_ib_order_type(&order.order_type, order.limit_price))
         .unwrap_or(OrderType::Market);
 
     // Map time in force from IB order if available
@@ -293,8 +293,13 @@ pub fn parse_order_status_to_report(
     Ok(report)
 }
 
-fn map_ib_order_type(order_type: &str) -> OrderType {
-    IbOrderType::from_str(order_type).map_or(OrderType::Market, IbOrderType::nautilus_order_type)
+fn map_ib_order_type(order_type: &str, limit_price: Option<f64>) -> OrderType {
+    if order_type == "IBALGO" && limit_price.is_some_and(|price| price != 0.0) {
+        OrderType::Limit
+    } else {
+        IbOrderType::from_str(order_type)
+            .map_or(OrderType::Market, IbOrderType::nautilus_order_type)
+    }
 }
 
 fn parse_ib_order_pricing_fields(
@@ -485,6 +490,11 @@ mod tests {
     }
 
     use rstest::rstest;
+
+    #[rstest]
+    fn test_ibalgo_with_zero_limit_price_maps_to_market() {
+        assert_eq!(map_ib_order_type("IBALGO", Some(0.0)), OrderType::Market);
+    }
 
     #[rstest]
     fn test_parse_execution_time_hyphenated_format() {
@@ -826,6 +836,32 @@ mod tests {
         None,
         OrderType::Limit,
         Some(Price::new(185.0, 0)),
+        None,
+        None,
+        None,
+        TrailingOffsetType::NoTrailingOffset
+    )]
+    #[case(
+        "IBALGO",
+        Some(185.0),
+        None,
+        None,
+        None,
+        OrderType::Limit,
+        Some(Price::new(185.0, 0)),
+        None,
+        None,
+        None,
+        TrailingOffsetType::NoTrailingOffset
+    )]
+    #[case(
+        "IBALGO",
+        None,
+        None,
+        None,
+        None,
+        OrderType::Market,
+        None,
         None,
         None,
         None,
