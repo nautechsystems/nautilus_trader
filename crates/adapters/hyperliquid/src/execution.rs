@@ -1735,11 +1735,17 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // Disconnect WebSocket
         self.ws_client.disconnect().await?;
 
+        if let Some(handle) = self.ws_stream_handle.as_mut()
+            && let Err(e) = handle.await
+        {
+            log::error!("Error waiting for WebSocket execution stream task: {e}");
+        }
+        self.ws_stream_handle = None;
+
         if let Some(handle) = self.settlement_poll_handle.take() {
             handle.abort();
         }
 
-        // Abort any pending tasks
         self.abort_pending_tasks();
 
         self.core.set_disconnected();
