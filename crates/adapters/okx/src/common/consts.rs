@@ -38,6 +38,18 @@ pub static OKX_CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::new(Us
 /// See <https://www.okx.com/docs-v5/en/#overview-broker-program> for further details.
 pub const OKX_NAUTILUS_BROKER_ID: &str = "5328c82e5542BCDE";
 
+/// Default lookback for terminal orders and fills during reconciliation.
+///
+/// Active orders and current positions are requested independently of this window. The three-day
+/// default matches the retention of `GET /api/v5/trade/fills`.
+pub const OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS: u64 = 3 * 24 * 60;
+
+/// Maximum lookback for terminal orders and fills during reconciliation.
+///
+/// Seven days is the longest complete window across the regular order history and spread trade
+/// history endpoints used for reconciliation.
+pub const OKX_RECONCILIATION_LOOKBACK_MAX_MINS: u64 = 7 * 24 * 60;
+
 // Use the canonical host with www to avoid cross-domain redirects which may
 // strip authentication headers in some HTTP clients and middleboxes.
 pub const OKX_HTTP_URL: &str = "https://www.okx.com";

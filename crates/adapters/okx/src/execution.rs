@@ -21,7 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
@@ -51,7 +51,8 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
+        TimeInForce, TrailingOffsetType,
     },
     events::OrderDeniedReason,
     identifiers::{
@@ -69,8 +70,9 @@ use ustr::Ustr;
 use crate::{
     common::{
         consts::{
-            OKX_CONDITIONAL_ORDER_TYPES, OKX_SUCCESS_CODE, OKX_VENUE, OKX_WS_HEARTBEAT_SECS,
-            resolve_instrument_families, validate_okx_client_order_id,
+            OKX_CONDITIONAL_ORDER_TYPES, OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS,
+            OKX_RECONCILIATION_LOOKBACK_MAX_MINS, OKX_SUCCESS_CODE, OKX_VENUE,
+            OKX_WS_HEARTBEAT_SECS, resolve_instrument_families, validate_okx_client_order_id,
         },
         enums::{OKXInstrumentType, OKXMarginMode, OKXTradeMode, is_advance_algo_order},
         failure::{classify_okx_http_failure, classify_okx_venue_code, classify_okx_ws_failure},
@@ -81,7 +83,7 @@ use crate::{
     },
     config::OKXExecClientConfig,
     http::{
-        client::{OKXHttpClient, ReportInstrumentScope},
+        client::{AlgoOrderReportSweep, FillHistory, OKXHttpClient, ReportInstrumentScope},
         models::OKXCancelAlgoOrderRequest,
     },
     websocket::{
@@ -255,13 +257,15 @@ impl OKXExecutionClient {
     async fn collect_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
-    ) -> anyhow::Result<(Vec<OrderStatusReport>, bool)> {
+    ) -> anyhow::Result<OrderReportSweep> {
         let instrument_types = self.instrument_types();
         let routing_types = order_routing_instrument_types(&instrument_types);
         let scope = self.report_scope(&routing_types);
         let start = nanos_to_datetime(cmd.start);
         let end = nanos_to_datetime(cmd.end);
         let mut reports = Vec::new();
+        let mut regular_by_venue_order_id = AHashMap::new();
+        let mut ambiguous_triggered_child_ids = AHashSet::new();
         let mut complete = true;
 
         if let Some(instrument_id) = cmd.instrument_id {
@@ -278,6 +282,14 @@ impl OKXExecutionClient {
                     Some(scope),
                 )
                 .await?;
+
+            regular_by_venue_order_id.extend(
+                sweep
+                    .reports
+                    .iter()
+                    .map(|report| (report.venue_order_id, report.clone())),
+            );
+
             reports.extend(sweep.reports);
             complete &= sweep.complete;
 
@@ -302,8 +314,12 @@ impl OKXExecutionClient {
                     .await
                 {
                     Ok(sweep) => {
-                        merge_order_status_reports(&mut reports, sweep.reports);
-                        complete &= sweep.complete;
+                        merge_algo_order_status_reports(
+                            &mut reports,
+                            sweep,
+                            &mut ambiguous_triggered_child_ids,
+                            &mut complete,
+                        );
                     }
                     Err(e) if is_instrument_cache_miss(&e) => return Err(e),
                     Err(e) => {
@@ -329,6 +345,14 @@ impl OKXExecutionClient {
                         Some(scope),
                     )
                     .await?;
+
+                regular_by_venue_order_id.extend(
+                    sweep
+                        .reports
+                        .iter()
+                        .map(|report| (report.venue_order_id, report.clone())),
+                );
+
                 reports.extend(sweep.reports);
                 complete &= sweep.complete;
 
@@ -349,8 +373,12 @@ impl OKXExecutionClient {
                         .await
                     {
                         Ok(sweep) => {
-                            merge_order_status_reports(&mut reports, sweep.reports);
-                            complete &= sweep.complete;
+                            merge_algo_order_status_reports(
+                                &mut reports,
+                                sweep,
+                                &mut ambiguous_triggered_child_ids,
+                                &mut complete,
+                            );
                         }
                         Err(e) if is_instrument_cache_miss(&e) => return Err(e),
                         Err(e) => {
@@ -405,12 +433,18 @@ impl OKXExecutionClient {
             reports.retain(|r| r.ts_last <= end || r.order_status.is_open());
         }
 
-        Ok((reports, complete))
+        Ok(OrderReportSweep {
+            reports,
+            complete,
+            ambiguous_triggered_child_ids,
+            regular_by_venue_order_id,
+        })
     }
 
     async fn collect_fill_reports(
         &self,
         cmd: GenerateFillReports,
+        history: FillHistory,
     ) -> anyhow::Result<(Vec<FillReport>, bool)> {
         let instrument_types = self.instrument_types();
         let routing_types = order_routing_instrument_types(&instrument_types);
@@ -430,6 +464,7 @@ impl OKXExecutionClient {
                     start_dt,
                     end_dt,
                     None,
+                    history,
                     Some(scope),
                 )
                 .await?;
@@ -446,6 +481,7 @@ impl OKXExecutionClient {
                         start_dt,
                         end_dt,
                         None,
+                        history,
                         Some(scope),
                     )
                     .await?;
@@ -463,6 +499,7 @@ impl OKXExecutionClient {
                         start_dt,
                         end_dt,
                         None,
+                        history,
                         Some(scope),
                     )
                     .await?;
@@ -1998,14 +2035,14 @@ impl ExecutionClient for OKXExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        Ok(self.collect_order_status_reports(cmd).await?.0)
+        Ok(self.collect_order_status_reports(cmd).await?.reports)
     }
 
     async fn generate_fill_reports(
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        Ok(self.collect_fill_reports(cmd).await?.0)
+        Ok(self.collect_fill_reports(cmd, FillHistory::Recent).await?.0)
     }
 
     async fn generate_position_status_reports(
@@ -2023,10 +2060,16 @@ impl ExecutionClient for OKXExecutionClient {
 
         let ts_now = self.clock.get_time_ns();
 
-        let start = lookback_mins.map(|mins| {
-            let lookback_ns = mins * 60 * 1_000_000_000;
-            UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns))
-        });
+        let lookback_mins = lookback_mins
+            .unwrap_or(OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS)
+            .min(OKX_RECONCILIATION_LOOKBACK_MAX_MINS);
+        let fill_history = if lookback_mins <= OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS {
+            FillHistory::Recent
+        } else {
+            FillHistory::Extended
+        };
+        let lookback_ns = lookback_mins * 60 * 1_000_000_000;
+        let start = Some(UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns)));
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)
@@ -2048,14 +2091,36 @@ impl ExecutionClient for OKXExecutionClient {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let (
-            (order_reports, orders_complete),
+            order_sweep,
             (fill_reports, fills_complete),
-            (position_reports, positions_complete),
+            (mut position_reports, positions_complete),
         ) = tokio::try_join!(
             self.collect_order_status_reports(&order_cmd),
-            self.collect_fill_reports(fill_cmd),
+            self.collect_fill_reports(fill_cmd, fill_history),
             self.collect_position_status_reports(&position_cmd),
         )?;
+        let OrderReportSweep {
+            reports: mut order_reports,
+            complete: mut orders_complete,
+            ambiguous_triggered_child_ids,
+            regular_by_venue_order_id,
+        } = order_sweep;
+        orders_complete &= self
+            .recover_triggered_child_order_reports(
+                &mut order_reports,
+                &ambiguous_triggered_child_ids,
+                &regular_by_venue_order_id,
+            )
+            .await;
+
+        if positions_complete {
+            self.add_flat_derivative_position_reports(
+                &order_reports,
+                &fill_reports,
+                &mut position_reports,
+                ts_now,
+            );
+        }
         let reports_complete = orders_complete && fills_complete && positions_complete;
 
         log::info!("Received {} OrderStatusReports", order_reports.len());
@@ -2586,6 +2651,210 @@ impl ExecutionClient for OKXExecutionClient {
     }
 }
 
+const MAX_TRIGGERED_CHILD_RECOVERIES: usize = 100;
+
+struct OrderReportSweep {
+    reports: Vec<OrderStatusReport>,
+    complete: bool,
+    ambiguous_triggered_child_ids: AHashSet<VenueOrderId>,
+    regular_by_venue_order_id: AHashMap<VenueOrderId, OrderStatusReport>,
+}
+
+impl OKXExecutionClient {
+    fn add_flat_derivative_position_reports(
+        &self,
+        order_reports: &[OrderStatusReport],
+        fill_reports: &[FillReport],
+        position_reports: &mut Vec<PositionStatusReport>,
+        ts_init: UnixNanos,
+    ) {
+        let mut instrument_ids: AHashSet<InstrumentId> = order_reports
+            .iter()
+            .map(|report| report.instrument_id)
+            .chain(fill_reports.iter().map(|report| report.instrument_id))
+            .collect();
+        let mut hedging_instrument_ids = AHashSet::new();
+
+        {
+            let cache = self.core.cache();
+            for position in cache.positions_open(
+                Some(&OKX_VENUE),
+                None,
+                None,
+                Some(&self.core.account_id),
+                None,
+            ) {
+                instrument_ids.insert(position.instrument_id);
+                if cache.oms_type(&position.id) == Some(OmsType::Hedging) {
+                    hedging_instrument_ids.insert(position.instrument_id);
+                }
+            }
+        }
+
+        instrument_ids.retain(|instrument_id| {
+            !is_spread_instrument(*instrument_id)
+                && matches!(
+                    okx_instrument_type_from_symbol(instrument_id.symbol.as_str()),
+                    OKXInstrumentType::Swap
+                        | OKXInstrumentType::Futures
+                        | OKXInstrumentType::Option
+                )
+                && !hedging_instrument_ids.contains(instrument_id)
+                && !position_reports
+                    .iter()
+                    .any(|report| report.instrument_id == *instrument_id)
+        });
+
+        for instrument_id in instrument_ids {
+            // A successful OKX positions snapshot omits flat rows
+            position_reports.push(PositionStatusReport::new(
+                self.core.account_id,
+                instrument_id,
+                PositionSideSpecified::Flat,
+                Quantity::zero(0),
+                ts_init,
+                ts_init,
+                None,
+                None,
+                None,
+            ));
+        }
+    }
+
+    async fn recover_triggered_child_order_reports(
+        &self,
+        reports: &mut Vec<OrderStatusReport>,
+        ambiguous_triggered_child_ids: &AHashSet<VenueOrderId>,
+        regular_by_venue_order_id: &AHashMap<VenueOrderId, OrderStatusReport>,
+    ) -> bool {
+        let mut recovered = Vec::with_capacity(reports.len());
+        let recovery_candidate_count = reports
+            .iter()
+            .filter(|report| {
+                report.order_status == OrderStatus::Triggered
+                    && !ambiguous_triggered_child_ids.contains(&report.venue_order_id)
+            })
+            .count();
+        let mut complete = true;
+
+        if recovery_candidate_count > MAX_TRIGGERED_CHILD_RECOVERIES {
+            log::warn!(
+                "Triggered child recovery hit {MAX_TRIGGERED_CHILD_RECOVERIES} request cap; omitting unresolved reports"
+            );
+        }
+
+        let mut request_count = 0;
+
+        for mut parent_report in reports.drain(..) {
+            if parent_report.order_status != OrderStatus::Triggered {
+                recovered.push(parent_report);
+                continue;
+            }
+
+            if ambiguous_triggered_child_ids.contains(&parent_report.venue_order_id) {
+                log::warn!(
+                    "Omitting triggered algo order with ambiguous child identifiers: {} {}",
+                    parent_report.instrument_id,
+                    parent_report.venue_order_id,
+                );
+                self.push_external_regular_order_fallback(
+                    &parent_report,
+                    regular_by_venue_order_id,
+                    &mut recovered,
+                );
+                complete = false;
+                continue;
+            }
+
+            if request_count >= MAX_TRIGGERED_CHILD_RECOVERIES {
+                self.push_external_regular_order_fallback(
+                    &parent_report,
+                    regular_by_venue_order_id,
+                    &mut recovered,
+                );
+                complete = false;
+                continue;
+            }
+            request_count += 1;
+
+            match self
+                .http_client
+                .request_order_status_report_by_venue_order_id(
+                    self.core.account_id,
+                    parent_report.instrument_id,
+                    parent_report.venue_order_id,
+                )
+                .await
+            {
+                Ok(Some(mut child_report)) => {
+                    if child_report.order_status == OrderStatus::Accepted {
+                        parent_report.quantity = child_report.quantity;
+                        parent_report.price = child_report.price.or(parent_report.price);
+                        parent_report.reduce_only |= child_report.reduce_only;
+                        parent_report.ts_last = child_report.ts_last;
+                        recovered.push(parent_report);
+                    } else {
+                        child_report.client_order_id = parent_report.client_order_id;
+                        recovered.push(child_report);
+                    }
+                }
+                Ok(None) => {
+                    log::warn!(
+                        "Triggered child order {} {} was not found",
+                        parent_report.instrument_id,
+                        parent_report.venue_order_id,
+                    );
+                    self.push_external_regular_order_fallback(
+                        &parent_report,
+                        regular_by_venue_order_id,
+                        &mut recovered,
+                    );
+                    complete = false;
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to recover triggered child order {} {}: {e}",
+                        parent_report.instrument_id,
+                        parent_report.venue_order_id,
+                    );
+                    self.push_external_regular_order_fallback(
+                        &parent_report,
+                        regular_by_venue_order_id,
+                        &mut recovered,
+                    );
+                    complete = false;
+                }
+            }
+        }
+
+        *reports = recovered;
+        complete
+    }
+
+    fn push_external_regular_order_fallback(
+        &self,
+        parent_report: &OrderStatusReport,
+        regular_by_venue_order_id: &AHashMap<VenueOrderId, OrderStatusReport>,
+        recovered: &mut Vec<OrderStatusReport>,
+    ) {
+        let cache = self.core.cache();
+        let cached_by_client = parent_report
+            .client_order_id
+            .is_some_and(|client_order_id| cache.order_exists(&client_order_id));
+        let cached_by_venue = cache
+            .client_order_id(&parent_report.venue_order_id)
+            .is_some_and(|client_order_id| cache.order_exists(client_order_id));
+
+        if !cached_by_client
+            && !cached_by_venue
+            && let Some(regular_report) =
+                regular_by_venue_order_id.get(&parent_report.venue_order_id)
+        {
+            recovered.push(regular_report.clone());
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OrderCommandRoute {
     RegularWs,
@@ -2829,6 +3098,23 @@ fn is_instrument_cache_miss(error: &anyhow::Error) -> bool {
     error
         .chain()
         .any(|cause| cause.to_string().contains("missing from cache"))
+}
+
+fn merge_algo_order_status_reports(
+    reports: &mut Vec<OrderStatusReport>,
+    sweep: AlgoOrderReportSweep,
+    ambiguous_triggered_child_ids: &mut AHashSet<VenueOrderId>,
+    complete: &mut bool,
+) {
+    let AlgoOrderReportSweep {
+        reports: incoming,
+        complete: sweep_complete,
+        ambiguous_triggered_child_ids: ambiguous,
+    } = sweep;
+
+    *complete &= sweep_complete && ambiguous.is_empty();
+    ambiguous_triggered_child_ids.extend(ambiguous);
+    merge_order_status_reports(reports, incoming);
 }
 
 fn merge_order_status_reports(

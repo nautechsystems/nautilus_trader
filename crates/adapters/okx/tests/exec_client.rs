@@ -73,13 +73,14 @@ use nautilus_model::{
         TradeId, TraderId, VenueOrderId,
     },
     instruments::{
-        CryptoFuturesSpread, InstrumentAny,
+        CryptoFuturesSpread, Instrument, InstrumentAny,
         stubs::{
             crypto_option_btc_deribit, crypto_perpetual_ethusdt, currency_pair_btcusdt,
             currency_pair_ethusdt,
         },
     },
-    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
 };
@@ -87,7 +88,9 @@ use nautilus_network::http::HttpClient;
 use nautilus_okx::{
     common::{
         consts::{
-            OKX_CLIENT_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_VENUE,
+            OKX_CLIENT_ID, OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE,
+            OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS, OKX_RECONCILIATION_LOOKBACK_MAX_MINS,
+            OKX_VENUE,
         },
         enums::{
             OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType, OKXSide, OKXTradeMode,
@@ -2831,6 +2834,17 @@ fn regular_order_detail_response(params: &HashMap<String, String>) -> serde_json
                 "filled",
                 "800.00",
             ),
+            "mass-triggered-child-venue-id" => (
+                "",
+                "",
+                "mass-triggered-child-venue-id",
+                "limit",
+                "filled",
+                "850.00",
+            ),
+            other if other.starts_with("mass-cap-child-") => {
+                ("", "", other, "limit", "filled", "850.00")
+            }
             "external-venue-id" => ("", "", "external-venue-id", "limit", "live", "2000.00"),
             other => panic!("unexpected regular order detail query: {other}"),
         };
@@ -3099,6 +3113,7 @@ struct ReportRouteState {
     spread_order_pending_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     spread_order_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     regular_fill_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
+    regular_fill_history_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
     spread_trade_queries: tokio::sync::Mutex<Vec<HashMap<String, String>>>,
 }
 
@@ -3202,6 +3217,7 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
     let spread_pending_state = Arc::clone(&state);
     let spread_history_state = Arc::clone(&state);
     let regular_fill_state = Arc::clone(&state);
+    let regular_fill_history_state = Arc::clone(&state);
     let spread_trade_state = state;
 
     Router::new()
@@ -3333,6 +3349,16 @@ fn create_exec_report_test_router(state: Arc<ReportRouteState>) -> Router {
                     response["data"][0]["billId"] = json!("bill-margin-spot-1");
                     response["data"][0]["ts"] = json!("1786550400100");
                     Json(response).into_response()
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/fills-history",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let state = Arc::clone(&regular_fill_history_state);
+                async move {
+                    state.regular_fill_history_queries.lock().await.push(params);
+                    Json(json!({"code": "0", "msg": "", "data": []})).into_response()
                 }
             }),
         )
@@ -4627,8 +4653,18 @@ async fn test_generate_order_status_report_venue_only_queries_algo_after_regular
 }
 
 #[rstest]
+#[case(Some(60), 60)]
+#[case(None, OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS)]
+#[case(Some(5 * 24 * 60), 5 * 24 * 60)]
+#[case(
+    Some(8 * 24 * 60),
+    OKX_RECONCILIATION_LOOKBACK_MAX_MINS
+)]
 #[tokio::test]
-async fn test_generate_mass_status_sets_report_window() {
+async fn test_generate_mass_status_sets_report_window(
+    #[case] lookback_mins: Option<u64>,
+    #[case] expected_mins: u64,
+) {
     let state = Arc::new(ReportRouteState::default());
     let addr = start_exec_report_test_server(Arc::clone(&state)).await;
     let base_url = format!("http://{addr}");
@@ -4638,13 +4674,826 @@ async fn test_generate_mass_status_sets_report_window() {
     client.on_instrument(query_order_instrument());
 
     let mass_status = client
-        .generate_mass_status(Some(60))
+        .generate_mass_status(lookback_mins)
         .await
         .unwrap()
         .unwrap();
+    let expected_start = UnixNanos::from(
+        mass_status
+            .ts_init
+            .as_u64()
+            .saturating_sub(expected_mins * 60 * 1_000_000_000),
+    );
+    let recent_fill_queries = state.regular_fill_queries.lock().await.clone();
+    let extended_fill_queries = state.regular_fill_history_queries.lock().await.clone();
+    let expected_begin = (expected_start.as_u64() / 1_000_000).to_string();
 
-    assert!(mass_status.lookback_start().is_some());
+    assert_eq!(mass_status.lookback_start(), Some(expected_start));
     assert!(mass_status.reports_complete());
+    let fill_query = if expected_mins <= OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS {
+        assert_eq!(recent_fill_queries.len(), 1);
+        assert!(extended_fill_queries.is_empty());
+        &recent_fill_queries[0]
+    } else {
+        assert!(recent_fill_queries.is_empty());
+        assert_eq!(extended_fill_queries.len(), 1);
+        &extended_fill_queries[0]
+    };
+    assert_eq!(
+        fill_query.get("begin").map(String::as_str),
+        Some(expected_begin.as_str())
+    );
+    assert!(!fill_query.contains_key("end"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_does_not_invent_net_flat_for_cached_hedge_position() {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(Arc::clone(&state)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    let instrument = query_order_instrument();
+    client.on_instrument(instrument.clone());
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-HEDGE-001")),
+        Some(PositionId::from("P-HEDGE-001")),
+        Some(Price::from("2000")),
+        Some(Quantity::from("1")),
+        Some(LiquiditySide::Taker),
+        Some(Money::from("0.01 USDT")),
+        None,
+        Some(AccountId::from("OKX-001")),
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(mass_status.reports_complete());
+    assert!(mass_status.position_reports().is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_fails_on_malformed_fill_quantity() {
+    let mut fill = load_test_data("http_transaction_detail.json");
+    fill["fillSz"] = json!("invalid");
+    fill["instId"] = json!("ETH-USDT-SWAP");
+    fill["instType"] = json!("SWAP");
+    fill["ts"] = json!(jiff::Timestamp::now().as_millisecond().to_string());
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route("/api/v5/trade/orders-algo-pending", empty.clone())
+        .route("/api/v5/trade/orders-algo-history", empty.clone())
+        .route(
+            "/api/v5/trade/fills",
+            get(move || {
+                let fill = fill.clone();
+                async move { Json(json!({"code": "0", "msg": "", "data": [fill]})) }
+            }),
+        )
+        .route("/api/v5/account/positions", empty.clone())
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+        });
+    client.on_instrument(query_order_instrument());
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+
+    assert!(error.to_string().contains("failed to parse fill quantity"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_recovers_historical_triggered_child_status() {
+    let detail_queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let addr = start_mass_status_triggered_child_server(
+        Arc::clone(&detail_queries),
+        "effective",
+        Some("filled"),
+        "1",
+        "OMASSTRIGGERED1",
+        "",
+        "ETH-USDT-SWAP",
+        None,
+        1,
+        false,
+        &["mass-triggered-child-venue-id"],
+    )
+    .await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+    let report = reports
+        .get(&VenueOrderId::from("mass-triggered-child-venue-id"))
+        .expect("expected recovered triggered child report");
+    let detail_queries = detail_queries.lock().await;
+
+    assert!(mass_status.reports_complete());
+    assert!(mass_status.lookback_start().is_some());
+    assert_eq!(reports.len(), 1);
+    let position_reports = mass_status.position_reports();
+    let position_report = position_reports
+        .get(&InstrumentId::from("ETH-USDT-SWAP.OKX"))
+        .and_then(|reports| reports.first())
+        .expect("expected explicit flat position report");
+    assert_eq!(detail_queries.len(), 1);
+    assert_eq!(
+        detail_queries[0].get("ordId").map(String::as_str),
+        Some("mass-triggered-child-venue-id")
+    );
+    assert_eq!(
+        detail_queries[0].get("instId").map(String::as_str),
+        Some("ETH-USDT-SWAP")
+    );
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from("OMASSTRIGGERED1"))
+    );
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.quantity, Quantity::from("1"));
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+    assert_eq!(position_reports.len(), 1);
+    assert_eq!(position_report.position_side, PositionSideSpecified::Flat);
+    assert_eq!(position_report.quantity, Quantity::from("0"));
+}
+
+#[rstest]
+#[case("live", "0", OrderStatus::Triggered, Quantity::from("0"))]
+#[case(
+    "partially_filled",
+    "0.5",
+    OrderStatus::PartiallyFilled,
+    Quantity::from("0.5")
+)]
+#[case("canceled", "0", OrderStatus::Canceled, Quantity::from("0"))]
+#[case("post_only_rejected", "0", OrderStatus::Rejected, Quantity::from("0"))]
+#[tokio::test]
+async fn test_generate_mass_status_preserves_triggered_child_status(
+    #[case] child_state: &'static str,
+    #[case] filled_qty: &'static str,
+    #[case] expected_status: OrderStatus,
+    #[case] expected_filled_qty: Quantity,
+) {
+    let detail_queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let addr = start_mass_status_triggered_child_server(
+        Arc::clone(&detail_queries),
+        "effective",
+        Some(child_state),
+        filled_qty,
+        "OMASSTRIGGERED1",
+        "",
+        "ETH-USDT-SWAP",
+        None,
+        1,
+        false,
+        &["mass-triggered-child-venue-id"],
+    )
+    .await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+    let report = reports
+        .get(&VenueOrderId::from("mass-triggered-child-venue-id"))
+        .expect("expected recovered triggered child report");
+    let detail_queries = detail_queries.lock().await;
+
+    assert!(mass_status.reports_complete());
+    assert_eq!(reports.len(), 1);
+    assert_eq!(detail_queries.len(), 1);
+    assert_eq!(report.order_status, expected_status);
+    assert_eq!(report.filled_qty, expected_filled_qty);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_uses_live_child_quantity_for_close_fraction_parent() {
+    let detail_queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let addr = start_mass_status_triggered_child_server(
+        Arc::clone(&detail_queries),
+        "effective",
+        Some("live"),
+        "0",
+        "OMASSCLOSEFRACTION1",
+        "",
+        "ETH-USDT-SWAP",
+        None,
+        1,
+        false,
+        &["mass-triggered-child-venue-id"],
+    )
+    .await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+    let report = reports
+        .get(&VenueOrderId::from("mass-triggered-child-venue-id"))
+        .expect("expected recovered close-fraction child report");
+
+    assert_eq!(detail_queries.lock().await.len(), 1);
+    assert_eq!(report.order_status, OrderStatus::Triggered);
+    assert_eq!(report.quantity, Quantity::from("1"));
+    assert_eq!(report.filled_qty, Quantity::from("0"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_preserves_external_triggered_child_identity() {
+    let detail_queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let addr = start_mass_status_triggered_child_server(
+        Arc::clone(&detail_queries),
+        "effective",
+        Some("filled"),
+        "1",
+        "",
+        "OCHILDGENERATED1",
+        "ETH-USDT-SWAP",
+        None,
+        1,
+        false,
+        &["mass-triggered-child-venue-id"],
+    )
+    .await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+    let report = reports
+        .get(&VenueOrderId::from("mass-triggered-child-venue-id"))
+        .expect("expected recovered external child report");
+
+    assert!(mass_status.reports_complete());
+    assert_eq!(report.client_order_id, None);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+}
+
+#[rstest]
+#[case::missing_child(
+    "effective",
+    None,
+    "ETH-USDT-SWAP",
+    None,
+    1,
+    &["mass-triggered-child-venue-id"],
+    1
+)]
+#[case::multiple_children(
+    "effective",
+    Some("filled"),
+    "ETH-USDT-SWAP",
+    None,
+    1,
+    &["mass-triggered-child-venue-id", "other-child-venue-id"],
+    0
+)]
+#[case::mismatched_instrument(
+    "effective",
+    Some("filled"),
+    "BTC-USDT-SWAP",
+    None,
+    1,
+    &["mass-triggered-child-venue-id"],
+    1
+)]
+#[case::mismatched_venue_order_id(
+    "effective",
+    Some("filled"),
+    "ETH-USDT-SWAP",
+    Some("other-child-venue-id"),
+    1,
+    &["mass-triggered-child-venue-id"],
+    1
+)]
+#[case::inconsistent_child_order_id(
+    "effective",
+    Some("filled"),
+    "ETH-USDT-SWAP",
+    None,
+    1,
+    &["other-child-venue-id"],
+    0
+)]
+#[case::child_algo_order(
+    "effective",
+    Some("filled"),
+    "ETH-USDT-SWAP",
+    None,
+    1,
+    &["sub-algo-id"],
+    0
+)]
+#[case::excess_order_details(
+    "effective",
+    Some("filled"),
+    "ETH-USDT-SWAP",
+    None,
+    2,
+    &["mass-triggered-child-venue-id"],
+    1
+)]
+#[tokio::test]
+async fn test_generate_mass_status_omits_unresolved_triggered_child(
+    #[case] parent_state: &'static str,
+    #[case] child_state: Option<&'static str>,
+    #[case] response_instrument_id: &'static str,
+    #[case] response_venue_order_id: Option<&'static str>,
+    #[case] detail_record_count: usize,
+    #[case] child_order_ids: &'static [&'static str],
+    #[case] expected_detail_queries: usize,
+) {
+    let detail_queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let addr = start_mass_status_triggered_child_server(
+        Arc::clone(&detail_queries),
+        parent_state,
+        child_state,
+        "0",
+        "OMASSTRIGGERED1",
+        "",
+        response_instrument_id,
+        response_venue_order_id,
+        detail_record_count,
+        false,
+        child_order_ids,
+    )
+    .await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let detail_queries = detail_queries.lock().await;
+
+    assert!(!mass_status.reports_complete());
+    assert!(mass_status.order_reports().is_empty());
+    assert_eq!(detail_queries.len(), expected_detail_queries);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_preserves_rejected_algo_parent() {
+    let detail_queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let addr = start_mass_status_triggered_child_server(
+        Arc::clone(&detail_queries),
+        "order_failed",
+        Some("filled"),
+        "0",
+        "OMASSREJECTED1",
+        "",
+        "ETH-USDT-SWAP",
+        None,
+        1,
+        false,
+        &["mass-triggered-child-venue-id"],
+    )
+    .await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+    let report = reports
+        .get(&VenueOrderId::from("mass-triggered-child-venue-id"))
+        .expect("expected rejected algo report");
+    let detail_queries = detail_queries.lock().await;
+
+    assert!(mass_status.reports_complete());
+    assert_eq!(reports.len(), 1);
+    assert!(detail_queries.is_empty());
+    assert_eq!(report.order_status, OrderStatus::Rejected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_preserves_regular_child_for_ambiguous_algo_parent() {
+    let detail_queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let addr = start_mass_status_triggered_child_server(
+        Arc::clone(&detail_queries),
+        "effective",
+        Some("live"),
+        "0",
+        "OMASSTRIGGERED1",
+        "",
+        "ETH-USDT-SWAP",
+        None,
+        1,
+        true,
+        &["mass-triggered-child-venue-id", "other-child-venue-id"],
+    )
+    .await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+    let report = reports
+        .get(&VenueOrderId::from("mass-triggered-child-venue-id"))
+        .expect("expected authoritative regular child report");
+    let detail_queries = detail_queries.lock().await;
+
+    assert!(!mass_status.reports_complete());
+    assert_eq!(reports.len(), 1);
+    assert!(detail_queries.is_empty());
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.filled_qty, Quantity::from("0"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_preserves_external_regular_child_when_detail_missing() {
+    let detail_queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let addr = start_mass_status_triggered_child_server(
+        Arc::clone(&detail_queries),
+        "effective",
+        None,
+        "0",
+        "OMASSTRIGGERED1",
+        "",
+        "ETH-USDT-SWAP",
+        None,
+        1,
+        true,
+        &["mass-triggered-child-venue-id"],
+    )
+    .await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+    let report = reports
+        .get(&VenueOrderId::from("mass-triggered-child-venue-id"))
+        .expect("expected regular child fallback report");
+    let detail_queries = detail_queries.lock().await;
+
+    assert!(!mass_status.reports_complete());
+    assert_eq!(reports.len(), 1);
+    assert_eq!(detail_queries.len(), 1);
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert_eq!(report.filled_qty, Quantity::from("0"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_recovers_sole_listed_child_order_id() {
+    let detail_queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+    let addr = start_mass_status_triggered_child_server(
+        Arc::clone(&detail_queries),
+        "effective",
+        Some("filled"),
+        "1",
+        "OMASSLISTONLY1",
+        "",
+        "ETH-USDT-SWAP",
+        None,
+        1,
+        false,
+        &["mass-triggered-child-venue-id"],
+    )
+    .await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+    let report = reports
+        .get(&VenueOrderId::from("mass-triggered-child-venue-id"))
+        .expect("expected recovered listed child report");
+    let detail_queries = detail_queries.lock().await;
+
+    assert!(mass_status.reports_complete());
+    assert_eq!(reports.len(), 1);
+    assert_eq!(detail_queries.len(), 1);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.filled_qty, Quantity::from("1"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_bounds_triggered_child_recovery() {
+    let detail_query_count = Arc::new(AtomicUsize::new(0));
+    let addr = start_mass_status_recovery_cap_server(Arc::clone(&detail_query_count)).await;
+    let base_url = format!("http://{addr}");
+    let (mut client, _rx, _cache) = create_test_execution_client_configured(&base_url, |config| {
+        config.instrument_types = vec![OKXInstrumentType::Swap];
+    });
+    client.on_instrument(query_order_instrument());
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let reports = mass_status.order_reports();
+
+    assert!(!mass_status.reports_complete());
+    assert_eq!(reports.len(), 100);
+    assert_eq!(detail_query_count.load(Ordering::Relaxed), 100);
+    assert!(reports.values().all(|report| {
+        report.order_status == OrderStatus::Filled && report.filled_qty == Quantity::from("1")
+    }));
+    assert!(reports.contains_key(&VenueOrderId::from("mass-cap-child-99")));
+    assert!(!reports.contains_key(&VenueOrderId::from("mass-cap-child-100")));
+}
+
+#[expect(clippy::too_many_arguments)]
+async fn start_mass_status_triggered_child_server(
+    detail_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
+    parent_state: &'static str,
+    child_state: Option<&'static str>,
+    filled_qty: &'static str,
+    parent_client_order_id: &'static str,
+    child_client_order_id: &'static str,
+    response_instrument_id: &'static str,
+    response_venue_order_id: Option<&'static str>,
+    detail_record_count: usize,
+    bulk_regular_child: bool,
+    child_order_ids: &'static [&'static str],
+) -> SocketAddr {
+    let algo_history = get(
+        move |Query(params): Query<HashMap<String, String>>| async move {
+            let returns_parent = params
+                .get("ordType")
+                .is_some_and(|value| value == "trigger")
+                && params
+                    .get("state")
+                    .is_some_and(|value| value == parent_state);
+
+            if !returns_parent {
+                return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+            }
+
+            let mut response = load_test_data("http_get_orders_algo_history.json");
+            let order = &mut response["data"][0];
+            order["actualPx"] = json!("850.00");
+            order["actualSide"] = json!("buy");
+            order["actualSz"] = json!(filled_qty);
+            order["algoClOrdId"] = json!(parent_client_order_id);
+            order["algoId"] = json!("mass-triggered-parent-venue-id");
+            order["clOrdId"] = json!("");
+            order["instId"] = json!("ETH-USDT-SWAP");
+            order["instType"] = json!("SWAP");
+            order["ordId"] = json!(if parent_client_order_id == "OMASSLISTONLY1" {
+                ""
+            } else {
+                "mass-triggered-child-venue-id"
+            });
+
+            if child_order_ids
+                .first()
+                .is_some_and(|order_id| order_id.starts_with("sub-algo-"))
+            {
+                order["ordIdList"] = json!([]);
+                order["subAlgoIdList"] = json!(child_order_ids);
+            } else {
+                order["ordIdList"] = json!(child_order_ids);
+            }
+            order["ordPx"] = json!("850.00");
+            order["posSide"] = json!("net");
+            order["side"] = json!("buy");
+            order["state"] = json!(parent_state);
+            if parent_client_order_id == "OMASSCLOSEFRACTION1" {
+                order["closeFraction"] = json!("1");
+                order["sz"] = json!("");
+            } else {
+                order["sz"] = json!("1");
+            }
+            order["tdMode"] = json!("cross");
+            order["triggerPx"] = json!("900.00");
+            let now_ms = jiff::Timestamp::now().as_millisecond().to_string();
+            order["cTime"] = json!(&now_ms);
+            order["triggerTime"] = json!(&now_ms);
+            order["uTime"] = json!(now_ms);
+            Json(response).into_response()
+        },
+    );
+    let order_detail = get(move |Query(params): Query<HashMap<String, String>>| {
+        let detail_queries = Arc::clone(&detail_queries);
+        async move {
+            detail_queries.lock().await.push(params.clone());
+            let Some(child_state) = child_state else {
+                return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+            };
+            let mut response = regular_order_detail_response(&params);
+            let order = &mut response["data"][0];
+            order["accFillSz"] = json!(filled_qty);
+            order["algoClOrdId"] = json!("");
+            order["avgPx"] = json!(if filled_qty == "0" { "" } else { "850.00" });
+            order["clOrdId"] = json!(child_client_order_id);
+            order["fillPx"] = json!(if filled_qty == "0" { "" } else { "850.00" });
+            order["fillSz"] = json!(filled_qty);
+            order["instId"] = json!(response_instrument_id);
+            let state = if child_state == "post_only_rejected" {
+                order["cancelSource"] = json!(OKX_POST_ONLY_CANCEL_SOURCE);
+                order["cancelSourceReason"] = json!(OKX_POST_ONLY_CANCEL_REASON);
+                order["ordType"] = json!("post_only");
+                "canceled"
+            } else {
+                child_state
+            };
+
+            if let Some(response_venue_order_id) = response_venue_order_id {
+                order["ordId"] = json!(response_venue_order_id);
+            }
+            order["state"] = json!(state);
+            let now_ms = jiff::Timestamp::now().as_millisecond().to_string();
+            order["cTime"] = json!(&now_ms);
+            order["uTime"] = json!(now_ms);
+            if detail_record_count > 1 {
+                let duplicate = order.clone();
+                response["data"]
+                    .as_array_mut()
+                    .unwrap()
+                    .resize(detail_record_count, duplicate);
+            }
+            Json(response).into_response()
+        }
+    });
+    let regular_history = get(move || async move {
+        if !bulk_regular_child {
+            return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+        }
+
+        let mut response = load_test_data("http_get_orders_history.json");
+        let order = &mut response["data"][0];
+        order["accFillSz"] = json!("0");
+        order["algoClOrdId"] = json!(parent_client_order_id);
+        order["avgPx"] = json!("");
+        order["clOrdId"] = json!("");
+        order["fillPx"] = json!("");
+        order["fillSz"] = json!("");
+        order["instId"] = json!("ETH-USDT-SWAP");
+        order["ordId"] = json!("mass-triggered-child-venue-id");
+        order["ordType"] = json!("limit");
+        order["posSide"] = json!("net");
+        order["px"] = json!("850.00");
+        order["side"] = json!("buy");
+        order["state"] = json!("live");
+        order["sz"] = json!("1");
+        order["tdMode"] = json!("cross");
+        let now_ms = jiff::Timestamp::now().as_millisecond().to_string();
+        order["cTime"] = json!(&now_ms);
+        order["uTime"] = json!(now_ms);
+        Json(response).into_response()
+    });
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/order", order_detail)
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", regular_history)
+        .route("/api/v5/trade/orders-algo-pending", empty.clone())
+        .route("/api/v5/trade/orders-algo-history", algo_history)
+        .route("/api/v5/trade/fills", empty.clone())
+        .route("/api/v5/trade/fills-history", empty.clone())
+        .route("/api/v5/account/positions", empty)
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    addr
+}
+
+async fn start_mass_status_recovery_cap_server(detail_query_count: Arc<AtomicUsize>) -> SocketAddr {
+    let algo_history = get(
+        move |Query(params): Query<HashMap<String, String>>| async move {
+            let returns_parents = params
+                .get("ordType")
+                .is_some_and(|value| value == "trigger")
+                && params
+                    .get("state")
+                    .is_some_and(|value| value == "effective")
+                && !params.contains_key("after");
+
+            if !returns_parents {
+                return Json(json!({"code": "0", "msg": "", "data": []})).into_response();
+            }
+
+            let template = load_test_data("http_get_orders_algo_history.json")["data"][0].clone();
+            let now_ms = jiff::Timestamp::now().as_millisecond().to_string();
+            let data: Vec<_> = (0..101)
+                .map(|index| {
+                    let mut order = template.clone();
+                    let child_order_id = format!("mass-cap-child-{index}");
+                    order["actualPx"] = json!("850.00");
+                    order["actualSide"] = json!("buy");
+                    order["actualSz"] = json!("1");
+                    order["algoClOrdId"] = json!(format!("OMASSCAP{index}"));
+                    order["algoId"] = json!(format!("mass-cap-parent-{index}"));
+                    order["clOrdId"] = json!("");
+                    order["instId"] = json!("ETH-USDT-SWAP");
+                    order["instType"] = json!("SWAP");
+                    order["ordId"] = json!(&child_order_id);
+                    order["ordIdList"] = json!([child_order_id]);
+                    order["ordPx"] = json!("850.00");
+                    order["posSide"] = json!("net");
+                    order["side"] = json!("buy");
+                    order["sz"] = json!("1");
+                    order["tdMode"] = json!("cross");
+                    order["triggerPx"] = json!("900.00");
+                    order["cTime"] = json!(&now_ms);
+                    order["triggerTime"] = json!(&now_ms);
+                    order["uTime"] = json!(&now_ms);
+                    order
+                })
+                .collect();
+
+            Json(json!({"code": "0", "msg": "", "data": data})).into_response()
+        },
+    );
+    let order_detail = get(move |Query(params): Query<HashMap<String, String>>| {
+        let detail_query_count = Arc::clone(&detail_query_count);
+        async move {
+            detail_query_count.fetch_add(1, Ordering::Relaxed);
+            Json(regular_order_detail_response(&params)).into_response()
+        }
+    });
+    let empty = get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() });
+    let router = Router::new()
+        .route("/api/v5/trade/order", order_detail)
+        .route("/api/v5/trade/orders-pending", empty.clone())
+        .route("/api/v5/trade/orders-history", empty.clone())
+        .route("/api/v5/trade/orders-algo-pending", empty.clone())
+        .route("/api/v5/trade/orders-algo-history", algo_history)
+        .route("/api/v5/trade/fills", empty.clone())
+        .route("/api/v5/trade/fills-history", empty.clone())
+        .route("/api/v5/account/positions", empty)
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")).into_response() }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+    addr
 }
 
 async fn start_live_order_report_server(inst_type: &'static str) -> SocketAddr {
@@ -4993,6 +5842,10 @@ async fn test_generate_mass_status_marks_historical_cache_miss_incomplete() {
         )
         .route(
             "/api/v5/trade/fills",
+            get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
+        )
+        .route(
+            "/api/v5/trade/fills-history",
             get(|| async { Json(json!({"code": "0", "msg": "", "data": []})).into_response() }),
         )
         .route(

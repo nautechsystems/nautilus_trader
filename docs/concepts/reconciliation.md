@@ -70,8 +70,9 @@ venue at startup. The `reconciliation_lookback_mins` parameter controls how far 
 engine requests history.
 
 :::tip
-Leave `reconciliation_lookback_mins` unset. This lets the engine request the maximum
-execution history the venue provides.
+Leave `reconciliation_lookback_mins` unset to use the adapter's documented default. Many adapters
+request the maximum execution history the venue provides, while others use a bounded default to
+match venue retention and request limits. See the integration guide for the selected venue.
 :::
 
 :::warning

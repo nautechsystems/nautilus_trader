@@ -1041,6 +1041,24 @@ Order operation buckets mirror OKX's published limits where available.
 See the [OKX rate limit documentation](https://www.okx.com/docs-v5/en/#rest-api-rate-limit).
 :::
 
+## Reconciliation
+
+The OKX adapter applies separate reconciliation policies to current venue state and terminal
+history:
+
+| Data                      | Unset lookback        | Explicit lookback     | OKX source                    |
+| ------------------------- | --------------------- | --------------------- | ----------------------------- |
+| Pending regular orders    | All current orders    | All current orders    | Regular pending orders        |
+| Live algo orders          | All current orders    | All current orders    | Algo pending orders           |
+| Current positions         | All current positions | All current positions | Account positions             |
+| Terminal orders and fills | 3 days                | Up to 7 days          | Order and trade history       |
+| Fill lookback <= 3 days   | Recent fills          | Recent fills          | `/api/v5/trade/fills`         |
+| Fill lookback > 3 days    | Not requested         | Extended fills        | `/api/v5/trade/fills-history` |
+
+Values above 7 days are clamped to the longest complete window across the regular order history
+and spread trade history endpoints used for reconciliation. This is not a limit on all archived data
+available from OKX.
+
 ## Configuration
 
 ### Data client
