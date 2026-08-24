@@ -115,6 +115,9 @@ Execution adds further variables (see [Execution](#execution)):
 
 - The signer private key is read from the variable named by the `signer_private_key_env`
   configuration field, never from configuration directly.
+- Signed-payload protection reads the active and retired 32-byte keys from the variables named by
+  `payload_key_env` and `payload_key_retired_env`. These configuration fields contain variable names,
+  never key values.
 - `BLOCKCHAIN_FORK_TESTS=1` enables the pinned-block Anvil integration suite.
   `BLOCKCHAIN_FORK_RPC_URL` is then required as Anvil's read-only Arbitrum fork source; signed
   transactions go to localhost only.
@@ -444,8 +447,8 @@ end-to-end fork tests. Other order operations fail closed with no on-chain or du
 
 Connect performs these checks before enabling transaction submission:
 
-1. When Postgres is configured, install or verify the execution schema and reconcile the signer's
-   active intent.
+1. When Postgres is configured, require ready protected storage and authenticate every retained
+   payload before reconciling the signer's active intent.
 1. Verify that the RPC chain ID matches the configured chain.
 1. Load the private key from `signer_private_key_env` and verify that its address matches
    `wallet_address`.
@@ -681,8 +684,8 @@ Fee and gas policy also runs before signing:
 #### Persist before broadcast
 
 The client reserves a durable intent before it assigns a nonce or signs. It then stores the nonce,
-raw signed transaction, and local hash before broadcast. A transaction cannot be submitted without
-a durable store.
+an authenticated signed-payload envelope, and the local hash before broadcast. A transaction
+cannot be submitted without a ready protected durable store.
 
 Immediately before sending, the client records the `broadcast` transition. Any outcome after that
 write, including a node rejection, is treated as uncertain until canonical nonce and receipt
@@ -866,17 +869,68 @@ idempotently; this adapter does not provide an atomic exactly-once delivery guar
 
 ### Signed transaction storage
 
-The `execution_transaction_hash` record retains each complete signed EIP-2718 transaction in
-plaintext so a durable `broadcast` intent can resend the exact authorized bytes after restart.
-Until the signer nonce is consumed, anyone holding those bytes can broadcast that transaction.
+Postgres-backed execution requires protected signed-transaction storage. Configure
+`payload_key_env` and `payload_deployment_id`, stop every client that points to the database, then
+run `protect_payload_storage()` on a disconnected Rust client. Protection seals every signed
+EIP-2718 transaction with AES-256-GCM and clears its live plaintext column. The authenticated
+context binds the exact signed bytes to the deployment, chain, signer, intent, signer nonce, and
+transaction hash.
+
+Protection records its durable marker before migrating existing rows in bounded batches. A restart
+can resume an interrupted protection operation by running `protect_payload_storage()` again. Run
+`check_payload_storage(batch_size)` after protection. Every later Postgres-backed execution connect
+also requires ready protected state and repeats the full authenticated check before it loads the
+signer. Connect never activates, resumes, or repairs protection implicitly.
+
+Configure and operate protected storage as follows:
+
+- Set the active key variable to exactly 32 bytes encoded as hexadecimal, with an optional `0x`
+  prefix. Keep key values out of configuration, logs, shell history, and process arguments.
+- Keep `payload_deployment_id` stable for the life of the protected database. A changed deployment
+  ID makes existing envelopes unreadable by design.
+- List every old key variable in `payload_key_retired_env` until no stored envelope references it.
+  Retired keys can open existing envelopes but never seal new ones.
+- Keep the complete key set available on every connect. A missing active or retired key, malformed
+  envelope, failed authentication tag, durable-context mismatch, or unexpected plaintext row fails
+  closed. Protected storage never falls back to `raw_transaction`.
+- Rotate the active key before it reaches `2^32` seals. With the client disconnected, configure the
+  replacement as active, retain the old key as retired, and run the Rust rewrap method before the
+  next connect. The database reserves and counts each seal, including migration and rewrap work,
+  and rejects further use at the limit.
+
+The maintenance operations are Rust methods on `BlockchainExecutionClient`; the Python bindings and
+`node_wallet` example do not expose them. Run `check_payload_storage(batch_size)` with the Rust
+client disconnected after protection, restore, or maintenance. It takes a stable database snapshot,
+opens and authenticates every original signed transaction in bounded batches, and reports row
+counts including the plaintext count, referenced key IDs, and database roles with direct table
+ownership or `SELECT` grants without returning payload bytes. Review that role list as part of the
+database access audit. Superuser and inherited privileges still require a server-level role review.
+
+To rewrap one database, stop its clients, configure the new active key, retain every required old
+key under `payload_key_retired_env`, and run `rewrap_payload_storage(batch_size)`. The operation is
+bounded and resumable. Run the full check before removing an old key. Rewrap changes the protected
+database copy; it cannot revoke a signed transaction or an envelope copied before the operation.
+
+Use `rollback_payload_storage(batch_size)` only for incident recovery. Keep every required key
+available until it finishes. Rollback authenticates each envelope, recreates and verifies the exact
+plaintext bytes, clears the envelopes, and removes the protection marker last. The disconnected
+client can then run a full unprotected check, but it cannot connect for execution. To restore
+execution capability, configure the complete key set, rerun `protect_payload_storage()`, complete a
+full protected check, and connect. Rollback does not remove signed bytes from WAL, replicas,
+backups, snapshots, or earlier exports.
 
 :::warning
-Treat `execution_transaction_hash.raw_transaction`, dead tuples, WAL, point-in-time recovery
-archives, replicas, backups, snapshots, restores, and operational exports as broadcast-capable
-material. Debug output and execution RPC errors redact the signed bytes, but they do not protect
-database artifacts or server-side statement parameters. Each database enforces signer and nonce
-ownership independently. Do not run a restored database against a signer used by another
-deployment.
+Signed transaction bytes remain bearer capabilities until their signer nonce is consumed. Protected
+storage covers live database payloads; it does not cover bytes before persistence, process memory,
+dead tuples, WAL, point-in-time recovery archives, replicas, backups, snapshots, restores, or
+operational exports. PostgreSQL statement or bind-parameter logging can also capture plaintext in
+the default mode and during rollback. Debug output, operational checks, and execution RPC errors do
+not expose the bytes.
+
+A restored protected database requires its original `payload_deployment_id` and complete key
+inventory. Each database enforces signer and nonce ownership independently, so never run a restored
+copy against a signer used by another live deployment. Do not point two copies with the same
+deployment ID at the same signer.
 :::
 
 ### Execution configuration
@@ -891,6 +945,9 @@ these fields to Python:
 | `wallet_address`                 | Required  | Wallet address for the execution client.                                 |
 | `http_rpc_url`                   | Required  | HTTP URL for the blockchain RPC endpoint.                                |
 | `signer_private_key_env`         | Required  | Environment variable that holds the signer key.                          |
+| `payload_key_env`                | `None`    | Active 32-byte key variable; required with Postgres execution.           |
+| `payload_key_retired_env`        | `[]`      | Environment variables for old keys that may only open envelopes.         |
+| `payload_deployment_id`          | `None`    | Stable database identity; required with Postgres execution.              |
 | `router_addresses`               | Required  | SwapRouter allowlist; at least one address is required.                  |
 | `max_fee_per_gas_wei`            | Required  | Maximum derived fee per gas in wei.                                      |
 | `base_fee_buffer_bps`            | Required  | Buffer over the swap-anchor or operator-path latest base fee.            |
@@ -1289,8 +1346,10 @@ DEXes that reuse modeled events share the existing event path.
   with no on-chain or durable side effects. LiveNode must disable in-flight checks and leave
   open-order checks off. Quote-denominated and multi-hop orders are not supported. See
   [Execution](#execution).
-- The execution store retains complete signed transactions in plaintext. Protect database storage,
-  replicas, backups, and exports as broadcast-capable material. See
+- Postgres-backed execution requires authenticated signed-transaction envelopes. Disconnected
+  rollback can restore plaintext for incident work, but the adapter rejects execution until the
+  database is protected and passes a full check again. Treat database storage, replicas, backups,
+  and exports as broadcast-capable material in either representation. See
   [Signed transaction storage](#signed-transaction-storage).
 - Recovery is not fully automated. A signed intent without a durable `broadcast` transition blocks
   connect, and a same-nonce replacement search over 4,096 blocks requires an explicit recovery

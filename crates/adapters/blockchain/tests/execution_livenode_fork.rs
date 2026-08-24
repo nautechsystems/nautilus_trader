@@ -38,9 +38,10 @@ use std::{
 use alloy::{primitives::U256, signers::local::PrivateKeySigner};
 use async_trait::async_trait;
 use harness::{
-    CHAIN_ID, ROUTER, SIGNER_ENV, SLIPPAGE_BPS, SWAP_AMOUNT, USDC, WETH, WRAP_AMOUNT_WEI,
-    build_full_range_snapshot, ensure_execution_schema, fund_anvil_wallet, git_diff_sha256,
-    quote_buy_amount_in, start_anvil, weth_usdc_pool,
+    CHAIN_ID, PAYLOAD_DEPLOYMENT_ID, PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX, ROUTER, SIGNER_ENV,
+    SLIPPAGE_BPS, SWAP_AMOUNT, USDC, WETH, WRAP_AMOUNT_WEI, build_full_range_snapshot,
+    ensure_execution_schema, fund_anvil_wallet, git_diff_sha256, quote_buy_amount_in, start_anvil,
+    weth_usdc_pool,
 };
 use nautilus_blockchain::{
     config::{BlockchainExecutionClientConfig, QuoteSpendLimit},
@@ -407,6 +408,8 @@ fn execution_config(
         .deadline_seconds(300)
         .max_quote_age_blocks(100)
         .receipt_timeout_secs(60)
+        .payload_key_env(PAYLOAD_KEY_ENV.to_string())
+        .payload_deployment_id(PAYLOAD_DEPLOYMENT_ID.to_string())
         .postgres_cache_database_config(pg_config)
         .build()
 }
@@ -494,7 +497,10 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
     // SAFETY: this opt-in test runs in its own process; the reconnect thread only reads this
     // variable after this spawn point and joins before the removal below, so accesses are
     // ordered by thread lifecycle.
-    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    unsafe {
+        std::env::set_var(SIGNER_ENV, signer_private_key);
+        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
+    }
 
     // Operator setup: explicit wrap and router approval before any node runs
     let operator_cache = Rc::new(RefCell::new(Cache::default()));
@@ -519,6 +525,7 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
     let (operator_event_sender, _operator_event_receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(operator_event_sender);
     operator.start().unwrap();
+    operator.protect_payload_storage().await.unwrap();
     operator.connect().await.unwrap();
 
     let wrap_hash = operator.wrap(U256::from(WRAP_AMOUNT_WEI)).await.unwrap();
@@ -880,7 +887,10 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
         evidence_dir.display()
     );
 
-    unsafe { std::env::remove_var(SIGNER_ENV) };
+    unsafe {
+        std::env::remove_var(SIGNER_ENV);
+        std::env::remove_var(PAYLOAD_KEY_ENV);
+    }
 }
 
 #[tokio::test]
@@ -916,7 +926,10 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
     let venue_string = pool.instrument_id.venue.to_string();
 
     // SAFETY: this opt-in test runs in its own process.
-    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    unsafe {
+        std::env::set_var(SIGNER_ENV, signer_private_key);
+        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
+    }
 
     let operator_cache = Rc::new(RefCell::new(Cache::default()));
     operator_cache.borrow_mut().add_pool(pool.clone()).unwrap();
@@ -938,6 +951,7 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
     let (operator_event_sender, _operator_event_receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(operator_event_sender);
     operator.start().unwrap();
+    operator.protect_payload_storage().await.unwrap();
     operator.connect().await.unwrap();
     assert!(
         rpc_client
@@ -1158,5 +1172,8 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
     assert_eq!(nonce_after_reconnect, nonce_before_reconnect);
     assert_eq!(intents_after_reconnect, intents_before_reconnect);
 
-    unsafe { std::env::remove_var(SIGNER_ENV) };
+    unsafe {
+        std::env::remove_var(SIGNER_ENV);
+        std::env::remove_var(PAYLOAD_KEY_ENV);
+    }
 }

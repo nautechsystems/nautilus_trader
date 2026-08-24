@@ -739,7 +739,9 @@ CREATE TABLE IF NOT EXISTS "execution_transaction_hash" (
     intent_id BIGINT NOT NULL,
     chain_id INTEGER NOT NULL,
     transaction_hash TEXT NOT NULL,
+    payload_expected BOOLEAN NOT NULL DEFAULT TRUE,
     raw_transaction BYTEA,
+    sealed_transaction BYTEA,
     status TEXT NOT NULL CHECK (status IN (
         'signed', 'broadcast', 'included', 'finalized', 'reverted',
         'replaced', 'dropped', 'reorged'
@@ -754,11 +756,30 @@ CREATE TABLE IF NOT EXISTS "execution_transaction_hash" (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     FOREIGN KEY (intent_id, chain_id)
         REFERENCES execution_intent(id, chain_id) ON DELETE RESTRICT,
+    CONSTRAINT execution_transaction_raw_size_check
+        CHECK (raw_transaction IS NULL OR octet_length(raw_transaction) <= 131072),
+    CONSTRAINT execution_transaction_sealed_size_check
+        CHECK (sealed_transaction IS NULL OR octet_length(sealed_transaction) <= 131133),
     UNIQUE (chain_id, transaction_hash),
     UNIQUE (intent_id, transaction_hash)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS execution_transaction_hash_current_key
     ON "execution_transaction_hash" (intent_id) WHERE current;
+
+CREATE TABLE IF NOT EXISTS "execution_payload_state" (
+    component TEXT PRIMARY KEY CHECK (component = 'signed_transactions'),
+    deployment_id TEXT NOT NULL CHECK (deployment_id <> ''),
+    protocol_version SMALLINT NOT NULL CHECK (protocol_version = 1),
+    operation TEXT NOT NULL CHECK (operation IN ('migrate', 'ready', 'rewrap', 'rollback')),
+    active_key_id BYTEA NOT NULL CHECK (octet_length(active_key_id) = 32),
+    progress_id BIGINT NOT NULL DEFAULT 0 CHECK (progress_id >= 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS "execution_payload_key_state" (
+    key_id BYTEA PRIMARY KEY CHECK (octet_length(key_id) = 32),
+    seals BIGINT NOT NULL DEFAULT 0 CHECK (seals >= 0 AND seals < 4294967296)
+);
 
 CREATE TABLE IF NOT EXISTS "execution_transaction_transition" (
     id BIGSERIAL PRIMARY KEY,

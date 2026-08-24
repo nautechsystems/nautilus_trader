@@ -16,3 +16,5 @@
 pub mod client;
 pub mod preflight;
 pub mod transaction;
+
+pub(crate) mod sealing;

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fmt::Display, pin::Pin};
+use std::{collections::BTreeSet, fmt::Display, pin::Pin};
 
 use alloy::primitives::{Address, U256};
 use anyhow::Context;
@@ -37,7 +37,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use sqlx::{
-    AssertSqlSafe, PgPool, Row,
+    AssertSqlSafe, PgPool, Postgres, Row, Transaction,
     postgres::{PgAdvisoryLock, PgAdvisoryLockKey, PgConnectOptions},
 };
 
@@ -54,8 +54,67 @@ use crate::{
         types::{U128Pg, U256Pg},
     },
     events::initialize::InitializeEvent,
-    execution::transaction::{EXECUTION_SCHEMA_VERSION, TransactionStatus},
+    execution::{
+        sealing::{
+            PayloadKeySet, PayloadPolicy, authenticate_payload, authenticate_retained_payload,
+            envelope_key_id, payload_context, retained_payload_requires_policy,
+        },
+        transaction::{EXECUTION_SCHEMA_VERSION, TransactionStatus},
+    },
 };
+
+const EXECUTION_PAYLOAD_COMPONENT: &str = "evm_execution_payload";
+const EXECUTION_PAYLOAD_PROTOCOL_VERSION: i16 = 1;
+const EXECUTION_PAYLOAD_BATCH_SIZE: i64 = 100;
+const EXECUTION_PAYLOAD_MAX_SEALS: i64 = 4_294_967_296;
+const EXECUTION_PAYLOAD_INFRASTRUCTURE_QUERY: &str = "
+    SELECT
+        EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_trigger AS t
+            JOIN pg_catalog.pg_class AS c ON c.oid = t.tgrelid
+            JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema()
+              AND c.relname = 'execution_transaction_hash'
+              AND t.tgname = 'execution_transaction_payload_fence'
+              AND NOT t.tgisinternal
+        ),
+        EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_constraint AS con
+            JOIN pg_catalog.pg_class AS c ON c.oid = con.conrelid
+            JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema()
+              AND c.relname = 'execution_transaction_hash'
+              AND con.conname = 'execution_transaction_payload_protected_check'
+              AND con.contype = 'c'
+        )
+";
+
+#[derive(Debug)]
+struct ExecutionPayloadState {
+    deployment_id: String,
+    protocol_version: i16,
+    operation: String,
+    active_key_id: Vec<u8>,
+}
+
+/// Transaction-held lease which prevents payload maintenance from starting during an action.
+pub(crate) struct ExecutionPayloadLease {
+    _transaction: Transaction<'static, Postgres>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExecutionPayloadCheck {
+    pub protected: bool,
+    pub deployment_id: Option<String>,
+    pub plaintext_rows: u64,
+    pub original_rows: u64,
+    pub replacement_rows: u64,
+    pub authenticated_rows: u64,
+    pub key_ids: Vec<String>,
+    pub read_roles: Vec<String>,
+}
 
 /// Database interface for persisting and retrieving blockchain entities and domain objects.
 #[derive(Debug, Clone)]
@@ -3280,7 +3339,9 @@ impl BlockchainCacheDatabase {
                 intent_id BIGINT NOT NULL,
                 chain_id INTEGER NOT NULL,
                 transaction_hash TEXT NOT NULL,
+                payload_expected BOOLEAN NOT NULL DEFAULT TRUE,
                 raw_transaction BYTEA,
+                sealed_transaction BYTEA,
                 status TEXT NOT NULL,
                 block_number BIGINT,
                 block_hash TEXT,
@@ -3294,12 +3355,72 @@ impl BlockchainCacheDatabase {
                     REFERENCES execution_intent(id, chain_id) ON DELETE RESTRICT,
                 CHECK (block_number IS NULL OR block_number >= 0),
                 CHECK (gas_used IS NULL OR gas_used >= 0),
+                CONSTRAINT execution_transaction_raw_size_check
+                    CHECK (raw_transaction IS NULL OR octet_length(raw_transaction) <= 131072),
+                CONSTRAINT execution_transaction_sealed_size_check
+                    CHECK (sealed_transaction IS NULL OR octet_length(sealed_transaction) <= 131133),
                 CHECK (status IN (
                     'signed', 'broadcast', 'included', 'finalized', 'reverted',
                     'replaced', 'dropped', 'reorged'
                 )),
                 UNIQUE (chain_id, transaction_hash),
                 UNIQUE (intent_id, transaction_hash)
+            )
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ADD COLUMN IF NOT EXISTS payload_expected BOOLEAN
+            ",
+            "
+            UPDATE execution_transaction_hash
+            SET payload_expected = raw_transaction IS NOT NULL
+            WHERE payload_expected IS NULL
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ALTER COLUMN payload_expected SET DEFAULT TRUE
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ALTER COLUMN payload_expected SET NOT NULL
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ADD COLUMN IF NOT EXISTS sealed_transaction BYTEA
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            DROP CONSTRAINT IF EXISTS execution_transaction_raw_size_check
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ADD CONSTRAINT execution_transaction_raw_size_check
+            CHECK (raw_transaction IS NULL OR octet_length(raw_transaction) <= 131072)
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            DROP CONSTRAINT IF EXISTS execution_transaction_sealed_size_check
+            ",
+            "
+            ALTER TABLE execution_transaction_hash
+            ADD CONSTRAINT execution_transaction_sealed_size_check
+            CHECK (sealed_transaction IS NULL OR octet_length(sealed_transaction) <= 131133)
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_payload_state (
+                component TEXT PRIMARY KEY CHECK (component = 'signed_transactions'),
+                deployment_id TEXT NOT NULL CHECK (deployment_id <> ''),
+                protocol_version SMALLINT NOT NULL CHECK (protocol_version = 1),
+                operation TEXT NOT NULL CHECK (operation IN ('migrate', 'ready', 'rewrap', 'rollback')),
+                active_key_id BYTEA NOT NULL CHECK (octet_length(active_key_id) = 32),
+                progress_id BIGINT NOT NULL DEFAULT 0 CHECK (progress_id >= 0),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            ",
+            "
+            CREATE TABLE IF NOT EXISTS execution_payload_key_state (
+                key_id BYTEA PRIMARY KEY CHECK (octet_length(key_id) = 32),
+                seals BIGINT NOT NULL DEFAULT 0 CHECK (seals >= 0 AND seals < 4294967296)
             )
             ",
             "
@@ -3415,6 +3536,1148 @@ impl BlockchainCacheDatabase {
             .map_err(|e| anyhow::anyhow!("Failed to commit execution schema migration: {e}"))?;
 
         Ok(())
+    }
+
+    /// Activates or resumes protected signed-transaction storage for this database.
+    pub(crate) async fn ensure_execution_payload_storage(
+        &self,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<()> {
+        let marker = self.execution_payload_marker().await?;
+        match marker {
+            None => self.activate_execution_payload_storage(keys).await?,
+            Some(version) => anyhow::ensure!(
+                version == EXECUTION_PAYLOAD_PROTOCOL_VERSION,
+                "Execution payload protection version {version} is newer than supported version {EXECUTION_PAYLOAD_PROTOCOL_VERSION}"
+            ),
+        }
+
+        loop {
+            let state = self.execution_payload_state().await?.ok_or_else(|| {
+                anyhow::anyhow!("Execution payload marker exists without durable state")
+            })?;
+            validate_execution_payload_state(&state, keys)?;
+            match state.operation.as_str() {
+                "migrate" => {
+                    if self
+                        .migrate_execution_payload_batch(keys, EXECUTION_PAYLOAD_BATCH_SIZE)
+                        .await?
+                    {
+                        break;
+                    }
+                }
+                "ready" => break,
+                operation => anyhow::bail!(
+                    "Execution payload storage is in {operation} maintenance; complete or roll back that operation before connecting"
+                ),
+            }
+        }
+
+        self.validate_execution_payload_ready(keys).await
+    }
+
+    /// Requires ready protected storage and authenticates every persisted signed payload.
+    pub(crate) async fn require_execution_payload_storage(
+        &self,
+        keys: &PayloadKeySet,
+        policy: PayloadPolicy,
+        batch_size: i64,
+    ) -> anyhow::Result<ExecutionPayloadLease> {
+        self.require_execution_payload_storage_ready(keys).await?;
+        let (check, transaction) = self
+            .inspect_execution_payload_storage(Some(keys), Some(policy), batch_size)
+            .await?;
+        anyhow::ensure!(
+            check.protected,
+            "Postgres execution requires protected payload storage"
+        );
+        Ok(ExecutionPayloadLease {
+            _transaction: transaction,
+        })
+    }
+
+    /// Requires protected storage to be ready before execution schema initialization.
+    pub(crate) async fn require_execution_payload_storage_ready(
+        &self,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.execution_payload_marker().await?.is_some(),
+            "Postgres execution requires protected payload storage"
+        );
+        self.validate_execution_payload_ready(keys).await
+    }
+
+    /// Acquires a shared state lease for signing, payload access, acknowledgment, or broadcast.
+    pub(crate) async fn acquire_execution_payload_lease(
+        &self,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<ExecutionPayloadLease> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload action lease")?;
+        let marker = sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version WHERE component = $1",
+        )
+        .bind(EXECUTION_PAYLOAD_COMPONENT)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to read execution payload marker")?;
+
+        let version = marker.ok_or_else(|| {
+            anyhow::anyhow!("Postgres execution requires protected payload storage")
+        })?;
+        anyhow::ensure!(
+            version == EXECUTION_PAYLOAD_PROTOCOL_VERSION,
+            "Unsupported execution payload protection version {version}"
+        );
+        let row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' \
+             FOR SHARE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload marker exists without state"))?;
+        let state = execution_payload_state_from_row(&row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "ready",
+            "Execution payload storage is in {} maintenance",
+            state.operation
+        );
+
+        Ok(ExecutionPayloadLease {
+            _transaction: transaction,
+        })
+    }
+
+    /// Reserves one nonce use under the active payload key.
+    pub(crate) async fn reserve_execution_payload_seal(
+        &self,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start payload seal reservation")?;
+        let row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR SHARE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload protection is not active"))?;
+        let state = execution_payload_state_from_row(&row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "ready",
+            "Execution payload storage is in {} maintenance",
+            state.operation
+        );
+        reserve_execution_payload_seal(&mut transaction, keys.active_key_id()).await?;
+        transaction
+            .commit()
+            .await
+            .context("failed to commit payload seal reservation")?;
+        Ok(())
+    }
+
+    async fn execution_payload_marker(&self) -> anyhow::Result<Option<i16>> {
+        sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version WHERE component = $1",
+        )
+        .bind(EXECUTION_PAYLOAD_COMPONENT)
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to read execution payload marker")
+    }
+
+    async fn execution_payload_state(&self) -> anyhow::Result<Option<ExecutionPayloadState>> {
+        let row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions'",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to read execution payload state")?;
+        row.as_ref()
+            .map(execution_payload_state_from_row)
+            .transpose()
+    }
+
+    async fn activate_execution_payload_storage(&self, keys: &PayloadKeySet) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload activation")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        sqlx::query("LOCK TABLE execution_transaction_hash IN ACCESS EXCLUSIVE MODE")
+            .execute(&mut *transaction)
+            .await
+            .context("failed to fence execution payload writers")?;
+        let marker = sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version WHERE component = $1",
+        )
+        .bind(EXECUTION_PAYLOAD_COMPONENT)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to recheck execution payload marker")?;
+        if marker.is_some() {
+            transaction
+                .rollback()
+                .await
+                .context("failed to release concurrent payload activation")?;
+            return Ok(());
+        }
+        let sealed_rows = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM execution_transaction_hash WHERE sealed_transaction IS NOT NULL",
+        )
+        .fetch_one(&mut *transaction)
+        .await
+        .context("failed to inspect pre-activation envelopes")?;
+        anyhow::ensure!(
+            sealed_rows == 0,
+            "Unprotected execution payload storage contains {sealed_rows} sealed row(s)"
+        );
+
+        for statement in [
+            "
+            CREATE OR REPLACE FUNCTION execution_transaction_payload_fence()
+            RETURNS TRIGGER AS $$
+            DECLARE payload_operation TEXT;
+            BEGIN
+                IF NEW.raw_transaction IS NOT NULL
+                   AND (TG_OP = 'INSERT'
+                        OR OLD.raw_transaction IS NULL
+                        OR NEW.raw_transaction IS DISTINCT FROM OLD.raw_transaction) THEN
+                    SELECT operation INTO payload_operation
+                    FROM execution_payload_state
+                    WHERE component = 'signed_transactions';
+                    IF NOT (
+                        TG_OP = 'UPDATE'
+                        AND payload_operation = 'rollback'
+                        AND OLD.payload_expected
+                        AND OLD.raw_transaction IS NULL
+                        AND NEW.raw_transaction IS NOT NULL
+                        AND OLD.sealed_transaction IS NOT NULL
+                        AND NEW.sealed_transaction = OLD.sealed_transaction
+                    ) THEN
+                        RAISE EXCEPTION 'Plaintext signed transaction writes are disabled';
+                    END IF;
+                END IF;
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql
+            ",
+            "DROP TRIGGER IF EXISTS execution_transaction_payload_fence ON execution_transaction_hash",
+            "
+            CREATE TRIGGER execution_transaction_payload_fence
+            BEFORE INSERT OR UPDATE ON execution_transaction_hash
+            FOR EACH ROW EXECUTE FUNCTION execution_transaction_payload_fence()
+            ",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut *transaction)
+                .await
+                .context("failed to install execution payload write fence")?;
+        }
+        sqlx::query("INSERT INTO execution_schema_version (component, version) VALUES ($1, $2)")
+            .bind(EXECUTION_PAYLOAD_COMPONENT)
+            .bind(EXECUTION_PAYLOAD_PROTOCOL_VERSION)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record execution payload marker")?;
+        sqlx::query(
+            "INSERT INTO execution_payload_state (component, deployment_id, protocol_version, operation, active_key_id) \
+             VALUES ('signed_transactions', $1, $2, 'migrate', $3)",
+        )
+        .bind(keys.deployment_id())
+        .bind(EXECUTION_PAYLOAD_PROTOCOL_VERSION)
+        .bind(keys.active_key_id().as_slice())
+        .execute(&mut *transaction)
+        .await
+        .context("failed to record execution payload migration state")?;
+        sqlx::query(
+            "INSERT INTO execution_payload_key_state (key_id, seals) VALUES ($1, 0) \
+             ON CONFLICT (key_id) DO NOTHING",
+        )
+        .bind(keys.active_key_id().as_slice())
+        .execute(&mut *transaction)
+        .await
+        .context("failed to initialize execution payload key state")?;
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload activation")?;
+        Ok(())
+    }
+
+    async fn migrate_execution_payload_batch(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<bool> {
+        anyhow::ensure!(
+            batch_size > 0,
+            "Execution payload batch size must be positive"
+        );
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload migration batch")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload migration state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload migration state is missing"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "migrate",
+            "Execution payload storage is {}, not migrating",
+            state.operation
+        );
+
+        let rows = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            SELECT
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status, block_number, block_hash,
+                receipt_success, gas_used, effective_gas_price, current
+            FROM execution_transaction_hash
+            WHERE payload_expected AND raw_transaction IS NOT NULL
+            ORDER BY id
+            LIMIT $1
+            FOR UPDATE
+            ",
+        )
+        .bind(batch_size)
+        .fetch_all(&mut *transaction)
+        .await
+        .context("failed to load legacy signed transaction batch")?;
+
+        if rows.is_empty() {
+            self.complete_execution_payload_migration(&mut transaction, keys)
+                .await?;
+            transaction
+                .commit()
+                .await
+                .context("failed to commit execution payload migration completion")?;
+            return Ok(true);
+        }
+
+        for hash in rows {
+            anyhow::ensure!(
+                hash.sealed_transaction.is_none(),
+                "Execution transaction {} contains both plaintext and sealed payloads",
+                hash.id
+            );
+            let raw_transaction = hash
+                .raw_transaction
+                .as_deref()
+                .expect("migration query requires plaintext");
+            let intent = load_execution_intent(&mut transaction, hash.intent_id).await?;
+            let context = authenticate_retained_payload(
+                raw_transaction,
+                &intent,
+                &hash,
+                keys.deployment_id(),
+            )
+            .with_context(|| format!("failed to authenticate execution payload {}", hash.id))?;
+            reserve_execution_payload_seal(&mut transaction, keys.active_key_id()).await?;
+            let envelope = keys.seal(raw_transaction, &context)?;
+            let unsealed = keys.unseal(&envelope, &context)?;
+            authenticate_retained_payload(&unsealed, &intent, &hash, keys.deployment_id())?;
+            anyhow::ensure!(
+                unsealed == raw_transaction,
+                "Execution payload {} changed during seal round trip",
+                hash.id
+            );
+            let result = sqlx::query(
+                "UPDATE execution_transaction_hash \
+                 SET sealed_transaction = $2, raw_transaction = NULL, updated_at = NOW() \
+                 WHERE id = $1 AND raw_transaction = $3 AND sealed_transaction IS NULL",
+            )
+            .bind(hash.id)
+            .bind(&envelope)
+            .bind(raw_transaction)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to promote execution payload")?;
+            anyhow::ensure!(
+                result.rows_affected() == 1,
+                "Execution payload {} changed during migration",
+                hash.id
+            );
+            sqlx::query(
+                "UPDATE execution_payload_state SET progress_id = $1, updated_at = NOW() \
+                 WHERE component = 'signed_transactions'",
+            )
+            .bind(hash.id)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record execution payload migration progress")?;
+        }
+
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload migration batch")?;
+        Ok(false)
+    }
+
+    async fn complete_execution_payload_migration(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        keys: &PayloadKeySet,
+    ) -> anyhow::Result<()> {
+        sqlx::query("LOCK TABLE execution_transaction_hash IN SHARE ROW EXCLUSIVE MODE")
+            .execute(&mut **transaction)
+            .await
+            .context("failed to lock execution payload migration completion")?;
+        let invalid = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM execution_transaction_hash \
+             WHERE (payload_expected AND (raw_transaction IS NOT NULL OR sealed_transaction IS NULL)) \
+                OR (NOT payload_expected AND (raw_transaction IS NOT NULL OR sealed_transaction IS NOT NULL))",
+        )
+        .fetch_one(&mut **transaction)
+        .await
+        .context("failed to verify migrated execution payload representations")?;
+        anyhow::ensure!(
+            invalid == 0,
+            "Execution payload migration found {invalid} invalid representation(s)"
+        );
+        validate_execution_payload_key_inventory(transaction, keys).await?;
+
+        for statement in [
+            "ALTER TABLE execution_transaction_hash \
+             DROP CONSTRAINT IF EXISTS execution_transaction_payload_protected_check",
+            "ALTER TABLE execution_transaction_hash \
+             ADD CONSTRAINT execution_transaction_payload_protected_check CHECK ( \
+                 (payload_expected AND raw_transaction IS NULL AND sealed_transaction IS NOT NULL) \
+                 OR (NOT payload_expected AND raw_transaction IS NULL AND sealed_transaction IS NULL) \
+             )",
+        ] {
+            sqlx::query(statement)
+                .execute(&mut **transaction)
+                .await
+                .context("failed to install protected execution payload constraint")?;
+        }
+        sqlx::query(
+            "UPDATE execution_payload_state SET operation = 'ready', updated_at = NOW() \
+             WHERE component = 'signed_transactions' AND operation = 'migrate'",
+        )
+        .execute(&mut **transaction)
+        .await
+        .context("failed to mark execution payload storage ready")?;
+        Ok(())
+    }
+
+    async fn validate_execution_payload_ready(&self, keys: &PayloadKeySet) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload validation")?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR SHARE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload state is missing"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "ready",
+            "Execution payload storage is not ready"
+        );
+        let (payload_fence, payload_constraint) =
+            sqlx::query_as::<_, (bool, bool)>(EXECUTION_PAYLOAD_INFRASTRUCTURE_QUERY)
+                .fetch_one(&mut *transaction)
+                .await
+                .context("failed to inspect execution payload protection infrastructure")?;
+        anyhow::ensure!(
+            payload_fence && payload_constraint,
+            "Execution payload storage is marked ready without its write fence or constraint"
+        );
+        validate_execution_payload_key_inventory(&mut transaction, keys).await?;
+        transaction
+            .commit()
+            .await
+            .context("failed to complete execution payload validation")?;
+        Ok(())
+    }
+
+    pub(crate) async fn check_execution_payload_storage(
+        &self,
+        keys: Option<&PayloadKeySet>,
+        policy: Option<PayloadPolicy>,
+        batch_size: i64,
+    ) -> anyhow::Result<ExecutionPayloadCheck> {
+        let (check, transaction) = self
+            .inspect_execution_payload_storage(keys, policy, batch_size)
+            .await?;
+        transaction
+            .commit()
+            .await
+            .context("failed to complete execution payload check")?;
+        Ok(check)
+    }
+
+    async fn inspect_execution_payload_storage(
+        &self,
+        keys: Option<&PayloadKeySet>,
+        policy: Option<PayloadPolicy>,
+        batch_size: i64,
+    ) -> anyhow::Result<(ExecutionPayloadCheck, Transaction<'static, Postgres>)> {
+        anyhow::ensure!(
+            batch_size > 0,
+            "Execution payload check batch size must be positive"
+        );
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload check")?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            .execute(&mut *transaction)
+            .await
+            .context("failed to stabilize execution payload snapshot")?;
+        sqlx::query("LOCK TABLE execution_transaction_hash IN SHARE MODE")
+            .execute(&mut *transaction)
+            .await
+            .context("failed to stabilize execution payload check")?;
+        let marker = sqlx::query_scalar::<_, i16>(
+            "SELECT version FROM execution_schema_version WHERE component = $1",
+        )
+        .bind(EXECUTION_PAYLOAD_COMPONENT)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to read execution payload marker")?;
+        let deployment_id = match (marker, keys) {
+            (None, _) => {
+                let state = sqlx::query_scalar::<_, bool>(
+                    "SELECT EXISTS (SELECT 1 FROM execution_payload_state) \
+                     OR EXISTS (SELECT 1 FROM execution_transaction_hash \
+                                WHERE sealed_transaction IS NOT NULL)",
+                )
+                .fetch_one(&mut *transaction)
+                .await
+                .context("failed to check legacy payload state")?;
+                anyhow::ensure!(!state, "Legacy payload storage contains protected state");
+                None
+            }
+            (Some(version), Some(keys)) => {
+                anyhow::ensure!(
+                    version == EXECUTION_PAYLOAD_PROTOCOL_VERSION,
+                    "Unsupported execution payload protection version {version}"
+                );
+                let state_row = sqlx::query(
+                    "SELECT deployment_id, protocol_version, operation, active_key_id \
+                     FROM execution_payload_state WHERE component = 'signed_transactions' FOR SHARE",
+                )
+                .fetch_optional(&mut *transaction)
+                .await
+                .context("failed to lock execution payload state")?
+                .ok_or_else(|| anyhow::anyhow!("Execution payload state is missing"))?;
+                let state = execution_payload_state_from_row(&state_row)?;
+                validate_execution_payload_state(&state, keys)?;
+                anyhow::ensure!(
+                    state.operation == "ready",
+                    "Execution payload storage is not ready"
+                );
+                Some(state.deployment_id)
+            }
+            (Some(_), None) => anyhow::bail!(
+                "Execution payload protection is active, but no payload key is configured"
+            ),
+        };
+
+        let mut cursor = 0_i64;
+        let mut plaintext_rows = 0_u64;
+        let mut original_rows = 0_u64;
+        let mut replacement_rows = 0_u64;
+        let mut authenticated_rows = 0_u64;
+        let mut key_ids = BTreeSet::new();
+
+        loop {
+            let rows = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+                "
+                SELECT
+                    id, intent_id, chain_id, transaction_hash, payload_expected,
+                    raw_transaction, sealed_transaction, status, block_number, block_hash,
+                    receipt_success, gas_used, effective_gas_price, current
+                FROM execution_transaction_hash
+                WHERE id > $1
+                ORDER BY id
+                LIMIT $2
+                ",
+            )
+            .bind(cursor)
+            .bind(batch_size)
+            .fetch_all(&mut *transaction)
+            .await
+            .context("failed to load execution payload check batch")?;
+
+            if rows.is_empty() {
+                break;
+            }
+
+            for hash in &rows {
+                cursor = hash.id;
+                plaintext_rows += u64::from(hash.raw_transaction.is_some());
+                if !hash.payload_expected {
+                    replacement_rows += 1;
+                    anyhow::ensure!(
+                        hash.raw_transaction.is_none() && hash.sealed_transaction.is_none(),
+                        "Replacement execution transaction {} retains signed bytes",
+                        hash.id
+                    );
+                    continue;
+                }
+                original_rows += 1;
+                let intent = load_execution_intent(&mut transaction, hash.intent_id).await?;
+                let raw_transaction = if let (Some(keys), Some(deployment_id)) =
+                    (keys, deployment_id.as_deref())
+                {
+                    anyhow::ensure!(
+                        hash.raw_transaction.is_none(),
+                        "Protected execution transaction {} contains plaintext",
+                        hash.id
+                    );
+                    let envelope = hash.sealed_transaction.as_deref().ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Protected execution transaction {} has no envelope",
+                            hash.id
+                        )
+                    })?;
+                    let key_id = envelope_key_id(envelope)?;
+                    anyhow::ensure!(
+                        keys.contains_key(&key_id),
+                        "Execution transaction {} requires an unavailable payload key",
+                        hash.id
+                    );
+                    key_ids.insert(alloy::hex::encode(key_id));
+                    let context = payload_context(&intent, hash, deployment_id)?;
+                    keys.unseal(envelope, &context)?
+                } else {
+                    anyhow::ensure!(
+                        hash.sealed_transaction.is_none(),
+                        "Legacy execution transaction {} contains an envelope",
+                        hash.id
+                    );
+                    hash.raw_transaction.clone().ok_or_else(|| {
+                        anyhow::anyhow!("Legacy execution transaction {} has no plaintext", hash.id)
+                    })?
+                };
+                authenticate_retained_payload(
+                    &raw_transaction,
+                    &intent,
+                    hash,
+                    deployment_id.as_deref().unwrap_or(""),
+                )?;
+
+                if let Some(policy) = policy
+                    && retained_payload_requires_policy(&intent, hash, policy)?
+                {
+                    authenticate_payload(
+                        &raw_transaction,
+                        &intent,
+                        hash,
+                        policy,
+                        deployment_id.as_deref().unwrap_or(""),
+                    )
+                    .with_context(|| {
+                        format!(
+                            "execution intent {} transaction {} violates current execution policy",
+                            intent.id, hash.transaction_hash
+                        )
+                    })?;
+                }
+                authenticated_rows += 1;
+            }
+        }
+        let read_roles = sqlx::query_scalar::<_, String>(
+            "SELECT DISTINCT role_name FROM ( \
+                 SELECT tableowner AS role_name FROM pg_tables \
+                 WHERE schemaname = current_schema() AND tablename = 'execution_transaction_hash' \
+                 UNION \
+                 SELECT grantee AS role_name FROM information_schema.role_table_grants \
+                 WHERE table_schema = current_schema() \
+                   AND table_name = 'execution_transaction_hash' \
+                   AND privilege_type = 'SELECT' \
+             ) AS roles ORDER BY role_name",
+        )
+        .fetch_all(&mut *transaction)
+        .await
+        .context("failed to inspect execution payload read roles")?;
+        Ok((
+            ExecutionPayloadCheck {
+                protected: deployment_id.is_some(),
+                deployment_id,
+                plaintext_rows,
+                original_rows,
+                replacement_rows,
+                authenticated_rows,
+                key_ids: key_ids.into_iter().collect(),
+                read_roles,
+            },
+            transaction,
+        ))
+    }
+
+    pub(crate) async fn rewrap_execution_payload_storage(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            batch_size > 0,
+            "Execution payload rewrap batch size must be positive"
+        );
+        self.begin_execution_payload_rewrap(keys).await?;
+
+        loop {
+            if self
+                .rewrap_execution_payload_batch(keys, batch_size)
+                .await?
+            {
+                return Ok(());
+            }
+        }
+    }
+
+    async fn begin_execution_payload_rewrap(&self, keys: &PayloadKeySet) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload rewrap")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state for rewrap")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload protection is not active"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        anyhow::ensure!(
+            state.protocol_version == EXECUTION_PAYLOAD_PROTOCOL_VERSION
+                && state.deployment_id == keys.deployment_id(),
+            "Execution payload rewrap context does not match this database"
+        );
+
+        match state.operation.as_str() {
+            "ready" => {
+                let current_id: [u8; 32] = state
+                    .active_key_id
+                    .as_slice()
+                    .try_into()
+                    .context("database active payload key ID is invalid")?;
+                anyhow::ensure!(
+                    keys.contains_key(&current_id),
+                    "Current database payload key is not configured for rewrap"
+                );
+                validate_execution_payload_key_inventory(&mut transaction, keys).await?;
+                if current_id == *keys.active_key_id() {
+                    transaction
+                        .commit()
+                        .await
+                        .context("failed to complete no-op execution payload rewrap")?;
+                    return Ok(());
+                }
+                sqlx::query(
+                    "UPDATE execution_payload_state \
+                     SET operation = 'rewrap', active_key_id = $1, progress_id = 0, updated_at = NOW() \
+                     WHERE component = 'signed_transactions'",
+                )
+                .bind(keys.active_key_id().as_slice())
+                .execute(&mut *transaction)
+                .await
+                .context("failed to record execution payload rewrap target")?;
+            }
+            "rewrap" => validate_execution_payload_state(&state, keys)?,
+            operation => anyhow::bail!(
+                "Execution payload storage is in {operation} maintenance, not ready for rewrap"
+            ),
+        }
+        sqlx::query(
+            "INSERT INTO execution_payload_key_state (key_id, seals) VALUES ($1, 0) \
+             ON CONFLICT (key_id) DO NOTHING",
+        )
+        .bind(keys.active_key_id().as_slice())
+        .execute(&mut *transaction)
+        .await
+        .context("failed to initialize rewrap target key state")?;
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload rewrap state")?;
+        Ok(())
+    }
+
+    async fn rewrap_execution_payload_batch(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<bool> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload rewrap batch")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload rewrap state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload rewrap state is missing"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        if state.operation == "ready" {
+            transaction
+                .commit()
+                .await
+                .context("failed to complete execution payload rewrap")?;
+            return Ok(true);
+        }
+        anyhow::ensure!(
+            state.operation == "rewrap",
+            "Execution payload storage is not rewrapping"
+        );
+        let rows = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            SELECT
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status, block_number, block_hash,
+                receipt_success, gas_used, effective_gas_price, current
+            FROM execution_transaction_hash
+            WHERE payload_expected
+              AND substring(sealed_transaction FROM 2 FOR 32) <> $1
+            ORDER BY id
+            LIMIT $2
+            FOR UPDATE
+            ",
+        )
+        .bind(keys.active_key_id().as_slice())
+        .bind(batch_size)
+        .fetch_all(&mut *transaction)
+        .await
+        .context("failed to load execution payload rewrap batch")?;
+
+        if rows.is_empty() {
+            sqlx::query("LOCK TABLE execution_transaction_hash IN SHARE ROW EXCLUSIVE MODE")
+                .execute(&mut *transaction)
+                .await
+                .context("failed to lock execution payload rewrap completion")?;
+            let remaining = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM execution_transaction_hash \
+                 WHERE payload_expected \
+                   AND (raw_transaction IS NOT NULL OR sealed_transaction IS NULL \
+                        OR substring(sealed_transaction FROM 2 FOR 32) <> $1)",
+            )
+            .bind(keys.active_key_id().as_slice())
+            .fetch_one(&mut *transaction)
+            .await
+            .context("failed to verify execution payload rewrap completion")?;
+            anyhow::ensure!(
+                remaining == 0,
+                "Execution payload rewrap left {remaining} row(s)"
+            );
+            sqlx::query(
+                "UPDATE execution_payload_state SET operation = 'ready', updated_at = NOW() \
+                 WHERE component = 'signed_transactions' AND operation = 'rewrap'",
+            )
+            .execute(&mut *transaction)
+            .await
+            .context("failed to mark execution payload rewrap complete")?;
+            transaction
+                .commit()
+                .await
+                .context("failed to commit execution payload rewrap completion")?;
+            return Ok(true);
+        }
+
+        for hash in rows {
+            let envelope = hash.sealed_transaction.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Execution payload {} has no envelope during rewrap",
+                    hash.id
+                )
+            })?;
+            anyhow::ensure!(
+                hash.raw_transaction.is_none(),
+                "Execution payload {} contains plaintext during rewrap",
+                hash.id
+            );
+            let intent = load_execution_intent(&mut transaction, hash.intent_id).await?;
+            let context = payload_context(&intent, &hash, keys.deployment_id())?;
+            let raw_transaction = keys.unseal(envelope, &context)?;
+            authenticate_retained_payload(&raw_transaction, &intent, &hash, keys.deployment_id())?;
+            reserve_execution_payload_seal(&mut transaction, keys.active_key_id()).await?;
+            let rewrapped = keys.seal(&raw_transaction, &context)?;
+            let verified = keys.unseal(&rewrapped, &context)?;
+            authenticate_retained_payload(&verified, &intent, &hash, keys.deployment_id())?;
+            anyhow::ensure!(
+                verified == raw_transaction,
+                "Execution payload {} changed during rewrap",
+                hash.id
+            );
+            let result = sqlx::query(
+                "UPDATE execution_transaction_hash SET sealed_transaction = $2, updated_at = NOW() \
+                 WHERE id = $1 AND sealed_transaction = $3 AND raw_transaction IS NULL",
+            )
+            .bind(hash.id)
+            .bind(&rewrapped)
+            .bind(envelope)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to persist rewrapped execution payload")?;
+            anyhow::ensure!(
+                result.rows_affected() == 1,
+                "Execution payload {} changed during rewrap",
+                hash.id
+            );
+            sqlx::query(
+                "UPDATE execution_payload_state SET progress_id = $1, updated_at = NOW() \
+                 WHERE component = 'signed_transactions'",
+            )
+            .bind(hash.id)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record execution payload rewrap progress")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload rewrap batch")?;
+        Ok(false)
+    }
+
+    pub(crate) async fn rollback_execution_payload_storage(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            batch_size > 0,
+            "Execution payload rollback batch size must be positive"
+        );
+        self.begin_execution_payload_rollback(keys).await?;
+
+        loop {
+            if self
+                .rollback_execution_payload_batch(keys, batch_size)
+                .await?
+            {
+                return Ok(());
+            }
+        }
+    }
+
+    async fn begin_execution_payload_rollback(&self, keys: &PayloadKeySet) -> anyhow::Result<()> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload rollback")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload state for rollback")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload protection is not active"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        match state.operation.as_str() {
+            "ready" => {
+                sqlx::query(
+                    "ALTER TABLE execution_transaction_hash \
+                     DROP CONSTRAINT IF EXISTS execution_transaction_payload_protected_check",
+                )
+                .execute(&mut *transaction)
+                .await
+                .context("failed to open execution payload rollback representation")?;
+                sqlx::query(
+                    "UPDATE execution_payload_state \
+                     SET operation = 'rollback', progress_id = 0, updated_at = NOW() \
+                     WHERE component = 'signed_transactions'",
+                )
+                .execute(&mut *transaction)
+                .await
+                .context("failed to record execution payload rollback state")?;
+            }
+            "rollback" => {}
+            operation => anyhow::bail!(
+                "Execution payload storage is in {operation} maintenance, not ready for rollback"
+            ),
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload rollback state")?;
+        Ok(())
+    }
+
+    async fn rollback_execution_payload_batch(
+        &self,
+        keys: &PayloadKeySet,
+        batch_size: i64,
+    ) -> anyhow::Result<bool> {
+        let mut transaction = self
+            .pool
+            .begin()
+            .await
+            .context("failed to start execution payload rollback batch")?;
+        lock_execution_payload_operation(&mut transaction).await?;
+        let state_row = sqlx::query(
+            "SELECT deployment_id, protocol_version, operation, active_key_id \
+             FROM execution_payload_state WHERE component = 'signed_transactions' FOR UPDATE",
+        )
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("failed to lock execution payload rollback state")?
+        .ok_or_else(|| anyhow::anyhow!("Execution payload rollback state is missing"))?;
+        let state = execution_payload_state_from_row(&state_row)?;
+        validate_execution_payload_state(&state, keys)?;
+        anyhow::ensure!(
+            state.operation == "rollback",
+            "Execution payload storage is not rolling back"
+        );
+        let rows = sqlx::query_as::<_, ExecutionTransactionHashRow>(
+            "
+            SELECT
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status, block_number, block_hash,
+                receipt_success, gas_used, effective_gas_price, current
+            FROM execution_transaction_hash
+            WHERE payload_expected AND sealed_transaction IS NOT NULL
+            ORDER BY id
+            LIMIT $1
+            FOR UPDATE
+            ",
+        )
+        .bind(batch_size)
+        .fetch_all(&mut *transaction)
+        .await
+        .context("failed to load execution payload rollback batch")?;
+
+        if rows.is_empty() {
+            sqlx::query("LOCK TABLE execution_transaction_hash IN SHARE ROW EXCLUSIVE MODE")
+                .execute(&mut *transaction)
+                .await
+                .context("failed to lock execution payload rollback completion")?;
+            let invalid = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM execution_transaction_hash \
+                 WHERE (payload_expected AND (raw_transaction IS NULL OR sealed_transaction IS NOT NULL)) \
+                    OR (NOT payload_expected AND (raw_transaction IS NOT NULL OR sealed_transaction IS NOT NULL))",
+            )
+            .fetch_one(&mut *transaction)
+            .await
+            .context("failed to verify execution payload rollback completion")?;
+            anyhow::ensure!(
+                invalid == 0,
+                "Execution payload rollback left {invalid} invalid row(s)"
+            );
+
+            for statement in [
+                "DROP TRIGGER IF EXISTS execution_transaction_payload_fence ON execution_transaction_hash",
+                "DELETE FROM execution_payload_state WHERE component = 'signed_transactions'",
+                "DELETE FROM execution_schema_version WHERE component = 'evm_execution_payload'",
+            ] {
+                sqlx::query(statement)
+                    .execute(&mut *transaction)
+                    .await
+                    .context("failed to complete execution payload rollback")?;
+            }
+            transaction
+                .commit()
+                .await
+                .context("failed to commit execution payload rollback completion")?;
+            return Ok(true);
+        }
+
+        for hash in rows {
+            anyhow::ensure!(
+                hash.raw_transaction.is_none(),
+                "Execution payload {} contains both representations during rollback",
+                hash.id
+            );
+            let envelope = hash
+                .sealed_transaction
+                .as_deref()
+                .expect("rollback query requires envelope");
+            let intent = load_execution_intent(&mut transaction, hash.intent_id).await?;
+            let context = payload_context(&intent, &hash, keys.deployment_id())?;
+            let raw_transaction = keys.unseal(envelope, &context)?;
+            authenticate_retained_payload(&raw_transaction, &intent, &hash, keys.deployment_id())?;
+            let result = sqlx::query(
+                "UPDATE execution_transaction_hash SET raw_transaction = $2, updated_at = NOW() \
+                 WHERE id = $1 AND raw_transaction IS NULL AND sealed_transaction = $3",
+            )
+            .bind(hash.id)
+            .bind(&raw_transaction)
+            .bind(envelope)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to recreate plaintext execution payload")?;
+            anyhow::ensure!(
+                result.rows_affected() == 1,
+                "Execution payload {} changed during rollback",
+                hash.id
+            );
+            authenticate_retained_payload(&raw_transaction, &intent, &hash, keys.deployment_id())?;
+            let result = sqlx::query(
+                "UPDATE execution_transaction_hash SET sealed_transaction = NULL, updated_at = NOW() \
+                 WHERE id = $1 AND raw_transaction = $2 AND sealed_transaction = $3",
+            )
+            .bind(hash.id)
+            .bind(&raw_transaction)
+            .bind(envelope)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to clear rolled-back execution payload envelope")?;
+            anyhow::ensure!(
+                result.rows_affected() == 1,
+                "Execution payload {} changed while clearing rollback envelope",
+                hash.id
+            );
+            sqlx::query(
+                "UPDATE execution_payload_state SET progress_id = $1, updated_at = NOW() \
+                 WHERE component = 'signed_transactions'",
+            )
+            .bind(hash.id)
+            .execute(&mut *transaction)
+            .await
+            .context("failed to record execution payload rollback progress")?;
+        }
+        transaction
+            .commit()
+            .await
+            .context("failed to commit execution payload rollback batch")?;
+        Ok(false)
     }
 
     /// Reserves durable ownership of a signer slot and optional client order before signing.
@@ -3617,12 +4880,84 @@ impl BlockchainCacheDatabase {
         transaction_hash: &str,
         raw_transaction: &[u8],
     ) -> anyhow::Result<ExecutionTransactionHashRow> {
+        self.add_execution_transaction_payload(
+            intent_id,
+            chain_id,
+            transaction_hash,
+            Some(raw_transaction),
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn add_execution_transaction_envelope(
+        &self,
+        intent_id: i64,
+        chain_id: u32,
+        transaction_hash: &str,
+        sealed_transaction: &[u8],
+    ) -> anyhow::Result<ExecutionTransactionHashRow> {
+        self.add_execution_transaction_payload(
+            intent_id,
+            chain_id,
+            transaction_hash,
+            None,
+            Some(sealed_transaction),
+        )
+        .await
+    }
+
+    async fn add_execution_transaction_payload(
+        &self,
+        intent_id: i64,
+        chain_id: u32,
+        transaction_hash: &str,
+        raw_transaction: Option<&[u8]>,
+        sealed_transaction: Option<&[u8]>,
+    ) -> anyhow::Result<ExecutionTransactionHashRow> {
+        anyhow::ensure!(
+            raw_transaction.is_some() != sealed_transaction.is_some(),
+            "A signed transaction requires exactly one payload representation"
+        );
         let chain_id_db = i32::try_from(chain_id)
             .with_context(|| format!("Chain ID {chain_id} exceeds PostgreSQL INTEGER"))?;
         let mut transaction =
             self.pool.begin().await.map_err(|e| {
                 anyhow::anyhow!("Failed to start signed transaction persistence: {e}")
             })?;
+
+        if let Some(envelope) = sealed_transaction {
+            let state_row = sqlx::query(
+                "SELECT deployment_id, protocol_version, operation, active_key_id \
+                 FROM execution_payload_state WHERE component = 'signed_transactions' FOR SHARE",
+            )
+            .fetch_optional(&mut *transaction)
+            .await
+            .context("failed to lock execution payload state for protected persistence")?
+            .ok_or_else(|| anyhow::anyhow!("Execution payload protection is not active"))?;
+            let state = execution_payload_state_from_row(&state_row)?;
+            anyhow::ensure!(
+                state.protocol_version == EXECUTION_PAYLOAD_PROTOCOL_VERSION
+                    && state.operation == "ready",
+                "Execution payload storage is not ready for protected persistence"
+            );
+            anyhow::ensure!(
+                envelope_key_id(envelope)?.as_slice() == state.active_key_id.as_slice(),
+                "Signed transaction envelope does not use the database active key"
+            );
+        } else {
+            let marker = sqlx::query_scalar::<_, bool>(
+                "SELECT EXISTS (SELECT 1 FROM execution_schema_version WHERE component = $1)",
+            )
+            .bind(EXECUTION_PAYLOAD_COMPONENT)
+            .fetch_one(&mut *transaction)
+            .await
+            .context("failed to inspect execution payload marker")?;
+            anyhow::ensure!(
+                !marker,
+                "Plaintext signed transaction persistence is disabled after payload activation"
+            );
+        }
         let current_status = sqlx::query_scalar::<_, String>(
             "SELECT status FROM execution_intent WHERE id = $1 FOR UPDATE",
         )
@@ -3640,17 +4975,31 @@ impl BlockchainCacheDatabase {
         let row = sqlx::query_as::<_, ExecutionTransactionHashRow>(
             "
             INSERT INTO execution_transaction_hash (
-                intent_id, chain_id, transaction_hash, raw_transaction, status
+                intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status
             )
-            SELECT id, chain_id, $3, $4, 'signed'
+            SELECT id, chain_id, $3, TRUE, $4, $5, 'signed'
             FROM execution_intent
             WHERE id = $1 AND chain_id = $2 AND nonce IS NOT NULL
             ON CONFLICT (chain_id, transaction_hash) DO UPDATE
             SET transaction_hash = EXCLUDED.transaction_hash
             WHERE execution_transaction_hash.intent_id = EXCLUDED.intent_id
-              AND execution_transaction_hash.raw_transaction = EXCLUDED.raw_transaction
+              AND execution_transaction_hash.payload_expected
+              AND (
+                  (
+                      EXCLUDED.raw_transaction IS NOT NULL
+                      AND execution_transaction_hash.raw_transaction = EXCLUDED.raw_transaction
+                      AND execution_transaction_hash.sealed_transaction IS NULL
+                  )
+                  OR (
+                      EXCLUDED.sealed_transaction IS NOT NULL
+                      AND execution_transaction_hash.raw_transaction IS NULL
+                      AND execution_transaction_hash.sealed_transaction IS NOT NULL
+                  )
+              )
             RETURNING
-                id, intent_id, chain_id, transaction_hash, raw_transaction, status,
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status,
                 block_number, block_hash, receipt_success, gas_used,
                 effective_gas_price, current
             ",
@@ -3659,6 +5008,7 @@ impl BlockchainCacheDatabase {
         .bind(chain_id_db)
         .bind(transaction_hash)
         .bind(raw_transaction)
+        .bind(sealed_transaction)
         .fetch_optional(&mut *transaction)
         .await
         .map_err(|e| {
@@ -3841,6 +5191,30 @@ impl BlockchainCacheDatabase {
         Ok(())
     }
 
+    /// Loads one durable execution intent by ID.
+    pub(crate) async fn get_execution_intent(
+        &self,
+        intent_id: i64,
+    ) -> anyhow::Result<ExecutionIntentRow> {
+        sqlx::query_as::<_, ExecutionIntentRow>(
+            "
+            SELECT
+                id, schema_version, chain_id, wallet_address, nonce, purpose, status,
+                client_order_id, trader_id, strategy_id, account_id, instrument_id,
+                pool_address, transaction_to, transaction_input, transaction_value,
+                amount_in, created_block, acknowledgement_emitted, fill_emitted,
+                terminal_emitted, active
+            FROM execution_intent
+            WHERE id = $1
+            ",
+        )
+        .bind(intent_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("failed to load execution intent")?
+        .ok_or_else(|| anyhow::anyhow!("Execution intent {intent_id} was not found"))
+    }
+
     /// Loads the active intent owned by a signer after any concurrent reservation completes.
     ///
     /// # Errors
@@ -3927,7 +5301,7 @@ impl BlockchainCacheDatabase {
                 WHERE intent.chain_id = $1
                   AND intent.wallet_address = $2
                   AND intent.status = 'recoverable'
-                  AND hash.raw_transaction IS NOT NULL
+                  AND (hash.raw_transaction IS NOT NULL OR hash.sealed_transaction IS NOT NULL)
             )
             ",
         )
@@ -3950,7 +5324,8 @@ impl BlockchainCacheDatabase {
         sqlx::query_as::<_, ExecutionTransactionHashRow>(
             "
             SELECT
-                id, intent_id, chain_id, transaction_hash, raw_transaction, status,
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status,
                 block_number, block_hash, receipt_success, gas_used,
                 effective_gas_price, current
             FROM execution_transaction_hash
@@ -4011,13 +5386,14 @@ impl BlockchainCacheDatabase {
         let row = sqlx::query_as::<_, ExecutionTransactionHashRow>(
             "
             INSERT INTO execution_transaction_hash (
-                intent_id, chain_id, transaction_hash, status, current
-            ) VALUES ($1, $2, $3, 'replaced', TRUE)
+                intent_id, chain_id, transaction_hash, payload_expected, status, current
+            ) VALUES ($1, $2, $3, FALSE, 'replaced', TRUE)
             ON CONFLICT (chain_id, transaction_hash) DO UPDATE
             SET current = TRUE, updated_at = NOW()
             WHERE execution_transaction_hash.intent_id = EXCLUDED.intent_id
             RETURNING
-                id, intent_id, chain_id, transaction_hash, raw_transaction, status,
+                id, intent_id, chain_id, transaction_hash, payload_expected,
+                raw_transaction, sealed_transaction, status,
                 block_number, block_hash, receipt_success, gas_used,
                 effective_gas_price, current
             ",
@@ -4178,6 +5554,128 @@ impl BlockchainCacheDatabase {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load from execution_transaction table: {e}"))
     }
+}
+
+fn execution_payload_state_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> anyhow::Result<ExecutionPayloadState> {
+    Ok(ExecutionPayloadState {
+        deployment_id: row.try_get("deployment_id")?,
+        protocol_version: row.try_get("protocol_version")?,
+        operation: row.try_get("operation")?,
+        active_key_id: row.try_get("active_key_id")?,
+    })
+}
+
+fn validate_execution_payload_state(
+    state: &ExecutionPayloadState,
+    keys: &PayloadKeySet,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        state.protocol_version == EXECUTION_PAYLOAD_PROTOCOL_VERSION,
+        "Execution payload protocol version {} is not supported",
+        state.protocol_version
+    );
+    anyhow::ensure!(
+        state.deployment_id == keys.deployment_id(),
+        "Execution payload deployment ID does not match this database"
+    );
+    anyhow::ensure!(
+        state.active_key_id.as_slice() == keys.active_key_id(),
+        "Configured active payload key does not match the database active key"
+    );
+    Ok(())
+}
+
+async fn lock_execution_payload_operation(
+    transaction: &mut Transaction<'_, Postgres>,
+) -> anyhow::Result<()> {
+    let lock = PgAdvisoryLock::new("nautilus:blockchain:execution-payload");
+    let PgAdvisoryLockKey::BigInt(lock_key) = lock.key() else {
+        unreachable!("string advisory locks use the 64-bit key space");
+    };
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(*lock_key)
+        .execute(&mut **transaction)
+        .await
+        .context("failed to acquire execution payload operation fence")?;
+    Ok(())
+}
+
+async fn reserve_execution_payload_seal(
+    transaction: &mut Transaction<'_, Postgres>,
+    key_id: &[u8; 32],
+) -> anyhow::Result<()> {
+    let seals = sqlx::query_scalar::<_, i64>(
+        "INSERT INTO execution_payload_key_state (key_id, seals) VALUES ($1, 1) \
+         ON CONFLICT (key_id) DO UPDATE SET seals = execution_payload_key_state.seals + 1 \
+         WHERE execution_payload_key_state.seals < $2 \
+         RETURNING seals",
+    )
+    .bind(key_id.as_slice())
+    .bind(EXECUTION_PAYLOAD_MAX_SEALS - 1)
+    .fetch_optional(&mut **transaction)
+    .await
+    .context("failed to reserve execution payload nonce use")?;
+    anyhow::ensure!(
+        seals.is_some(),
+        "Execution payload key reached its seal limit; rotate the active key before continuing"
+    );
+    Ok(())
+}
+
+async fn validate_execution_payload_key_inventory(
+    transaction: &mut Transaction<'_, Postgres>,
+    keys: &PayloadKeySet,
+) -> anyhow::Result<()> {
+    let envelopes = sqlx::query_scalar::<_, Vec<u8>>(
+        "SELECT DISTINCT substring(sealed_transaction FROM 1 FOR 33) \
+         FROM execution_transaction_hash \
+         WHERE sealed_transaction IS NOT NULL",
+    )
+    .fetch_all(&mut **transaction)
+    .await
+    .context("failed to inspect execution payload key inventory")?;
+
+    for header in envelopes {
+        anyhow::ensure!(
+            header.len() == 33,
+            "Stored execution payload has a truncated envelope header"
+        );
+        let mut envelope = header;
+        envelope.extend_from_slice(&[0; 12 + 16]);
+        let key_id = envelope_key_id(&envelope)?;
+        anyhow::ensure!(
+            keys.contains_key(&key_id),
+            "Stored execution payload requires unavailable key {}",
+            alloy::hex::encode(key_id)
+        );
+    }
+    Ok(())
+}
+
+async fn load_execution_intent(
+    transaction: &mut Transaction<'_, Postgres>,
+    intent_id: i64,
+) -> anyhow::Result<ExecutionIntentRow> {
+    sqlx::query_as::<_, ExecutionIntentRow>(
+        "
+        SELECT
+            id, schema_version, chain_id, wallet_address, nonce, purpose, status,
+            client_order_id, trader_id, strategy_id, account_id, instrument_id,
+            pool_address, transaction_to, transaction_input, transaction_value,
+            amount_in, created_block, acknowledgement_emitted, fill_emitted,
+            terminal_emitted, active
+        FROM execution_intent
+        WHERE id = $1
+        FOR SHARE
+        ",
+    )
+    .bind(intent_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .context("failed to load execution intent for payload authentication")?
+    .ok_or_else(|| anyhow::anyhow!("Execution intent {intent_id} was not found"))
 }
 
 fn execution_transition_allowed(current: &str, next: TransactionStatus) -> bool {

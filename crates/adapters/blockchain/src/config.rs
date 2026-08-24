@@ -194,6 +194,16 @@ pub struct BlockchainExecutionClientConfig {
     pub rpc_requests_per_second: Option<u32>,
     /// Name of the environment variable holding the signer private key.
     pub signer_private_key_env: String,
+    /// Name of the environment variable holding the active transaction payload sealing key.
+    #[serde(default)]
+    pub payload_key_env: Option<String>,
+    /// Names of environment variables holding retired payload keys used only for unsealing.
+    #[builder(default)]
+    #[serde(default)]
+    pub payload_key_retired_env: Vec<String>,
+    /// Stable identifier bound to this execution database's sealed payloads.
+    #[serde(default)]
+    pub payload_deployment_id: Option<String>,
     /// Allowed SwapRouter addresses for approval and swap transactions.
     pub router_addresses: Vec<String>,
     /// Wrapped native token address for wrap operations.
@@ -247,6 +257,9 @@ impl Debug for BlockchainExecutionClientConfig {
             .field("http_rpc_url", &REDACTED)
             .field("rpc_requests_per_second", &self.rpc_requests_per_second)
             .field("signer_private_key_env", &self.signer_private_key_env)
+            .field("payload_key_env", &self.payload_key_env)
+            .field("payload_key_retired_env", &self.payload_key_retired_env)
+            .field("payload_deployment_id", &self.payload_deployment_id)
             .field("router_addresses", &self.router_addresses)
             .field("weth_address", &self.weth_address)
             .field("unlimited_approval", &self.unlimited_approval)
@@ -291,6 +304,9 @@ nautilus_core::impl_pyo3_config_getters!(BlockchainExecutionClientConfig {
     quote_spend_limits: Option<Vec<QuoteSpendLimit>>,
     receipt_timeout_secs: Option<u64>,
     router_addresses: Vec<String>,
+    payload_deployment_id: Option<String>,
+    payload_key_env: Option<String>,
+    payload_key_retired_env: Vec<String>,
     signer_private_key_env: String,
     slippage_bps: Option<u32>,
     tokens: Option<Vec<String>>,
@@ -341,6 +357,9 @@ client_id = "BLOCKCHAIN-001"
 wallet_address = "0x0000000000000000000000000000000000000000"
 http_rpc_url = "https://eth-mainnet.example.com"
 signer_private_key_env = "BLOCKCHAIN_PRIVATE_KEY"
+payload_key_env = "BLOCKCHAIN_PAYLOAD_KEY"
+payload_key_retired_env = ["BLOCKCHAIN_PAYLOAD_KEY_OLD"]
+payload_deployment_id = "primary-execution"
 router_addresses = ["0xE592427A0AEce92De3Edee1F18E0157C05861564"]
 weth_address = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
 max_fee_per_gas_wei = 1000000000
@@ -383,6 +402,18 @@ native_currency_decimals = 18
         assert!(config.tokens.is_none());
         assert!(config.rpc_requests_per_second.is_none());
         assert_eq!(config.signer_private_key_env, "BLOCKCHAIN_PRIVATE_KEY");
+        assert_eq!(
+            config.payload_key_env.as_deref(),
+            Some("BLOCKCHAIN_PAYLOAD_KEY")
+        );
+        assert_eq!(
+            config.payload_key_retired_env,
+            vec!["BLOCKCHAIN_PAYLOAD_KEY_OLD".to_string()]
+        );
+        assert_eq!(
+            config.payload_deployment_id.as_deref(),
+            Some("primary-execution")
+        );
         assert_eq!(
             config.router_addresses,
             vec!["0xE592427A0AEce92De3Edee1F18E0157C05861564".to_string()],
@@ -454,6 +485,9 @@ native_currency_decimals = 18
         .unwrap();
 
         assert!(config.allowed_token_pairs.is_none());
+        assert!(config.payload_key_env.is_none());
+        assert!(config.payload_key_retired_env.is_empty());
+        assert!(config.payload_deployment_id.is_none());
         assert!(config.quote_spend_limits.is_none());
         assert!(config.slippage_bps.is_none());
         assert!(config.max_slippage_bps.is_none());

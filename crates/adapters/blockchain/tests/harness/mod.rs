@@ -50,6 +50,10 @@ pub(crate) const FORK_BLOCK: u64 = 489_000_000;
 /// Arbitrum chain ID.
 pub(crate) const CHAIN_ID: u64 = 42161;
 pub(crate) const SIGNER_ENV: &str = "BLOCKCHAIN_FORK_TEST_PRIVATE_KEY";
+pub(crate) const PAYLOAD_KEY_ENV: &str = "BLOCKCHAIN_FORK_TEST_PAYLOAD_KEY";
+pub(crate) const PAYLOAD_KEY_HEX: &str =
+    "5f573818412f4c7c25d86a4f8d719a4f972e3c028634c95ab9bb49c439ec2198";
+pub(crate) const PAYLOAD_DEPLOYMENT_ID: &str = "blockchain-fork-tests";
 pub(crate) const ROUTER: &str = "0xE592427A0AEce92De3Edee1F18E0157C05861564";
 pub(crate) const WETH: &str = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 pub(crate) const USDC: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";

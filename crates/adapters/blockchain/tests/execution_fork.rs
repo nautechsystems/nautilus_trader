@@ -32,10 +32,11 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use harness::{
-    CHAIN_ID, FORK_BLOCK, FUND_AMOUNT_WEI, ROUTER, SIGNER_ENV, SLIPPAGE_BPS, SWAP_AMOUNT, USDC,
-    WETH, WRAP_AMOUNT_WEI, anvil_mine, anvil_set_automine, anvil_set_interval_mining,
-    build_full_range_snapshot, ensure_execution_schema, fund_anvil_wallet, git_diff_sha256,
-    quote_buy_amount_in, start_anvil, start_anvil_at, weth_usdc_pool,
+    CHAIN_ID, FORK_BLOCK, FUND_AMOUNT_WEI, PAYLOAD_DEPLOYMENT_ID, PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX,
+    ROUTER, SIGNER_ENV, SLIPPAGE_BPS, SWAP_AMOUNT, USDC, WETH, WRAP_AMOUNT_WEI, anvil_mine,
+    anvil_set_automine, anvil_set_interval_mining, build_full_range_snapshot,
+    ensure_execution_schema, fund_anvil_wallet, git_diff_sha256, quote_buy_amount_in, start_anvil,
+    start_anvil_at, weth_usdc_pool,
 };
 use nautilus_blockchain::{
     config::{BlockchainExecutionClientConfig, QuoteSpendLimit},
@@ -160,16 +161,22 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         .deadline_seconds(300)
         .max_quote_age_blocks(100)
         .receipt_timeout_secs(60)
+        .payload_key_env(PAYLOAD_KEY_ENV.to_string())
+        .payload_deployment_id(PAYLOAD_DEPLOYMENT_ID.to_string())
         .postgres_cache_database_config(pg_config)
         .build();
 
     // SAFETY: this opt-in test runs in its own process and no other thread reads this variable.
-    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    unsafe {
+        std::env::set_var(SIGNER_ENV, signer_private_key);
+        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
+    }
 
     let mut client = BlockchainExecutionClient::new(core, config).unwrap();
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(event_sender);
     client.start().unwrap();
+    client.protect_payload_storage().await.unwrap();
     client.connect().await.unwrap();
 
     // Build a live pool profiler from the fork's current on-chain state so submit_order can
@@ -605,7 +612,10 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         evidence_dir.display()
     );
 
-    unsafe { std::env::remove_var(SIGNER_ENV) };
+    unsafe {
+        std::env::remove_var(SIGNER_ENV);
+        std::env::remove_var(PAYLOAD_KEY_ENV);
+    }
 }
 
 #[tokio::test]
@@ -688,16 +698,22 @@ async fn anvil_fork_usdc_to_weth_market_buy() {
         .deadline_seconds(300)
         .max_quote_age_blocks(100)
         .receipt_timeout_secs(60)
+        .payload_key_env(PAYLOAD_KEY_ENV.to_string())
+        .payload_deployment_id(PAYLOAD_DEPLOYMENT_ID.to_string())
         .postgres_cache_database_config(pg_config)
         .build();
 
     // SAFETY: this opt-in test runs in its own process and no other thread reads this variable.
-    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    unsafe {
+        std::env::set_var(SIGNER_ENV, signer_private_key);
+        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
+    }
 
     let mut client = BlockchainExecutionClient::new(core, config).unwrap();
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(event_sender);
     client.start().unwrap();
+    client.protect_payload_storage().await.unwrap();
     client.connect().await.unwrap();
 
     let setup_sell_amount_wei = U256::from(WRAP_AMOUNT_WEI) * U256::from(2);
@@ -853,7 +869,10 @@ async fn anvil_fork_usdc_to_weth_market_buy() {
         "BUY fork proof: hash={swap_hash_string} usdc_spent={usdc_spent} weth_received={weth_received} anvil={}",
         startup.version
     );
-    unsafe { std::env::remove_var(SIGNER_ENV) };
+    unsafe {
+        std::env::remove_var(SIGNER_ENV);
+        std::env::remove_var(PAYLOAD_KEY_ENV);
+    }
 }
 
 async fn wait_for_finalized_fill(admin_pool: &PgPool, client_order_id: &str) -> String {
@@ -996,7 +1015,10 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     ensure_execution_schema(&admin_pool).await;
 
     // SAFETY: this opt-in test uses a distinct env var from the sibling fork test.
-    unsafe { std::env::set_var(RECOVERY_SIGNER_ENV, &signer_private_key) };
+    unsafe {
+        std::env::set_var(RECOVERY_SIGNER_ENV, &signer_private_key);
+        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
+    }
 
     let rpc_client = Arc::new(BlockchainHttpRpcClient::new(anvil_url.clone(), None, None));
     let erc20 = Erc20Contract::new(rpc_client.clone(), true);
@@ -1157,7 +1179,10 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     )
     .unwrap();
 
-    unsafe { std::env::remove_var(RECOVERY_SIGNER_ENV) };
+    unsafe {
+        std::env::remove_var(RECOVERY_SIGNER_ENV);
+        std::env::remove_var(PAYLOAD_KEY_ENV);
+    }
 }
 
 async fn pause_mining(anvil_url: &str) {
@@ -1182,6 +1207,7 @@ async fn connected_fork_client(
     let (event_sender, _event_receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(event_sender);
     client.start().unwrap();
+    client.protect_payload_storage().await.unwrap();
     client.connect().await.unwrap();
     client
 }
@@ -1225,6 +1251,8 @@ fn fork_client(
         .deadline_seconds(300)
         .max_quote_age_blocks(100)
         .receipt_timeout_secs(receipt_timeout_secs)
+        .payload_key_env(PAYLOAD_KEY_ENV.to_string())
+        .payload_deployment_id(PAYLOAD_DEPLOYMENT_ID.to_string())
         .postgres_cache_database_config(pg_config)
         .build();
     BlockchainExecutionClient::new(core, config).unwrap()

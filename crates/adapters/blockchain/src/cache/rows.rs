@@ -696,7 +696,9 @@ pub struct ExecutionTransactionHashRow {
     pub intent_id: i64,
     pub chain_id: u32,
     pub transaction_hash: String,
+    pub payload_expected: bool,
     pub raw_transaction: Option<Vec<u8>>,
+    pub sealed_transaction: Option<Vec<u8>>,
     pub status: String,
     pub block_number: Option<u64>,
     pub block_hash: Option<String>,
@@ -713,9 +715,14 @@ impl Debug for ExecutionTransactionHashRow {
             .field("intent_id", &self.intent_id)
             .field("chain_id", &self.chain_id)
             .field("transaction_hash", &self.transaction_hash)
+            .field("payload_expected", &self.payload_expected)
             .field(
                 "raw_transaction",
                 &self.raw_transaction.as_ref().map(|_| "<redacted>"),
+            )
+            .field(
+                "sealed_transaction",
+                &self.sealed_transaction.as_ref().map(|_| "<redacted>"),
             )
             .field("status", &self.status)
             .field("block_number", &self.block_number)
@@ -756,7 +763,9 @@ impl<'r> FromRow<'r, PgRow> for ExecutionTransactionHashRow {
             intent_id: row.try_get("intent_id")?,
             chain_id,
             transaction_hash: row.try_get("transaction_hash")?,
+            payload_expected: row.try_get("payload_expected")?,
             raw_transaction: row.try_get("raw_transaction")?,
+            sealed_transaction: row.try_get("sealed_transaction")?,
             status: row.try_get("status")?,
             block_number,
             block_hash: row.try_get("block_hash")?,
@@ -843,7 +852,9 @@ mod tests {
             intent_id: 2,
             chain_id: 42161,
             transaction_hash: "0xhash".to_string(),
+            payload_expected: true,
             raw_transaction: Some(vec![0xde, 0xad, 0xbe, 0xef]),
+            sealed_transaction: Some(vec![0xca, 0xfe]),
             status: "signed".to_string(),
             block_number: None,
             block_hash: None,
@@ -856,6 +867,8 @@ mod tests {
         let debug = format!("{row:?}");
 
         assert!(debug.contains("raw_transaction: Some(\"<redacted>\")"));
+        assert!(debug.contains("sealed_transaction: Some(\"<redacted>\")"));
         assert!(!debug.contains("[222, 173, 190, 239]"));
+        assert!(!debug.contains("[202, 254]"));
     }
 }

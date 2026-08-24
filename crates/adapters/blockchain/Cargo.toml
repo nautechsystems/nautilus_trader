@@ -64,6 +64,7 @@ alloy = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
+aws-lc-rs = { workspace = true }
 bon = { workspace = true }
 bytes = { workspace = true }
 dotenvy = { workspace = true }
@@ -90,7 +91,6 @@ turmoil = { workspace = true, optional = true }
 [dev-dependencies]
 nautilus-trading = { workspace = true }
 
-aws-lc-rs = { workspace = true }
 axum = { workspace = true }
 rstest = { workspace = true }
 toml = { workspace = true }

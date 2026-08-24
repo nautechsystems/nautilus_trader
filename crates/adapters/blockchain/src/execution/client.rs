@@ -68,7 +68,10 @@ use zeroize::Zeroizing;
 use crate::{
     cache::{
         BlockchainCache,
-        database::{BlockchainCacheDatabase, reservation_failure_proven_not_committed},
+        database::{
+            BlockchainCacheDatabase, ExecutionPayloadCheck, ExecutionPayloadLease,
+            reservation_failure_proven_not_committed,
+        },
         rows::{ExecutionIntentInsert, ExecutionIntentRow, ExecutionTransactionHashRow},
     },
     config::BlockchainExecutionClientConfig,
@@ -81,10 +84,14 @@ use crate::{
         preflight::{
             BlockchainPreflightReport, ContractCodeCheck, PoolPreflightCheck, TokenPreflightCheck,
         },
+        sealing::{
+            PayloadKeySet, PayloadPolicy, authenticate_payload, authenticate_payload_identity,
+            authenticate_retained_payload, payload_context, payload_context_identity,
+            persisted_call_fields, retained_payload_requires_policy,
+        },
         transaction::{
-            SignedTransactionIntent, TransactionPurpose, TransactionStatus,
-            build_eip1559_transaction, compute_max_fee, derive_fees, derive_gas_limit,
-            sign_eip1559_transaction, validate_signed_transaction,
+            TransactionPurpose, TransactionStatus, build_eip1559_transaction, compute_max_fee,
+            derive_fees, derive_gas_limit, sign_eip1559_transaction,
         },
     },
     rpc::{
@@ -97,6 +104,43 @@ use crate::{
 
 /// Interval between receipt polls while awaiting transaction finality.
 const RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const MAX_PAYLOAD_OPERATION_BATCH_SIZE: usize = 1_000;
+
+/// Result of authenticating every persisted signed transaction in one execution database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PayloadStorageCheck {
+    /// Whether payload protection is active.
+    pub protected: bool,
+    /// Durable deployment identity when protection is active.
+    pub deployment_id: Option<String>,
+    /// Rows which still contain plaintext signed transaction bytes.
+    pub plaintext_rows: u64,
+    /// Signed transaction rows which require a payload.
+    pub original_rows: u64,
+    /// Canonical replacement rows whose original bytes are unavailable.
+    pub replacement_rows: u64,
+    /// Payload rows successfully opened and authenticated.
+    pub authenticated_rows: u64,
+    /// Key IDs referenced by protected payloads.
+    pub key_ids: Vec<String>,
+    /// Database roles with direct table ownership or `SELECT` grants.
+    pub read_roles: Vec<String>,
+}
+
+impl From<ExecutionPayloadCheck> for PayloadStorageCheck {
+    fn from(value: ExecutionPayloadCheck) -> Self {
+        Self {
+            protected: value.protected,
+            deployment_id: value.deployment_id,
+            plaintext_rows: value.plaintext_rows,
+            original_rows: value.original_rows,
+            replacement_rows: value.replacement_rows,
+            authenticated_rows: value.authenticated_rows,
+            key_ids: value.key_ids,
+            read_roles: value.read_roles,
+        }
+    }
+}
 /// Basis points denominator for slippage derivation.
 const BPS_DENOMINATOR: u32 = 10_000;
 /// Denial reason for order-list submissions, which have no on-chain execution route.
@@ -232,6 +276,8 @@ pub struct BlockchainExecutionClient {
     wallet_address: Address,
     /// Transaction signer loaded from the configured environment variable at connect.
     signer: Option<Arc<PrivateKeySigner>>,
+    /// Signed transaction payload keys loaded from configured environment variables at connect.
+    payload_keys: Option<Arc<PayloadKeySet>>,
     /// Validated allowlist of SwapRouter addresses.
     router_addresses: Vec<Address>,
     /// Validated transaction limits required before execution can start.
@@ -314,6 +360,7 @@ impl BlockchainExecutionClient {
             cache,
             config,
             signer: None,
+            payload_keys: None,
             router_addresses,
             transaction_limits,
             weth_address,
@@ -941,6 +988,123 @@ impl BlockchainExecutionClient {
         Ok(pool)
     }
 
+    /// Authenticates every persisted signed transaction in this execution database.
+    ///
+    /// Run this while the execution client is disconnected. The check takes a stable table lock,
+    /// reads in bounded batches, and returns counts, deployment identity, key IDs, and database
+    /// roles with direct ownership or `SELECT` grants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for inconsistent storage state, missing keys, or any payload which cannot
+    /// be opened and authenticated against its durable intent.
+    pub async fn check_payload_storage(
+        &self,
+        batch_size: usize,
+    ) -> anyhow::Result<PayloadStorageCheck> {
+        let batch_size = validate_payload_operation_batch_size(batch_size)?;
+        let database = self.payload_operation_database().await?;
+        let keys = self.load_payload_keys()?;
+        database
+            .check_execution_payload_storage(keys.as_ref(), None, batch_size)
+            .await
+            .map(Into::into)
+    }
+
+    /// Activates or resumes protected signed-transaction storage for this execution database.
+    ///
+    /// Run this while the execution client is disconnected. A full payload check must succeed
+    /// before a later execution connection is permitted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client is connected, an active key or deployment identity is
+    /// unavailable, or any stored payload cannot be migrated and authenticated.
+    pub async fn protect_payload_storage(&self) -> anyhow::Result<()> {
+        let database = self.payload_operation_database().await?;
+        database.ensure_execution_transaction_schema().await?;
+        let keys = self
+            .load_payload_keys()?
+            .ok_or_else(|| anyhow::anyhow!("Payload protection requires an active payload key"))?;
+        database.ensure_execution_payload_storage(&keys).await
+    }
+
+    /// Rewraps all protected payloads in this execution database with the configured active key.
+    ///
+    /// The prior active key must remain configured as a retired key until this method and a
+    /// subsequent full check both succeed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client is connected, storage is not protected, required keys are
+    /// unavailable, or any bounded rewrap batch fails authentication.
+    pub async fn rewrap_payload_storage(&self, batch_size: usize) -> anyhow::Result<()> {
+        let batch_size = validate_payload_operation_batch_size(batch_size)?;
+        let database = self.payload_operation_database().await?;
+        let keys = self
+            .load_payload_keys()?
+            .ok_or_else(|| anyhow::anyhow!("Payload rewrap requires an active payload key"))?;
+        database
+            .rewrap_execution_payload_storage(&keys, batch_size)
+            .await
+    }
+
+    /// Restores authenticated plaintext payloads and removes protection from this database.
+    ///
+    /// This incident-only operation is resumable. Keep the complete key set configured until it
+    /// succeeds and the unprotected database passes a full payload check.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client is connected, storage is not protected, required keys are
+    /// unavailable, or any bounded rollback batch fails authentication.
+    pub async fn rollback_payload_storage(&self, batch_size: usize) -> anyhow::Result<()> {
+        let batch_size = validate_payload_operation_batch_size(batch_size)?;
+        let database = self.payload_operation_database().await?;
+        let keys = self
+            .load_payload_keys()?
+            .ok_or_else(|| anyhow::anyhow!("Payload rollback requires an active payload key"))?;
+        database
+            .rollback_execution_payload_storage(&keys, batch_size)
+            .await
+    }
+
+    async fn payload_operation_database(&self) -> anyhow::Result<BlockchainCacheDatabase> {
+        anyhow::ensure!(
+            !self.core.is_connected(),
+            "Disconnect the execution client before payload storage operations"
+        );
+
+        if let Some(database) = &self.cache.database {
+            return Ok(database.clone());
+        }
+        let options = self
+            .config
+            .postgres_cache_database_config
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No Postgres cache database is configured"))?;
+        BlockchainCacheDatabase::connect(options.clone().into())
+            .await
+            .context("failed to connect to the execution database")
+    }
+
+    fn load_payload_keys(&self) -> anyhow::Result<Option<PayloadKeySet>> {
+        PayloadKeySet::load(
+            self.config.payload_key_env.as_deref(),
+            &self.config.payload_key_retired_env,
+            self.config.payload_deployment_id.as_deref(),
+        )
+    }
+
+    fn payload_policy(&self) -> PayloadPolicy {
+        PayloadPolicy {
+            chain_id: self.chain.chain_id,
+            signer: self.wallet_address,
+            gas_limit: self.config.gas_limit,
+            max_fee_per_gas: self.config.max_fee_per_gas_wei,
+        }
+    }
+
     /// Builds the shared transaction executor from the connected client state.
     ///
     /// # Errors
@@ -954,11 +1118,15 @@ impl BlockchainExecutionClient {
             .signer
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Signer not initialized; connect the client first"))?;
+        let payload_keys = self.payload_keys.clone().ok_or_else(|| {
+            anyhow::anyhow!("Protected payload keys are not initialized; connect the client first")
+        })?;
 
         Ok(TransactionExecutor {
             http_rpc_client: self.http_rpc_client.clone(),
             database,
             signer,
+            payload_keys,
             in_flight: Arc::clone(&self.in_flight),
             wallet_balance: Arc::clone(&self.wallet_balance),
             account_id: self.core.account_id,
@@ -1078,6 +1246,11 @@ impl BlockchainExecutionClient {
         let database = self.cache.database.clone().ok_or_else(|| {
             anyhow::anyhow!("No durable store configured for execution reconciliation")
         })?;
+        let _payload_lease = database
+            .acquire_execution_payload_lease(self.payload_keys.as_deref().ok_or_else(|| {
+                anyhow::anyhow!("Protected payload keys are required for execution recovery")
+            })?)
+            .await?;
         let wallet_address = self.wallet_address.to_string();
         anyhow::ensure!(
             !database
@@ -1131,10 +1304,14 @@ impl BlockchainExecutionClient {
                 intent.id, current.transaction_hash
             )
         })?;
-        let durable_signer = Address::from_str(&intent.wallet_address)
-            .with_context(|| "persisted execution wallet is invalid")?;
-        let (to, input, value) = persisted_call_fields(&intent)?;
+        let policy = PayloadPolicy {
+            chain_id: self.chain.chain_id,
+            signer: self.wallet_address,
+            gas_limit: self.config.gas_limit,
+            max_fee_per_gas: self.config.max_fee_per_gas_wei,
+        };
         let mut authenticated = false;
+        let mut current_payload = None;
 
         for hash in &hashes {
             anyhow::ensure!(
@@ -1149,31 +1326,23 @@ impl BlockchainExecutionClient {
                 hash.chain_id,
                 self.chain.chain_id
             );
-            let Some(raw_transaction) = hash.raw_transaction.as_deref() else {
+
+            if !hash.payload_expected {
+                anyhow::ensure!(
+                    hash.raw_transaction.is_none() && hash.sealed_transaction.is_none(),
+                    "Replacement transaction {} unexpectedly retains signed bytes",
+                    hash.transaction_hash
+                );
                 continue;
-            };
-            let persisted_hash = B256::from_str(&hash.transaction_hash).with_context(|| {
-                format!(
-                    "Execution intent {} has invalid transaction hash {}",
-                    intent.id, hash.transaction_hash
-                )
-            })?;
-            validate_signed_transaction(
-                raw_transaction,
-                &SignedTransactionIntent {
-                    hash: persisted_hash,
-                    signer: self.wallet_address,
-                    durable_signer,
-                    chain_id: self.chain.chain_id,
-                    intent_chain_id: intent.chain_id,
-                    row_chain_id: hash.chain_id,
-                    nonce,
-                    to,
-                    value,
-                    input: input.clone(),
-                    gas_limit: self.config.gas_limit,
-                    max_fee_per_gas: self.config.max_fee_per_gas_wei,
-                },
+            }
+            let raw_transaction = open_execution_payload(
+                self.payload_keys
+                    .as_deref()
+                    .expect("payload keys checked above"),
+                policy,
+                &intent,
+                hash,
+                "recovery",
             )
             .map_err(|e| {
                 anyhow::anyhow!(
@@ -1182,6 +1351,10 @@ impl BlockchainExecutionClient {
                     hash.transaction_hash
                 )
             })?;
+
+            if hash.id == current.id {
+                current_payload = Some(raw_transaction);
+            }
             authenticated = true;
         }
         anyhow::ensure!(
@@ -1192,7 +1365,7 @@ impl BlockchainExecutionClient {
 
         if intent.status == "broadcast" {
             anyhow::ensure!(
-                current.raw_transaction.is_some(),
+                current_payload.is_some(),
                 "Broadcast execution intent {} has no persisted signed transaction bytes",
                 intent.id
             );
@@ -1237,7 +1410,8 @@ impl BlockchainExecutionClient {
             created_block: intent.created_block,
             nonce,
             tx_hash,
-            raw_tx: current.raw_transaction.clone().unwrap_or_default(),
+            raw_tx: current_payload.unwrap_or_default(),
+            payload_lease: None,
         };
 
         if intent.status == "broadcast" {
@@ -1623,6 +1797,7 @@ struct PreparedTransaction {
     nonce: u64,
     tx_hash: B256,
     raw_tx: Vec<u8>,
+    payload_lease: Option<ExecutionPayloadLease>,
 }
 
 impl Debug for PreparedTransaction {
@@ -1633,6 +1808,10 @@ impl Debug for PreparedTransaction {
             .field("nonce", &self.nonce)
             .field("tx_hash", &self.tx_hash)
             .field("raw_tx", &"<redacted>")
+            .field(
+                "payload_lease",
+                &self.payload_lease.as_ref().map(|_| "held"),
+            )
             .finish()
     }
 }
@@ -1669,6 +1848,7 @@ struct TransactionExecutor {
     http_rpc_client: Arc<BlockchainHttpRpcClient>,
     database: BlockchainCacheDatabase,
     signer: Arc<PrivateKeySigner>,
+    payload_keys: Arc<PayloadKeySet>,
     in_flight: Arc<Mutex<Option<InFlightSlot>>>,
     wallet_balance: Arc<Mutex<WalletBalance>>,
     account_id: AccountId,
@@ -1911,6 +2091,10 @@ impl TransactionExecutor {
         if let Some(anchors) = swap_anchors {
             validate_swap_anchors_before_sign(anchors, &self.http_rpc_client).await?;
         }
+        let payload_lease = self
+            .database
+            .acquire_execution_payload_lease(&self.payload_keys)
+            .await?;
         let (tx_hash, raw_tx) = sign_eip1559_transaction(tx, &self.signer).await?;
 
         Ok(PreparedTransaction {
@@ -1919,6 +2103,7 @@ impl TransactionExecutor {
             nonce,
             tx_hash,
             raw_tx,
+            payload_lease: Some(payload_lease),
         })
     }
 
@@ -1945,20 +2130,66 @@ impl TransactionExecutor {
         }
 
         let tx_hash = prepared.tx_hash;
+        let transaction_hash = tx_hash.to_string();
+        let policy = self.payload_policy();
+        let intent = self
+            .database
+            .get_execution_intent(prepared.intent_id)
+            .await?;
+        authenticate_payload_identity(
+            &prepared.raw_tx,
+            &intent,
+            &transaction_hash,
+            self.chain_id,
+            policy,
+        )
+        .with_context(|| format!("Newly signed transaction {tx_hash} failed authentication"))?;
+
         self.database
-            .add_execution_transaction_hash(
+            .reserve_execution_payload_seal(&self.payload_keys)
+            .await?;
+        let context = payload_context_identity(
+            &intent,
+            &transaction_hash,
+            self.chain_id,
+            self.payload_keys.deployment_id(),
+        )?;
+        let envelope = self.payload_keys.seal(&prepared.raw_tx, &context)?;
+        let row = self
+            .database
+            .add_execution_transaction_envelope(
                 prepared.intent_id,
                 self.chain_id,
-                &tx_hash.to_string(),
-                &prepared.raw_tx,
+                &transaction_hash,
+                &envelope,
             )
             .await
-            .map(|_| ())
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to persist transaction {tx_hash}: {e}; the in-flight slot stays occupied"
-                )
-            })
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to persist transaction {tx_hash}: {e}; the in-flight slot stays occupied"
+            )
+        })?;
+        let stored = open_execution_payload(
+            &self.payload_keys,
+            policy,
+            &intent,
+            &row,
+            "initial persistence",
+        )?;
+        anyhow::ensure!(
+            stored == prepared.raw_tx,
+            "Persisted transaction {tx_hash} does not match the signed bytes"
+        );
+        Ok(())
+    }
+
+    fn payload_policy(&self) -> PayloadPolicy {
+        PayloadPolicy {
+            chain_id: self.chain_id,
+            signer: self.wallet_address,
+            gas_limit: self.gas_limit,
+            max_fee_per_gas: self.max_fee_per_gas_wei,
+        }
     }
 
     /// Broadcasts the signed transaction and classifies the acceptance outcome.
@@ -2249,6 +2480,14 @@ fn replacement_scan_range(from_block: u64, head_block: u64) -> anyhow::Result<Ra
     Ok(from_block..=head_block)
 }
 
+fn validate_payload_operation_batch_size(batch_size: usize) -> anyhow::Result<i64> {
+    anyhow::ensure!(
+        (1..=MAX_PAYLOAD_OPERATION_BATCH_SIZE).contains(&batch_size),
+        "Payload operation batch size must be between 1 and {MAX_PAYLOAD_OPERATION_BATCH_SIZE}"
+    );
+    Ok(i64::try_from(batch_size).expect("bounded payload batch size fits i64"))
+}
+
 fn current_execution_hash(
     intent_id: i64,
     hashes: &[ExecutionTransactionHashRow],
@@ -2262,6 +2501,49 @@ fn current_execution_hash(
         "Execution intent {intent_id} has more than one current hash"
     );
     Ok(row)
+}
+
+fn open_execution_payload(
+    keys: &PayloadKeySet,
+    policy: PayloadPolicy,
+    intent: &ExecutionIntentRow,
+    hash: &ExecutionTransactionHashRow,
+    reason: &str,
+) -> anyhow::Result<Vec<u8>> {
+    anyhow::ensure!(
+        hash.payload_expected,
+        "Execution transaction {} has no signed payload",
+        hash.transaction_hash
+    );
+    anyhow::ensure!(
+        hash.raw_transaction.is_none(),
+        "Protected execution transaction {} contains plaintext",
+        hash.transaction_hash
+    );
+    let envelope = hash.sealed_transaction.as_deref().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Protected execution transaction {} has no sealed payload",
+            hash.transaction_hash
+        )
+    })?;
+    let context = payload_context(intent, hash, keys.deployment_id())?;
+    let raw_transaction = keys.unseal(envelope, &context)?;
+    log::info!(
+        "Unsealed execution payload for intent {} transaction {} during {reason}",
+        intent.id,
+        hash.transaction_hash
+    );
+    authenticate_retained_payload(&raw_transaction, intent, hash, keys.deployment_id())?;
+    if retained_payload_requires_policy(intent, hash, policy)? {
+        authenticate_payload(&raw_transaction, intent, hash, policy, keys.deployment_id())
+            .with_context(|| {
+                format!(
+                    "execution intent {} transaction {} violates current execution policy",
+                    intent.id, hash.transaction_hash
+                )
+            })?;
+    }
+    Ok(raw_transaction)
 }
 
 /// Polls for the receipt of a broadcast transaction until it exists or the poll bound
@@ -2788,23 +3070,6 @@ async fn finalized_transaction_matches(
         && transaction.to == Some(expected_to)
         && transaction.input == expected_input
         && transaction.value == expected_value)
-}
-
-/// Parses the persisted destination, calldata, and value of an execution intent.
-fn persisted_call_fields(intent: &ExecutionIntentRow) -> anyhow::Result<(Address, Bytes, U256)> {
-    let to = Address::from_str(&intent.transaction_to)
-        .with_context(|| "persisted execution destination is invalid")?;
-    let input = hex::decode(
-        intent
-            .transaction_input
-            .strip_prefix("0x")
-            .unwrap_or(&intent.transaction_input),
-    )
-    .with_context(|| "persisted execution calldata is invalid")?;
-    let value = U256::from_str(&intent.transaction_value)
-        .with_context(|| "persisted execution value is invalid")?;
-
-    Ok((to, Bytes::from(input), value))
 }
 
 async fn complete_finalized_swap(
@@ -3531,22 +3796,70 @@ impl ExecutionClient for BlockchainExecutionClient {
             );
         }
 
-        // Attach the durable store for execution transaction records when configured
-        if let Some(pg_options) = &self.config.postgres_cache_database_config {
-            let database =
-                crate::cache::database::BlockchainCacheDatabase::connect(pg_options.clone().into())
-                    .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to connect to the Postgres cache database: {e}")
-                    })?;
-            self.cache.database = Some(database);
+        let payload_keys = PayloadKeySet::load(
+            self.config.payload_key_env.as_deref(),
+            &self.config.payload_key_retired_env,
+            self.config.payload_deployment_id.as_deref(),
+        )?
+        .map(Arc::new);
+
+        // Attach or reuse the durable store for execution transaction records
+        if self.cache.database.is_some() || self.config.postgres_cache_database_config.is_some() {
+            let keys = payload_keys.as_deref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Postgres execution requires an active payload key and deployment identity"
+                )
+            })?;
+
+            if self.cache.database.is_none() {
+                let pg_options = self
+                    .config
+                    .postgres_cache_database_config
+                    .as_ref()
+                    .expect("Postgres configuration checked above");
+                let database = crate::cache::database::BlockchainCacheDatabase::connect(
+                    pg_options.clone().into(),
+                )
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to connect to the Postgres cache database: {e}")
+                })?;
+                self.cache.database = Some(database);
+            }
+            self.cache
+                .database
+                .as_ref()
+                .expect("database was attached")
+                .require_execution_payload_storage_ready(keys)
+                .await?;
             self.cache.initialize_chain().await;
             self.cache.ensure_execution_transaction_schema().await?;
+            let check = self
+                .cache
+                .database
+                .as_ref()
+                .expect("database was attached")
+                .check_execution_payload_storage(
+                    Some(keys),
+                    Some(PayloadPolicy {
+                        chain_id: self.chain.chain_id,
+                        signer: self.wallet_address,
+                        gas_limit: self.config.gas_limit,
+                        max_fee_per_gas: self.config.max_fee_per_gas_wei,
+                    }),
+                    100,
+                )
+                .await?;
+            anyhow::ensure!(
+                check.protected,
+                "Postgres execution requires protected payload storage"
+            );
         } else {
             log::warn!(
                 "No Postgres cache database configured; transactions will be refused (no durable store)"
             );
         }
+        self.payload_keys = payload_keys;
 
         // Verify the RPC chain ID against configuration before any signature
         let expected_chain_id = u64::from(self.chain.chain_id);
@@ -3556,6 +3869,18 @@ impl ExecutionClient for BlockchainExecutionClient {
                 "Chain ID mismatch at connect: expected {expected_chain_id}, node reported {actual_chain_id}"
             );
         }
+
+        let payload_connect_lease = if let (Some(database), Some(keys)) =
+            (self.cache.database.as_ref(), self.payload_keys.as_deref())
+        {
+            Some(
+                database
+                    .require_execution_payload_storage(keys, self.payload_policy(), 100)
+                    .await?,
+            )
+        } else {
+            None
+        };
 
         // Load the signer key from the configured environment variable; the key is never
         // logged, serialized, or stored in configuration
@@ -3592,6 +3917,7 @@ impl ExecutionClient for BlockchainExecutionClient {
         }
 
         self.signer = Some(Arc::new(signer));
+        drop(payload_connect_lease);
 
         if self.cache.has_database()
             && let Err(e) = self.reconcile_unresolved_execution().await
@@ -3664,7 +3990,11 @@ impl ExecutionClient for BlockchainExecutionClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
     use alloy::{
         primitives::{address, aliases::I24},
@@ -4263,6 +4593,7 @@ mod tests {
             .ensure_execution_transaction_schema()
             .await
             .unwrap();
+        protect_test_storage(&mut client, &schema).await;
         client.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -4318,11 +4649,83 @@ mod tests {
         .unwrap()
     }
 
+    #[allow(unsafe_code)] // env-var mutation in tests; unique names avoid cross-test races
+    fn payload_test_keys(
+        active: [u8; 32],
+        retired: Vec<[u8; 32]>,
+        deployment_id: &str,
+    ) -> PayloadKeySet {
+        static NEXT_ENV_ID: AtomicU64 = AtomicU64::new(0);
+
+        let env_id = NEXT_ENV_ID.fetch_add(1, Ordering::Relaxed);
+        let active_env = format!("BLOCKCHAIN_TEST_PAYLOAD_KEY_{env_id}_ACTIVE");
+        let retired_envs = retired
+            .iter()
+            .enumerate()
+            .map(|(index, _)| format!("BLOCKCHAIN_TEST_PAYLOAD_KEY_{env_id}_RETIRED_{index}"))
+            .collect::<Vec<_>>();
+        // SAFETY: each invocation uses unique variable names and removes them before returning
+        unsafe { std::env::set_var(&active_env, hex::encode(active)) };
+        for (env, key) in retired_envs.iter().zip(&retired) {
+            // SAFETY: the retired variable name is unique to this invocation
+            unsafe { std::env::set_var(env, hex::encode(key)) };
+        }
+
+        let keys = PayloadKeySet::load(Some(&active_env), &retired_envs, Some(deployment_id))
+            .unwrap()
+            .unwrap();
+
+        // SAFETY: no other test or thread uses these unique variable names
+        unsafe { std::env::remove_var(active_env) };
+        for env in retired_envs {
+            // SAFETY: the retired variable name is unique to this invocation
+            unsafe { std::env::remove_var(env) };
+        }
+        keys
+    }
+
+    #[allow(unsafe_code)] // env-var mutation in tests; unique names avoid cross-test races
+    fn set_test_payload_key(
+        client: &mut BlockchainExecutionClient,
+        key: [u8; 32],
+        deployment_id: &str,
+    ) -> PayloadKeySet {
+        static NEXT_ENV_ID: AtomicU64 = AtomicU64::new(0);
+
+        let env_id = NEXT_ENV_ID.fetch_add(1, Ordering::Relaxed);
+        let active_env = format!("BLOCKCHAIN_TEST_EXECUTION_KEY_{env_id}");
+        // SAFETY: each invocation uses a unique variable name retained for reconnect tests
+        unsafe { std::env::set_var(&active_env, hex::encode(key)) };
+        client.config.payload_key_env = Some(active_env);
+        client.config.payload_deployment_id = Some(deployment_id.to_string());
+        client.load_payload_keys().unwrap().unwrap()
+    }
+
+    async fn protect_test_storage(client: &mut BlockchainExecutionClient, deployment_id: &str) {
+        let keys = set_test_payload_key(client, [0xa5; 32], deployment_id);
+        client
+            .cache
+            .database
+            .as_ref()
+            .unwrap()
+            .ensure_execution_payload_storage(&keys)
+            .await
+            .unwrap();
+        client.payload_keys = Some(Arc::new(keys));
+    }
+
     async fn reserve_test_wrap_intent(database: &BlockchainCacheDatabase) -> ExecutionIntentRow {
+        reserve_test_wrap_intent_for_wallet(database, WALLET).await
+    }
+
+    async fn reserve_test_wrap_intent_for_wallet(
+        database: &BlockchainCacheDatabase,
+        wallet: &str,
+    ) -> ExecutionIntentRow {
         database
             .reserve_execution_intent(&ExecutionIntentInsert {
                 chain_id: 42161,
-                wallet_address: WALLET.to_string(),
+                wallet_address: wallet.to_string(),
                 purpose: "wrap".to_string(),
                 client_order_id: None,
                 trader_id: None,
@@ -4340,6 +4743,48 @@ mod tests {
             .unwrap()
     }
 
+    async fn persist_test_wrap_broadcast(
+        database: &BlockchainCacheDatabase,
+        keys: Option<&PayloadKeySet>,
+    ) -> (ExecutionIntentRow, B256, Vec<u8>) {
+        let intent = reserve_test_wrap_intent(database).await;
+        database
+            .assign_execution_intent_nonce(intent.id, 7)
+            .await
+            .unwrap();
+        let intent = database.get_execution_intent(intent.id).await.unwrap();
+        let transaction = build_eip1559_transaction(
+            42161,
+            7,
+            78_000,
+            130_000_000,
+            10_000_000,
+            WETH_ADDRESS,
+            U256::from(1u64),
+            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
+        );
+        let (tx_hash, raw_tx) = sign_eip1559_transaction(
+            transaction,
+            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        )
+        .await
+        .unwrap();
+        persist_test_payload(database, keys, &intent, tx_hash, &raw_tx).await;
+        database
+            .record_execution_status(
+                intent.id,
+                &tx_hash.to_string(),
+                TransactionStatus::Broadcast,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        (intent, tx_hash, raw_tx)
+    }
     async fn reserve_test_swap_intent(database: &BlockchainCacheDatabase) -> ExecutionIntentRow {
         let pool = test_pool();
         let order = test_market_sell_order(pool.instrument_id);
@@ -4368,24 +4813,18 @@ mod tests {
 
     async fn persist_invalid_test_swap(
         database: &BlockchainCacheDatabase,
+        keys: Option<&PayloadKeySet>,
     ) -> (ExecutionIntentRow, B256) {
         let intent = reserve_test_swap_intent(database).await;
         database
             .assign_execution_intent_nonce(intent.id, 7)
             .await
             .unwrap();
+        let intent = database.get_execution_intent(intent.id).await.unwrap();
         let (tx_hash, raw_transaction) = expected_swap_tx(expected_min_amount_out(50)).await;
         let mut raw_transaction = hex::decode(raw_transaction.strip_prefix("0x").unwrap()).unwrap();
         raw_transaction.push(0xff);
-        database
-            .add_execution_transaction_hash(
-                intent.id,
-                42161,
-                &tx_hash.to_string(),
-                &raw_transaction,
-            )
-            .await
-            .unwrap();
+        persist_test_payload(database, keys, &intent, tx_hash, &raw_transaction).await;
         database
             .record_execution_status(
                 intent.id,
@@ -4403,14 +4842,75 @@ mod tests {
         (intent, tx_hash)
     }
 
+    async fn persist_test_swap_broadcast(
+        database: &BlockchainCacheDatabase,
+        keys: Option<&PayloadKeySet>,
+    ) -> (ExecutionIntentRow, B256, Vec<u8>) {
+        let intent = reserve_test_swap_intent(database).await;
+        database
+            .assign_execution_intent_nonce(intent.id, 7)
+            .await
+            .unwrap();
+        let intent = database.get_execution_intent(intent.id).await.unwrap();
+        let (tx_hash, raw_transaction) = expected_swap_tx(expected_min_amount_out(50)).await;
+        let raw_transaction = hex::decode(raw_transaction.strip_prefix("0x").unwrap()).unwrap();
+        persist_test_payload(database, keys, &intent, tx_hash, &raw_transaction).await;
+        database
+            .record_execution_status(
+                intent.id,
+                &tx_hash.to_string(),
+                TransactionStatus::Broadcast,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        (intent, tx_hash, raw_transaction)
+    }
+
+    async fn persist_test_payload(
+        database: &BlockchainCacheDatabase,
+        keys: Option<&PayloadKeySet>,
+        intent: &ExecutionIntentRow,
+        tx_hash: B256,
+        raw_transaction: &[u8],
+    ) {
+        if let Some(keys) = keys {
+            database.reserve_execution_payload_seal(keys).await.unwrap();
+            let transaction_hash = tx_hash.to_string();
+            let context =
+                payload_context_identity(intent, &transaction_hash, 42_161, keys.deployment_id())
+                    .unwrap();
+            let envelope = keys.seal(raw_transaction, &context).unwrap();
+            database
+                .add_execution_transaction_envelope(intent.id, 42_161, &transaction_hash, &envelope)
+                .await
+                .unwrap();
+        } else {
+            database
+                .add_execution_transaction_hash(
+                    intent.id,
+                    42_161,
+                    &tx_hash.to_string(),
+                    raw_transaction,
+                )
+                .await
+                .unwrap();
+        }
+    }
     async fn later_reconnect(
         previous: BlockchainExecutionClient,
         http_rpc_url: String,
     ) -> anyhow::Error {
         let database = previous.cache.database.as_ref().unwrap().clone();
+        let payload_keys = previous.payload_keys.clone();
         drop(previous);
         let mut next = test_client(http_rpc_url);
         next.cache.database = Some(database);
+        next.payload_keys = payload_keys;
         next.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -5081,6 +5581,7 @@ mod tests {
             nonce: 3,
             tx_hash: B256::ZERO,
             raw_tx: vec![0xde, 0xad, 0xbe, 0xef],
+            payload_lease: None,
         };
 
         let debug = format!("{prepared:?}");
@@ -6497,10 +6998,12 @@ mod tests {
         assert!(!active);
 
         let database = client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = client.payload_keys.clone();
         let restart_config = client.config.clone();
         drop(client);
         let (mut restarted, _) = swap_client_with_cache(restart_config);
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -6710,10 +7213,12 @@ mod tests {
         assert!(!active);
 
         let database = client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = client.payload_keys.clone();
         let restart_config = client.config.clone();
         drop(client);
         let (mut restarted, _) = swap_client_with_cache(restart_config);
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -7676,6 +8181,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn submit_order_persists_authenticated_envelope_before_broadcast() {
+        let state = swap_rpc_state().await;
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("protected_submit_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_swap_submitted_and_filled(&events);
+        let representations: Vec<(bool, bool)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT raw_transaction IS NULL, sealed_transaction IS NOT NULL \
+             FROM {schema}.execution_transaction_hash WHERE payload_expected"
+        )))
+        .fetch_all(&admin_pool)
+        .await
+        .unwrap();
+        let broadcasts = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .count();
+        assert_eq!(representations, vec![(true, true)]);
+        assert_eq!(broadcasts, 1);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn protected_persistence_failure_prevents_broadcast_and_acknowledgment() {
+        let state = swap_rpc_state().await;
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("protected_persist_failure_test", state).await
+        else {
+            return;
+        };
+
+        for statement in [
+            format!(
+                "CREATE FUNCTION {schema}.reject_protected_payload() RETURNS trigger \
+                 LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''test payload rejection''; END'"
+            ),
+            format!(
+                "CREATE TRIGGER reject_protected_payload BEFORE INSERT ON \
+                 {schema}.execution_transaction_hash FOR EACH ROW \
+                 EXECUTE FUNCTION {schema}.reject_protected_payload()"
+            ),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(statement))
+                .execute(&admin_pool)
+                .await
+                .unwrap();
+        }
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert!(
+            events
+                .iter()
+                .all(|event| !matches!(event, OrderEventAny::Submitted(_)))
+        );
+        let broadcasts = state
+            .recorded_requests()
+            .into_iter()
+            .filter(|request| request["method"] == "eth_sendRawTransaction")
+            .count();
+        let payload_rows: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction_hash"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(broadcasts, 0);
+        assert_eq!(payload_rows, 0);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
     async fn submit_order_reservation_failure_denies_without_broadcast_and_releases_slot() {
         let Some((admin_pool, schema, mut client, state, cache)) =
             swap_client_with_database("execution_submit_persist_fail_test", swap_rpc_state().await)
@@ -7813,6 +8406,778 @@ mod tests {
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn protected_payload_migration_failure_keeps_plaintext_and_blocks_ready() {
+        let Some((admin_pool, schema, client, _)) = execution_client_with_unprotected_database(
+            "protected_payload_migration_failure",
+            execution_rpc_state(),
+        )
+        .await
+        else {
+            return;
+        };
+        let database = client.cache.database.as_ref().unwrap();
+        let (intent, _) = persist_invalid_test_swap(database, None).await;
+        let keys = payload_test_keys([0x31; 32], vec![], "migration-failure");
+        let error = database
+            .ensure_execution_payload_storage(&keys)
+            .await
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("failed to authenticate execution payload")
+        );
+        let row = database
+            .get_execution_transaction_hashes(intent.id)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        let operation: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT operation FROM {schema}.execution_payload_state"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(operation, "migrate");
+        assert!(row.raw_transaction.is_some());
+        assert!(row.sealed_transaction.is_none());
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn protected_payload_migration_restart_restore_rewrap_and_rollback() {
+        let Some((admin_pool, pg_config)) =
+            connect_test_postgres("protected payload lifecycle").await
+        else {
+            return;
+        };
+        let schema = format!("protected_payload_lifecycle_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+        let options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let options = options.options([("search_path", schema.clone())]);
+        let database = BlockchainCacheDatabase::connect(options.clone())
+            .await
+            .unwrap();
+        database
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+        let intent = reserve_test_wrap_intent(&database).await;
+        database
+            .assign_execution_intent_nonce(intent.id, 7)
+            .await
+            .unwrap();
+        let transaction = build_eip1559_transaction(
+            42161,
+            7,
+            78_000,
+            130_000_000,
+            10_000_000,
+            WETH_ADDRESS,
+            U256::from(1_u64),
+            Bytes::from(hex::decode("d0e30db0").unwrap()),
+        );
+        let (transaction_hash, raw_transaction) = sign_eip1559_transaction(
+            transaction,
+            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        )
+        .await
+        .unwrap();
+        database
+            .add_execution_transaction_hash(
+                intent.id,
+                42161,
+                &transaction_hash.to_string(),
+                &raw_transaction,
+            )
+            .await
+            .unwrap();
+        let keys = payload_test_keys([0x41; 32], vec![], "restore-a");
+
+        database
+            .ensure_execution_payload_storage(&keys)
+            .await
+            .unwrap();
+        let operation: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT operation FROM {schema}.execution_payload_state"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(operation, "ready");
+        drop(database);
+
+        let restarted = BlockchainCacheDatabase::connect(options).await.unwrap();
+        restarted
+            .ensure_execution_payload_storage(&keys)
+            .await
+            .unwrap();
+        let row = restarted
+            .get_execution_transaction_hashes(intent.id)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert!(row.raw_transaction.is_none());
+        let sealed_transaction = row.sealed_transaction.clone().unwrap();
+        let stored_intent = restarted.get_execution_intent(intent.id).await.unwrap();
+        let context = payload_context(&stored_intent, &row, keys.deployment_id()).unwrap();
+        let alternate_envelope = keys.seal(&raw_transaction, &context).unwrap();
+        assert_ne!(alternate_envelope, sealed_transaction);
+        let repeated = restarted
+            .add_execution_transaction_envelope(
+                intent.id,
+                42161,
+                &transaction_hash.to_string(),
+                &alternate_envelope,
+            )
+            .await
+            .unwrap();
+        let check = restarted
+            .check_execution_payload_storage(Some(&keys), None, 1)
+            .await
+            .unwrap();
+        assert_eq!(
+            repeated.sealed_transaction,
+            Some(sealed_transaction.clone())
+        );
+        assert_eq!(check.plaintext_rows, 0);
+        assert_eq!(check.original_rows, 1);
+        assert_eq!(check.replacement_rows, 0);
+        assert_eq!(check.authenticated_rows, 1);
+        assert!(!check.read_roles.is_empty());
+
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_payload_key_state SET seals = 4294967295"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+        let exhausted = restarted
+            .reserve_execution_payload_seal(&keys)
+            .await
+            .unwrap_err();
+        assert!(exhausted.to_string().contains("seal limit"));
+        let seals: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT seals FROM {schema}.execution_payload_key_state"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(seals, 4_294_967_295);
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_payload_key_state SET seals = 1"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        let missing_key = restarted
+            .check_execution_payload_storage(None, None, 1)
+            .await
+            .unwrap_err();
+        assert!(
+            missing_key
+                .to_string()
+                .contains("no payload key is configured")
+        );
+        let restored_elsewhere = payload_test_keys([0x41; 32], vec![], "restore-b");
+        let wrong_context = restarted
+            .ensure_execution_payload_storage(&restored_elsewhere)
+            .await
+            .unwrap_err();
+        assert!(wrong_context.to_string().contains("deployment ID"));
+
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_transaction_hash \
+             SET sealed_transaction = set_byte(sealed_transaction, octet_length(sealed_transaction) - 1, \
+                 get_byte(sealed_transaction, octet_length(sealed_transaction) - 1) # 1)"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+        assert!(
+            restarted
+                .check_execution_payload_storage(Some(&keys), None, 1)
+                .await
+                .is_err()
+        );
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_transaction_hash SET sealed_transaction = $1"
+        )))
+        .bind(&sealed_transaction)
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        for statement in [
+            format!(
+                "ALTER TABLE {schema}.execution_transaction_hash \
+                 DROP CONSTRAINT execution_transaction_payload_protected_check"
+            ),
+            format!("UPDATE {schema}.execution_transaction_hash SET sealed_transaction = NULL"),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(statement))
+                .execute(&admin_pool)
+                .await
+                .unwrap();
+        }
+        assert!(
+            restarted
+                .check_execution_payload_storage(Some(&keys), None, 1)
+                .await
+                .is_err()
+        );
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_transaction_hash SET sealed_transaction = $1"
+        )))
+        .bind(&sealed_transaction)
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "ALTER TABLE {schema}.execution_transaction_hash \
+             ADD CONSTRAINT execution_transaction_payload_protected_check CHECK ( \
+                 (payload_expected AND raw_transaction IS NULL AND sealed_transaction IS NOT NULL) \
+                 OR (NOT payload_expected AND raw_transaction IS NULL AND sealed_transaction IS NULL) \
+             )"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        let rotated = payload_test_keys([0x52; 32], vec![[0x41; 32]], "restore-a");
+        restarted
+            .rewrap_execution_payload_storage(&rotated, 1)
+            .await
+            .unwrap();
+        let rotated_check = restarted
+            .check_execution_payload_storage(Some(&rotated), None, 1)
+            .await
+            .unwrap();
+        assert_eq!(rotated_check.authenticated_rows, 1);
+        assert_eq!(rotated_check.key_ids.len(), 1);
+
+        restarted
+            .rollback_execution_payload_storage(&rotated, 1)
+            .await
+            .unwrap();
+        let rolled_back = restarted
+            .get_execution_transaction_hashes(intent.id)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(
+            rolled_back.raw_transaction.as_deref(),
+            Some(raw_transaction.as_slice())
+        );
+        assert!(rolled_back.sealed_transaction.is_none());
+        let legacy_check = restarted
+            .check_execution_payload_storage(None, None, 1)
+            .await
+            .unwrap();
+        assert!(!legacy_check.protected);
+        assert_eq!(legacy_check.plaintext_rows, 1);
+        assert_eq!(legacy_check.authenticated_rows, 1);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn protected_payload_storage_authenticates_multiple_execution_identities() {
+        let Some((admin_pool, pg_config)) =
+            connect_test_postgres("protected payload multiple identities").await
+        else {
+            return;
+        };
+        let schema = format!("protected_payload_identities_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+        let options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let database = connect_test_database(options.options([("search_path", schema.clone())]))
+            .await
+            .unwrap();
+        database
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+
+        let private_keys = [
+            TEST_PRIVATE_KEY,
+            "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+        ];
+
+        for (index, private_key) in private_keys.into_iter().enumerate() {
+            let signer = PrivateKeySigner::from_str(private_key).unwrap();
+            let nonce = 7 + u64::try_from(index).unwrap();
+            let intent =
+                reserve_test_wrap_intent_for_wallet(&database, &signer.address().to_string()).await;
+            database
+                .assign_execution_intent_nonce(intent.id, nonce)
+                .await
+                .unwrap();
+            let transaction = build_eip1559_transaction(
+                42161,
+                nonce,
+                78_000,
+                130_000_000,
+                10_000_000,
+                WETH_ADDRESS,
+                U256::from(1_u64),
+                Bytes::from(hex::decode("d0e30db0").unwrap()),
+            );
+            let (transaction_hash, raw_transaction) =
+                sign_eip1559_transaction(transaction, &signer)
+                    .await
+                    .unwrap();
+            database
+                .add_execution_transaction_hash(
+                    intent.id,
+                    42161,
+                    &transaction_hash.to_string(),
+                    &raw_transaction,
+                )
+                .await
+                .unwrap();
+        }
+
+        let keys = payload_test_keys([0x61; 32], vec![], "multiple-identities");
+        database
+            .ensure_execution_payload_storage(&keys)
+            .await
+            .unwrap();
+        let lease = database
+            .require_execution_payload_storage(
+                &keys,
+                PayloadPolicy {
+                    chain_id: 42161,
+                    signer: Address::from_str(WALLET).unwrap(),
+                    gas_limit: 1_000_000,
+                    max_fee_per_gas: 1_000_000_000,
+                },
+                1,
+            )
+            .await
+            .unwrap();
+        drop(lease);
+        let check = database
+            .check_execution_payload_storage(Some(&keys), None, 1)
+            .await
+            .unwrap();
+
+        assert!(check.protected);
+        assert_eq!(check.plaintext_rows, 0);
+        assert_eq!(check.original_rows, 2);
+        assert_eq!(check.replacement_rows, 0);
+        assert_eq!(check.authenticated_rows, 2);
+        assert_eq!(check.key_ids.len(), 1);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[rstest]
+    #[case::finalized(TransactionStatus::Finalized)]
+    #[case::reverted(TransactionStatus::Reverted)]
+    #[tokio::test]
+    async fn protected_payload_storage_ignores_current_policy_for_released_terminal_history(
+        #[case] status: TransactionStatus,
+    ) {
+        let Some((admin_pool, pg_config)) =
+            connect_test_postgres("protected payload terminal history").await
+        else {
+            return;
+        };
+        let schema = format!(
+            "protected_payload_terminal_{}_{}",
+            status.as_str(),
+            std::process::id()
+        );
+        setup_execution_schema(&admin_pool, &schema).await;
+        let options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let database = connect_test_database(options.options([("search_path", schema.clone())]))
+            .await
+            .unwrap();
+        database
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+        let (intent, transaction_hash, _) = persist_test_wrap_broadcast(&database, None).await;
+        database
+            .record_execution_status(
+                intent.id,
+                &transaction_hash.to_string(),
+                status,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        database
+            .mark_execution_event_emitted(intent.id, "terminal")
+            .await
+            .unwrap();
+        let keys = payload_test_keys([0x62; 32], vec![], "terminal-history");
+        database
+            .ensure_execution_payload_storage(&keys)
+            .await
+            .unwrap();
+
+        let lease = database
+            .require_execution_payload_storage(
+                &keys,
+                PayloadPolicy {
+                    chain_id: 42161,
+                    signer: Address::from_str(WALLET).unwrap(),
+                    gas_limit: 1,
+                    max_fee_per_gas: 1,
+                },
+                1,
+            )
+            .await
+            .unwrap();
+        drop(lease);
+        let check = database
+            .check_execution_payload_storage(Some(&keys), None, 1)
+            .await
+            .unwrap();
+        let active_intent = reserve_test_wrap_intent(&database).await;
+        database
+            .assign_execution_intent_nonce(active_intent.id, 8)
+            .await
+            .unwrap();
+        let active_intent = database
+            .get_execution_intent(active_intent.id)
+            .await
+            .unwrap();
+        let active_transaction = build_eip1559_transaction(
+            42161,
+            8,
+            78_000,
+            130_000_000,
+            10_000_000,
+            WETH_ADDRESS,
+            U256::from(1_u64),
+            Bytes::from(hex::decode("d0e30db0").unwrap()),
+        );
+        let (active_hash, active_raw_transaction) = sign_eip1559_transaction(
+            active_transaction,
+            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        )
+        .await
+        .unwrap();
+        persist_test_payload(
+            &database,
+            Some(&keys),
+            &active_intent,
+            active_hash,
+            &active_raw_transaction,
+        )
+        .await;
+        let active_error = match database
+            .require_execution_payload_storage(
+                &keys,
+                PayloadPolicy {
+                    chain_id: 42161,
+                    signer: Address::from_str(WALLET).unwrap(),
+                    gas_limit: 1,
+                    max_fee_per_gas: 1,
+                },
+                1,
+            )
+            .await
+        {
+            Ok(_) => panic!("active execution payload unexpectedly passed current policy"),
+            Err(e) => e,
+        };
+        let active_error = format!("{active_error:#}");
+
+        assert!(check.protected);
+        assert_eq!(check.authenticated_rows, 1);
+        assert!(
+            active_error.contains(&format!(
+                "execution intent {} transaction {active_hash} violates current execution policy",
+                active_intent.id
+            )),
+            "was: {active_error}"
+        );
+        assert!(
+            active_error.contains("gas limit 78000 exceeds configured ceiling 1"),
+            "was: {active_error}"
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[allow(unsafe_code)] // env-var mutation uses the test client's dedicated signer variable
+    #[tokio::test]
+    async fn rollback_blocks_execution_until_protection_and_full_check_succeed() {
+        let state = ready_rpc_state();
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database("payload_rollback_reactivation", state).await
+        else {
+            return;
+        };
+        // SAFETY: this test binary owns the dedicated test signer variable
+        unsafe { std::env::set_var("BLOCKCHAIN_TEST_PRIVATE_KEY", TEST_PRIVATE_KEY) };
+        client.disconnect().await.unwrap();
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(sender);
+        client.start().unwrap();
+
+        client.rollback_payload_storage(1).await.unwrap();
+        let unprotected = client.check_payload_storage(1).await.unwrap();
+        let error = client.connect().await.unwrap_err();
+
+        assert!(!unprotected.protected);
+        assert_eq!(unprotected.plaintext_rows, 0);
+        assert_eq!(unprotected.authenticated_rows, 0);
+        assert!(
+            error
+                .to_string()
+                .contains("Postgres execution requires protected payload storage"),
+            "was: {error}"
+        );
+        assert!(client.signer.is_none());
+        assert!(state.recorded_requests().is_empty());
+
+        client.protect_payload_storage().await.unwrap();
+        let protected = client.check_payload_storage(1).await.unwrap();
+        assert!(protected.protected);
+        assert_eq!(protected.plaintext_rows, 0);
+        assert_eq!(protected.authenticated_rows, 0);
+
+        client.connect().await.unwrap();
+
+        assert!(client.is_connected());
+        assert!(client.transaction_executor().is_ok());
+        assert!(!state.recorded_requests().is_empty());
+
+        drop(client);
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[rstest]
+    #[case::active_key(true)]
+    #[case::deployment_identity(false)]
+    #[tokio::test]
+    async fn postgres_connect_rejects_missing_payload_identity_before_rpc(
+        #[case] remove_active_key: bool,
+    ) {
+        let test_name = if remove_active_key {
+            "payload_connect_missing_active_key"
+        } else {
+            "payload_connect_missing_deployment"
+        };
+        let Some((admin_pool, schema, mut client, state)) =
+            execution_client_with_database(test_name, ready_rpc_state()).await
+        else {
+            return;
+        };
+        client.disconnect().await.unwrap();
+        client.payload_keys = None;
+        if remove_active_key {
+            client.config.payload_key_env = None;
+            client.config.payload_deployment_id = None;
+        } else {
+            client.config.payload_deployment_id = None;
+        }
+
+        let error = client.connect().await.unwrap_err();
+
+        assert!(
+            error.to_string().contains(if remove_active_key {
+                "Postgres execution requires an active payload key and deployment identity"
+            } else {
+                "Payload deployment ID is required"
+            }),
+            "was: {error}"
+        );
+        assert!(client.signer.is_none());
+        assert!(client.payload_keys.is_none());
+        assert!(state.recorded_requests().is_empty());
+
+        drop(client);
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn postgres_connect_rejects_missing_envelope_key_before_rpc() {
+        let Some((admin_pool, schema, mut client, state)) = execution_client_with_database(
+            "payload_connect_missing_envelope_key",
+            ready_rpc_state(),
+        )
+        .await
+        else {
+            return;
+        };
+        let database = client.cache.database.as_ref().unwrap().clone();
+        persist_test_wrap_broadcast(&database, client.payload_keys.as_deref()).await;
+        client.disconnect().await.unwrap();
+        client.payload_keys = None;
+        let keys = set_test_payload_key(&mut client, [0xb6; 32], &schema);
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_payload_state SET active_key_id = $1 \
+             WHERE component = 'signed_transactions'"
+        )))
+        .bind(keys.active_key_id().as_slice())
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+
+        let error = client.connect().await.unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Stored execution payload requires unavailable key"),
+            "was: {error}"
+        );
+        assert!(client.signer.is_none());
+        assert!(client.payload_keys.is_none());
+        assert!(state.recorded_requests().is_empty());
+
+        drop(client);
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn payload_action_lease_blocks_rewrap_transition_until_release() {
+        let Some((admin_pool, schema, client, _)) = execution_client_with_unprotected_database(
+            "payload_action_lease",
+            execution_rpc_state(),
+        )
+        .await
+        else {
+            return;
+        };
+        let database = client.cache.database.as_ref().unwrap();
+        let keys = payload_test_keys([0x71; 32], vec![], "action-lease");
+        database
+            .ensure_execution_payload_storage(&keys)
+            .await
+            .unwrap();
+        let lease = database
+            .acquire_execution_payload_lease(&keys)
+            .await
+            .unwrap();
+        let rotated = payload_test_keys([0x72; 32], vec![[0x71; 32]], "action-lease");
+        let operation_database = database.clone();
+
+        let mut operation = tokio::spawn(async move {
+            operation_database
+                .rewrap_execution_payload_storage(&rotated, 1)
+                .await
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), &mut operation)
+                .await
+                .is_err()
+        );
+        let state: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT operation FROM {schema}.execution_payload_state"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(state, "ready");
+
+        drop(lease);
+        tokio::time::timeout(Duration::from_secs(2), operation)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let state: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT operation FROM {schema}.execution_payload_state"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(state, "ready");
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn payload_infrastructure_checks_are_scoped_to_the_execution_schema() {
+        let Some((admin_pool, pg_config)) = connect_test_postgres("payload schema isolation").await
+        else {
+            return;
+        };
+        let schema_a = format!("payload_schema_a_{}", std::process::id());
+        let schema_b = format!("payload_schema_b_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema_a).await;
+        setup_execution_schema(&admin_pool, &schema_b).await;
+        let options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let database_a = BlockchainCacheDatabase::connect(
+            options.clone().options([("search_path", schema_a.clone())]),
+        )
+        .await
+        .unwrap();
+        let database_b =
+            BlockchainCacheDatabase::connect(options.options([("search_path", schema_b.clone())]))
+                .await
+                .unwrap();
+        database_a
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+        database_b
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+        let keys_a = payload_test_keys([0x91; 32], vec![], "schema-a");
+        let keys_b = payload_test_keys([0x92; 32], vec![], "schema-b");
+
+        database_a
+            .ensure_execution_payload_storage(&keys_a)
+            .await
+            .unwrap();
+        database_b
+            .ensure_execution_payload_storage(&keys_b)
+            .await
+            .unwrap();
+
+        for statement in [
+            format!(
+                "DROP TRIGGER execution_transaction_payload_fence ON \
+                 {schema_a}.execution_transaction_hash"
+            ),
+            format!(
+                "ALTER TABLE {schema_a}.execution_transaction_hash \
+                 DROP CONSTRAINT execution_transaction_payload_protected_check"
+            ),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(statement))
+                .execute(&admin_pool)
+                .await
+                .unwrap();
+        }
+
+        let error = database_a
+            .ensure_execution_payload_storage(&keys_a)
+            .await
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("without its write fence or constraint"),
+            "was: {error}"
+        );
+
+        drop_execution_schema(&admin_pool, &schema_a).await;
+        drop_execution_schema(&admin_pool, &schema_b).await;
     }
 
     #[tokio::test]
@@ -8356,6 +9721,7 @@ mod tests {
             .ensure_execution_transaction_schema()
             .await
             .unwrap();
+        protect_test_storage(&mut client, &schema).await;
         client.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -9967,6 +11333,7 @@ mod tests {
             .ensure_execution_transaction_schema()
             .await
             .unwrap();
+        protect_test_storage(&mut client, &schema).await;
         client.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -10396,28 +11763,36 @@ mod tests {
     async fn included_receipt_keeps_slot_when_status_update_fails() {
         let state = signing_rpc_state()
             .with_send_raw_transaction_echo()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_sleep("eth_getTransactionReceipt", Duration::from_secs(1));
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS);
         let Some((admin_pool, schema, mut client, state)) =
             execution_client_with_database("execution_included_update_test", state).await
         else {
             return;
         };
 
-        let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
-        tokio::select! {
-            result = &mut wrap => panic!("receipt completed before database failure: {result:?}"),
-            () = await_recorded_request(&state, "eth_getTransactionReceipt") => {}
+        for statement in [
+            format!(
+                "CREATE FUNCTION {schema}.reject_included_status() RETURNS trigger \
+                 LANGUAGE plpgsql AS 'BEGIN IF NEW.status = ''included'' THEN \
+                 RAISE EXCEPTION ''test included status rejection''; END IF; \
+                 RETURN NEW; END'"
+            ),
+            format!(
+                "CREATE TRIGGER reject_included_status BEFORE UPDATE ON \
+                 {schema}.execution_transaction_hash FOR EACH ROW \
+                 EXECUTE FUNCTION {schema}.reject_included_status()"
+            ),
+        ] {
+            sqlx::query(sqlx::AssertSqlSafe(statement))
+                .execute(&admin_pool)
+                .await
+                .unwrap();
         }
-        sqlx::query(sqlx::AssertSqlSafe(format!(
-            "ALTER TABLE {schema}.execution_transaction_hash \
-             RENAME TO execution_transaction_hash_unavailable"
-        )))
-        .execute(&admin_pool)
-        .await
-        .unwrap();
 
-        let error = wrap.await.unwrap_err();
+        let error = client
+            .wrap(U256::from(1_000_000_000_000_000u64))
+            .await
+            .unwrap_err();
         let in_flight = awaiting_in_flight(&client);
         let requests = state.recorded_requests();
 
@@ -10504,6 +11879,7 @@ mod tests {
             "was: {error}"
         );
         let database = first_client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
         let restart_state = execution_rpc_state()
@@ -10517,6 +11893,7 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -10595,6 +11972,77 @@ mod tests {
                 .recorded_requests()
                 .iter()
                 .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn protected_restart_authenticates_envelope_before_recovery() {
+        let initial_state = broadcast_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE);
+        let Some((admin_pool, schema, mut first_client, _)) =
+            execution_client_with_database("protected_restart_test", initial_state).await
+        else {
+            return;
+        };
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        let value = U256::from(1_000_000_000_000_000_u64);
+        let expected_hash = expected_wrap_tx_hash(value).await;
+
+        let error = first_client.wrap(value).await.unwrap_err();
+
+        assert!(error.to_string().contains("Timed out awaiting finality"));
+        let intent = database
+            .get_active_execution_intent(42161, WALLET)
+            .await
+            .unwrap()
+            .unwrap();
+        let payload = database
+            .get_execution_transaction_hashes(intent.id)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert!(payload.raw_transaction.is_none());
+        assert!(payload.sealed_transaction.is_some());
+        let keys = first_client.payload_keys.take().unwrap();
+        drop(first_client);
+
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_parameter_response(
+                "eth_getBlockByNumber",
+                "0x1cf0d41",
+                &finalized_wrap_block(expected_hash),
+            )
+            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE_AFTER_WRAP]);
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.payload_keys = Some(keys);
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
+
+        restarted.reconcile_unresolved_execution().await.unwrap();
+
+        let record = restarted
+            .cache
+            .get_execution_transaction(42161, &expected_hash.to_string())
+            .await
+            .unwrap()
+            .unwrap();
+        let requests = restart_state.recorded_requests();
+        assert_eq!(record.status, "finalized");
+        assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_sendRawTransaction")
+                .count(),
+            0
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
@@ -10692,15 +12140,15 @@ mod tests {
             .assign_execution_intent_nonce(intent.id, 7)
             .await
             .unwrap();
-        database
-            .add_execution_transaction_hash(
-                intent.id,
-                42161,
-                &tx_hash.to_string(),
-                &raw_transaction,
-            )
-            .await
-            .unwrap();
+        let intent = database.get_execution_intent(intent.id).await.unwrap();
+        persist_test_payload(
+            database,
+            client.payload_keys.as_deref(),
+            &intent,
+            tx_hash,
+            &raw_transaction,
+        )
+        .await;
 
         let error = client.reconcile_unresolved_execution().await.unwrap_err();
 
@@ -10745,15 +12193,15 @@ mod tests {
             .assign_execution_intent_nonce(intent.id, 7)
             .await
             .unwrap();
-        database
-            .add_execution_transaction_hash(
-                intent.id,
-                42161,
-                &tx_hash.to_string(),
-                &[0x01, 0x02, 0x03],
-            )
-            .await
-            .unwrap();
+        let intent = database.get_execution_intent(intent.id).await.unwrap();
+        persist_test_payload(
+            database,
+            client.payload_keys.as_deref(),
+            &intent,
+            tx_hash,
+            &[0x01, 0x02, 0x03],
+        )
+        .await;
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "UPDATE {schema}.execution_intent SET status = 'recoverable', active = FALSE WHERE id = {}",
             intent.id
@@ -10796,7 +12244,8 @@ mod tests {
             return;
         };
         let database = first_client.cache.database.as_ref().unwrap().clone();
-        let (intent, _) = persist_invalid_test_swap(&database).await;
+        let (intent, _) =
+            persist_invalid_test_swap(&database, first_client.payload_keys.as_deref()).await;
         if historical {
             database
                 .add_execution_replacement_hash(
@@ -10814,10 +12263,12 @@ mod tests {
         .await
         .unwrap();
         let config = first_client.config.clone();
+        let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
         let (mut restarted, _) = swap_client_with_cache(config);
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -10876,44 +12327,9 @@ mod tests {
             return;
         };
         let database = first_client.cache.database.as_ref().unwrap().clone();
-        let intent = reserve_test_wrap_intent(&database).await;
-        database
-            .assign_execution_intent_nonce(intent.id, 7)
-            .await
-            .unwrap();
-        let transaction = build_eip1559_transaction(
-            42161,
-            7,
-            78_000,
-            130_000_000,
-            10_000_000,
-            WETH_ADDRESS,
-            U256::from(1u64),
-            Bytes::from(nautilus_core::hex::decode("d0e30db0").unwrap()),
-        );
-        let (tx_hash, raw_tx) = sign_eip1559_transaction(
-            transaction,
-            &PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
-        )
-        .await
-        .unwrap();
-        database
-            .add_execution_transaction_hash(intent.id, 42161, &tx_hash.to_string(), &raw_tx)
-            .await
-            .unwrap();
-        database
-            .record_execution_status(
-                intent.id,
-                &tx_hash.to_string(),
-                TransactionStatus::Broadcast,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .await
-            .unwrap();
+        let (_, _, raw_tx) =
+            persist_test_wrap_broadcast(&database, first_client.payload_keys.as_deref()).await;
+        let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
         let restart_state = execution_rpc_state()
@@ -10923,6 +12339,7 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -10964,6 +12381,7 @@ mod tests {
             "was: {error}"
         );
         let database = first_client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
         // The finalized transaction carries no value, so it cannot be the persisted wrap
@@ -10993,6 +12411,7 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -11034,9 +12453,11 @@ mod tests {
         assert!(active);
 
         let database = restarted.cache.database.as_ref().unwrap().clone();
+        let payload_keys = restarted.payload_keys.clone();
         drop(restarted);
         let mut second = test_client(format!("http://{addr}"));
         second.cache.database = Some(database);
+        second.payload_keys = payload_keys;
         second.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -11079,6 +12500,7 @@ mod tests {
             "was: {error}"
         );
         let database = first_client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
         // Call identity matches, but the wrapped balance does not increase
@@ -11096,6 +12518,7 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -11157,6 +12580,7 @@ mod tests {
             "was: {error}"
         );
         let database = first_client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
         let restart_state =
@@ -11164,6 +12588,7 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -11301,6 +12726,7 @@ mod tests {
             "was: {error}"
         );
         let database = first_client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
         let restart_state = execution_rpc_state()
@@ -11314,6 +12740,7 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -11373,6 +12800,7 @@ mod tests {
             "was: {error}"
         );
         let database = first_client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
         // Call identity matches, but the allowance does not equal the approved amount
@@ -11387,6 +12815,7 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -11801,9 +13230,11 @@ mod tests {
     async fn execution_transaction_constraints_reject_conflicting_identity() {
         const TRANSACTION_HASH: &str = "0xduplicate-transaction-hash";
         const OTHER_WALLET: &str = "0x0000000000000000000000000000000000000001";
-        let Some((admin_pool, schema, client, _)) =
-            execution_client_with_database("execution_duplicate_record_test", ready_rpc_state())
-                .await
+        let Some((admin_pool, schema, client, _)) = execution_client_with_unprotected_database(
+            "execution_duplicate_record_test",
+            ready_rpc_state(),
+        )
+        .await
         else {
             return;
         };
@@ -12011,8 +13442,11 @@ mod tests {
     async fn execution_status_transitions_are_idempotent() {
         const TRANSACTION_HASH: &str =
             "0x5555555555555555555555555555555555555555555555555555555555555555";
-        let Some((admin_pool, schema, client, _)) =
-            execution_client_with_database("execution_transition_test", ready_rpc_state()).await
+        let Some((admin_pool, schema, client, _)) = execution_client_with_unprotected_database(
+            "execution_transition_test",
+            ready_rpc_state(),
+        )
+        .await
         else {
             return;
         };
@@ -12738,6 +14172,21 @@ mod tests {
     }
 
     async fn execution_client_with_database(
+        test_name: &str,
+        state: MockRpcState,
+    ) -> Option<(
+        sqlx::PgPool,
+        String,
+        BlockchainExecutionClient,
+        MockRpcState,
+    )> {
+        let (admin_pool, schema, mut client, state) =
+            execution_client_with_unprotected_database(test_name, state).await?;
+        protect_test_storage(&mut client, &schema).await;
+        Some((admin_pool, schema, client, state))
+    }
+
+    async fn execution_client_with_unprotected_database(
         test_name: &str,
         state: MockRpcState,
     ) -> Option<(

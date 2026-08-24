@@ -193,7 +193,7 @@ impl BlockchainExecutionClientConfig {
     /// Configuration for blockchain execution clients.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None, *, allowed_token_pairs=None, quote_spend_limits=None, slippage_bps=None, max_slippage_bps=None, max_order_amount=None, deadline_seconds=None, max_quote_age_blocks=None, receipt_timeout_secs=None))]
+    #[pyo3(signature = (client_id, chain, wallet_address, http_rpc_url, signer_private_key_env, router_addresses, weth_address, max_fee_per_gas_wei, base_fee_buffer_bps, gas_limit, gas_buffer_bps, tokens=None, rpc_requests_per_second=None, unlimited_approval=false, postgres_cache_database_config=None, transport_backend=None, *, allowed_token_pairs=None, quote_spend_limits=None, slippage_bps=None, max_slippage_bps=None, max_order_amount=None, deadline_seconds=None, max_quote_age_blocks=None, receipt_timeout_secs=None, payload_key_env=None, payload_key_retired_env=None, payload_deployment_id=None))]
     fn py_new(
         client_id: AccountId,
         #[gen_stub(
@@ -231,6 +231,9 @@ impl BlockchainExecutionClientConfig {
         deadline_seconds: Option<u64>,
         max_quote_age_blocks: Option<u64>,
         receipt_timeout_secs: Option<u64>,
+        payload_key_env: Option<String>,
+        payload_key_retired_env: Option<Vec<String>>,
+        payload_deployment_id: Option<String>,
     ) -> Self {
         Self::builder()
             .client_id(client_id)
@@ -252,6 +255,9 @@ impl BlockchainExecutionClientConfig {
             .maybe_deadline_seconds(deadline_seconds)
             .maybe_max_quote_age_blocks(max_quote_age_blocks)
             .maybe_receipt_timeout_secs(receipt_timeout_secs)
+            .maybe_payload_key_env(payload_key_env)
+            .payload_key_retired_env(payload_key_retired_env.unwrap_or_default())
+            .maybe_payload_deployment_id(payload_deployment_id)
             .maybe_tokens(tokens)
             .maybe_rpc_requests_per_second(rpc_requests_per_second)
             .unlimited_approval(unlimited_approval)
