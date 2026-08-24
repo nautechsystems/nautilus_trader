@@ -626,10 +626,15 @@ At least one value must differ from the original order for the command to be val
 The component a `ModifyOrder` command will flow to for execution depends on the following:
 
 - If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`.
+- Otherwise, if the order has an `exec_algorithm_id` and is still active within the local system, the
+  command will be sent to the relevant `ExecutionAlgorithm`.
 - Otherwise, the order will *firstly* be sent to the `RiskEngine`.
 
 :::info
-Unlike `CancelOrder`, a `ModifyOrder` command never routes to an execution algorithm.
+An `ExecutionAlgorithm` refuses a `ModifyOrder` for a primary order that is still active locally, and
+logs a warning without emitting an event. The algorithm's schedule is keyed to the quantity it
+computed, so applying the modification in place would break that state; the primary order is left
+unchanged.
 :::
 
 The following shows how to modify the size of `LIMIT` BUY order currently *open* on a venue:
