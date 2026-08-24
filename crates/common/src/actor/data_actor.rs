@@ -237,10 +237,9 @@ pub trait DataActorNative {
 /// methods for data actors.
 ///
 /// Default methods that read or mutate native runtime state carry explicit
-/// [`DataActorNative`] bounds. Data actor implementations that only need
-/// core-free callbacks can implement this trait with their own [`Component`]
-/// implementation, while runtime-registered actors keep using native wiring.
-pub trait DataActor: Component {
+/// [`DataActorNative`] and [`Component`] bounds. Implementations that only need
+/// behavioral callbacks do not own or implement native runtime state.
+pub trait DataActor {
     /// Returns the actor ID.
     fn actor_id(&self) -> ActorId
     where
@@ -822,7 +821,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received time event.
-    fn handle_time_event(&mut self, event: &TimeEvent) {
+    fn handle_time_event(&mut self, event: &TimeEvent)
+    where
+        Self: Component,
+    {
         log_received(&event);
 
         if self.not_running() {
@@ -836,7 +838,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received custom data point.
-    fn handle_data(&mut self, data: &CustomData) {
+    fn handle_data(&mut self, data: &CustomData)
+    where
+        Self: Component,
+    {
         log_received(&data);
 
         if self.not_running() {
@@ -850,7 +855,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received signal.
-    fn handle_signal(&mut self, signal: &Signal) {
+    fn handle_signal(&mut self, signal: &Signal)
+    where
+        Self: Component,
+    {
         log_received(&signal);
 
         if self.not_running() {
@@ -864,7 +872,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received queue state change.
-    fn handle_queue_state(&mut self, event: &QueueStateChanged) {
+    fn handle_queue_state(&mut self, event: &QueueStateChanged)
+    where
+        Self: Component,
+    {
         log_received(&event);
 
         if self.not_running() {
@@ -878,7 +889,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received socket state change.
-    fn handle_socket_state(&mut self, event: &SocketStateChanged) {
+    fn handle_socket_state(&mut self, event: &SocketStateChanged)
+    where
+        Self: Component,
+    {
         log_received(&event);
 
         if self.not_running() {
@@ -892,7 +906,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received instrument.
-    fn handle_instrument(&mut self, instrument: &InstrumentAny) {
+    fn handle_instrument(&mut self, instrument: &InstrumentAny)
+    where
+        Self: Component,
+    {
         log_received(&instrument);
 
         if self.not_running() {
@@ -906,7 +923,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles received order book deltas.
-    fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+    fn handle_book_deltas(&mut self, deltas: &OrderBookDeltas)
+    where
+        Self: Component,
+    {
         log_received(&deltas);
 
         if self.not_running() {
@@ -920,7 +940,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received order book depth10 snapshot.
-    fn handle_book_depth(&mut self, depth: &OrderBookDepth10) {
+    fn handle_book_depth(&mut self, depth: &OrderBookDepth10)
+    where
+        Self: Component,
+    {
         log_received(&depth);
 
         if self.not_running() {
@@ -934,7 +957,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received order book reference.
-    fn handle_book(&mut self, book: &OrderBook) {
+    fn handle_book(&mut self, book: &OrderBook)
+    where
+        Self: Component,
+    {
         log_received(&book);
 
         if self.not_running() {
@@ -950,7 +976,7 @@ pub trait DataActor: Component {
     /// Handles a received quote.
     fn handle_quote(&mut self, quote: &QuoteTick)
     where
-        Self: DataActorNative,
+        Self: DataActorNative + Component,
     {
         log_received(&quote);
 
@@ -972,7 +998,7 @@ pub trait DataActor: Component {
     /// Handles a received trade.
     fn handle_trade(&mut self, trade: &TradeTick)
     where
-        Self: DataActorNative,
+        Self: DataActorNative + Component,
     {
         log_received(&trade);
 
@@ -994,7 +1020,7 @@ pub trait DataActor: Component {
     /// Handles a receiving bar.
     fn handle_bar(&mut self, bar: &Bar)
     where
-        Self: DataActorNative,
+        Self: DataActorNative + Component,
     {
         log_received(&bar);
 
@@ -1014,7 +1040,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received mark price update.
-    fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate) {
+    fn handle_mark_price(&mut self, mark_price: &MarkPriceUpdate)
+    where
+        Self: Component,
+    {
         log_received(&mark_price);
 
         if self.not_running() {
@@ -1028,7 +1057,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received index price update.
-    fn handle_index_price(&mut self, index_price: &IndexPriceUpdate) {
+    fn handle_index_price(&mut self, index_price: &IndexPriceUpdate)
+    where
+        Self: Component,
+    {
         log_received(&index_price);
 
         if self.not_running() {
@@ -1042,7 +1074,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received funding rate update.
-    fn handle_funding_rate(&mut self, funding_rate: &FundingRateUpdate) {
+    fn handle_funding_rate(&mut self, funding_rate: &FundingRateUpdate)
+    where
+        Self: Component,
+    {
         log_received(&funding_rate);
 
         if self.not_running() {
@@ -1056,7 +1091,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received option greeks update.
-    fn handle_option_greeks(&mut self, greeks: &OptionGreeks) {
+    fn handle_option_greeks(&mut self, greeks: &OptionGreeks)
+    where
+        Self: Component,
+    {
         log_received(&greeks);
 
         if self.not_running() {
@@ -1070,7 +1108,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received option chain slice snapshot.
-    fn handle_option_chain(&mut self, slice: &OptionChainSlice) {
+    fn handle_option_chain(&mut self, slice: &OptionChainSlice)
+    where
+        Self: Component,
+    {
         log_received(&slice);
 
         if self.not_running() {
@@ -1084,7 +1125,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received instrument status.
-    fn handle_instrument_status(&mut self, status: &InstrumentStatus) {
+    fn handle_instrument_status(&mut self, status: &InstrumentStatus)
+    where
+        Self: Component,
+    {
         log_received(&status);
 
         if self.not_running() {
@@ -1098,7 +1142,10 @@ pub trait DataActor: Component {
     }
 
     /// Handles a received instrument close.
-    fn handle_instrument_close(&mut self, close: &InstrumentClose) {
+    fn handle_instrument_close(&mut self, close: &InstrumentClose)
+    where
+        Self: Component,
+    {
         log_received(&close);
 
         if self.not_running() {
@@ -1113,7 +1160,10 @@ pub trait DataActor: Component {
 
     #[cfg(feature = "defi")]
     /// Handles a received block.
-    fn handle_block(&mut self, block: &Block) {
+    fn handle_block(&mut self, block: &Block)
+    where
+        Self: Component,
+    {
         log_received(&block);
 
         if self.not_running() {
@@ -1128,7 +1178,10 @@ pub trait DataActor: Component {
 
     #[cfg(feature = "defi")]
     /// Handles a received pool definition update.
-    fn handle_pool(&mut self, pool: &Pool) {
+    fn handle_pool(&mut self, pool: &Pool)
+    where
+        Self: Component,
+    {
         log_received(&pool);
 
         if self.not_running() {
@@ -1143,7 +1196,10 @@ pub trait DataActor: Component {
 
     #[cfg(feature = "defi")]
     /// Handles a received pool swap.
-    fn handle_pool_swap(&mut self, swap: &PoolSwap) {
+    fn handle_pool_swap(&mut self, swap: &PoolSwap)
+    where
+        Self: Component,
+    {
         log_received(&swap);
 
         if self.not_running() {
@@ -1158,7 +1214,10 @@ pub trait DataActor: Component {
 
     #[cfg(feature = "defi")]
     /// Handles a received pool liquidity update.
-    fn handle_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate) {
+    fn handle_pool_liquidity_update(&mut self, update: &PoolLiquidityUpdate)
+    where
+        Self: Component,
+    {
         log_received(&update);
 
         if self.not_running() {
@@ -1173,7 +1232,10 @@ pub trait DataActor: Component {
 
     #[cfg(feature = "defi")]
     /// Handles a received pool fee collect.
-    fn handle_pool_fee_collect(&mut self, collect: &PoolFeeCollect) {
+    fn handle_pool_fee_collect(&mut self, collect: &PoolFeeCollect)
+    where
+        Self: Component,
+    {
         log_received(&collect);
 
         if self.not_running() {
@@ -1188,7 +1250,10 @@ pub trait DataActor: Component {
 
     #[cfg(feature = "defi")]
     /// Handles a received pool flash event.
-    fn handle_pool_flash(&mut self, flash: &PoolFlash) {
+    fn handle_pool_flash(&mut self, flash: &PoolFlash)
+    where
+        Self: Component,
+    {
         log_received(&flash);
 
         if self.not_running() {
@@ -2897,7 +2962,6 @@ where
     }
 }
 
-// Blanket implementation: any DataActor automatically implements Component
 impl<T> Component for T
 where
     T: DataActor + DataActorNative + Debug + 'static,

@@ -98,10 +98,8 @@ pub type BatchModifyOrder = (
 /// ```
 ///
 /// Default methods that read or mutate native runtime state carry explicit
-/// [`StrategyNative`] bounds. Strategy implementations that only need core-free
-/// callbacks can implement this trait with their own [`Component`]
-/// implementation, while runtime-registered strategies keep using native
-/// wiring.
+/// [`StrategyNative`] and [`Component`] bounds. Implementations that only need
+/// behavioral callbacks do not own or implement native runtime state.
 pub trait Strategy: DataActor {
     /// Returns the external order claims for this strategy.
     ///
@@ -1454,7 +1452,7 @@ pub trait Strategy: DataActor {
     /// Returns an error if time event handling fails.
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()>
     where
-        Self: StrategyNative,
+        Self: StrategyNative + Component,
     {
         if event.name.starts_with("GTD-EXPIRY:") {
             self.expire_gtd_order(event.clone());
@@ -1743,7 +1741,7 @@ pub trait Strategy: DataActor {
     /// This method is called by the market exit timer.
     fn check_market_exit(&mut self, _event: TimeEvent)
     where
-        Self: StrategyNative,
+        Self: StrategyNative + Component,
     {
         // Guard against stale timer events after cancel_market_exit
         if !self.is_exiting() {
@@ -1848,7 +1846,7 @@ pub trait Strategy: DataActor {
     /// and stops the strategy if a stop was pending.
     fn finalize_market_exit(&mut self)
     where
-        Self: StrategyNative,
+        Self: StrategyNative + Component,
     {
         let (actor_id, should_stop) = {
             let core = StrategyNative::strategy_core_mut(self);
@@ -2278,7 +2276,7 @@ mod tests {
         cache::{Cache, ORDER_NOT_FOUND},
         clock::{Clock, TestClock},
         component::Component,
-        enums::{ComponentState, ComponentTrigger},
+        enums::ComponentState,
         msgbus::{
             self, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
             stubs::{
@@ -2301,8 +2299,8 @@ mod tests {
             },
         },
         identifiers::{
-            AccountId, ActorId, ClientOrderId, ComponentId, InstrumentId, OrderListId, PositionId,
-            StrategyId, TradeId, TraderId, VenueOrderId,
+            AccountId, ActorId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+            TradeId, TraderId, VenueOrderId,
         },
         orderbook::own::OwnOrderBook,
         orders::{LimitOrder, MarketOrder, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -2334,32 +2332,7 @@ mod tests {
 
     #[derive(Debug)]
     struct CoreFreeStrategy {
-        state: ComponentState,
         started: bool,
-    }
-
-    impl Component for CoreFreeStrategy {
-        fn component_id(&self) -> ComponentId {
-            ComponentId::new("CoreFreeStrategy")
-        }
-
-        fn state(&self) -> ComponentState {
-            self.state
-        }
-
-        fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
-            self.state = self.state.transition(&trigger)?;
-            Ok(())
-        }
-
-        fn register(
-            &mut self,
-            _trader_id: TraderId,
-            _clock: Rc<RefCell<dyn Clock>>,
-            _cache: Rc<RefCell<Cache>>,
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
     }
 
     impl DataActor for CoreFreeStrategy {
@@ -4987,14 +4960,11 @@ mod tests {
 
     #[rstest]
     fn test_strategy_behavior_does_not_require_native_core_access() {
-        fn assert_strategy<T: Strategy + DataActor + Component>() {}
+        fn assert_strategy<T: Strategy + DataActor>() {}
 
         assert_strategy::<CoreFreeStrategy>();
 
-        let mut strategy = CoreFreeStrategy {
-            state: ComponentState::PreInitialized,
-            started: false,
-        };
+        let mut strategy = CoreFreeStrategy { started: false };
         DataActor::on_start(&mut strategy).unwrap();
 
         assert!(strategy.started);

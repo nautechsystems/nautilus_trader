@@ -44,8 +44,8 @@ use nautilus_model::{
         BookAction, BookType, GreeksConvention, OrderSide, OrderType, PositionSide, PriceType,
     },
     identifiers::{
-        AccountId, ActorId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OptionSeriesId, OrderListId, PositionId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OptionSeriesId,
+        OrderListId, PositionId, StrategyId, Symbol, TraderId, Venue, VenueOrderId,
     },
     instruments::{CurrencyPair, Instrument, InstrumentAny, SyntheticInstrument, stubs::*},
     orderbook::{OrderBook, own::OwnOrderBook},
@@ -78,7 +78,6 @@ use crate::{
     cache::Cache,
     clock::{Clock, TestClock},
     component::Component,
-    enums::{ComponentState, ComponentTrigger},
     logging::{logger::LogGuard, logging_is_initialized},
     messages::{
         data::{
@@ -218,32 +217,7 @@ struct TestDataActor {
 
 #[derive(Debug)]
 struct FacadeOnlyActor {
-    state: ComponentState,
     started: bool,
-}
-
-impl Component for FacadeOnlyActor {
-    fn component_id(&self) -> ComponentId {
-        ComponentId::new("FacadeOnlyActor")
-    }
-
-    fn state(&self) -> ComponentState {
-        self.state
-    }
-
-    fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
-        self.state = self.state.transition(&trigger)?;
-        Ok(())
-    }
-
-    fn register(
-        &mut self,
-        _trader_id: TraderId,
-        _clock: Rc<RefCell<dyn Clock>>,
-        _cache: Rc<RefCell<Cache>>,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
 }
 
 impl DataActor for FacadeOnlyActor {
@@ -555,14 +529,11 @@ fn register_data_actor(
 
 #[rstest]
 fn test_data_actor_facade_behavior_does_not_require_native_core_access() {
-    fn assert_data_actor<T: DataActor + Component>() {}
+    fn assert_data_actor<T: DataActor>() {}
 
     assert_data_actor::<FacadeOnlyActor>();
 
-    let mut actor = FacadeOnlyActor {
-        state: ComponentState::PreInitialized,
-        started: false,
-    };
+    let mut actor = FacadeOnlyActor { started: false };
 
     DataActor::on_start(&mut actor).unwrap();
     let state = DataActor::on_save(&actor).unwrap();

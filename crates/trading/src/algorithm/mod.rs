@@ -1463,7 +1463,7 @@ mod tests {
     use nautilus_common::{
         actor::DataActor,
         cache::Cache,
-        clock::{Clock, TestClock},
+        clock::TestClock,
         component::Component,
         enums::ComponentTrigger,
         msgbus::{
@@ -1481,8 +1481,8 @@ mod tests {
             },
         },
         identifiers::{
-            AccountId, ActorId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-            StrategyId, TraderId, VenueOrderId,
+            AccountId, ActorId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
+            VenueOrderId,
         },
         orders::{LimitOrder, MarketOrder, OrderAny, OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
@@ -1500,37 +1500,12 @@ mod tests {
 
     #[derive(Debug)]
     struct CoreFreeExecutionAlgorithm {
-        state: ComponentState,
         orders_seen: usize,
     }
 
     #[derive(Debug)]
     struct MacroTestCustomField {
         inner: ExecutionAlgorithmCore,
-    }
-
-    impl Component for CoreFreeExecutionAlgorithm {
-        fn component_id(&self) -> ComponentId {
-            ComponentId::new("CoreFreeExecutionAlgorithm")
-        }
-
-        fn state(&self) -> ComponentState {
-            self.state
-        }
-
-        fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
-            self.state = self.state.transition(&trigger)?;
-            Ok(())
-        }
-
-        fn register(
-            &mut self,
-            _trader_id: TraderId,
-            _clock: Rc<RefCell<dyn Clock>>,
-            _cache: Rc<RefCell<Cache>>,
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
     }
 
     impl DataActor for CoreFreeExecutionAlgorithm {}
@@ -1887,14 +1862,11 @@ mod tests {
 
     #[rstest]
     fn test_execution_algorithm_behavior_does_not_require_native_core_access() {
-        fn assert_execution_algorithm<T: ExecutionAlgorithm + DataActor + Component>() {}
+        fn assert_execution_algorithm<T: ExecutionAlgorithm + DataActor>() {}
 
         assert_execution_algorithm::<CoreFreeExecutionAlgorithm>();
 
-        let mut algorithm = CoreFreeExecutionAlgorithm {
-            state: ComponentState::PreInitialized,
-            orders_seen: 0,
-        };
+        let mut algorithm = CoreFreeExecutionAlgorithm { orders_seen: 0 };
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
             .quantity(Quantity::from("1.0"))
