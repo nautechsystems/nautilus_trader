@@ -344,8 +344,7 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        self.cancel_all_orders_command(&cmd);
-        Ok(())
+        self.cancel_all_orders_command(&cmd)
     }
 
     fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {

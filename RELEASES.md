@@ -45,6 +45,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
 - Fixed Lighter testnet orders by omitting mainnet-only integrator attribution (#4834), thanks @Buff2out
 - Fixed Polymarket user WebSocket subscriptions to cover all account orders and trades
+- Fixed Polymarket `CancelAllOrders` handling for empty caches and cross-strategy, instrument, and side scopes
 
 ### Internal Improvements
 

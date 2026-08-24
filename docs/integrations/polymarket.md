@@ -354,7 +354,7 @@ sequential 15-order chunks.
 
 #### Batch cancel
 
-`BatchCancelOrders` and `CancelAllOrders` commands with resolved venue order IDs use Polymarket's
+`BatchCancelOrders` commands with resolved venue order IDs use Polymarket's
 [`DELETE /orders`](https://docs.polymarket.com/api-reference/trade/cancel-multiple-orders)
 endpoint. The adapter sends sequential chunks and chooses each new chunk from the smaller of the
 endpoint's 1,000-ID limit and the signer's current cancellation burst. A signer starts with the
@@ -365,6 +365,15 @@ smaller chunks before the retry. The adapter merges the completed responses and 
 requested order once after every chunk succeeds. If a later chunk exhausts its retries, earlier
 chunks may already have changed venue state, but the adapter emits no partial per-order results;
 reconciliation resolves the unknown overall outcome.
+
+Without a side filter, `CancelAllOrders` applies to the selected outcome token for the authenticated
+execution account, across strategies, even when the local order cache has no matches. The adapter
+sends the instrument's raw token ID as `asset_id` to
+[`DELETE /cancel-market-orders`](https://docs.polymarket.com/api-reference/trade/cancel-orders-for-a-market).
+For a `Buy` or `Sell` filter, the venue mass-cancel endpoint cannot express the side. The adapter
+therefore selects matching open orders from the local cache and sends their venue order IDs through
+the same chunked `DELETE /orders` path. A matching order that is still awaiting its venue order ID
+retains a pending cancellation, which is sent after submission resolves.
 
 ### Submit response handling
 
