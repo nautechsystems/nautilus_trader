@@ -267,8 +267,11 @@ impl PolymarketDataApiHttpClient {
     /// Fetches all positions for a user from the Data API.
     ///
     /// Paginates through `GET /positions?user={address}&sizeThreshold=0`
-    /// until a partial page is returned.
+    /// until a partial page is returned. Fails if the venue's maximum supported offset is
+    /// exhausted before the response is complete.
     pub async fn get_positions(&self, user_address: &str) -> Result<Vec<DataApiPosition>> {
+        // Polymarket defines the `/positions` maximum offset as 10,000 inclusive
+        const MAX_OFFSET: u32 = 10_000;
         const PAGE_SIZE: usize = 100;
 
         let protocol = OffsetProtocol::<DataApiPosition, Infallible>::new(
@@ -281,6 +284,12 @@ impl PolymarketDataApiHttpClient {
         let completed = paginator
             .run(
                 |offset| async move {
+                    if offset > MAX_OFFSET {
+                        return Err(Error::decode(format!(
+                            "/positions pagination exhausted the maximum supported offset {MAX_OFFSET}"
+                        )));
+                    }
+
                     let params = vec![
                         ("user".to_string(), user_address.to_string()),
                         ("limit".to_string(), PAGE_SIZE.to_string()),

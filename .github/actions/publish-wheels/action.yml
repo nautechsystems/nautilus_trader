@@ -6,43 +6,21 @@ runs:
   steps:
     - name: Validate wheel artifacts
       shell: bash
-      run: | # zizmor: ignore[github-env] All paths are fixed under RUNNER_TEMP
-        manifest="${RUNNER_TEMP}/publish-wheels-manifest.tsv"
-        delete_manifest="${RUNNER_TEMP}/publish-wheels-delete.txt"
-        index_file="${RUNNER_TEMP}/publish-wheels-index.html"
-        bash scripts/ci/validate-wheel-artifacts.bash "$manifest"
-        echo "PUBLISH_WHEELS_MANIFEST=$manifest" >> "$GITHUB_ENV"
-        echo "PUBLISH_WHEELS_DELETE_MANIFEST=$delete_manifest" >> "$GITHUB_ENV"
-        echo "PUBLISH_WHEELS_INDEX_FILE=$index_file" >> "$GITHUB_ENV"
+      env:
+        PUBLISH_WHEELS_MANIFEST: ${{ runner.temp }}/publish-wheels-manifest.tsv
+      run: bash scripts/ci/validate-wheel-artifacts.bash "$PUBLISH_WHEELS_MANIFEST"
 
     - name: Configure AWS CLI for Cloudflare R2
       shell: bash
-      run: |
-        set -euo pipefail
-        aws --version
-
-        mkdir -p ~/.aws
-        {
-          echo "[default]"
-          echo "aws_access_key_id=${AWS_ACCESS_KEY_ID}"
-          echo "aws_secret_access_key=${AWS_SECRET_ACCESS_KEY}"
-        } > ~/.aws/credentials
-
-        {
-          echo "[default]"
-          echo "region=${CLOUDFLARE_R2_REGION:-auto}"
-          echo "output=json"
-          echo "s3 ="
-          echo "    signature_version = s3v4"
-          echo "    addressing_style = path"
-          echo "    payload_signing_enabled = false"
-          echo "    use_accelerate_endpoint = false"
-          echo "    use_dualstack_endpoint = false"
-          echo "    use_fips_endpoint = false"
-        } > ~/.aws/config
-
-        echo "AWS_EC2_METADATA_DISABLED=true" >> "$GITHUB_ENV"
+      env:
+        AWS_EC2_METADATA_DISABLED: "true"
+      run: bash scripts/ci/configure-r2-aws.bash
 
     - name: Publish and verify wheels
       shell: bash
+      env:
+        AWS_EC2_METADATA_DISABLED: "true"
+        PUBLISH_WHEELS_MANIFEST: ${{ runner.temp }}/publish-wheels-manifest.tsv
+        PUBLISH_WHEELS_DELETE_MANIFEST: ${{ runner.temp }}/publish-wheels-delete.txt
+        PUBLISH_WHEELS_INDEX_FILE: ${{ runner.temp }}/publish-wheels-index.html
       run: bash scripts/ci/publish-wheels-r2.bash

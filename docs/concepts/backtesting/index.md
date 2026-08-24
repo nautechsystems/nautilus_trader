@@ -11,8 +11,8 @@ backtesting:
 
 | API level  | Use when                                                                |
 | ---------- | ----------------------------------------------------------------------- |
-| High‑level | You want `BacktestNode`, config objects, data catalogs, and batch runs. |
-| Low‑level  | You want direct `BacktestEngine` control and manual component setup.    |
+| High-level | You want `BacktestNode`, config objects, data catalogs, and batch runs. |
+| Low-level  | You want direct `BacktestEngine` control and manual component setup.    |
 
 The pages in this section describe the current Rust backtest engine and its Python package-root
 API.

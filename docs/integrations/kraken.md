@@ -16,14 +16,14 @@ The main Python components are:
   configuration.
 - `KrakenDataClientFactory` and `KrakenExecutionClientFactory`: Factories used
   by the trading node builder.
-- `KrakenSpotHttpClient` and `KrakenFuturesHttpClient`: Lower‑level HTTP access
+- `KrakenSpotHttpClient` and `KrakenFuturesHttpClient`: Lower-level HTTP access
   for direct requests.
-- `KrakenSpotWebSocketClient` and `KrakenFuturesWebSocketClient`: Lower‑level
+- `KrakenSpotWebSocketClient` and `KrakenFuturesWebSocketClient`: Lower-level
   WebSocket access.
 
 :::note
 Most users configure these components through a live trading node and do not
-need to work directly with the lower‑level clients.
+need to work directly with the lower-level clients.
 :::
 
 ## Examples
@@ -94,9 +94,9 @@ the first trade in the next interval and is not bounded to one bar period when a
 market has no trades. When the WebSocket message handler stops, the adapter
 flushes its buffered bars, including a current bar that may still be incomplete.
 
-The adapter uses buffering instead of timer‑based emission because:
+The adapter uses buffering instead of timer-based emission because:
 
-- Timer‑based emission could miss the final update before the bar closes.
+- Timer-based emission could miss the final update before the bar closes.
 - Kraken's updates are not guaranteed to arrive at exact interval boundaries.
 
 This favors the latest venue update at the cost of latency.
@@ -139,7 +139,7 @@ normalizes it to `DOGE`, including in quote currency symbols.
 
 ### Spot markets
 
-NautilusTrader uses normalized, slash‑separated symbols for Kraken Spot
+NautilusTrader uses normalized, slash-separated symbols for Kraken Spot
 instruments. The adapter translates them to Kraken's native format internally.
 
 **Instrument ID format:**
@@ -157,7 +157,7 @@ InstrumentId.from_str("ETH/BTC.KRAKEN")  # Spot ETH/BTC (normalized from ETH/XBT
 Kraken Futures instruments use a specific naming convention with prefixes:
 
 - `PI_` - Perpetual Inverse contracts (e.g., `PI_XBTUSD`)
-- `PF_` - Perpetual Fixed‑margin contracts (e.g., `PF_XBTUSD`)
+- `PF_` - Perpetual Fixed-margin contracts (e.g., `PF_XBTUSD`)
 - `PV_` - Perpetual Vanilla contracts (e.g., `PV_XRPXBT`)
 - `FI_` - Fixed maturity Inverse contracts (e.g., `FI_XBTUSD_230929`)
 - `FF_` - Flex futures contracts
@@ -193,7 +193,7 @@ InstrumentId.from_str("PF_XBTUSD.KRAKEN")  # Perpetual fixed-margin BTC
 | `TradeTick`            | ✓    | ✓       |                                        |
 | `Bar`                  | ✓    | ✓       |                                        |
 | `OrderBook` (snapshot) | ✓    | ✓       | Via HTTP depth endpoint.               |
-| `FundingRateUpdate`    | -    | ✓       | Client‑side start/end/limit filtering. |
+| `FundingRateUpdate`    | -    | ✓       | Client-side start/end/limit filtering. |
 
 ## L3 order book (market-by-order)
 
@@ -263,12 +263,12 @@ more events per instrument than L2. Recommended settings:
 | ---------------------- | ---- | ------- | ------------------------------------------ |
 | `MARKET`               | ✓    | ✓       | Immediate execution at market price.       |
 | `LIMIT`                | ✓    | ✓       | Execution at specified price or better.    |
-| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop‑loss).      |
-| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take‑profit).    |
-| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop‑loss‑limit). |
+| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop-loss).      |
+| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take-profit).    |
+| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop-loss-limit). |
 | `LIMIT_IF_TOUCHED`     | ✓    | ✓       | Maps to `take_profit` with `limit_price`.  |
 | `TRAILING_STOP_MARKET` | ✓    | -       | Trailing stop with `trailing_offset`.      |
-| `TRAILING_STOP_LIMIT`  | ✓    | -       | Trailing stop‑limit with `limit_offset`.   |
+| `TRAILING_STOP_LIMIT`  | ✓    | -       | Trailing stop-limit with `limit_offset`.   |
 
 ### Time in force
 
@@ -315,7 +315,7 @@ time rather than silently coercing them.
 | ------------ | ---- | ------- | ------------------------------------------------------ |
 | Batch Submit | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10.        |
 | Batch Modify | -    | ✓       | Futures HTTP helper only. Execution sends one command. |
-| Batch Cancel | ✓    | ✓       | Auto‑chunks into batches of 50.                        |
+| Batch Cancel | ✓    | ✓       | Auto-chunks into batches of 50.                        |
 
 :::note
 **Cancel all orders**:
@@ -331,9 +331,9 @@ time rather than silently coercing them.
 
 | Feature          | Spot | Futures | Notes                                               |
 | ---------------- | ---- | ------- | --------------------------------------------------- |
-| Query positions  | ✓    | ✓       | Spot margin via `OpenPositions`; spot cash opt‑in.  |
+| Query positions  | ✓    | ✓       | Spot margin via `OpenPositions`; spot cash opt-in.  |
 | Position mode    | -    | -       | Single position per instrument.                     |
-| Leverage control | ✓    | -       | Spot tiers; per‑order `params={"leverage": N}`.     |
+| Leverage control | ✓    | -       | Spot tiers; per-order `params={"leverage": N}`.     |
 | Margin mode      | ✓    | ✓       | Spot/Futures cross margin; no isolated spot margin. |
 
 ### Order querying
@@ -342,7 +342,7 @@ time rather than silently coercing them.
 | -------------------- | ---- | ------- | -------------------------------------------- |
 | Query open orders    | ✓    | ✓       | List all active orders.                      |
 | Query order history  | ✓    | ✓       | Historical order data with pagination.       |
-| Order status updates | ✓    | ✓       | Real‑time order state changes via WebSocket. |
+| Order status updates | ✓    | ✓       | Real-time order state changes via WebSocket. |
 | Trade history        | ✓    | ✓       | Execution and fill reports.                  |
 
 ### Contingent orders
@@ -352,7 +352,7 @@ time rather than silently coercing them.
 | Linked order lists | -    | -       | Submitted lists contain independent orders. |
 | OCO orders         | -    | -       | *Not supported*.                            |
 | Bracket orders     | -    | -       | *Not supported*.                            |
-| Conditional orders | ✓    | ✓       | Stop and take‑profit orders.                |
+| Conditional orders | ✓    | ✓       | Stop and take-profit orders.                |
 
 ## Order routing (Spot)
 
@@ -370,11 +370,11 @@ supports these shapes, but the adapter routes them through REST:
 | Shape                      | Adapter behavior                                                  |
 | -------------------------- | ----------------------------------------------------------------- |
 | `FOK` time in force        | The WebSocket parameter builder does not encode `FOK`.            |
-| Trailing stop / stop‑limit | The WebSocket parameter builder does not encode trailing offsets. |
+| Trailing stop / stop-limit | The WebSocket parameter builder does not encode trailing offsets. |
 | Iceberg (`display_qty`)    | The WebSocket parameter builder does not encode iceberg orders.   |
-| Quote‑quantity orders      | WS supports non‑margin buy market orders; the adapter uses REST.  |
+| Quote-quantity orders      | WS supports non-margin buy market orders; the adapter uses REST.  |
 
-Mixed‑symbol order lists also use REST because Kraken's WebSocket `batch_add`
+Mixed-symbol order lists also use REST because Kraken's WebSocket `batch_add`
 request requires one shared symbol. Unsupported trigger references fall back to
 the REST path, which rejects them locally before sending a request to Kraken.
 
@@ -385,12 +385,12 @@ command through REST regardless of the configured default. Set it on
 
 ### WebSocket request timeout
 
-When a WebSocket round‑trip exceeds `ws_request_timeout_secs` (default `5`),
+When a WebSocket round-trip exceeds `ws_request_timeout_secs` (default `5`),
 the venue outcome may still be unknown. The dispatcher handles each operation
 as follows:
 
 - Submit and batch add: emits `OrderRejected` for each affected order, then
-  sends a best‑effort compensating cancel over the same WebSocket.
+  sends a best-effort compensating cancel over the same WebSocket.
 - Modify: emits `OrderModifyRejected`.
 - Cancel: emits no rejection event, logs the timeout, and awaits
   reconciliation.
@@ -400,7 +400,7 @@ updates or the live execution reconciliation engine (`open_check_interval_secs`)
 recover divergent state.
 
 :::tip
-Set `ws_request_timeout_secs` comfortably above your observed round‑trip
+Set `ws_request_timeout_secs` comfortably above your observed round-trip
 latency so ordinary network variation does not trigger timeout recovery.
 :::
 
@@ -411,7 +411,7 @@ latency so ordinary network variation does not trigger timeout recovery.
 | Option                    | Default | Description                                             |
 | ------------------------- | ------- | ------------------------------------------------------- |
 | `use_ws_trade`            | `True`  | Route orders via WS when the trade channel is active.   |
-| `ws_request_timeout_secs` | `5`     | WS response timeout before operation‑specific recovery. |
+| `ws_request_timeout_secs` | `5`     | WS response timeout before operation-specific recovery. |
 
 ## Reconciliation
 
@@ -442,7 +442,7 @@ the exchange state at startup or during operation.
   `OpenPositions`), the adapter emits a synthetic FLAT report on the next
   position-check tick so the engine reconciles to closed.
 - Margin balances: `POST /0/private/TradeBalance` is called alongside the
-  account‑state refresh; used margin populates `MarginBalance.initial`, while
+  account-state refresh; used margin populates `MarginBalance.initial`, while
   equity and free margin populate the summary balance (see Spot margin trading).
 
 ### Futures reconciliation
@@ -580,9 +580,9 @@ When `spot_account_type=Margin`, the execution client calls Kraken's
 - Equity (`e`) and free margin (`mf`) for the balance denominated by
   `margin_balance_asset`.
 - Used margin (`m`) for `MarginBalance.initial`. Maintenance margin is zero
-  because Kraken does not return a separate maintenance‑margin amount.
+  because Kraken does not return a separate maintenance-margin amount.
 
-The lower‑level `KrakenSpotHttpClient` methods `request_margin_metrics()` and
+The lower-level `KrakenSpotHttpClient` methods `request_margin_metrics()` and
 `request_account_state_with_metrics()` return the full `TradeBalance` metrics
 dictionary for direct consumers. The live execution client does not attach
 that dictionary to `AccountState.info`.
@@ -608,22 +608,22 @@ documentation does not specify a fixed funding period.
 
 ## Rate limiting
 
-Each Kraken HTTP client applies an adapter‑side request throttle. The default is
+Each Kraken HTTP client applies an adapter-side request throttle. The default is
 five requests per second and `max_requests_per_second` can override it. This is
-a request‑count throttle, not a complete model of Kraken's endpoint costs or
-account‑tier budgets.
+a request-count throttle, not a complete model of Kraken's endpoint costs or
+account-tier budgets.
 
 Kraken applies different venue limits to Spot and Futures:
 
 - [Spot REST rate limits](https://docs.kraken.com/exchange/guides/rest/ratelimits)
-  use a tier‑dependent call counter. Ledger and trade history calls add `2`,
+  use a tier-dependent call counter. Ledger and trade history calls add `2`,
   most other REST calls add `1`, and order management uses a separate trading
   limiter.
 - [Derivatives rate limits](https://docs.kraken.com/exchange/guides/futures/ratelimits)
   use endpoint costs and separate budgets for `/derivatives` and `/history`
   paths.
 
-The current Spot REST call‑counter limits are:
+The current Spot REST call-counter limits are:
 
 | Spot tier    | Maximum counter | Counter decay |
 | ------------ | --------------- | ------------- |
@@ -639,7 +639,7 @@ tier, Kraken can still reject or throttle requests.
 The execution engine's `open_check_interval_secs` and
 `position_check_interval_secs` settings create sustained private REST API load.
 Short intervals can exhaust Kraken's venue budgets even when the adapter stays
-below its configured requests‑per‑second throttle.
+below its configured requests-per-second throttle.
 
 Use conservative intervals as a starting point, especially for a Spot Starter
 account:
@@ -676,8 +676,8 @@ The product type for each client is specified via the `product_type` option.
 | `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.          |
 | `timeout_secs`            | `30`      | HTTP request timeout in seconds.                               |
 | `heartbeat_interval_secs` | `30`      | WebSocket heartbeat interval in seconds.                       |
-| `ws_idle_timeout_ms`      | `10,000`  | Data‑silence timeout for the Spot v2 WebSocket; `0` disables.  |
-| `max_requests_per_second` | `None`    | Per‑client request throttle; default is 5 req/s.               |
+| `ws_idle_timeout_ms`      | `10,000`  | Data-silence timeout for the Spot v2 WebSocket; `0` disables.  |
+| `max_requests_per_second` | `None`    | Per-client request throttle; default is 5 req/s.               |
 | `transport_backend`       | `Sockudo` | WebSocket transport backend.                                   |
 
 ### Execution client configuration options
@@ -696,7 +696,7 @@ The product type for each client is specified via the `product_type` option.
 | `timeout_secs`                  | `30`      | HTTP request timeout in seconds.                                      |
 | `heartbeat_interval_secs`       | `30`      | WebSocket heartbeat interval in seconds.                              |
 | `auth_timeout_secs`             | `None`    | Futures WebSocket auth timeout; `None` uses the client default.       |
-| `max_requests_per_second`       | `None`    | Per‑client request throttle; default is 5 req/s.                      |
+| `max_requests_per_second`       | `None`    | Per-client request throttle; default is 5 req/s.                      |
 | `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reports. |
 | `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                |
 | `use_spot_position_reports`     | `False`   | Report wallet balances as positions; cash mode only.                  |
@@ -735,16 +735,16 @@ execution clients.
 
 ### API credentials
 
-Live‑node configuration objects do not read credential environment variables
+Live-node configuration objects do not read credential environment variables
 automatically. Pass `api_key` and `api_secret` explicitly to
 `KrakenExecClientConfig` and, for Spot L3 data, to `KrakenDataClientConfig`.
 Public market data does not require credentials.
 
-The lower‑level Python HTTP and WebSocket clients load the following variables
+The lower-level Python HTTP and WebSocket clients load the following variables
 when their credential arguments are omitted. Rust applications can use
 `KrakenCredential::from_env_spot()` or
 `KrakenCredential::from_env_futures(demo)` to load them before constructing
-live‑node configs.
+live-node configs.
 
 | Environment Variable             | Description                              |
 | -------------------------------- | ---------------------------------------- |
@@ -763,7 +763,7 @@ does not have a demo or testnet environment.
 
 :::tip
 Use environment variables to store credentials, then pass their values into
-live‑node configuration at the application boundary.
+live-node configuration at the application boundary.
 :::
 
 Authentication errors are reported when a private client connects or performs a

@@ -58,8 +58,8 @@ pub const BETFAIR_RACE_STREAM_HOST: &str = "sports-data-stream-api.betfair.com";
 /// Stream TLS port.
 pub const BETFAIR_STREAM_PORT: u16 = 443;
 
-/// Interval between client stream heartbeat messages in seconds.
-pub const BETFAIR_STREAM_HEARTBEAT_SECS: u64 = 5;
+/// Requested interval between server stream heartbeat messages in milliseconds.
+pub const BETFAIR_STREAM_SERVER_HEARTBEAT_MS: u64 = 5_000;
 
 // Interactive login URL (non-cert)
 pub const BETFAIR_IDENTITY_LOGIN_URL: &str = "https://identitysso.betfair.com/api/login";

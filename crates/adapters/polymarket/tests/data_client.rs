@@ -56,6 +56,7 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{Data as NautilusData, DataType},
     enums::BookType,
@@ -294,7 +295,8 @@ async fn test_connect_emits_market_socket_state_change() {
     let addr = start_mock_server(state).await;
     let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_system_event_sender(system_tx);
-    let (mut client, _data_rx) = create_test_data_client(addr);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _data_rx) = registry.scope(|| create_test_data_client(addr));
 
     client.connect().await.expect("connect data client");
 
@@ -303,18 +305,30 @@ async fn test_connect_emits_market_socket_state_change() {
         .expect("wait for socket state change")
         .expect("system event channel closed");
     let SystemEvent::SocketState(change) = event;
+    let endpoint = ustr::Ustr::from("polymarket-market-streams");
+    let handle = registry.handle(*POLYMARKET_CLIENT_ID, endpoint).unwrap();
 
     assert_eq!(change.client_id, *POLYMARKET_CLIENT_ID);
     assert_eq!(change.venue, Some(*POLYMARKET_VENUE));
-    assert_eq!(
-        change.endpoint,
-        ustr::Ustr::from("polymarket-market-streams")
-    );
+    assert_eq!(change.endpoint, endpoint);
     assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+
+    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .expect("wait for socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.client_id, *POLYMARKET_CLIENT_ID);
+    assert_eq!(change.venue, Some(*POLYMARKET_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.expect("disconnect data client");
-
-    assert!(system_rx.try_recv().is_err());
+    assert!(registry.handle(*POLYMARKET_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]

@@ -32,18 +32,32 @@ use crate::{
     stream::parse::FillTracker,
 };
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct PendingReplaceState {
     pub(crate) total_quantity: Option<Quantity>,
     pub(crate) old_terminal: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingReductionState {
+    client_order_id: ClientOrderId,
+    original_quantity: Quantity,
+    requested_quantity: Quantity,
+    confirmed_quantity: Option<Quantity>,
 }
 
 /// Shared mutable state for the OCM stream handler.
 ///
 /// Accessed by both the TCP reader closure and the execution client methods
 /// (submit, modify, connect/disconnect). All access goes through `Arc<Mutex<>>`.
-#[derive(Debug, Default)]
+///
+/// Pending reductions are keyed by Bet ID so confirmed quantities survive terminal identity
+/// cleanup. The first REST, OCM, or reconciliation observation with active quantity at least the
+/// requested quantity and below the original confirms the reduction; later observations are
+/// no-ops.
+#[derive(Clone, Debug, Default)]
 pub struct OcmState {
+    /// Tracks cumulative per-bet fill and void state for deduplication and reconciliation.
     pub fill_tracker: FillTracker,
     /// Maps customer_order_ref (rfo) to ClientOrderId for stream resolution.
     pub customer_order_refs: AHashMap<String, ClientOrderId>,
@@ -65,6 +79,7 @@ pub struct OcmState {
     /// (client_order_id, old_bet_id) pairs for in-flight replace operations.
     pub pending_update_keys: AHashSet<(ClientOrderId, String)>,
     pending_replace_state: AHashMap<(ClientOrderId, String), PendingReplaceState>,
+    pending_reductions: AHashMap<String, PendingReductionState>,
 }
 
 impl OcmState {
@@ -135,6 +150,9 @@ impl OcmState {
         self.customer_order_refs.remove(&rfo_legacy);
         self.order_strategies.remove(client_order_id);
         self.accepted_orders.remove(client_order_id);
+        self.pending_reductions.retain(|_, pending| {
+            pending.client_order_id != *client_order_id || pending.confirmed_quantity.is_some()
+        });
     }
 
     /// Resolves a client_order_id from the unmatched order's rfo field.
@@ -251,6 +269,82 @@ impl OcmState {
         Some(total_quantity)
     }
 
+    pub(crate) fn register_pending_reduction(
+        &mut self,
+        client_order_id: ClientOrderId,
+        bet_id: String,
+        original_quantity: Quantity,
+        requested_quantity: Quantity,
+    ) {
+        self.pending_reductions.insert(
+            bet_id,
+            PendingReductionState {
+                client_order_id,
+                original_quantity,
+                requested_quantity,
+                confirmed_quantity: None,
+            },
+        );
+    }
+
+    pub(crate) fn confirm_pending_reduction(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        bet_id: &str,
+        active_quantity: Quantity,
+    ) -> Option<Quantity> {
+        let pending = self.pending_reductions.get_mut(bet_id)?;
+
+        if pending.client_order_id != *client_order_id
+            || pending.confirmed_quantity.is_some()
+            || active_quantity < pending.requested_quantity
+            || active_quantity >= pending.original_quantity
+        {
+            return None;
+        }
+
+        pending.confirmed_quantity = Some(active_quantity);
+        Some(active_quantity)
+    }
+
+    pub(crate) fn complete_pending_reduction(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        bet_id: &str,
+        quantity: Quantity,
+    ) -> bool {
+        let Some(pending) = self.pending_reductions.get_mut(bet_id) else {
+            return false;
+        };
+
+        if pending.client_order_id != *client_order_id || pending.confirmed_quantity.is_some() {
+            return false;
+        }
+
+        pending.confirmed_quantity = Some(quantity);
+        true
+    }
+
+    pub(crate) fn reduced_quantity(&self, bet_id: &str) -> Option<Quantity> {
+        self.pending_reductions
+            .get(bet_id)
+            .and_then(|pending| pending.confirmed_quantity)
+    }
+
+    pub(crate) fn clear_pending_reduction(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        bet_id: &str,
+    ) {
+        if self
+            .pending_reductions
+            .get(bet_id)
+            .is_some_and(|pending| pending.client_order_id == *client_order_id)
+        {
+            self.pending_reductions.remove(bet_id);
+        }
+    }
+
     /// Cleans up customer_order_ref mappings for a terminal order,
     /// unless a pending replace exists for this client_order_id.
     pub fn cleanup_terminal_order(&mut self, client_order_id: &ClientOrderId) {
@@ -277,6 +371,7 @@ impl OcmState {
             self.terminal_orders.remove(&expired_bet_id);
             self.replaced_venue_order_ids.remove(&expired_bet_id);
             self.canceled_replace_bet_ids.remove(&expired_bet_id);
+            self.pending_reductions.remove(&expired_bet_id);
             self.fill_tracker.prune(&expired_bet_id);
         }
     }
@@ -421,6 +516,95 @@ mod tests {
             state.promote_pending_replace(&client_order_id, "replacement-bet", Quantity::from(8)),
             Some(Quantity::from(10)),
         );
+    }
+
+    #[rstest]
+    #[case::below_requested(Quantity::from(3), None)]
+    #[case::at_requested(Quantity::from(4), Some(Quantity::from(4)))]
+    #[case::inside_window(Quantity::from(9), Some(Quantity::from(9)))]
+    #[case::at_original(Quantity::from(10), None)]
+    fn pending_reduction_confirms_only_a_definitive_reduction(
+        #[case] active_quantity: Quantity,
+        #[case] expected: Option<Quantity>,
+    ) {
+        let client_order_id = ClientOrderId::from("O-1");
+        let bet_id = "bet-1";
+        let mut state = OcmState::default();
+        state.register_pending_reduction(
+            client_order_id,
+            bet_id.to_string(),
+            Quantity::from(10),
+            Quantity::from(4),
+        );
+
+        assert_eq!(
+            state.confirm_pending_reduction(&client_order_id, bet_id, active_quantity),
+            expected,
+        );
+        assert_eq!(state.reduced_quantity(bet_id), expected);
+    }
+
+    #[rstest]
+    fn pending_reduction_validates_identity_and_resolves_once() {
+        let client_order_id = ClientOrderId::from("O-1");
+        let other_client_order_id = ClientOrderId::from("O-2");
+        let bet_id = "bet-1";
+        let mut state = OcmState::default();
+        state.register_pending_reduction(
+            client_order_id,
+            bet_id.to_string(),
+            Quantity::from(10),
+            Quantity::from(4),
+        );
+
+        let mismatched =
+            state.confirm_pending_reduction(&other_client_order_id, bet_id, Quantity::from(4));
+        assert_eq!(mismatched, None);
+        assert!(!state.complete_pending_reduction(
+            &other_client_order_id,
+            bet_id,
+            Quantity::from(4),
+        ));
+        state.clear_pending_reduction(&other_client_order_id, bet_id);
+
+        assert_eq!(
+            state.confirm_pending_reduction(&client_order_id, bet_id, Quantity::from(4)),
+            Some(Quantity::from(4)),
+        );
+        assert_eq!(
+            state.confirm_pending_reduction(&client_order_id, bet_id, Quantity::from(4)),
+            None,
+            "a confirmed reduction must not resolve twice",
+        );
+
+        state.clear_pending_reduction(&client_order_id, bet_id);
+
+        assert_eq!(state.reduced_quantity(bet_id), None);
+        assert_eq!(
+            state.confirm_pending_reduction(&client_order_id, bet_id, Quantity::from(4)),
+            None,
+            "a discarded reduction must not resolve from a later observation",
+        );
+    }
+
+    #[rstest]
+    fn terminal_order_retention_evicts_pending_reduction_state() {
+        let client_order_id = ClientOrderId::from("O-1");
+        let bet_id = "bet-0";
+        let mut state = OcmState::default();
+        state.register_pending_reduction(
+            client_order_id,
+            bet_id.to_string(),
+            Quantity::from(10),
+            Quantity::from(4),
+        );
+        state.confirm_pending_reduction(&client_order_id, bet_id, Quantity::from(4));
+
+        for index in 0..=OcmState::DEDUP_RETENTION {
+            state.mark_terminal_order(format!("bet-{index}"));
+        }
+
+        assert_eq!(state.reduced_quantity(bet_id), None);
     }
 
     #[rstest]

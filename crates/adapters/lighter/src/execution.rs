@@ -41,11 +41,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
     enums::LogColor,
-    live::{
-        runner::{get_exec_event_sender, try_get_system_event_sender},
-        runtime::get_runtime,
-        task::TaskHandles,
-    },
+    live::{runner::get_exec_event_sender, runtime::get_runtime, task::TaskHandles},
     log_debug,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -59,7 +55,7 @@ use nautilus_core::{
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, ContingencyType, OmsType, OrderSide, OrderType, PositionSideSpecified},
@@ -85,11 +81,10 @@ use crate::{
         },
         credential::{Credential, scrub_auth},
         enums::{
-            LighterAccountTier, LighterPositionMarginMode, LighterProductType, LighterTxStatus,
-            LighterTxType,
+            LighterAccountTier, LighterEnvironment, LighterPositionMarginMode, LighterProductType,
+            LighterTxStatus, LighterTxType,
         },
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
-        socket::{USER_STREAMS_ENDPOINT, socket_state_sink},
         symbol::{MarketRegistry, product_type_from_instrument_id},
         urls::lighter_chain_id,
     },
@@ -112,7 +107,7 @@ use crate::{
         },
     },
     websocket::{
-        LighterWsError,
+        LighterWsError, USER_STREAMS_ENDPOINT,
         client::LighterWebSocketClient,
         dispatch::{
             LIGHTER_INSTRUMENT_CACHE, MAX_RECONCILIATION_PAGES, OrderIdentity, PendingOrderAction,
@@ -259,14 +254,11 @@ impl LighterExecutionClient {
             config.ws_timeout_secs,
             config.proxy_url.clone(),
         );
-        let ws_client = match try_get_system_event_sender() {
-            Some(sender) => ws_client.with_state_sink(socket_state_sink(
-                core.client_id,
-                USER_STREAMS_ENDPOINT,
-                sender,
-            )),
-            None => ws_client,
-        };
+        let ws_client = ws_client.with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*LIGHTER_VENUE),
+            USER_STREAMS_ENDPOINT,
+        ));
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -512,6 +504,10 @@ impl LighterExecutionClient {
     }
 
     async fn submit_integrator_auto_approval(&self) -> anyhow::Result<()> {
+        if self.config.environment == LighterEnvironment::Testnet {
+            return Ok(());
+        }
+
         let Some(credential) = &self.credential else {
             return Ok(());
         };
@@ -1744,7 +1740,7 @@ impl LighterExecutionClient {
             base_amount,
             price: price_ticks,
             trigger_price: trigger_price_ticks,
-            attributes: integrator_attributes(),
+            attributes: integrator_attributes(self.config.environment),
         };
 
         let signed = sign_tx(
@@ -2499,7 +2495,7 @@ impl FanoutDispatchContext {
                 trigger_price: plan.trigger_price,
                 order_expiry: plan.order_expiry,
             },
-            attributes: integrator_attributes(),
+            attributes: integrator_attributes(self.environment),
         };
         let signed = sign_tx(
             &tx,
@@ -3473,12 +3469,13 @@ fn rollback_tx_dispatch_indices(
     }
 }
 
-fn integrator_attributes() -> L2TxAttributes {
-    L2TxAttributes {
-        integrator_account_index: LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
-        integrator_taker_fee: 0,
-        integrator_maker_fee: 0,
-        skip_nonce: 0,
+fn integrator_attributes(environment: LighterEnvironment) -> L2TxAttributes {
+    match environment {
+        LighterEnvironment::Mainnet => L2TxAttributes {
+            integrator_account_index: LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            ..Default::default()
+        },
+        LighterEnvironment::Testnet => L2TxAttributes::default(),
     }
 }
 
@@ -8566,15 +8563,22 @@ mod tests {
     }
 
     #[rstest]
-    fn integrator_attributes_tags_nautilus_account_at_zero_fees() {
-        let attrs = integrator_attributes();
+    fn integrator_attributes_tag_mainnet_orders() {
         assert_eq!(
-            attrs.integrator_account_index,
-            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            integrator_attributes(LighterEnvironment::Mainnet),
+            L2TxAttributes {
+                integrator_account_index: LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+                ..Default::default()
+            },
         );
-        assert_eq!(attrs.integrator_taker_fee, 0);
-        assert_eq!(attrs.integrator_maker_fee, 0);
-        assert_eq!(attrs.skip_nonce, 0);
+    }
+
+    #[rstest]
+    fn integrator_attributes_leave_testnet_orders_unattributed() {
+        assert_eq!(
+            integrator_attributes(LighterEnvironment::Testnet),
+            L2TxAttributes::default(),
+        );
     }
 
     use std::str::FromStr;
@@ -11159,6 +11163,7 @@ mod tests {
     #[tokio::test]
     async fn integrator_approval_api_rejection_releases_reservation_and_nonce() {
         let mut config = test_config();
+        config.environment = LighterEnvironment::Mainnet;
         config.base_url_http = Some(spawn_integrator_approval_rejection_server().await);
         let (client, _cache, _rx) = create_execution_client_with_config(config);
 

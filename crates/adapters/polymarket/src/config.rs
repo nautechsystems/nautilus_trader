@@ -296,7 +296,7 @@ pub struct PolymarketDataClientConfig {
     pub ws_max_subscriptions: usize,
     /// Instrument reload interval in minutes.
     pub update_instruments_interval_mins: Option<u64>,
-    /// Whether to subscribe to new market discovery events via WebSocket.
+    /// Whether to subscribe to new-market discovery, resolution, and best-bid/ask events.
     #[builder(default)]
     pub subscribe_new_markets: bool,
     /// Optional filter applied to newly discovered markets before instrument emission.

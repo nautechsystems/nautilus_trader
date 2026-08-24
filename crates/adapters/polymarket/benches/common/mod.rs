@@ -180,6 +180,17 @@ pub(crate) mod fixtures {
         "timestamp": "1703875201000"
     }"#;
 
+    /// WS market `best_bid_ask` (tagged with `event_type: best_bid_ask`).
+    pub(crate) const MARKET_BEST_BID_ASK: &str = r#"{
+        "event_type": "best_bid_ask",
+        "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+        "asset_id": "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+        "best_bid": "0.50",
+        "best_ask": "0.51",
+        "spread": "0.01",
+        "timestamp": "1703875201500"
+    }"#;
+
     /// WS market `last_trade_price` (tagged with `event_type: last_trade_price`).
     pub(crate) const MARKET_LAST_TRADE: &str = r#"{
         "event_type": "last_trade_price",

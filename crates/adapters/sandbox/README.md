@@ -17,7 +17,7 @@ paper trading and strategy testing in real-time without actual order execution o
 - Paper trading against live market data from any data source.
 - Full order matching simulation using the production-grade `OrderMatchingEngine`.
 - Support for all order types (market, limit, stop, etc.).
-- Configurable fill models and fee models.
+- Configurable fill models, fee models, queue-position tracking, and liquidity consumption.
 - Account balance and position tracking.
 - Support for both cash and margin account types.
 

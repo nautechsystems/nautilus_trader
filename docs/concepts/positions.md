@@ -6,7 +6,7 @@ configurations.
 
 ## Overview
 
-A position records exposure to an instrument during an open‑close cycle. It aggregates the fills
+A position records exposure to an instrument during an open-close cycle. It aggregates the fills
 assigned to one position ID and tracks its quantity, average prices, realized PnL, commissions, and
 related identifiers. Use a market price with the position's methods to calculate unrealized PnL and
 notional value.
@@ -117,7 +117,7 @@ currency directly affect the net quantity received or delivered:
 - **Flips**: Commission affects the final position size on both sides of the flip.
 
 :::note
-Base‑currency commissions only apply to spot currency pairs and FX spot instruments where the
+Base-currency commissions only apply to spot currency pairs and FX spot instruments where the
 commission currency matches `instrument.base_currency`. For other instruments, commissions are
 tracked separately and do not affect position quantity.
 :::
@@ -136,7 +136,7 @@ The position exposes its retained adjustments:
   event ID, and timestamps.
 - The current adjustment history is cleared when a closed position reopens.
 - If fills remain after `purge_events_for_order()`, the position regenerates commission adjustments
-  from the surviving fills and reapplies non‑commission adjustments. If no fills remain, the
+  from the surviving fills and reapplies non-commission adjustments. If no fills remain, the
   position becomes an empty `FLAT` shell and clears its adjustment history.
 
 ## OMS types and position management
@@ -163,7 +163,7 @@ In `HEDGING` mode, multiple positions can exist for the same instrument:
 - Positions are tracked independently.
 - No automatic netting across positions.
 - A fill with a new position ID creates a separate position. If a later fill reuses a closed
-  position ID, it replaces the cached state without creating a closed‑cycle snapshot.
+  position ID, it replaces the cached state without creating a closed-cycle snapshot.
 
 :::warning
 `HEDGING` can increase margin requirements when a venue maintains long and short positions
@@ -184,7 +184,7 @@ Strategy and venue OMS types can differ:
 
 :::tip
 Align the strategy and venue OMS types unless the strategy requires virtual positions. See the
-integration guide for the venue's position‑mode configuration.
+integration guide for the venue's position-mode configuration.
 :::
 
 ## Position snapshotting
@@ -217,7 +217,7 @@ corrected history actually closes, keeping each counted once. See
 [Position replay across NETTING cycles](execution.md#position-replay-across-netting-cycles).
 
 :::note
-This closed‑cycle archive differs from optional position state snapshots. Setting
+This closed-cycle archive differs from optional position state snapshots. Setting
 `snapshot_positions=true` publishes state when a position opens or changes, while
 `snapshot_positions_interval_secs` periodically publishes all open positions. A cache with a
 backing database also persists these snapshots. The Rust live runtime has no cache database adapter,
@@ -292,7 +292,7 @@ total_pnl = position.total_pnl(current_price)
   inverse contracts, and settlement for quanto contracts.
 - For Forex, the cost currency is typically the quote currency.
 - Portfolio aggregates realized PnL per instrument in cost currency.
-- Multi‑currency totals require conversion outside the Position class.
+- Multi-currency totals require conversion outside the Position class.
 
 ## Commissions and costs
 
@@ -336,7 +336,7 @@ panics if the calculation fails.
   the position reverses direction.
 - `quantity`: Current absolute position size.
 - `signed_qty`: Signed position size (positive for `LONG`, negative for `SHORT`).
-- `peak_qty`: Maximum quantity reached during the current open‑close cycle.
+- `peak_qty`: Maximum quantity reached during the current open-close cycle.
 - `is_open`: Whether position is currently open.
 - `is_closed`: Whether position is closed (`FLAT`).
 - `is_long`: Whether position side is `LONG`.
@@ -387,7 +387,7 @@ For complete type information and detailed property documentation, see the Posit
 
 ## Events and tracking
 
-Each `Position` object records the fills and adjustments for its current open‑close cycle:
+Each `Position` object records the fills and adjustments for its current open-close cycle:
 
 - Fill events remain in application order.
 - Client order, venue order, and trade ID accessors return sorted, unique values.
@@ -410,32 +410,32 @@ See the [Execution guide](execution.md) for reconciliation best practices.
 ## Numerical precision
 
 `Position` uses `f64` for signed quantity, average prices, realized returns, and PnL intermediates.
-`Price`, `Quantity`, and `Money` retain their fixed‑point representations at the API boundary, but
+`Price`, `Quantity`, and `Money` retain their fixed-point representations at the API boundary, but
 conversions between these types and `f64` can introduce rounding. `f64` represents every integer
-exactly only through `2^53`; above that boundary, conversion can lose low‑order bits. It provides
+exactly only through `2^53`; above that boundary, conversion can lose low-order bits. It provides
 roughly 15 to 16 significant decimal digits rather than a fixed number of exact decimal places.
 
-The design avoids the higher computational cost of arbitrary‑precision arithmetic. The
-average‑price calculation also avoids multiplying raw fixed‑point values because those products can
+The design avoids the higher computational cost of arbitrary-precision arithmetic. The
+average-price calculation also avoids multiplying raw fixed-point values because those products can
 overflow their integer representation. Average prices reuse the prior `f64` average, and realized
 PnL is converted between `Money` and `f64` as fills accumulate. The resulting precision depends on
-the values, settlement‑currency precision, and sequence of fills.
+the values, settlement-currency precision, and sequence of fills.
 
 `quantity` is derived from `signed_qty` at the instrument's `size_precision`. If that conversion
 rounds a residual quantity to zero, the position becomes `FLAT` and normalizes `signed_qty` to zero.
 Inverse PnL calculations reject nonpositive open or close prices and positive prices below `1e-15`.
 With the `defi` feature, converting a `Price` or `Quantity` with more than 16 decimal places to
-`f64` panics, so `Position` does not support 17‑ or 18‑decimal fill values.
+`f64` panics, so `Position` does not support 17- or 18-decimal fill values.
 
-Tests in `crates/model/src/position.rs` cover a `0.01` USD commission, nine‑decimal price inputs, 100
-sequential fills, prices from `0.00001` to `99999.99999`, and same‑price round trips. These cases do
+Tests in `crates/model/src/position.rs` cover a `0.01` USD commission, nine-decimal price inputs, 100
+sequential fills, prices from `0.00001` to `99999.99999`, and same-price round trips. These cases do
 not establish a universal precision bound.
 
 :::warning
 If a workflow requires exact decimal arithmetic for regulatory reporting or audit records, perform
 and retain a separate decimal calculation from the original fills and adjustments. Converting
 `Position` float outputs back to decimal, including through `signed_decimal_qty()`, cannot restore
-discarded precision. `Position` does not provide an exact‑decimal guarantee. Validate the
+discarded precision. `Position` does not provide an exact-decimal guarantee. Validate the
 instruments, currencies, amount ranges, and fill sequences used by the application.
 :::
 
@@ -445,7 +445,7 @@ Positions interact with several key components:
 
 - **Portfolio**: Aggregates position exposure and PnL across instruments and strategies.
 - **ExecutionEngine**: Creates and updates positions from fills.
-- **Cache**: Stores current position state and closed‑cycle snapshots.
+- **Cache**: Stores current position state and closed-cycle snapshots.
 - **RiskEngine**: Reads open positions when it checks whether an order reduces exposure.
 
 :::note
@@ -459,4 +459,4 @@ regular positions.
 - [Events](events/): How fills produce position events.
 - [Orders](orders/): Orders that create and modify positions.
 - [Execution](execution.md): Fill handling that updates positions.
-- [Portfolio](portfolio.md): Portfolio‑level position aggregation.
+- [Portfolio](portfolio.md): Portfolio-level position aggregation.

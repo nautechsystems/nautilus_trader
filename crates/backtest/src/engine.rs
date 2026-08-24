@@ -30,8 +30,8 @@ use nautilus_common::{
     actor::{DataActor, DataActorNative},
     cache::Cache,
     clock::{Clock, TestClock},
-    component::Component,
-    enums::LogColor,
+    component::{Component, component_state},
+    enums::{ComponentState, LogColor},
     log_info,
     logging::{
         logging_clock_set_realtime_mode, logging_clock_set_static_mode,
@@ -54,7 +54,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Data, HasTsInit},
     enums::{AccountType, AggregationSource, BookType},
-    identifiers::{AccountId, ClientId, InstrumentId, TraderId, Venue},
+    identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     position::Position,
     types::Price,
@@ -971,6 +971,12 @@ impl BacktestEngine {
 
         self.settle_venues(ts_now);
 
+        for strategy_id in self.running_strategy_ids() {
+            log::error!(
+                "Strategy {strategy_id} is still RUNNING after the backtest end sequence; its stop did not complete",
+            );
+        }
+
         let save_result = self.kernel.save_trader_state();
         self.kernel.portfolio.borrow_mut().finalize_equity_curve();
 
@@ -987,6 +993,28 @@ impl BacktestEngine {
 
         self.log_post_run();
         save_result
+    }
+
+    /// Returns registered strategies whose state resolves to `Running` after the end sequence.
+    ///
+    /// Known causes include a stop deferred for a managed market exit that never completed,
+    /// and an earlier component stop failure making `Trader::stop_components` return before
+    /// reaching the strategy - so callers must report the state observed rather than
+    /// attribute a cause.
+    fn running_strategy_ids(&self) -> Vec<StrategyId> {
+        self.kernel
+            .trader
+            .borrow()
+            .strategy_ids()
+            .into_iter()
+            .filter(|strategy_id| match component_state(&strategy_id.inner()) {
+                Ok(state) => matches!(state, ComponentState::Running),
+                Err(e) => {
+                    log::warn!("Cannot resolve stop state for strategy {strategy_id}: {e}");
+                    false
+                }
+            })
+            .collect()
     }
 
     /// Reset the backtest engine.
@@ -2182,7 +2210,10 @@ mod tests {
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
-        orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{
+            Order, OrderAny, OrderTestBuilder,
+            stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
+        },
         types::{Money, Price, Quantity},
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents};
@@ -2302,6 +2333,47 @@ mod tests {
             .borrow_mut()
             .initialize_account();
         engine
+    }
+
+    fn create_engine_with_strategy(manage_stop: bool) -> (BacktestEngine, StrategyId) {
+        let mut engine = create_engine();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let strategy_id = StrategyId::from(if manage_stop {
+            "MANAGED-STOP-001"
+        } else {
+            "IMMEDIATE-STOP-001"
+        });
+        engine.add_instrument(&instrument).unwrap();
+        engine
+            .add_strategy(TestStrategy::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                manage_stop,
+                ..Default::default()
+            }))
+            .unwrap();
+
+        if manage_stop {
+            let order = OrderTestBuilder::new(OrderType::Market)
+                .trader_id(engine.trader_id())
+                .strategy_id(strategy_id)
+                .instrument_id(instrument.id())
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("1.000"))
+                .build();
+            let fill = OrderFilledTestBuilder::new(&order, &instrument).build();
+            let OrderEventAny::Filled(fill) = fill else {
+                unreachable!();
+            };
+            let position = Position::new(&instrument, fill);
+            engine
+                .kernel
+                .cache
+                .borrow_mut()
+                .add_position_without_order(&position, OmsType::Netting)
+                .unwrap();
+        }
+
+        (engine, strategy_id)
     }
 
     fn send_execution_command(command: TradingCommand) {
@@ -2868,6 +2940,53 @@ mod tests {
         assert!(engine.kernel.is_event_store_replay_configured());
         assert!(engine.kernel.is_event_store_replay());
         assert!(!engine.kernel.trader.borrow().is_running());
+    }
+
+    #[rstest]
+    fn test_end_reports_strategy_stranded_by_managed_stop() {
+        let (mut engine, strategy_id) = create_engine_with_strategy(true);
+
+        let result = engine.run(
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(1)),
+            None,
+            false,
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(
+            component_state(&strategy_id.inner()).unwrap(),
+            ComponentState::Running
+        );
+        assert_eq!(engine.running_strategy_ids(), vec![strategy_id]);
+    }
+
+    #[rstest]
+    fn test_end_reports_no_cleanly_stopped_strategies() {
+        let mut empty_engine = create_engine();
+        let empty_result = empty_engine.run(
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(1)),
+            None,
+            false,
+        );
+        assert!(empty_result.is_ok());
+        assert!(empty_engine.running_strategy_ids().is_empty());
+
+        let (mut engine, strategy_id) = create_engine_with_strategy(false);
+        let result = engine.run(
+            Some(UnixNanos::from(0)),
+            Some(UnixNanos::from(1)),
+            None,
+            false,
+        );
+
+        assert!(result.is_ok());
+        assert_ne!(
+            component_state(&strategy_id.inner()).unwrap(),
+            ComponentState::Running
+        );
+        assert!(engine.running_strategy_ids().is_empty());
     }
 
     #[rstest]

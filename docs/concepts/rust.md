@@ -128,7 +128,7 @@ The minimum supported Rust version (MSRV) is **1.98.0**.
 | `high-precision` | `nautilus-model`    | 16-digit fixed precision (default is 9). Required for crypto. |
 | `stubs`          | `nautilus-model`    | Test instrument stubs (`audusd_sim`, etc.).                   |
 | `examples`       | `nautilus-trading`  | Example strategies (`EmaCross`, `GridMarketMaker`).           |
-| `streaming`      | `nautilus-backtest` | Catalog‑based data streaming via `BacktestNode`.              |
+| `streaming`      | `nautilus-backtest` | Catalog-based data streaming via `BacktestNode`.              |
 | `defi`           | `nautilus-model`    | DeFi data types. Implies `high-precision`.                    |
 
 :::tip
@@ -286,7 +286,7 @@ latency-sensitive native Rust code, not the portable authoring path.
 | ------------------------- | ---------------- | ----------------------------------- |
 | Native Rust binary        | Only when needed | `Strategy` and `DataActor` facades. |
 | Rust launched from Python | Only when needed | Same as native Rust.                |
-| Python‑authored component | No               | Facades only.                       |
+| Python-authored component | No               | Facades only.                       |
 
 Native traits expose borrowed core state, `Rc<RefCell<_>>`, and runtime
 references. Use them when native Rust code intentionally accepts those borrow
@@ -314,7 +314,7 @@ for normal strategy order construction. Reach for
 | `core_mut()`  | `&mut DataActorCore`     | Mutate actor internals.         |
 | `clock_mut()` | `RefMut<'_, dyn Clock>`  | Need a mutable clock borrow.    |
 | `clock_rc()`  | `Rc<RefCell<dyn Clock>>` | Store or pass the shared clock. |
-| `cache_ref()` | `Ref<'_, Cache>`         | Need short live‑cache reads.    |
+| `cache_ref()` | `Ref<'_, Cache>`         | Need short live-cache reads.    |
 | `cache_rc()`  | `Rc<RefCell<Cache>>`     | Mutate, store, or pass cache.   |
 
 #### `StrategyNative` methods

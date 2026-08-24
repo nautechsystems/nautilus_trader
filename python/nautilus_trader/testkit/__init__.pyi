@@ -162,6 +162,7 @@ class ExecTesterConfig:
         modify_stop_orders_to_maintain_offset: bool | None = None,
         cancel_replace_orders_to_maintain_tob_offset: bool | None = None,
         cancel_replace_stop_orders_to_maintain_offset: bool | None = None,
+        trigger_limit_order_maintenance_once: bool | None = None,
         use_post_only: bool | None = None,
         limit_aggressive: bool | None = None,
         use_quote_quantity: bool | None = None,
@@ -267,6 +268,8 @@ class ExecTesterConfig:
     def cancel_replace_orders_to_maintain_tob_offset(self) -> bool: ...
     @property
     def cancel_replace_stop_orders_to_maintain_offset(self) -> bool: ...
+    @property
+    def trigger_limit_order_maintenance_once(self) -> bool: ...
     @property
     def use_post_only(self) -> bool: ...
     @property

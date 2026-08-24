@@ -57,7 +57,7 @@ layout. Open `backtest_results.html` in your browser to view the interactive tea
 ### Backtest result input
 
 Let `result` be a `BacktestResult` returned by a completed backtest. Pass it without its node for a
-result‑only tearsheet:
+result-only tearsheet:
 
 ```python
 create_tearsheet(
@@ -67,7 +67,7 @@ create_tearsheet(
 ```
 
 To include starting account balances from node reports, retain the node state. The node is also
-required when the configured tearsheet includes a cache‑backed chart such as `bars_with_fills`.
+required when the configured tearsheet includes a cache-backed chart such as `bars_with_fills`.
 
 Follow the complete [`BacktestNode` setup](backtesting/apis-and-runs.md#high-level-api),
 setting `dispose_on_completion=False` on its `BacktestRunConfig`. Then pass the completed result and
@@ -236,7 +236,7 @@ NautilusTrader provides four built-in themes:
 | Theme Name      | Description                                   | Use Case                       |
 | --------------- | --------------------------------------------- | ------------------------------ |
 | `plotly_white`  | Clean light theme with dark gray headers.     | Default, professional reports. |
-| `plotly_dark`   | Dark background with standard Plotly colors.  | Low‑light environments.        |
+| `plotly_dark`   | Dark background with standard Plotly colors.  | Low-light environments.        |
 | `nautilus`      | Light theme with NautilusTrader brand colors. | Official light mode.           |
 | `nautilus_dark` | Dark theme with teal/cyan signature colors.   | Official dark mode.            |
 
@@ -318,10 +318,10 @@ config = TearsheetConfig(
 
 | Parameter           | Type                   | Default          | Description                         |
 | ------------------- | ---------------------- | ---------------- | ----------------------------------- |
-| `charts`            | `list[TearsheetChart]` | Built‑ins        | Charts to include, in order.        |
+| `charts`            | `list[TearsheetChart]` | Built-ins        | Charts to include, in order.        |
 | `theme`             | `str`                  | `"plotly_white"` | Theme name for styling.             |
 | `layout`            | `GridLayout`           | `None`           | Custom subplot grid layout.         |
-| `title`             | `str`                  | Auto‑generated   | Tearsheet title.                    |
+| `title`             | `str`                  | Auto-generated   | Tearsheet title.                    |
 | `include_benchmark` | `bool`                 | `True`           | Show benchmark when provided.       |
 | `benchmark_name`    | `str`                  | `"Benchmark"`    | Display name for benchmark.         |
 | `height`            | `int`                  | `1500`           | Total height in pixels.             |

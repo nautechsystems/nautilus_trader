@@ -46,7 +46,7 @@ arrives. See [order book immutability](fill-prices-and-matching.md#order-book-im
 | `SizeAwareFillModel`         | Changes the book shape at an order size of 10 units.    |
 | `CompetitionAwareFillModel`  | Exposes a configurable fraction of 1,000 units at best. |
 | `VolumeSensitiveFillModel`   | Places 25% of its internal volume at best.              |
-| `MarketHoursFillModel`       | Uses a normal or one‑tick‑wider synthetic spread.       |
+| `MarketHoursFillModel`       | Uses a normal or one-tick-wider synthetic spread.       |
 
 The tier sizes are model constants expressed in instrument quantity units. Confirm that they suit
 the scale of the instrument before using a tiered model.

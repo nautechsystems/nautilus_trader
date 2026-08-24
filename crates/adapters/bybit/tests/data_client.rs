@@ -47,21 +47,24 @@ use nautilus_bybit::{
 };
 use nautilus_common::{
     clients::DataClient,
-    live::runner::set_data_event_sender,
+    live::runner::{replace_system_event_sender, set_data_event_sender},
     messages::{
-        DataEvent,
+        DataEvent, SystemEvent,
         data::{
             DataResponse, RequestBookSnapshot, RequestFundingRates, RequestInstrument,
             RequestInstruments, SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{data::Data, enums::BookType, identifiers::InstrumentId};
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 #[derive(Clone)]
 struct TestServerState {
@@ -402,9 +405,14 @@ async fn test_data_client_connect_disconnect() {
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
 
     let config = create_test_config(addr);
-    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry
+        .scope(|| BybitDataClient::new(*BYBIT_CLIENT_ID, config))
+        .unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
@@ -415,10 +423,34 @@ async fn test_data_client_connect_disconnect() {
         Duration::from_secs(5),
     )
     .await;
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("bybit-linear-data-streams");
+    let handle = registry.handle(*BYBIT_CLIENT_ID, endpoint).unwrap();
+
     assert_eq!(*state.connection_count.lock().await, 1);
+    assert_eq!(change.client_id, *BYBIT_CLIENT_ID);
+    assert_eq!(change.venue, Some(*BYBIT_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+    assert!(registry.handle(*BYBIT_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]

@@ -26,6 +26,7 @@ use std::{
 use futures_util::Stream;
 use nautilus_common::live::get_runtime;
 use nautilus_core::AtomicMap;
+use nautilus_live::{SocketControl, SocketControlFactory};
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,
@@ -59,6 +60,7 @@ struct ConnectionSlot {
     bytes_task: tokio::task::JoinHandle<()>,
     cancellation_token: CancellationToken,
     connection_mode: Arc<AtomicU8>,
+    socket_control: Option<SocketControl>,
 }
 
 /// Binance Spot public JSON WebSocket client.
@@ -68,12 +70,15 @@ pub struct BinanceSpotPublicJsonWebSocketClient {
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
     slots: Arc<Mutex<Vec<ConnectionSlot>>>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     out_tx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<BinanceSpotPublicWsMessage>>>>,
     out_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotPublicWsMessage>>>>,
     request_id_counter: Arc<AtomicU64>,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
+    socket_factory: Option<SocketControlFactory>,
+    socket_endpoint: Option<String>,
 }
 
 impl Debug for BinanceSpotPublicJsonWebSocketClient {
@@ -109,12 +114,15 @@ impl BinanceSpotPublicJsonWebSocketClient {
             heartbeat,
             signal: Arc::new(AtomicBool::new(false)),
             slots: Arc::new(Mutex::new(Vec::new())),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             out_tx: Arc::new(Mutex::new(None)),
             out_rx: Arc::new(Mutex::new(None)),
             request_id_counter: Arc::new(AtomicU64::new(1)),
             instruments_cache: Arc::new(AtomicMap::new()),
             transport_backend,
             proxy_url: None,
+            socket_factory: None,
+            socket_endpoint: None,
         }
     }
 
@@ -122,6 +130,18 @@ impl BinanceSpotPublicJsonWebSocketClient {
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
         self.proxy_url = proxy_url;
+        self
+    }
+
+    /// Configures socket state reporting and reconnect control for the stream pool.
+    #[must_use]
+    pub fn with_socket_control(
+        mut self,
+        factory: SocketControlFactory,
+        endpoint: impl Into<String>,
+    ) -> Self {
+        self.socket_factory = Some(factory);
+        self.socket_endpoint = Some(endpoint.into());
         self
     }
 
@@ -159,7 +179,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
         *self.out_tx.lock().expect("out_tx lock poisoned") = Some(out_tx);
         *self.out_rx.lock().expect("out_rx lock poisoned") = Some(out_rx);
 
-        let slot = self.create_connection().await?;
+        let slot = self.create_connection(0).await?;
         self.slots.lock().expect("slots lock poisoned").push(slot);
 
         log::debug!(
@@ -184,6 +204,9 @@ impl BinanceSpotPublicJsonWebSocketClient {
         };
 
         for slot in taken {
+            if let Some(control) = &slot.socket_control {
+                control.deregister();
+            }
             let _ = slot.cmd_tx.send(BinanceSpotPublicWsCommand::Disconnect);
             slot.cancellation_token.cancel();
             let _ = slot.bytes_task.await;
@@ -204,6 +227,8 @@ impl BinanceSpotPublicJsonWebSocketClient {
     /// Returns an error if command delivery fails or if the connection pool is exhausted.
     #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn subscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
+        let _connect_guard = self.connect_lock.lock().await;
+
         // Phase 1: filter already-subscribed streams (brief lock)
         let new_streams: Vec<String> = {
             let slots = self.slots.lock().expect("slots lock poisoned");
@@ -232,7 +257,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
                 break;
             }
 
-            let new_slot = self.create_connection().await?;
+            let new_slot = self.create_connection(slot_count).await?;
             let slot_count = {
                 let mut slots = self.slots.lock().expect("slots lock poisoned");
                 slots.push(new_slot);
@@ -369,7 +394,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
         self.instruments_cache.clone()
     }
 
-    async fn create_connection(&self) -> anyhow::Result<ConnectionSlot> {
+    async fn create_connection(&self, slot_index: usize) -> anyhow::Result<ConnectionSlot> {
         let out_tx = self
             .out_tx
             .lock()
@@ -402,17 +427,34 @@ impl BinanceSpotPublicJsonWebSocketClient {
             *BINANCE_WS_SUBSCRIPTION_QUOTA,
         )];
 
-        let client = WebSocketClient::connect(
+        let socket_control = self
+            .socket_factory
+            .as_ref()
+            .zip(self.socket_endpoint.as_ref())
+            .map(|(factory, endpoint)| {
+                let endpoint = if slot_index == 0 {
+                    endpoint.clone()
+                } else {
+                    format!("{endpoint}-{slot_index}")
+                };
+                factory.control(endpoint)
+            });
+        let client = WebSocketClient::connect_with_state_sink(
             config,
             Some(raw_handler),
             Some(ping_handler),
             keyed_quotas,
             Some(*BINANCE_WS_CONNECTION_QUOTA),
+            socket_control.as_ref().map(SocketControl::sink),
         )
         .await
         .map_err(|e| anyhow::anyhow!("Failed to connect Spot public JSON WS: {e}"))?;
 
         let connection_mode = client.connection_mode_atomic();
+        let reconnect_handle = client.reconnect_handle();
+        if let Some(control) = &socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
         let subscriptions_state = SubscriptionState::new('@');
         let cancellation_token = CancellationToken::new();
 
@@ -504,6 +546,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
             bytes_task,
             cancellation_token,
             connection_mode,
+            socket_control,
         })
     }
 }
@@ -562,6 +605,7 @@ mod tests {
             bytes_task,
             cancellation_token: CancellationToken::new(),
             connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Active as u8)),
+            socket_control: None,
         };
 
         (slot, cmd_rx)

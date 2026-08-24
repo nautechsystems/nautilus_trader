@@ -77,14 +77,11 @@ use nautilus_trading::{
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
-use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt},
-    net::TcpListener,
-};
+use tokio::{io::AsyncWriteExt, net::TcpListener};
 
 use crate::common::{
-    MockState, accept_and_auth, create_test_http_client, load_fixture, plain_stream_config,
-    start_mock_http, start_mock_stream, test_credential,
+    MockState, accept_and_activate, create_test_http_client, load_fixture, load_json_fixture,
+    plain_stream_config, start_mock_http, start_mock_stream, test_credential,
 };
 
 const TRADER_ID: &str = "TESTER-001";
@@ -252,10 +249,7 @@ impl StreamFeeder {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
         tokio::spawn(async move {
-            let (mut reader, mut write_half) = accept_and_auth(&listener).await;
-            // Drain the order-subscription line the client sends after auth.
-            let mut line = String::new();
-            reader.read_line(&mut line).await.ok();
+            let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
             while let Some(frame) = rx.recv().await {
                 write_half
@@ -268,7 +262,9 @@ impl StreamFeeder {
     }
 
     fn feed(&self, fixture_rel_path: &str) {
-        self.tx.send(load_fixture(fixture_rel_path)).unwrap();
+        let mut frame = load_json_fixture(fixture_rel_path);
+        frame["id"] = 2.into();
+        self.tx.send(frame.to_string()).unwrap();
     }
 }
 

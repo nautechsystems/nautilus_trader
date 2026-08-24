@@ -53,6 +53,7 @@ use nautilus_core::{
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate},
     enums::{BookType, MarketStatusAction},
@@ -135,6 +136,11 @@ impl AxDataClient {
     ) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let ws_client = ws_client.with_socket_control(SocketControl::new(
+            client_id,
+            Some(*AX_VENUE),
+            "architect-ax-data-streams",
+        ));
 
         // Share instruments cache with HTTP client
         let instruments = http_client.instruments_cache.clone();

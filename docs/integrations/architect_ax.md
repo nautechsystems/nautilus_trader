@@ -161,10 +161,10 @@ for historical data backfill.
 
 | AX Data           | Nautilus Data Type  | Notes                                                          |
 | ----------------- | ------------------- | -------------------------------------------------------------- |
-| Order book (L1)   | `QuoteTick`         | Best bid/ask top‑of‑book from L1 book subscription.            |
+| Order book (L1)   | `QuoteTick`         | Best bid/ask top-of-book from L1 book subscription.            |
 | Order book (L2)   | `OrderBookDelta`    | Aggregated price levels.                                       |
-| Order book (L3)   | `OrderBookDelta`    | Per‑snapshot order quantities with synthetic IDs.              |
-| Trades            | `TradeTick`         | Real‑time trade events from trade‑only WebSocket subscription. |
+| Order book (L3)   | `OrderBookDelta`    | Per-snapshot order quantities with synthetic IDs.              |
+| Trades            | `TradeTick`         | Real-time trade events from trade-only WebSocket subscription. |
 | Mark price        | `MarkPriceUpdate`   | Extracted from L1 ticker subscription.                         |
 | Bars/candles      | `Bar`               | OHLCV data (total volume only, no buy/sell breakdown).         |
 | Funding rates     | `FundingRateUpdate` | Polled via HTTP; interval configurable.                        |
@@ -174,11 +174,11 @@ AX instrument states map to `MarketStatusAction` as follows:
 
 | AX state                            | `MarketStatusAction`        |
 | ----------------------------------- | --------------------------- |
-| Pre‑open                            | `PRE_OPEN`                  |
+| Pre-open                            | `PRE_OPEN`                  |
 | Open                                | `TRADING`                   |
-| Closed, closed‑frozen               | `CLOSE`                     |
+| Closed, closed-frozen               | `CLOSE`                     |
 | Halted                              | `HALT`                      |
-| Match‑and‑close auction             | `CROSS`                     |
+| Match-and-close auction             | `CROSS`                     |
 | Suspended                           | `SUSPEND`                   |
 | Delisted, or any unrecognized state | `NOT_AVAILABLE_FOR_TRADING` |
 
@@ -273,7 +273,7 @@ configured trigger, then sends a plain limit order to this adapter.
 
 | Order Type             | Supported | Notes                                           |
 | ---------------------- | --------- | ----------------------------------------------- |
-| `MARKET`               | ✓         | Adapter‑simulated with an aggressive IOC price. |
+| `MARKET`               | ✓         | Adapter-simulated with an aggressive IOC price. |
 | `LIMIT`                | ✓         | Maps to the native AX priced order shape.       |
 | `STOP_LIMIT`           | -         | *Not supported by AX Exchange*.                 |
 | `LIMIT_IF_TOUCHED`     | -         | *Not supported by AX Exchange*.                 |
@@ -285,8 +285,8 @@ configured trigger, then sends a plain limit order to this adapter.
 
 | Instruction      | Supported | Notes                                                         |
 | ---------------- | --------- | ------------------------------------------------------------- |
-| `post_only`      | ✓         | Maker‑only; rejected if the order would take.                 |
-| `reduce_only`    | -         | Rejected locally; AX exposes no reduce‑only field.            |
+| `post_only`      | ✓         | Maker-only; rejected if the order would take.                 |
+| `reduce_only`    | -         | Rejected locally; AX exposes no reduce-only field.            |
 | `quote_quantity` | -         | Rejected locally; the adapter wire path encodes base only.    |
 | `display_qty`    | -         | Rejected locally; the adapter wire path has no display field. |
 
@@ -322,15 +322,15 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | Cancel order       | ✓         | Single order cancellation.                                         |
 | Cancel all orders  | ✓         | Cancel all open orders for an instrument.                          |
 | Batch cancel       | -         | The adapter sends individual cancels.                              |
-| Order lists        | ✓         | Sequential submission (orders submitted individually, non‑atomic). |
+| Order lists        | ✓         | Sequential submission (orders submitted individually, non-atomic). |
 
 ### Position management
 
 | Feature         | Supported | Notes                                |
 | --------------- | --------- | ------------------------------------ |
-| Query positions | ✓         | Real‑time position updates.          |
+| Query positions | ✓         | Real-time position updates.          |
 | Position mode   | -         | Netting mode only.                   |
-| Cross margin    | ✓         | Cross‑margin across all instruments. |
+| Cross margin    | ✓         | Cross-margin across all instruments. |
 
 ### Order querying
 
@@ -338,7 +338,7 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | -------------------- | --------- | ------------------------------------------------------- |
 | Query open orders    | ✓         | List all active orders.                                 |
 | Query single order   | ✓         | By venue order ID or client order ID (any order state). |
-| Order status reports | ✓         | Open‑order checks and historical startup mass status.   |
+| Order status reports | ✓         | Open-order checks and historical startup mass status.   |
 | Fill reports         | ✓         | Execution and fill history.                             |
 
 :::note
@@ -486,6 +486,10 @@ credentials are valid and have trading permissions.
   inconsistent classification.
 - **Unfilled IOC/FOK**: AX reports an unfilled immediate order as an expiry; the adapter maps
   it to `OrderCanceled` to match NautilusTrader semantics.
+- **One-tick quotes**: Example testers place post-only limits one tick from top of book.
+  Those quotes can still fill. Flatten leftovers with
+  `cargo run --bin ax-flatten -p nautilus-architect-ax` (`AX_IS_SANDBOX` defaults to true).
+  That binary cancels all open orders on the account, then closes every position.
 
 ## Contributing
 

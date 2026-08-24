@@ -285,7 +285,7 @@ pub fn make_trade_id(uo: &UnmatchedOrder) -> TradeId {
 /// Betfair provides cumulative `sm` (size matched) and `avp` (average price
 /// matched) on each order update. This tracker maintains per-bet state to
 /// derive individual fill quantities and prices for each update.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct FillTracker {
     filled_qty: AHashMap<String, Decimal>,
     voided_qty: AHashMap<String, Decimal>,

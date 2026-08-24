@@ -42,6 +42,6 @@ def on_position_opened(self, event: PositionOpened) -> None:
 
 ## Related guides
 
-- [Events](index.md) - Event categories, dispatch, and the fill‑to‑position chain.
+- [Events](index.md) - Event categories, dispatch, and the fill-to-position chain.
 - [Positions](../positions.md) - Position lifecycle, aggregation, and PnL.
 - [Orders](../orders/) - Orders whose fills open and close positions.

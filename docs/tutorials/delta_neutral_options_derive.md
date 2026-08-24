@@ -174,12 +174,12 @@ The Derive runner reads these environment variables:
 | `DERIVE_DELTA_NEUTRAL_REHEDGE_DELTA_THRESHOLD`    | `0.5`                  | Portfolio delta hedge threshold.   |
 | `DERIVE_DELTA_NEUTRAL_REHEDGE_INTERVAL_SECS`      | `30`                   | Periodic hedge check interval.     |
 | `DERIVE_DELTA_NEUTRAL_CONTRACTS`                  | `1`                    | Contracts per option leg.          |
-| `DERIVE_DELTA_NEUTRAL_TARGET_CALL_DELTA`          | `0.20`                 | Call strike‑selection target.      |
-| `DERIVE_DELTA_NEUTRAL_TARGET_PUT_DELTA`           | `-0.20`                | Put strike‑selection target.       |
+| `DERIVE_DELTA_NEUTRAL_TARGET_CALL_DELTA`          | `0.20`                 | Call strike-selection target.      |
+| `DERIVE_DELTA_NEUTRAL_TARGET_PUT_DELTA`           | `-0.20`                | Put strike-selection target.       |
 | `DERIVE_DELTA_NEUTRAL_EXPIRY`                     | unset                  | Optional expiry substring filter.  |
-| `DERIVE_DELTA_NEUTRAL_ENTRY_PREMIUM_OFFSET_TICKS` | `1`                    | Sell‑entry ticks above option ask. |
+| `DERIVE_DELTA_NEUTRAL_ENTRY_PREMIUM_OFFSET_TICKS` | `1`                    | Sell-entry ticks above option ask. |
 | `DERIVE_DELTA_NEUTRAL_ENTRY_IV_OFFSET`            | `0.0`                  | Used only outside premium mode.    |
-| `DERIVE_DELTA_NEUTRAL_MAX_FEE_PER_CONTRACT`       | `1000`                 | Signed per‑contract fee cap.       |
+| `DERIVE_DELTA_NEUTRAL_MAX_FEE_PER_CONTRACT`       | `1000`                 | Signed per-contract fee cap.       |
 | `DERIVE_DELTA_NEUTRAL_MARKET_ORDER_SLIPPAGE_BPS`  | adapter default        | Market hedge slippage bound.       |
 
 Derive signs explicit premium limit prices. The runner enables the strategy's premium-entry mode

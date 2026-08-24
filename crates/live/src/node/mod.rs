@@ -93,7 +93,7 @@ use nautilus_common::{
         DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent,
         data::DataCommand,
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, TradingCommand},
-        system::{QueueStateChanged, SocketStateChange, SocketStateChanged},
+        system::{QueueStateChanged, ReconnectSocket, SocketStateChange, SocketStateChanged},
     },
     msgbus::{self, BusMessage, MessagingSwitchboard},
     runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
@@ -111,6 +111,7 @@ use nautilus_model::{
     orders::Order,
     reports::PositionStatusReport,
 };
+use nautilus_network::mode::ReconnectRequestOutcome;
 #[cfg(feature = "python")]
 use nautilus_system::trader::Trader;
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
@@ -130,6 +131,7 @@ use crate::{
         },
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
+    socket::{SocketReconnectLookup, SocketReconnectRegistry},
 };
 
 pub mod builder;
@@ -170,6 +172,7 @@ pub struct LiveNode {
     handle: LiveNodeHandle,
     exec_manager: ExecutionManager,
     exec_clients: Vec<LiveExecutionClient>,
+    socket_registry: SocketReconnectRegistry,
     cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
     external_msgbus: Option<ExternalMessageBusIngress>,
     shutdown_deadline: Option<dst::time::Instant>,
@@ -182,12 +185,17 @@ impl LiveNode {
     ///
     /// This is an internal constructor used by `LiveNodeBuilder`.
     #[must_use]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "builder components have distinct lifecycle roles"
+    )]
     pub(crate) fn new_from_builder(
         kernel: NautilusKernel,
         runner: AsyncRunner,
         config: LiveNodeConfig,
         exec_manager: ExecutionManager,
         exec_clients: Vec<LiveExecutionClient>,
+        socket_registry: SocketReconnectRegistry,
         cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
         external_msgbus: Option<ExternalMessageBusIngress>,
     ) -> Self {
@@ -198,6 +206,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients,
+            socket_registry,
             cache_database_factory,
             external_msgbus,
             shutdown_deadline: None,
@@ -262,7 +271,7 @@ impl LiveNode {
             kernel.clock.clone(),
             kernel.cache.clone(),
             exec_manager_config,
-        );
+        )?;
 
         let node = Self {
             kernel,
@@ -271,6 +280,7 @@ impl LiveNode {
             handle: LiveNodeHandle::new(),
             exec_manager,
             exec_clients: Vec::new(),
+            socket_registry: SocketReconnectRegistry::default(),
             cache_database_factory: None,
             external_msgbus: None,
             shutdown_deadline: None,
@@ -583,7 +593,56 @@ impl LiveNode {
     fn process_system_command(&self, command: SystemCommand) {
         match command {
             SystemCommand::ReconnectSocket(command) => {
-                self.kernel.process_socket_reconnect(command);
+                self.process_socket_reconnect(command);
+            }
+        }
+    }
+
+    fn process_socket_reconnect(&self, command: ReconnectSocket) {
+        let outcome = if command.trader_id == self.config.trader_id {
+            Self::request_socket_reconnect(
+                self.socket_registry
+                    .get(command.client_id, command.endpoint),
+            )
+        } else {
+            SocketReconnectDispatchOutcome::InvalidTrader
+        };
+
+        if outcome == SocketReconnectDispatchOutcome::Accepted {
+            log::info!(
+                "Requested socket reconnect for client {} endpoint {}",
+                command.client_id,
+                command.endpoint
+            );
+        } else {
+            log::warn!(
+                "Rejected socket reconnect request for client {} endpoint {}: {outcome:?}",
+                command.client_id,
+                command.endpoint
+            );
+        }
+    }
+
+    fn request_socket_reconnect(lookup: SocketReconnectLookup) -> SocketReconnectDispatchOutcome {
+        match lookup {
+            SocketReconnectLookup::Handle(handle) => match handle.request_reconnect() {
+                ReconnectRequestOutcome::Accepted => SocketReconnectDispatchOutcome::Accepted,
+                ReconnectRequestOutcome::AlreadyReconnecting => {
+                    SocketReconnectDispatchOutcome::AlreadyReconnecting
+                }
+                ReconnectRequestOutcome::Disconnected => {
+                    SocketReconnectDispatchOutcome::Disconnected
+                }
+                ReconnectRequestOutcome::Closed => SocketReconnectDispatchOutcome::Closed,
+                ReconnectRequestOutcome::Unsupported => SocketReconnectDispatchOutcome::Unsupported,
+            },
+            SocketReconnectLookup::ClientNotFound => SocketReconnectDispatchOutcome::UnknownClient,
+            SocketReconnectLookup::Unsupported => SocketReconnectDispatchOutcome::Unsupported,
+            SocketReconnectLookup::EndpointNotFound => {
+                SocketReconnectDispatchOutcome::UnknownEndpoint
+            }
+            SocketReconnectLookup::AmbiguousEndpoint => {
+                SocketReconnectDispatchOutcome::AmbiguousEndpoint
             }
         }
     }
@@ -2963,6 +3022,19 @@ impl LiveNode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SocketReconnectDispatchOutcome {
+    Accepted,
+    AlreadyReconnecting,
+    Disconnected,
+    Closed,
+    Unsupported,
+    InvalidTrader,
+    UnknownClient,
+    UnknownEndpoint,
+    AmbiguousEndpoint,
+}
+
 fn record_runner_dispatch(
     metrics: &RunnerMetrics,
     channel: SystemChannel,
@@ -3553,6 +3625,7 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::socket::SocketControl;
 
     struct ExternalIngressLogCapture {
         messages: Mutex<Vec<String>>,
@@ -3772,6 +3845,108 @@ mod tests {
         assert_eq!(events[0].ts_init, events[0].ts_event);
         drop(events);
         msgbus::get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    #[case::accepted(
+        ReconnectRequestOutcome::Accepted,
+        SocketReconnectDispatchOutcome::Accepted
+    )]
+    #[case::already_reconnecting(
+        ReconnectRequestOutcome::AlreadyReconnecting,
+        SocketReconnectDispatchOutcome::AlreadyReconnecting
+    )]
+    #[case::disconnected(
+        ReconnectRequestOutcome::Disconnected,
+        SocketReconnectDispatchOutcome::Disconnected
+    )]
+    #[case::closed(
+        ReconnectRequestOutcome::Closed,
+        SocketReconnectDispatchOutcome::Closed
+    )]
+    #[case::unsupported(
+        ReconnectRequestOutcome::Unsupported,
+        SocketReconnectDispatchOutcome::Unsupported
+    )]
+    fn test_request_socket_reconnect_maps_transport_outcome(
+        #[case] transport: ReconnectRequestOutcome,
+        #[case] expected: SocketReconnectDispatchOutcome,
+    ) {
+        let registry = SocketReconnectRegistry::default();
+        let client_id = ClientId::from("TEST");
+        let endpoint = Ustr::from("test-streams");
+        let control = SocketControl::with_registry(client_id, None, endpoint, &registry);
+        let _sink = control.sink();
+        control.register(move || transport);
+
+        let outcome = LiveNode::request_socket_reconnect(registry.get(client_id, endpoint));
+
+        assert_eq!(outcome, expected);
+    }
+
+    #[rstest]
+    #[case::client_not_found(
+        SocketReconnectLookup::ClientNotFound,
+        SocketReconnectDispatchOutcome::UnknownClient
+    )]
+    #[case::unsupported(
+        SocketReconnectLookup::Unsupported,
+        SocketReconnectDispatchOutcome::Unsupported
+    )]
+    #[case::endpoint_not_found(
+        SocketReconnectLookup::EndpointNotFound,
+        SocketReconnectDispatchOutcome::UnknownEndpoint
+    )]
+    #[case::ambiguous(
+        SocketReconnectLookup::AmbiguousEndpoint,
+        SocketReconnectDispatchOutcome::AmbiguousEndpoint
+    )]
+    fn test_request_socket_reconnect_maps_lookup_failure(
+        #[case] lookup: SocketReconnectLookup,
+        #[case] expected: SocketReconnectDispatchOutcome,
+    ) {
+        assert_eq!(LiveNode::request_socket_reconnect(lookup), expected);
+    }
+
+    #[rstest]
+    fn test_process_socket_reconnect_routes_only_matching_trader() {
+        let trader_id = TraderId::from("SOCKET-001");
+        let config = LiveNodeConfig {
+            trader_id,
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let node = LiveNode::build("SocketReconnectNode".to_string(), Some(config)).unwrap();
+        let client_id = ClientId::from("TEST");
+        let endpoint = Ustr::from("test-streams");
+        let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let request_count = Arc::clone(&requests);
+        let control =
+            SocketControl::with_registry(client_id, None, endpoint, &node.socket_registry);
+        let _sink = control.sink();
+        control.register(move || {
+            request_count.fetch_add(1, Ordering::SeqCst);
+            ReconnectRequestOutcome::Accepted
+        });
+
+        node.process_system_command(SystemCommand::ReconnectSocket(ReconnectSocket::new(
+            TraderId::from("OTHER-001"),
+            client_id,
+            endpoint,
+            UnixNanos::default(),
+        )));
+        assert_eq!(requests.load(Ordering::SeqCst), 0);
+
+        node.process_system_command(SystemCommand::ReconnectSocket(ReconnectSocket::new(
+            trader_id,
+            client_id,
+            endpoint,
+            UnixNanos::default(),
+        )));
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
     }
 
     #[rstest]

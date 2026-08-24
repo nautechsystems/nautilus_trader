@@ -41,7 +41,7 @@ use nautilus_common::{
     live::dst,
     messages::{
         execution::{
-            CancelAllOrders, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            CancelOrder, GenerateOrderStatusReport, GenerateOrderStatusReports,
             GeneratePositionStatusReports, QueryOrder,
         },
         system::{QueueStateChanged, ShutdownSystem},
@@ -163,7 +163,7 @@ impl DataActor for StopOnStartStrategy {
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.stop_count.fetch_add(1, Ordering::Relaxed);
-        self.cancel_all_orders(self.instrument_id, None, None, None)
+        self.cancel_all_orders(self.instrument_id, None, None, true, None)
     }
 }
 
@@ -304,8 +304,8 @@ mod serial_tests {
         mass_status_requested: Arc<AtomicBool>,
         mass_status: Arc<Mutex<Option<ExecutionMassStatus>>>,
         registered_external_orders: Arc<Mutex<Vec<ClientOrderId>>>,
-        cancel_all_orders_received: Arc<AtomicUsize>,
-        cancel_all_orders_while_connected: Arc<AtomicBool>,
+        cancel_orders_received: Arc<AtomicUsize>,
+        cancel_orders_while_connected: Arc<AtomicBool>,
     }
 
     #[derive(Clone, Debug, Default)]
@@ -784,11 +784,11 @@ mod serial_tests {
             Ok(())
         }
 
-        fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
+        fn cancel_order(&self, _cmd: CancelOrder) -> anyhow::Result<()> {
             self.state
-                .cancel_all_orders_received
+                .cancel_orders_received
                 .fetch_add(1, Ordering::Relaxed);
-            self.state.cancel_all_orders_while_connected.store(
+            self.state.cancel_orders_while_connected.store(
                 self.state.connected.load(Ordering::Relaxed),
                 Ordering::Relaxed,
             );
@@ -2765,12 +2765,8 @@ mod serial_tests {
         assert!(!state.connected.load(Ordering::Relaxed));
         assert!(node.kernel().trader().borrow().is_stopped());
         assert_eq!(stop_count.load(Ordering::Relaxed), 1);
-        assert_eq!(state.cancel_all_orders_received.load(Ordering::Relaxed), 1);
-        assert!(
-            state
-                .cancel_all_orders_while_connected
-                .load(Ordering::Relaxed)
-        );
+        assert_eq!(state.cancel_orders_received.load(Ordering::Relaxed), 1);
+        assert!(state.cancel_orders_while_connected.load(Ordering::Relaxed));
 
         node.dispose();
 

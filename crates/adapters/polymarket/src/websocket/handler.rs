@@ -219,8 +219,6 @@ impl FeedHandler {
                 secret: cred.api_secret(),
                 passphrase: cred.passphrase().to_string(),
             },
-            markets: vec![],
-            assets_ids: vec![],
             msg_type: "user",
         };
 

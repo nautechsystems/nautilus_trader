@@ -25,10 +25,10 @@ use nautilus_core::{UUID4, UnixNanos, python::to_pyvalue_err};
 use nautilus_data::engine::config::DataEngineConfig;
 use nautilus_execution::{
     engine::config::ExecutionEngineConfig,
-    models::{fill::FillModelAny, latency::LatencyModelAny},
+    models::latency::LatencyModelAny,
     python::{
         fee::{fee_model_any_to_pyobject, pyobject_to_fee_model_any},
-        fill::pyobject_to_fill_model_any,
+        fill::{fill_model_any_to_pyobject, pyobject_to_fill_model_any},
     },
 };
 use nautilus_model::{
@@ -929,21 +929,5 @@ fn simulation_module_any_to_pyobject(
 fn latency_model_any_to_pyobject(py: Python<'_>, model: &LatencyModelAny) -> PyResult<Py<PyAny>> {
     match model {
         LatencyModelAny::Static(model) => model.clone().into_py_any(py),
-    }
-}
-
-fn fill_model_any_to_pyobject(py: Python<'_>, model: &FillModelAny) -> PyResult<Py<PyAny>> {
-    match model {
-        FillModelAny::Default(model) => model.clone().into_py_any(py),
-        FillModelAny::BestPrice(model) => model.clone().into_py_any(py),
-        FillModelAny::OneTickSlippage(model) => model.clone().into_py_any(py),
-        FillModelAny::Probabilistic(model) => model.clone().into_py_any(py),
-        FillModelAny::TwoTier(model) => model.clone().into_py_any(py),
-        FillModelAny::ThreeTier(model) => model.clone().into_py_any(py),
-        FillModelAny::LimitOrderPartialFill(model) => model.clone().into_py_any(py),
-        FillModelAny::SizeAware(model) => model.clone().into_py_any(py),
-        FillModelAny::CompetitionAware(model) => model.clone().into_py_any(py),
-        FillModelAny::VolumeSensitive(model) => model.clone().into_py_any(py),
-        FillModelAny::MarketHours(model) => model.clone().into_py_any(py),
     }
 }

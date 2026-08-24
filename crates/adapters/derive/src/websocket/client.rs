@@ -35,6 +35,7 @@ use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::UUID4;
+use nautilus_live::SocketControl;
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::clock::MonotonicClock,
@@ -156,6 +157,7 @@ pub struct DeriveWebSocketClient {
     request_timeout: Duration,
     conn_id: Arc<ArcSwap<String>>,
     rate_limiter: Arc<WsRateLimiter>,
+    socket_control: Option<SocketControl>,
 }
 
 /// Cloneable command handle for Derive public market data subscriptions.
@@ -277,7 +279,15 @@ impl DeriveWebSocketClient {
             request_timeout: WS_REQUEST_TIMEOUT,
             conn_id: Arc::new(ArcSwap::from_pointee(UUID4::new().to_string())),
             rate_limiter,
+            socket_control: None,
         }
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
     }
 
     /// Returns the configured WebSocket URL.
@@ -357,9 +367,16 @@ impl DeriveWebSocketClient {
         // Rate limiting runs caller-side via `self.rate_limiter` before frames
         // are enqueued, so the network client's own limiter is left unconfigured
         // and never sleeps inside the single feed-handler task.
-        let client = WebSocketClient::connect(cfg, Some(message_handler), None, vec![], None)
-            .await
-            .map_err(|e| DeriveWsError::transport(e.to_string()))?;
+        let client = WebSocketClient::connect_with_state_sink(
+            cfg,
+            Some(message_handler),
+            None,
+            vec![],
+            None,
+            self.socket_control.as_ref().map(SocketControl::sink),
+        )
+        .await
+        .map_err(|e| DeriveWsError::transport(e.to_string()))?;
 
         // Register the tracker so the network controller clears
         // `is_authenticated()` on dead-socket detection, not just on the
@@ -375,6 +392,7 @@ impl DeriveWebSocketClient {
 
         let connection_mode = client.connection_mode_atomic();
         let connection_epoch = client.connection_epoch_atomic();
+        let reconnect_handle = client.reconnect_handle();
         self.connection_mode.store(Arc::clone(&connection_mode));
         self.connection_epoch.store(Arc::clone(&connection_epoch));
         log::debug!("Derive WebSocket connected: {}", self.url);
@@ -383,6 +401,10 @@ impl DeriveWebSocketClient {
             return Err(DeriveWsError::transport(format!(
                 "failed to send SetClient command: {e}",
             )));
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
         }
 
         let signal = Arc::clone(&self.signal);
@@ -574,6 +596,10 @@ impl DeriveWebSocketClient {
             .store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
         self.subscriptions.clear();
         self.signal.store(false, Ordering::Relaxed);
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
     }
 
     /// Disconnects the WebSocket connection and awaits the handler task.

@@ -36,6 +36,7 @@ use nautilus_core::{
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var_opt},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::bar::BarType,
     identifiers::{AccountId, InstrumentId},
@@ -90,6 +91,7 @@ pub struct BitmexWebSocketClient {
     instruments: Arc<DashMap<Ustr, InstrumentAny>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
+    socket_control: Option<SocketControl>,
 }
 
 impl BitmexWebSocketClient {
@@ -140,7 +142,15 @@ impl BitmexWebSocketClient {
             instruments: Arc::new(DashMap::new()),
             transport_backend,
             proxy_url,
+            socket_control: None,
         })
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
     }
 
     /// Creates a new [`BitmexWebSocketClient`] with environment variable credential resolution.
@@ -287,6 +297,7 @@ impl BitmexWebSocketClient {
 
         // Replace connection state so all clones see the underlying WebSocketClient's state
         self.connection_mode.store(client.connection_mode_atomic());
+        let reconnect_handle = client.reconnect_handle();
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<BitmexWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -299,6 +310,10 @@ impl BitmexWebSocketClient {
             return Err(BitmexWsError::ClientError(format!(
                 "Failed to send WebSocketClient to handler: {e}"
             )));
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
         }
 
         let signal = self.signal.clone();
@@ -553,12 +568,13 @@ impl BitmexWebSocketClient {
         };
 
         let keyed_quotas = vec![];
-        let client = WebSocketClient::connect(
+        let client = WebSocketClient::connect_with_state_sink(
             config,
             Some(message_handler),
             None,
             keyed_quotas,
             None, // default_quota
+            self.socket_control.as_ref().map(SocketControl::sink),
         )
         .await
         .map_err(|e| BitmexWsError::ClientError(e.to_string()))?;
@@ -702,6 +718,10 @@ impl BitmexWebSocketClient {
         }
 
         log::debug!("Closed");
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
 
         Ok(())
     }

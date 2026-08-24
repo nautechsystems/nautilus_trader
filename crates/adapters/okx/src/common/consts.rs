@@ -38,6 +38,18 @@ pub static OKX_CLIENT_ID: LazyLock<ClientId> = LazyLock::new(|| ClientId::new(Us
 /// See <https://www.okx.com/docs-v5/en/#overview-broker-program> for further details.
 pub const OKX_NAUTILUS_BROKER_ID: &str = "5328c82e5542BCDE";
 
+/// Default lookback for terminal orders and fills during reconciliation.
+///
+/// Active orders and current positions are requested independently of this window. The three-day
+/// default matches the retention of `GET /api/v5/trade/fills`.
+pub const OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS: u64 = 3 * 24 * 60;
+
+/// Maximum lookback for terminal orders and fills during reconciliation.
+///
+/// Seven days is the longest complete window across the regular order history and spread trade
+/// history endpoints used for reconciliation.
+pub const OKX_RECONCILIATION_LOOKBACK_MAX_MINS: u64 = 7 * 24 * 60;
+
 // Use the canonical host with www to avoid cross-domain redirects which may
 // strip authentication headers in some HTTP clients and middleboxes.
 pub const OKX_HTTP_URL: &str = "https://www.okx.com";
@@ -149,9 +161,12 @@ pub const OKX_ADVANCE_ALGO_ORDER_TYPES: &[OrderType] = &[OrderType::TrailingStop
 
 /// OKX error codes that should trigger retries.
 ///
-/// Only retry on temporary network/system issues. `50004` ("request
-/// timeout, outcome unknown") is safe because every order/cancel/amend
-/// path sends `clOrdId` and OKX rejects duplicates with `51000`.
+/// Only retry on temporary network/system issues. Retries never apply to
+/// order submission POSTs: OKX rejects a duplicate `clOrdId` only while the
+/// first order rests open, so a submit whose response was lost can already
+/// have filled, and retrying could place a second live order. Submits are
+/// sent once, and an ambiguous outcome resolves through stream updates and
+/// reconciliation.
 ///
 /// # References
 ///

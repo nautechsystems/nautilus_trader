@@ -110,7 +110,7 @@ The loader returns a `Vec<BetfairDataItem>`:
 | `InstrumentClose`   | Settlement event.                               | Yes, `Data::InstrumentClose` |
 | `SequenceCompleted` | Batch completion marker.                        | -                            |
 | `RaceRunnerData`    | GPS tracking data (horse/greyhound racing).     | -                            |
-| `RaceProgress`      | Race‑level progress data.                       | -                            |
+| `RaceProgress`      | Race-level progress data.                       | -                            |
 
 The backtest engine accepts the `Data` enum, so we map the variants we need
 and skip the Betfair-specific types:

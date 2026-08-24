@@ -308,24 +308,12 @@ pub(crate) fn dispatch_order_update(
     let ts_event =
         parse_millis_or_init(msg.event_time, "Futures order dispatch event time", ts_init);
 
-    let cache = http_client.instruments_cache();
-    let cached_instrument = cache.get(&symbol_ustr);
-
-    let (instrument_id, price_precision, size_precision) = if let Some(ref inst) = cached_instrument
-    {
-        (
-            inst.id(),
-            inst.price_precision() as u8,
-            inst.quantity_precision() as u8,
-        )
-    } else {
-        let id = format_instrument_id(&symbol_ustr, product_type);
-        log::warn!(
-            "Instrument not in cache for {}, using default precision",
-            order.symbol
-        );
-        (id, 8, 8)
+    let Some((cached_instrument, price_precision, size_precision)) =
+        resolve_instrument_metadata(http_client, symbol_ustr, product_type, "order update")
+    else {
+        return;
     };
+    let instrument_id = cached_instrument.id();
 
     let client_order_id = match decode_order_client_id(order) {
         Ok(client_order_id) => client_order_id,
@@ -339,15 +327,8 @@ pub(crate) fn dispatch_order_update(
     // reconciliation reports regardless of tracked/untracked state, because
     // they have no locally submitted identity
     if order.is_exchange_generated() {
-        let is_linear = cached_instrument
-            .as_ref()
-            .map_or(product_type == BinanceProductType::UsdM, |inst| {
-                matches!(inst.value(), BinanceFuturesInstrument::UsdM(_))
-            });
-
-        let quote_currency = cached_instrument
-            .as_ref()
-            .map_or_else(Currency::USDT, |inst| inst.value().quote_currency());
+        let is_linear = matches!(cached_instrument, BinanceFuturesInstrument::UsdM(_));
+        let quote_currency = cached_instrument.quote_currency();
 
         let taker_fee = if is_linear {
             Some(default_taker_fee)
@@ -987,24 +968,12 @@ pub(crate) fn dispatch_trade_lite(
     let ts_init = clock.get_time_ns();
     let ts_event = parse_millis_or_init(msg.event_time, "Futures TRADE_LITE event time", ts_init);
 
-    let cache = http_client.instruments_cache();
-    let cached_instrument = cache.get(&symbol_ustr);
-
-    let (instrument_id, price_precision, size_precision) = if let Some(ref inst) = cached_instrument
-    {
-        (
-            inst.id(),
-            inst.price_precision() as u8,
-            inst.quantity_precision() as u8,
-        )
-    } else {
-        let id = format_instrument_id(&symbol_ustr, product_type);
-        log::warn!(
-            "Instrument not in cache for {}, using default precision",
-            msg.symbol
-        );
-        (id, 8, 8)
+    let Some((cached_instrument, price_precision, size_precision)) =
+        resolve_instrument_metadata(http_client, symbol_ustr, product_type, "TRADE_LITE")
+    else {
+        return;
     };
+    let instrument_id = cached_instrument.id();
 
     let client_order_id =
         match decode_client_order_id(&msg.client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID) {
@@ -1081,9 +1050,7 @@ pub(crate) fn dispatch_trade_lite(
 
     // TRADE_LITE does not carry commission_asset, so fall back to the
     // instrument's quote currency (COIN-M and non-USDT USD-M symbols).
-    let quote_currency = cached_instrument
-        .as_ref()
-        .map_or_else(Currency::USDT, |inst| inst.value().quote_currency());
+    let quote_currency = cached_instrument.quote_currency();
 
     let filled = OrderFilled::new(
         emitter.trader_id(),
@@ -1318,21 +1285,12 @@ pub(crate) fn dispatch_algo_update(
     };
 
     let symbol_ustr = algo_data.symbol;
-    let (instrument_id, _price_precision, _size_precision) =
-        if let Some(inst) = http_client.instruments_cache().get(&symbol_ustr) {
-            (
-                inst.id(),
-                inst.price_precision() as u8,
-                inst.quantity_precision() as u8,
-            )
-        } else {
-            let id = format_instrument_id(&symbol_ustr, product_type);
-            log::warn!(
-                "Instrument not in cache for {}, using default precision",
-                algo_data.symbol
-            );
-            (id, 8, 8)
-        };
+    let Some((instrument, price_precision, size_precision)) =
+        resolve_instrument_metadata(http_client, symbol_ustr, product_type, "algo update")
+    else {
+        return;
+    };
+    let instrument_id = instrument.id();
 
     let identity = dispatch_state
         .order_identities
@@ -1435,8 +1393,8 @@ pub(crate) fn dispatch_algo_update(
                     algo_data,
                     msg.event_time,
                     instrument_id,
-                    _price_precision,
-                    _size_precision,
+                    price_precision,
+                    size_precision,
                     account_id,
                     ts_init,
                 ) {
@@ -1465,8 +1423,8 @@ pub(crate) fn dispatch_algo_update(
                     algo_data,
                     msg.event_time,
                     instrument_id,
-                    _price_precision,
-                    _size_precision,
+                    price_precision,
+                    size_precision,
                     account_id,
                     ts_init,
                 ) {
@@ -1513,6 +1471,39 @@ pub(crate) fn dispatch_algo_update(
             );
         }
     }
+}
+
+fn resolve_instrument_metadata(
+    http_client: &BinanceFuturesHttpClient,
+    symbol: ustr::Ustr,
+    product_type: BinanceProductType,
+    update: &str,
+) -> Option<(BinanceFuturesInstrument, u8, u8)> {
+    let expected_id = format_instrument_id(&symbol, product_type);
+    let Some(instrument) = http_client
+        .instruments_cache()
+        .get(&symbol)
+        .map(|instrument| instrument.value().clone())
+    else {
+        log::error!("Skipping Futures {update} without instrument metadata for {expected_id}");
+        return None;
+    };
+    let instrument_id = instrument.id();
+    if instrument_id != expected_id {
+        log::error!(
+            "Skipping Futures {update} because instrument metadata ID {instrument_id} does not match {expected_id}"
+        );
+        return None;
+    }
+    let (price_precision, size_precision) = match instrument.precisions() {
+        Ok(precisions) => precisions,
+        Err(e) => {
+            log::error!("Skipping Futures {update} with invalid metadata for {expected_id}: {e}");
+            return None;
+        }
+    };
+
+    Some((instrument, price_precision, size_precision))
 }
 
 fn emit_venue_order_id_update(
@@ -2186,7 +2177,7 @@ mod tests {
     }
 
     fn create_test_http_client(clock: &'static AtomicTime) -> BinanceFuturesHttpClient {
-        BinanceFuturesHttpClient::new(
+        let client = BinanceFuturesHttpClient::new(
             BinanceProductType::UsdM,
             BinanceEnvironment::Live,
             clock,
@@ -2198,7 +2189,16 @@ mod tests {
             None,
             false,
         )
-        .expect("Test HTTP client should be created")
+        .expect("Test HTTP client should be created");
+        client.instruments_cache().insert(
+            ustr::Ustr::from("BTCUSDT"),
+            usdm_instrument("BTCUSDT", "USDT"),
+        );
+        client.instruments_cache().insert(
+            ustr::Ustr::from("BNBUSDT"),
+            usdm_instrument("BNBUSDT", "USDT"),
+        );
+        client
     }
 
     fn create_tracked_dispatch_state(
@@ -3052,6 +3052,25 @@ mod tests {
             time_in_force: vec![],
             filters: vec![],
         })
+    }
+
+    #[rstest]
+    fn test_resolve_instrument_metadata_rejects_product_mismatch() {
+        let clock = get_atomic_clock_realtime();
+        let http_client = create_test_http_client(clock);
+        let symbol = ustr::Ustr::from("BTCUSDT");
+        http_client
+            .instruments_cache()
+            .insert(symbol, coinm_instrument("BTCUSDT"));
+
+        let resolved = resolve_instrument_metadata(
+            &http_client,
+            symbol,
+            BinanceProductType::UsdM,
+            "test update",
+        );
+
+        assert!(resolved.is_none());
     }
 
     #[rstest]

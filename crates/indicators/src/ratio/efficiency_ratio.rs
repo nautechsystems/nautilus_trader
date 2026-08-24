@@ -32,7 +32,7 @@ use crate::indicator::Indicator;
 ///
 /// `ER(t) = |P(t) - P(t - n)| / sum(|P(i) - P(i - 1)|, i = t - n + 1 to t)`
 ///
-/// A full `n`‑period window requires `n + 1` prices for `n` price changes. For
+/// A full `n`-period window requires `n + 1` prices for `n` price changes. For
 /// finite inputs within the model price range, values range from `0.0` to `1.0`:
 /// lower values indicate more noise, while `1.0` indicates directional price
 /// movement without reversals.
@@ -42,7 +42,7 @@ use crate::indicator::Indicator;
 ///
 /// # References
 ///
-/// - Kaufman, P. J. (1995). *Smarter Trading*. McGraw‑Hill.
+/// - Kaufman, P. J. (1995). *Smarter Trading*. McGraw-Hill.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(

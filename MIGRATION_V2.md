@@ -131,9 +131,9 @@ price or conversion is unavailable or exact arithmetic overflows. Collection que
 partial results. When a query accepts both `venue` and `account_id`, those scopes must identify the
 same account.
 
-`account()` returns a detached account value. `build_snapshot()` returns an on‑demand
+`account()` returns a detached account value. `build_snapshot()` returns an on-demand
 sample without recording it, and the Python Portfolio does not expose engine mutation commands or
-the internal recorded realized‑PnL cache.
+the internal recorded realized-PnL cache.
 
 V1 `is_initialized` means that a component has advanced beyond `PRE_INITIALIZED`. V2 `is_ready()`
 means exactly `READY`, so it is not an equivalent replacement while a component is running,
@@ -216,7 +216,7 @@ used by the application when calendar-time inspection is needed. V1 `Directional
 never changed from zero, so v2 exposes the meaningful positive and negative outputs instead.
 
 `MarginAccount.margin()`, `MarginAccount.margins()`, and `MarginAccount.account_margins()` keep
-their v1 names. Other read‑only margin queries move the measure or scope qualifier to the front in
+their v1 names. Other read-only margin queries move the measure or scope qualifier to the front in
 v2: for example, `margin_init()` becomes `initial_margin()`, and `margin_init_for_currency()`
 becomes `account_initial_margin()`.
 
@@ -234,7 +234,7 @@ becomes `account_initial_margin()`.
 | `total_margin_init()`         | `total_initial_margin()`        |
 | `total_margin_maint()`        | `total_maintenance_margin()`    |
 
-The v2 Python query surface exposes only the read‑only methods above. It does not bind the Rust
+The v2 Python query surface exposes only the read-only methods above. It does not bind the Rust
 engine mutation methods `update_margin`, `clear_margin`, `clear_account_margin`,
 `clear_initial_margin`, `clear_maintenance_margin`, or `set_margin_model`. This v2 boundary does
 not describe which command APIs were available in v1. Existing v2 Python methods, including
@@ -299,7 +299,7 @@ Interactive Brokers legacy mutation fields have constructor or builder replaceme
 | `dockerized_gateway`      | Start the gateway outside v2, then pass its `host` and `port`.                  |
 
 V2 retains writable `instrument_provider` fields on the data and execution client configs and
-`cache_path` on the provider config. A non‑`None` `dockerized_gateway` is rejected because Python
+`cache_path` on the provider config. A non-`None` `dockerized_gateway` is rejected because Python
 v2 does not own the container lifecycle.
 
 Core config types remain grouped under `nautilus_trader.config`. Adapter configs move to the
@@ -319,13 +319,13 @@ Import the current names from `nautilus_trader.config`. `ControllerConfig` has n
 direct replacement: define controller fields on a `DataActorConfig` subclass, then refer to that
 class through `ImportableControllerConfig`.
 
-The v1 fill, fee, latency, and simulation‑module config and factory wrappers are also removed.
+The v1 fill, fee, latency, and simulation-module config and factory wrappers are also removed.
 Construct the current model or module directly, such as `ProbabilisticFillModel`,
 `FixedFeeModel`, `StaticLatencyModel`, or `FXRolloverInterestModule`, and pass it to the backtest
 venue. `SimulationModuleConfig` is therefore no longer a separate Python type.
 
 Three v1 application config exports represent workflows with no current public Python equivalent:
-`DataCatalogConfig`, `DatabaseConfig`, and `StreamingConfig`. Do not substitute a same‑named Rust
+`DataCatalogConfig`, `DatabaseConfig`, and `StreamingConfig`. Do not substitute a same-named Rust
 config. `BacktestNode` does not yet expose the v1 catalog streaming workflow. For live trading,
 configure Redis or Postgres cache backing through `LiveNodeBuilder`; this does not restore the
 generic v1 `DatabaseConfig` workflow. See
@@ -333,7 +333,7 @@ generic v1 `DatabaseConfig` workflow. See
 
 The generic Python APIs under `nautilus_trader.network` have no v2 public Python equivalent:
 `HttpClient`, `HttpMethod`, `HttpResponse`, `SocketClient`, `WebSocketClient`, `SocketConfig`,
-`WebSocketConfig`, `Quota`, network exceptions, and the `http_*` functions. Use adapter‑specific
+`WebSocketConfig`, `Quota`, network exceptions, and the `http_*` functions. Use adapter-specific
 APIs for supported venue workflows or the Rust `nautilus-network` crate for custom networking.
 `TransportBackend` remains available from `nautilus_trader.network` only for adapter config
 transport selection.
@@ -354,7 +354,7 @@ them:
 See the [Python concept guide](docs/concepts/python.md) for the runtime ownership model and public
 API boundaries.
 
-The [Rust‑native Python examples][python-v2-examples] show current live-node builders, adapter factories,
+The [Rust-native Python examples][python-v2-examples] show current live-node builders, adapter factories,
 strategies, actors, and data/execution testers.
 
 Python v2 strategies subclass `Strategy` and override lifecycle or data callbacks:
@@ -452,7 +452,7 @@ V2 `OrderList` stores client order IDs instead of order objects. The runtime res
 through the cache and calls `on_order_list(order_list, orders)`, where `orders` follows the client
 order ID order. If the subclass overrides `on_order_list`, it receives one list callback and the
 runtime does not also call `on_order`. Without an override, the default implementation calls
-`on_order` once for each resolved order. Change v1 one‑argument overrides to accept `orders`; the
+`on_order` once for each resolved order. Change v1 one-argument overrides to accept `orders`; the
 v1 default did not fan out order lists.
 
 The supported authoring surface has these v1 dispositions:
@@ -497,7 +497,7 @@ class RoutedAlgorithm(ExecutionAlgorithm):
         self.log.info(f"Routing {instrument.id}; portfolio ready={portfolio_ready}")
 ```
 
-Order `exec_algorithm_params` keys and values remain string‑only across the v2 model and Python
+Order `exec_algorithm_params` keys and values remain string-only across the v2 model and Python
 bindings. Encode each value as a string when constructing the order, then parse it in the algorithm.
 For example, pass `exec_algorithm_params={"horizon_secs": "300", "interval_secs": "10"}`, not
 numeric values. This keeps Python authoring aligned with the Rust `IndexMap<Ustr, Ustr>` contract.
@@ -545,7 +545,7 @@ Constructed instances and importable configs work in backtest and live workflows
   values.
 - Register the result with `BacktestEngine.add_exec_algorithm_from_config` or
   `LiveNode.add_exec_algorithm_from_config`.
-- Register DataActor‑based compatibility algorithms with `add_exec_algorithm_from_config`.
+- Register DataActor-based compatibility algorithms with `add_exec_algorithm_from_config`.
 
 Nodes normally drive lifecycle transitions. Direct lifecycle methods remain available for
 control-plane integrations and dispatch the same Python callbacks.
@@ -587,18 +587,18 @@ These gaps can affect migration but do not block supported cutover workflows:
 
 - Python request callbacks do not provide v1 joined-response, pending-request cleanup, or late and
   duplicate delivery convenience behavior.
-- Python v2 accepts built‑in backing configs such as `RedisMessageBusConfig`, but arbitrary Python
+- Python v2 accepts built-in backing configs such as `RedisMessageBusConfig`, but arbitrary Python
   factory classes remain unsupported. V1
   `MessageBusConfig(database=DatabaseConfig(...), external_streams=[...])` maps to the builder calls
   `LiveNodeBuilder.with_msgbus_config(...)` and
   `LiveNodeBuilder.with_external_msgbus_factory(RedisMessageBusConfig(...))`. See
-  [live message‑bus configuration][live-message-bus-config]. The existing
+  [live message-bus configuration][live-message-bus-config]. The existing
   `RedisMessageBusFactory(RedisMessageBusConfig(...))` wrapper remains supported.
-- Official in‑tree live adapters remain configurable from Python through
+- Official in-tree live adapters remain configurable from Python through
   `LiveNodeBuilder.add_data_client` and `add_exec_client`. Sandbox simulated execution uses
   `add_simulated_exec_client`. A working sandbox client does not mean a custom live factory will
-  register: neither path currently accepts an out‑of‑tree Python factory, and v1 `LiveDataClient`
-  and `LiveExecutionClient` subclassing has no v2 equivalent yet. An out‑of‑tree Python adapter
+  register: neither path currently accepts an out-of-tree Python factory, and v1 `LiveDataClient`
+  and `LiveExecutionClient` subclassing has no v2 equivalent yet. An out-of-tree Python adapter
   surface is planned. See [Python support boundaries][python-support-boundaries],
   [issue 4748][python-v2-custom-clients], and [issue 4694][python-v2-out-of-tree-adapters].
 - PostgreSQL cache position and synthetic loads, actor and strategy state persistence, and cache
@@ -611,7 +611,7 @@ These gaps can affect migration but do not block supported cutover workflows:
   Check each adapter's Rust/PyO3 config rather than copying v1 provider examples.
 - The high-level and low-level backtesting tutorials still use v1 imports and configuration. Use
   the generated v2 stubs, the [v2 backtest acceptance tests][python-v2-backtest-tests] for
-  backtesting, and [Rust‑native Python examples][python-v2-examples] for live and adapter workflows
+  backtesting, and [Rust-native Python examples][python-v2-examples] for live and adapter workflows
   while those tutorials are ported.
 
 The [v2 roadmap][v2-roadmap] tracks the wider post-cutover surface. Release-specific breaking

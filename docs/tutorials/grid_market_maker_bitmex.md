@@ -451,7 +451,7 @@ Press **Ctrl+C** to stop the node. The shutdown sequence:
 | `num_levels`            | `usize`        | `3`        | Number of buy and sell levels.                                           |
 | `grid_step_bps`         | `u32`          | `10`       | Grid spacing in basis points (100 = 1%).                                 |
 | `skew_factor`           | `f64`          | `0.0`      | How aggressively to shift the grid based on net inventory.               |
-| `requote_threshold_bps` | `u32`          | `5`        | Minimum mid‑price move (bps) before re‑quoting.                          |
+| `requote_threshold_bps` | `u32`          | `5`        | Minimum mid-price move (bps) before re-quoting.                          |
 | `expire_time_secs`      | `Option<u64>`  | `None`     | Order expiry in seconds. Use `None` for GTC on BitMEX.                   |
 | `on_cancel_resubmit`    | `bool`         | `false`    | Resubmit grid on next quote after an unexpected cancel.                  |
 
@@ -459,7 +459,7 @@ Press **Ctrl+C** to stop the node. The shutdown sequence:
 
 | Parameter                      | Type          | Description                                                                                                      |
 | ------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `deadmans_switch_timeout_secs` | `Option<u64>` | Server‑side cancel timer in seconds. Refresh interval = `timeout / 4` (minimum 1s). `None` disables the feature. |
+| `deadmans_switch_timeout_secs` | `Option<u64>` | Server-side cancel timer in seconds. Refresh interval = `timeout / 4` (minimum 1s). `None` disables the feature. |
 
 A 60-second timeout gives a 15-second refresh interval and a 60-second
 window before BitMEX fires the timer. Lower values reduce the exposure
@@ -508,7 +508,7 @@ flowchart TB
 | `Starting dead man's switch: timeout=60s, refresh_interval=15s` | Deadman's switch armed at node start.                     |
 | `Dead man's switch heartbeat failed: ...`                       | Transient network issue; switch will retry next interval. |
 | `Disarming dead man's switch`                                   | Switch stopped cleanly during shutdown.                   |
-| `benign cancel error, treating as success`                      | Cancel for an already‑filled or cancelled order (normal). |
+| `benign cancel error, treating as success`                      | Cancel for an already-filled or cancelled order (normal). |
 | `Reconciling orders from last 2880 minutes`                     | Startup reconciliation loading prior state.               |
 
 ### Expected behaviour patterns

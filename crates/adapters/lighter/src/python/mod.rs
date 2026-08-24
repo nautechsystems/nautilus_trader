@@ -150,17 +150,18 @@ async fn submit_integrator_revocation(environment: LighterEnvironment) -> anyhow
     ))
 }
 
-/// Revoke the Nautilus integrator approval when leaving the adapter.
+/// Revokes the Nautilus integrator approval when leaving the adapter on mainnet.
 ///
-/// This cleanup call is not a trading-mode toggle. Live trading through this
-/// adapter requires the approval; the next execution-client startup records a
-/// fresh zero-fee approval.
+/// This cleanup call is not a trading-mode toggle. Mainnet trading through this
+/// adapter requires the approval, and the next mainnet execution-client startup
+/// records a fresh zero-fee approval. Testnet does not use integrator attribution
+/// and requires no revocation.
 ///
 /// See:
 /// <https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution>.
 ///
-/// Reads L2 credentials from `LIGHTER_API_KEY_INDEX`, `LIGHTER_API_SECRET`,
-/// and `LIGHTER_ACCOUNT_INDEX` (or the `LIGHTER_TESTNET_*` variants).
+/// Reads mainnet L2 credentials from `LIGHTER_API_KEY_INDEX`, `LIGHTER_API_SECRET`,
+/// and `LIGHTER_ACCOUNT_INDEX`.
 ///
 /// Returns a status string on the awaitable; raises on failure.
 #[pyfunction]

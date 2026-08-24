@@ -29,13 +29,9 @@ use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{
-        runner::{get_data_event_sender, try_get_system_event_sender},
-        runtime::get_runtime,
-        task::TaskHandles,
-    },
+    live::{runner::get_data_event_sender, runtime::get_runtime, task::TaskHandles},
     messages::{
-        DataEvent, SystemEvent,
+        DataEvent,
         data::{
             BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
             InstrumentsResponse, RequestBars, RequestBookDepth, RequestBookSnapshot,
@@ -55,6 +51,7 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControlFactory;
 use nautilus_model::{
     data::{Data, InstrumentStatus, TradeTick},
     enums::{BookType, MarketStatusAction},
@@ -70,7 +67,6 @@ use crate::{
         credential::Credential,
         enums::{LighterCandleResolution, LighterMarketStatus},
         rate_limit::resolve_quota,
-        socket::{DATA_STREAMS_ENDPOINT, socket_state_sink},
         symbol::MarketRegistry,
     },
     config::LighterDataClientConfig,
@@ -80,6 +76,7 @@ use crate::{
         query::LighterOrderBookOrdersQuery,
     },
     websocket::{
+        DATA_STREAMS_ENDPOINT,
         client::LighterWebSocketClient,
         messages::{LighterMarketSelection, LighterWsChannel, NautilusWsMessage},
     },
@@ -106,11 +103,11 @@ pub struct LighterDataClient {
     http_client: LighterHttpClient,
     ws_client: LighterWebSocketClient,
     registry: Arc<MarketRegistry>,
+    socket_factory: SocketControlFactory,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: TaskHandles,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    system_sender: Option<tokio::sync::mpsc::UnboundedSender<SystemEvent>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_statuses: Arc<DashMap<InstrumentId, LighterMarketStatus>>,
     instrument_status_subscriptions: Arc<DashSet<InstrumentId>>,
@@ -128,7 +125,7 @@ impl LighterDataClient {
     pub fn new(client_id: ClientId, config: LighterDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let system_sender = try_get_system_event_sender();
+        let socket_factory = SocketControlFactory::new(client_id, Some(*LIGHTER_VENUE));
 
         let credential = if config.has_credentials() {
             // Mirror `has_credentials()`: a blank or whitespace-only `private_key`
@@ -163,12 +160,7 @@ impl LighterDataClient {
         let http_client =
             LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
 
-        let ws_client = Self::create_ws_client(
-            &config,
-            Arc::clone(&registry),
-            client_id,
-            system_sender.as_ref(),
-        );
+        let ws_client = Self::create_ws_client(&config, Arc::clone(&registry), &socket_factory);
 
         Ok(Self {
             clock,
@@ -178,11 +170,11 @@ impl LighterDataClient {
             http_client,
             ws_client,
             registry,
+            socket_factory,
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
             tasks: TaskHandles::default(),
             data_sender,
-            system_sender,
             instruments: Arc::new(AtomicMap::new()),
             instrument_statuses: Arc::new(DashMap::new()),
             instrument_status_subscriptions: Arc::new(DashSet::new()),
@@ -205,8 +197,7 @@ impl LighterDataClient {
     fn create_ws_client(
         config: &LighterDataClientConfig,
         registry: Arc<MarketRegistry>,
-        client_id: ClientId,
-        system_sender: Option<&tokio::sync::mpsc::UnboundedSender<SystemEvent>>,
+        socket_factory: &SocketControlFactory,
     ) -> LighterWebSocketClient {
         let ws_client = LighterWebSocketClient::new(
             Some(config.ws_url()),
@@ -217,14 +208,7 @@ impl LighterDataClient {
             config.proxy_url.clone(),
         );
 
-        match system_sender {
-            Some(sender) => ws_client.with_state_sink(socket_state_sink(
-                client_id,
-                DATA_STREAMS_ENDPOINT,
-                sender.clone(),
-            )),
-            None => ws_client,
-        }
+        ws_client.with_socket_control(socket_factory.control(DATA_STREAMS_ENDPOINT))
     }
 
     fn take_ws_client(&mut self) -> LighterWebSocketClient {
@@ -233,8 +217,7 @@ impl LighterDataClient {
             Self::create_ws_client(
                 &self.config,
                 Arc::clone(&self.registry),
-                self.client_id,
-                self.system_sender.as_ref(),
+                &self.socket_factory,
             ),
         )
     }

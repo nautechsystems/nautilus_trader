@@ -678,6 +678,10 @@ impl FeedHandler {
     }
 
     fn topic_from_msg(&self, channel: &DydxWsChannel, id: &Option<String>) -> String {
+        if matches!(channel, DydxWsChannel::BlockHeight) {
+            return channel.as_ref().to_string();
+        }
+
         match id {
             Some(id) => format!(
                 "{}{}{}",

@@ -51,6 +51,7 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, InstrumentStatus},
     enums::{BookType, GreeksConvention, MarketStatusAction},
@@ -152,6 +153,7 @@ pub struct OKXDataClient {
     ws_public: Option<OKXWebSocketClient>,
     ws_business: Option<OKXWebSocketClient>,
     is_connected: AtomicBool,
+    transports_started: bool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -213,7 +215,12 @@ impl OKXDataClient {
             config.transport_backend,
             config.proxy_url.clone(),
         )
-        .context("failed to construct OKX public websocket client")?;
+        .context("failed to construct OKX public websocket client")?
+        .with_socket_control(SocketControl::new(
+            client_id,
+            Some(*OKX_VENUE),
+            "okx-public-data-streams",
+        ));
 
         let ws_business = if config.requires_business_ws() {
             let ws = OKXWebSocketClient::new(
@@ -227,7 +234,12 @@ impl OKXDataClient {
                 config.transport_backend,
                 config.proxy_url.clone(),
             )
-            .context("failed to construct OKX business websocket client")?;
+            .context("failed to construct OKX business websocket client")?
+            .with_socket_control(SocketControl::new(
+                client_id,
+                Some(*OKX_VENUE),
+                "okx-business-data-streams",
+            ));
             Some(ws)
         } else {
             None
@@ -248,6 +260,7 @@ impl OKXDataClient {
             ws_public: Some(ws_public),
             ws_business,
             is_connected: AtomicBool::new(false),
+            transports_started: false,
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
             data_sender,
@@ -731,6 +744,25 @@ impl OKXDataClient {
             | OKXWsMessage::SendFailed { .. } => {
                 log::debug!("Ignoring execution message on data client");
             }
+            OKXWsMessage::SubscriptionFailed {
+                channel,
+                inst_id,
+                code,
+                msg,
+            } => {
+                log::error!(
+                    "OKX rejected {channel:?} subscription for {inst_id:?} \
+                     (code={code}, msg={msg}); no data will flow for this subscription"
+                );
+
+                if let Some(inst_id) = inst_id
+                    && channel.is_book()
+                    && let Some(instrument) = instruments_by_symbol.get(&inst_id)
+                {
+                    let instrument_id = instrument.id();
+                    book_sync.remove(instrument_id);
+                }
+            }
             OKXWsMessage::Error(e) => {
                 if should_retry_error_code(&e.code) {
                     log::warn!("OKX websocket error: {e:?}");
@@ -766,6 +798,289 @@ impl OKXDataClient {
                 log::debug!("Websocket authenticated");
             }
         }
+    }
+
+    /// Establishes instrument context and both WebSocket transports.
+    ///
+    /// Any failure leaves partially started transports for [`Self::teardown_transports`].
+    async fn connect_session(&mut self) -> anyhow::Result<()> {
+        // Create fresh token so tasks from a previous connection cycle are not
+        // immediately cancelled (the old token may already be in cancelled state)
+        self.cancellation_token = CancellationToken::new();
+        self.transports_started = true;
+
+        let instrument_types = if self.config.instrument_types.is_empty() {
+            vec![OKXInstrumentType::Spot]
+        } else {
+            self.config.instrument_types.clone()
+        };
+
+        let mut all_instruments = Vec::new();
+
+        for inst_type in &instrument_types {
+            let Some(families) =
+                resolve_instrument_families(&self.config.instrument_families, *inst_type)
+            else {
+                continue;
+            };
+
+            if families.is_empty() {
+                let (mut fetched, _inst_id_codes) = self
+                    .http_client
+                    .request_instruments(*inst_type, None)
+                    .await
+                    .with_context(|| {
+                        format!("failed to request OKX instruments for {inst_type:?}")
+                    })?;
+
+                fetched.retain(|instrument| contract_filter_with_config(&self.config, instrument));
+                self.http_client.cache_instruments(&fetched);
+
+                self.instruments.rcu(|m| {
+                    for instrument in &fetched {
+                        m.insert(instrument.id(), instrument.clone());
+                    }
+                });
+
+                all_instruments.extend(fetched);
+            } else {
+                for family in &families {
+                    let (mut fetched, _inst_id_codes) = self
+                        .http_client
+                        .request_instruments(*inst_type, Some(family.clone()))
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "failed to request OKX instruments for {inst_type:?} family {family}"
+                            )
+                        })?;
+
+                    fetched
+                        .retain(|instrument| contract_filter_with_config(&self.config, instrument));
+                    self.http_client.cache_instruments(&fetched);
+
+                    self.instruments.rcu(|m| {
+                        for instrument in &fetched {
+                            m.insert(instrument.id(), instrument.clone());
+                        }
+                    });
+
+                    all_instruments.extend(fetched);
+                }
+            }
+        }
+
+        if self.config.load_spreads {
+            match self
+                .http_client
+                .request_spread_instruments(GetSpreadsParams {
+                    state: Some("live".to_string()),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(mut fetched) => {
+                    fetched
+                        .retain(|instrument| contract_filter_with_config(&self.config, instrument));
+                    self.http_client.cache_instruments(&fetched);
+
+                    self.instruments.rcu(|m| {
+                        for instrument in &fetched {
+                            m.insert(instrument.id(), instrument.clone());
+                        }
+                    });
+
+                    all_instruments.extend(fetched);
+                }
+                Err(e) => {
+                    log::error!("Failed to fetch OKX spread instruments: {e:?}");
+                }
+            }
+        }
+
+        for instrument in all_instruments {
+            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                log::warn!("Failed to send instrument: {e}");
+            }
+        }
+
+        if let Some(ref mut ws) = self.ws_public {
+            // Cache instruments to websocket before connecting so handler has them
+            let instruments: Vec<_> = self.instruments.load().values().cloned().collect();
+            ws.cache_instruments(&instruments);
+
+            ws.connect()
+                .await
+                .context("failed to connect OKX public websocket")?;
+            ws.wait_until_active(10.0)
+                .await
+                .context("public websocket did not become active")?;
+
+            let stream = ws.stream();
+            let sender = self.data_sender.clone();
+            let insts = self.instruments.clone();
+            let book_channels = self.book_channels.clone();
+            let book_sync = self.book_sync.clone();
+            let recovery_ws = ws.clone();
+            let idx_map = self.index_ticker_map.clone();
+            let greeks_subs = self.option_greeks_subs.clone();
+            let cancel = self.cancellation_token.clone();
+            let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+            let clock = self.clock;
+
+            let handle = get_runtime().spawn(async move {
+                let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = insts
+                    .load()
+                    .values()
+                    .map(|i| (i.symbol().inner(), i.clone()))
+                    .collect();
+                let mut quote_cache = QuoteCache::new();
+                let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
+
+                pin_mut!(stream);
+
+                loop {
+                    tokio::select! {
+                        Some(message) = stream.next() => {
+                            Self::handle_ws_message(
+                                message,
+                                &sender,
+                                &insts,
+                                &mut instruments_by_symbol,
+                                &book_channels,
+                                &book_sync,
+                                Some(&recovery_ws),
+                                &mut quote_cache,
+                                &mut funding_cache,
+                                &idx_map,
+                                &greeks_subs,
+                                BookChannelScope::Public,
+                                snapshot_timeout,
+                                &cancel,
+                                clock,
+                            );
+                        }
+                        () = cancel.cancelled() => {
+                            log::debug!("Public websocket stream task cancelled");
+                            break;
+                        }
+                    }
+                }
+            });
+            self.tasks.push(handle);
+
+            for inst_type in &instrument_types {
+                ws.subscribe_instruments(*inst_type)
+                    .await
+                    .with_context(|| {
+                        format!("failed to subscribe to instrument type {inst_type:?}")
+                    })?;
+            }
+        }
+
+        if let Some(ref mut ws) = self.ws_business {
+            // Cache instruments to websocket before connecting so handler has them
+            let instruments: Vec<_> = self.instruments.load().values().cloned().collect();
+            ws.cache_instruments(&instruments);
+
+            ws.connect()
+                .await
+                .context("failed to connect OKX business websocket")?;
+            ws.wait_until_active(10.0)
+                .await
+                .context("business websocket did not become active")?;
+
+            let stream = ws.stream();
+            let sender = self.data_sender.clone();
+            let insts = self.instruments.clone();
+            let book_channels = self.book_channels.clone();
+            let book_sync = self.book_sync.clone();
+            let idx_map = self.index_ticker_map.clone();
+            let greeks_subs = self.option_greeks_subs.clone();
+            let cancel = self.cancellation_token.clone();
+            let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+            let clock = self.clock;
+
+            let handle = get_runtime().spawn(async move {
+                let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = insts
+                    .load()
+                    .values()
+                    .map(|i| (i.symbol().inner(), i.clone()))
+                    .collect();
+                let mut quote_cache = QuoteCache::new();
+                let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
+
+                pin_mut!(stream);
+
+                loop {
+                    tokio::select! {
+                        Some(message) = stream.next() => {
+                            Self::handle_ws_message(
+                                message,
+                                &sender,
+                                &insts,
+                                &mut instruments_by_symbol,
+                                &book_channels,
+                                &book_sync,
+                                None,
+                                &mut quote_cache,
+                                &mut funding_cache,
+                                &idx_map,
+                                &greeks_subs,
+                                BookChannelScope::Business,
+                                snapshot_timeout,
+                                &cancel,
+                                clock,
+                            );
+                        }
+                        () = cancel.cancelled() => {
+                            log::debug!("Business websocket stream task cancelled");
+                            break;
+                        }
+                    }
+                }
+            });
+            self.tasks.push(handle);
+        }
+
+        self.spawn_book_health_monitor();
+        Ok(())
+    }
+
+    /// Cancels stream tasks, closes both WebSocket transports, and clears
+    /// transport-local subscription bookkeeping.
+    ///
+    /// Safe to call after a partially failed connect and idempotent.
+    async fn teardown_transports(&mut self) -> anyhow::Result<()> {
+        self.transports_started = false;
+        self.cancellation_token.cancel();
+
+        if let Some(ref mut ws) = self.ws_public {
+            let _result = ws.close().await;
+        }
+
+        if let Some(ref mut ws) = self.ws_business {
+            let _result = ws.close().await;
+        }
+
+        let handles: Vec<_> = std::mem::take(&mut self.tasks);
+
+        for handle in handles {
+            if let Err(e) = handle.await {
+                log::error!("Error joining websocket task: {e}");
+            }
+        }
+
+        self.book_channels.store(AHashMap::new());
+        self.book_sync.clear();
+        self.option_greeks_subs
+            .store(AHashMap::<InstrumentId, AHashSet<OKXGreeksType>>::new());
+        self.option_summary_family_subs
+            .lock()
+            .expect("option_summary_family_subs mutex poisoned")
+            .clear();
+        self.is_connected.store(false, Ordering::Release);
+        Ok(())
     }
 }
 
@@ -1015,297 +1330,41 @@ impl DataClient for OKXDataClient {
             return Ok(());
         }
 
-        // Create fresh token so tasks from a previous connection cycle are not
-        // immediately cancelled (the old token may already be in cancelled state)
-        self.cancellation_token = CancellationToken::new();
-
-        let instrument_types = if self.config.instrument_types.is_empty() {
-            vec![OKXInstrumentType::Spot]
-        } else {
-            self.config.instrument_types.clone()
-        };
-
-        let mut all_instruments = Vec::new();
-
-        for inst_type in &instrument_types {
-            let Some(families) =
-                resolve_instrument_families(&self.config.instrument_families, *inst_type)
-            else {
-                continue;
-            };
-
-            if families.is_empty() {
-                let (mut fetched, _inst_id_codes) = self
-                    .http_client
-                    .request_instruments(*inst_type, None)
-                    .await
-                    .with_context(|| {
-                        format!("failed to request OKX instruments for {inst_type:?}")
-                    })?;
-
-                fetched.retain(|instrument| contract_filter_with_config(&self.config, instrument));
-                self.http_client.cache_instruments(&fetched);
-
-                self.instruments.rcu(|m| {
-                    for instrument in &fetched {
-                        m.insert(instrument.id(), instrument.clone());
-                    }
-                });
-
-                all_instruments.extend(fetched);
-            } else {
-                for family in &families {
-                    let (mut fetched, _inst_id_codes) = self
-                        .http_client
-                        .request_instruments(*inst_type, Some(family.clone()))
-                        .await
-                        .with_context(|| {
-                            format!(
-                                "failed to request OKX instruments for {inst_type:?} family {family}"
-                            )
-                        })?;
-
-                    fetched
-                        .retain(|instrument| contract_filter_with_config(&self.config, instrument));
-                    self.http_client.cache_instruments(&fetched);
-
-                    self.instruments.rcu(|m| {
-                        for instrument in &fetched {
-                            m.insert(instrument.id(), instrument.clone());
-                        }
-                    });
-
-                    all_instruments.extend(fetched);
-                }
+        if let Err(e) = self.connect_session().await {
+            if let Err(teardown_error) = self.teardown_transports().await {
+                log::warn!("Error tearing down partial connection: {teardown_error:?}");
             }
+            return Err(e);
         }
 
-        if self.config.load_spreads {
-            match self
-                .http_client
-                .request_spread_instruments(GetSpreadsParams {
-                    state: Some("live".to_string()),
-                    ..Default::default()
-                })
-                .await
-            {
-                Ok(mut fetched) => {
-                    fetched
-                        .retain(|instrument| contract_filter_with_config(&self.config, instrument));
-                    self.http_client.cache_instruments(&fetched);
-
-                    self.instruments.rcu(|m| {
-                        for instrument in &fetched {
-                            m.insert(instrument.id(), instrument.clone());
-                        }
-                    });
-
-                    all_instruments.extend(fetched);
-                }
-                Err(e) => {
-                    log::error!("Failed to fetch OKX spread instruments: {e:?}");
-                }
-            }
-        }
-
-        for instrument in all_instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
-                log::warn!("Failed to send instrument: {e}");
-            }
-        }
-
-        if let Some(ref mut ws) = self.ws_public {
-            // Cache instruments to websocket before connecting so handler has them
-            let instruments: Vec<_> = self.instruments.load().values().cloned().collect();
-            ws.cache_instruments(&instruments);
-
-            ws.connect()
-                .await
-                .context("failed to connect OKX public websocket")?;
-            ws.wait_until_active(10.0)
-                .await
-                .context("public websocket did not become active")?;
-
-            let stream = ws.stream();
-            let sender = self.data_sender.clone();
-            let insts = self.instruments.clone();
-            let book_channels = self.book_channels.clone();
-            let book_sync = self.book_sync.clone();
-            let recovery_ws = ws.clone();
-            let idx_map = self.index_ticker_map.clone();
-            let greeks_subs = self.option_greeks_subs.clone();
-            let cancel = self.cancellation_token.clone();
-            let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
-            let clock = self.clock;
-
-            let handle = get_runtime().spawn(async move {
-                let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = insts
-                    .load()
-                    .values()
-                    .map(|i| (i.symbol().inner(), i.clone()))
-                    .collect();
-                let mut quote_cache = QuoteCache::new();
-                let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
-
-                pin_mut!(stream);
-
-                loop {
-                    tokio::select! {
-                        Some(message) = stream.next() => {
-                            Self::handle_ws_message(
-                                message,
-                                &sender,
-                                &insts,
-                                &mut instruments_by_symbol,
-                                &book_channels,
-                                &book_sync,
-                                Some(&recovery_ws),
-                                &mut quote_cache,
-                                &mut funding_cache,
-                                &idx_map,
-                                &greeks_subs,
-                                BookChannelScope::Public,
-                                snapshot_timeout,
-                                &cancel,
-                                clock,
-                            );
-                        }
-                        () = cancel.cancelled() => {
-                            log::debug!("Public websocket stream task cancelled");
-                            break;
-                        }
-                    }
-                }
-            });
-            self.tasks.push(handle);
-
-            for inst_type in &instrument_types {
-                ws.subscribe_instruments(*inst_type)
-                    .await
-                    .with_context(|| {
-                        format!("failed to subscribe to instrument type {inst_type:?}")
-                    })?;
-            }
-        }
-
-        if let Some(ref mut ws) = self.ws_business {
-            // Cache instruments to websocket before connecting so handler has them
-            let instruments: Vec<_> = self.instruments.load().values().cloned().collect();
-            ws.cache_instruments(&instruments);
-
-            ws.connect()
-                .await
-                .context("failed to connect OKX business websocket")?;
-            ws.wait_until_active(10.0)
-                .await
-                .context("business websocket did not become active")?;
-
-            let stream = ws.stream();
-            let sender = self.data_sender.clone();
-            let insts = self.instruments.clone();
-            let book_channels = self.book_channels.clone();
-            let book_sync = self.book_sync.clone();
-            let idx_map = self.index_ticker_map.clone();
-            let greeks_subs = self.option_greeks_subs.clone();
-            let cancel = self.cancellation_token.clone();
-            let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
-            let clock = self.clock;
-
-            let handle = get_runtime().spawn(async move {
-                let mut instruments_by_symbol: AHashMap<Ustr, InstrumentAny> = insts
-                    .load()
-                    .values()
-                    .map(|i| (i.symbol().inner(), i.clone()))
-                    .collect();
-                let mut quote_cache = QuoteCache::new();
-                let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
-
-                pin_mut!(stream);
-
-                loop {
-                    tokio::select! {
-                        Some(message) = stream.next() => {
-                            Self::handle_ws_message(
-                                message,
-                                &sender,
-                                &insts,
-                                &mut instruments_by_symbol,
-                                &book_channels,
-                                &book_sync,
-                                None,
-                                &mut quote_cache,
-                                &mut funding_cache,
-                                &idx_map,
-                                &greeks_subs,
-                                BookChannelScope::Business,
-                                snapshot_timeout,
-                                &cancel,
-                                clock,
-                            );
-                        }
-                        () = cancel.cancelled() => {
-                            log::debug!("Business websocket stream task cancelled");
-                            break;
-                        }
-                    }
-                }
-            });
-            self.tasks.push(handle);
-        }
-
-        self.spawn_book_health_monitor();
         self.is_connected.store(true, Ordering::Release);
         log::info!("Connected: client_id={}", self.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
+        if self.is_disconnected() && !self.transports_started {
             return Ok(());
         }
 
-        self.cancellation_token.cancel();
-
-        if let Some(ref ws) = self.ws_public
-            && let Err(e) = ws.unsubscribe_all().await
-        {
-            log::warn!("Failed to unsubscribe all from public websocket: {e:?}");
-        }
-
-        if let Some(ref ws) = self.ws_business
-            && let Err(e) = ws.unsubscribe_all().await
-        {
-            log::warn!("Failed to unsubscribe all from business websocket: {e:?}");
-        }
-
-        // Allow time for unsubscribe confirmations
-        tokio::time::sleep(Duration::from_millis(500)).await;
-
-        if let Some(ref mut ws) = self.ws_public {
-            let _result = ws.close().await;
-        }
-
-        if let Some(ref mut ws) = self.ws_business {
-            let _result = ws.close().await;
-        }
-
-        let handles: Vec<_> = std::mem::take(&mut self.tasks);
-
-        for handle in handles {
-            if let Err(e) = handle.await {
-                log::error!("Error joining websocket task: {e}");
+        if !self.is_disconnected() {
+            if let Some(ref ws) = self.ws_public
+                && let Err(e) = ws.unsubscribe_all().await
+            {
+                log::warn!("Failed to unsubscribe all from public websocket: {e:?}");
             }
+
+            if let Some(ref ws) = self.ws_business
+                && let Err(e) = ws.unsubscribe_all().await
+            {
+                log::warn!("Failed to unsubscribe all from business websocket: {e:?}");
+            }
+
+            // Allow time for unsubscribe confirmations
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
-        self.book_channels.store(AHashMap::new());
-        self.book_sync.clear();
-        self.option_greeks_subs
-            .store(AHashMap::<InstrumentId, AHashSet<OKXGreeksType>>::new());
-        self.option_summary_family_subs
-            .lock()
-            .expect("option_summary_family_subs mutex poisoned")
-            .clear();
-        self.is_connected.store(false, Ordering::Release);
+        self.teardown_transports().await?;
         log::info!("Disconnected: client_id={}", self.client_id);
         Ok(())
     }
@@ -2347,7 +2406,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{common::testing::load_test_json, websocket::messages::OKXWsFrame};
+    use crate::{
+        common::testing::load_test_json,
+        websocket::{enums::OKXWsChannel, messages::OKXWsFrame},
+    };
 
     fn both() -> AHashSet<OKXGreeksType> {
         [OKXGreeksType::Bs, OKXGreeksType::Pa].into_iter().collect()
@@ -2387,6 +2449,64 @@ mod tests {
         }
         assert!(instruments_by_symbol.is_empty());
         assert!(instruments.load().is_empty());
+    }
+
+    #[rstest]
+    fn rejected_book_subscription_clears_sync_and_preserves_reconnect_intent() {
+        let instrument_id = InstrumentId::from("OMI-USD.OKX");
+        let mut pair = currency_pair_btcusdt();
+        pair.id = instrument_id;
+        pair.raw_symbol = Symbol::from("OMI-USD");
+        let instrument = InstrumentAny::CurrencyPair(pair);
+
+        let instruments = Arc::new(AtomicMap::new());
+        instruments.insert(instrument_id, instrument.clone());
+        let mut instruments_by_symbol = AHashMap::from([(Ustr::from("OMI-USD"), instrument)]);
+        let book_channels = Arc::new(AtomicMap::new());
+        book_channels.insert(instrument_id, OKXBookChannel::Book);
+        let book_sync = BookSyncTracker::default();
+        book_sync.record_subscription(instrument_id, Instant::now());
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let mut quote_cache = QuoteCache::new();
+        let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
+        let index_ticker_map = Arc::new(AtomicMap::new());
+        let option_greeks_subs = Arc::new(AtomicMap::new());
+        let cancel = CancellationToken::new();
+
+        OKXDataClient::handle_ws_message(
+            OKXWsMessage::SubscriptionFailed {
+                channel: OKXWsChannel::Books,
+                inst_id: Some(Ustr::from("OMI-USD")),
+                code: "60018".to_string(),
+                msg: "Channel does not exist".to_string(),
+            },
+            &sender,
+            &instruments,
+            &mut instruments_by_symbol,
+            &book_channels,
+            &book_sync,
+            None,
+            &mut quote_cache,
+            &mut funding_cache,
+            &index_ticker_map,
+            &option_greeks_subs,
+            BookChannelScope::Public,
+            Duration::ZERO,
+            &cancel,
+            get_atomic_clock_realtime(),
+        );
+
+        assert_eq!(
+            book_channels.load().get(&instrument_id),
+            Some(&OKXBookChannel::Book),
+            "rejected subscription must preserve the channel selected for reconnect"
+        );
+        assert!(
+            book_sync
+                .stale_books(Duration::ZERO, Instant::now())
+                .is_empty(),
+            "rejected subscription must remove book synchronization state"
+        );
     }
 
     #[rstest]

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Adapter‑managed subscription intent and acknowledgment tracking.
+//! Adapter-managed subscription intent and acknowledgment tracking.
 //!
 //! [`SubscriptionState`] keeps confirmed, `pending_subscribe`, and `pending_unsubscribe` topics
 //! separate. Server acknowledgments move topics between those states; late subscribe
@@ -67,11 +67,11 @@ pub(crate) static CHANNEL_LEVEL_MARKER: LazyLock<Ustr> = LazyLock::new(|| Ustr::
 /// # Topic format
 ///
 /// Topics use `channel{delimiter}symbol`, with delimiters such as `.` or `:`. A topic without the
-/// delimiter represents a channel‑level subscription.
+/// delimiter represents a channel-level subscription.
 ///
 /// # Thread safety
 ///
-/// Clones share all state. Operations are thread‑safe and can run concurrently from multiple
+/// Clones share all state. Operations are thread-safe and can run concurrently from multiple
 /// tasks.
 #[derive(Clone, Debug)]
 pub struct SubscriptionState {
@@ -395,7 +395,7 @@ impl SubscriptionState {
 
     /// Clears all subscription state.
     ///
-    /// This resets confirmed, pending, and reference‑count state.
+    /// This resets confirmed, pending, and reference-count state.
     pub fn clear(&self) {
         self.confirmed.clear();
         self.pending_subscribe.clear();

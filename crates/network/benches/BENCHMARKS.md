@@ -1,10 +1,10 @@
 # Network WebSocket Benchmarks
 
 Numbers measured 2026-07-29. The tables report the median of three
-back‑to‑back runs on the same host.
+back-to-back runs on the same host.
 
 Refresh these numbers after a substantive WebSocket transport change or
-dependency upgrade. Absolute numbers vary by machine; only same‑machine
+dependency upgrade. Absolute numbers vary by machine; only same-machine
 deltas are meaningful.
 
 ## Environment
@@ -27,7 +27,7 @@ deltas are meaningful.
 - CPU scheduling: SMT and boost enabled; benchmark thread not pinned.
 - Latency sampling: 1,000 warmup messages, then 50,000 measured messages.
 - Throughput sampling: Criterion default warmup and 100 samples.
-- Aggregation: median of three back‑to‑back runs per table cell.
+- Aggregation: median of three back-to-back runs per table cell.
 
 ## How to reproduce
 
@@ -45,7 +45,7 @@ done
 sudo cpupower frequency-set -g powersave
 ```
 
-For policy and the general noise‑reduction recipe, see
+For policy and the general noise-reduction recipe, see
 [`BENCHMARKING.md`](../../../BENCHMARKING.md) at the repository root.
 
 ## Methodology
@@ -53,21 +53,21 @@ For policy and the general noise‑reduction recipe, see
 The benchmarks compare `tokio-tungstenite 0.30.0` and `sockudo-ws 2.0.1` in
 the same binary and measurement session.
 
-- Both use established, uncompressed streams over identical 1 MiB in‑memory
-  Tokio duplex transports and a current‑thread runtime through `Sink` and `Stream`.
+- Both use established, uncompressed streams over identical 1 MiB in-memory
+  Tokio duplex transports and a current-thread runtime through `Sink` and `Stream`.
 - Sockudo enables `simd`, `fastrand`, `tokio-runtime`, and
   `rustls-webpki-roots`; `auto_ping` and `idle_timeout` are disabled to isolate
   frame transport.
 - Throughput processes 10,000 text messages per Criterion iteration.
-- Round‑trip latency spans client send through echo receive.
-- One‑way burst latency timestamps each binary message from a continuous
-  sender and includes in‑memory queueing and receiver backpressure.
+- Round-trip latency spans client send through echo receive.
+- One-way burst latency timestamps each binary message from a continuous
+  sender and includes in-memory queueing and receiver backpressure.
 - Each p99.9 value covers 50 observations per run; it is useful but noisier
   than p50, p95, or p99.
 
 The benchmark excludes DNS, TCP connect, TLS, HTTP upgrade, kernel network I/O,
 and external network latency. It also excludes Compio, sockudo's native
-split‑stream driver, compression, and keepalive traffic.
+split-stream driver, compression, and keepalive traffic.
 
 ## Round-trip text latency
 
@@ -88,7 +88,7 @@ relative to `tokio-tungstenite 0.30.0`.
 ## One-way binary burst latency
 
 Lower is better. Values are microseconds and include queueing within the
-in‑memory transport.
+in-memory transport.
 
 | Payload | Library                    |    p50 |    p95 |    p99 | p99.9  |
 | ------: | -------------------------- | -----: | -----: | -----: | -----: |

@@ -313,7 +313,7 @@ pub struct PolymarketMarketResolved {
 /// A best bid/ask notification from the WebSocket market channel.
 ///
 /// Only received when `subscribe_new_markets` is enabled.
-/// Data is already covered by existing PriceChange/Book handlers.
+/// The data adapter emits these events as quote ticks for active quote subscriptions.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolymarketBestBidAsk {
     pub market: Ustr,
@@ -646,7 +646,8 @@ pub struct PolymarketWsAuth {
 /// Initial market-channel subscribe request sent for a fresh WebSocket session.
 ///
 /// Wire format: `{"assets_ids": [...], "type": "market", "initial_dump": true}`
-/// When `custom_feature_enabled` is true, enables new market and market resolved events.
+/// When `custom_feature_enabled` is true, enables new-market, market-resolved, and best-bid/ask
+/// events.
 #[derive(Debug, Serialize)]
 pub struct MarketInitialSubscribeRequest {
     pub assets_ids: Vec<String>,
@@ -660,7 +661,8 @@ pub struct MarketInitialSubscribeRequest {
 /// Incremental market-channel subscribe request sent after the initial session subscribe.
 ///
 /// Wire format: `{"assets_ids": [...], "operation": "subscribe", "initial_dump": true}`
-/// When `custom_feature_enabled` is true, enables new market and market resolved events.
+/// When `custom_feature_enabled` is true, enables new-market, market-resolved, and best-bid/ask
+/// events.
 #[derive(Debug, Serialize)]
 pub struct MarketSubscribeRequest {
     pub assets_ids: Vec<String>,
@@ -681,12 +683,10 @@ pub struct MarketUnsubscribeRequest {
 
 /// User-channel subscribe request sent on connect.
 ///
-/// Wire format: `{"auth": {...}, "markets": [], "assets_ids": [], "type": "user"}`
+/// Wire format: `{"auth": {...}, "type": "user"}`
 #[derive(Debug, Serialize)]
 pub struct UserSubscribeRequest {
     pub auth: PolymarketWsAuth,
-    pub markets: Vec<String>,
-    pub assets_ids: Vec<String>,
     #[serde(rename = "type")]
     pub msg_type: &'static str,
 }
@@ -700,6 +700,30 @@ mod tests {
         PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOrderStatus,
         PolymarketOrderType, PolymarketOutcome, PolymarketTradeStatus,
     };
+
+    #[rstest]
+    fn user_subscribe_request_matches_all_markets_wire_format() {
+        let request = UserSubscribeRequest {
+            auth: PolymarketWsAuth {
+                api_key: "fixture-key".to_string(),
+                secret: "fixture-secret".to_string(),
+                passphrase: "fixture-passphrase".to_string(),
+            },
+            msg_type: "user",
+        };
+
+        assert_eq!(
+            serde_json::to_value(request).unwrap(),
+            serde_json::json!({
+                "auth": {
+                    "apiKey": "fixture-key",
+                    "secret": "fixture-secret",
+                    "passphrase": "fixture-passphrase",
+                },
+                "type": "user",
+            }),
+        );
+    }
 
     fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
         let path = format!("test_data/{filename}");

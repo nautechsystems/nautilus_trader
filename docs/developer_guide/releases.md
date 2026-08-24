@@ -4,10 +4,10 @@ This guide covers the release process and the standards for writing release note
 
 ## Overview
 
-NautilusTrader uses a three‑branch model:
+NautilusTrader uses a three-branch model:
 
 - **`develop`**: active development; publishes dev wheels to Cloudflare R2 on every push.
-- **`nightly`**: pre‑release testing; publishes all supported pre‑release wheels and CLI binaries.
+- **`nightly`**: pre-release testing; publishes all supported pre-release wheels and CLI binaries.
 - **`master`**: stable releases; triggers the full release pipeline.
 
 Merging a release commit to `master` automatically tags the version from `python/pyproject.toml`,
@@ -88,7 +88,7 @@ The project maintains two version numbers:
 | `Cargo.toml` (workspace) | Rust crates    |
 
 These are bumped independently. The Python version drives the `v<python-version>` release tag.
-Versions ending in `aN`, `bN`, or `rcN` create a GitHub pre‑release; final versions create a normal
+Versions ending in `aN`, `bN`, or `rcN` create a GitHub pre-release; final versions create a normal
 release.
 
 ## Crates.io publishing

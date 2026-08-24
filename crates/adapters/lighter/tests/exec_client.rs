@@ -83,7 +83,7 @@ use nautilus_lighter::{
     config::LighterExecClientConfig,
     execution::LighterExecutionClient,
 };
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
@@ -102,6 +102,7 @@ use nautilus_model::{
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 const PRIVATE_KEY_HEX: &str =
     "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
@@ -887,6 +888,18 @@ fn build_client(
     build_client_with(build_config(addr))
 }
 
+fn build_client_mainnet(
+    addr: SocketAddr,
+) -> (
+    LighterExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let mut config = build_config(addr);
+    config.environment = LighterEnvironment::Mainnet;
+    build_client_with(config)
+}
+
 fn build_client_with(
     config: LighterExecClientConfig,
 ) -> (
@@ -1388,9 +1401,27 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
     let (addr, _state) = start_server().await;
     let (system_sender, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_system_event_sender(system_sender);
-    let (mut client, _rx, _cache) = build_client(addr);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, _cache) = registry.scope(|| build_client(addr));
 
     client.connect().await.expect("connect");
+
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .expect("timed out waiting for a socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("lighter-user-streams");
+    let handle = registry.handle(client_id(), endpoint).unwrap();
+
+    assert_eq!(change.client_id, client_id());
+    assert_eq!(change.venue, Some(*LIGHTER_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
 
     let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
         .await
@@ -1400,15 +1431,18 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
 
     assert_eq!(change.client_id, client_id());
     assert_eq!(change.venue, Some(*LIGHTER_VENUE));
-    assert_eq!(change.endpoint.as_str(), "lighter-user-streams");
-    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
+
+    client.disconnect().await.expect("disconnect");
+    assert!(registry.handle(client_id(), endpoint).is_none());
 }
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_submits_l2_only_integrator_auto_approval() {
     let (addr, state) = start_server().await;
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr);
 
     client.connect().await.expect("connect");
 
@@ -1447,6 +1481,24 @@ async fn connect_submits_l2_only_integrator_auto_approval() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn connect_omits_integrator_approval_on_testnet() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.connect().await.expect("connect");
+
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        state.maker_only_authorizations().await,
+        Vec::<String>::new()
+    );
+    assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
     let (addr, state) = start_server().await;
     state
@@ -1454,7 +1506,7 @@ async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
         .lock()
         .await
         .push(i64::from(TEST_API_KEY_INDEX));
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr);
 
     client.connect().await.expect("connect");
 
@@ -1473,7 +1525,7 @@ async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
         "code": 21149,
         "message": "integrator is not approved",
     }));
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr);
 
     let err = client.connect().await.unwrap_err();
     let msg = format!("{err:#}");
@@ -1710,10 +1762,20 @@ mod serial_tests {
 }
 
 #[rstest]
+#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
+#[case::mainnet(
+    LighterEnvironment::Mainnet,
+    json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_submit_limit_order_emits_submitted_and_signs_sendtx() {
+async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
+    #[case] environment: LighterEnvironment,
+    #[case] expected_attributes: Value,
+) {
     let (addr, state) = start_server().await;
-    let (mut client, mut rx, cache) = build_client(addr);
+    let mut config = build_config(addr);
+    config.environment = environment;
+    let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
     let order = make_limit_order(
@@ -1754,6 +1816,7 @@ async fn test_submit_limit_order_emits_submitted_and_signs_sendtx() {
     assert_eq!(info["IsAsk"], 0); // buys serialize as 0
     assert_eq!(info["Price"], 236_131); // 2361.31 * 100
     assert_eq!(info["BaseAmount"], 50); // 0.0050 * 10_000
+    assert_eq!(info["L2TxAttributes"], expected_attributes);
 
     client.disconnect().await.expect("disconnect");
 }
@@ -2816,10 +2879,20 @@ async fn test_cancel_order_venue_rejection_emits_cancel_rejected_for_pending_can
 }
 
 #[rstest]
+#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
+#[case::mainnet(
+    LighterEnvironment::Mainnet,
+    json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_signs_modify_sendtx() {
+async fn test_modify_order_signs_modify_sendtx(
+    #[case] environment: LighterEnvironment,
+    #[case] expected_attributes: Value,
+) {
     let (addr, state) = start_server().await;
-    let (mut client, _rx, cache) = build_client(addr);
+    let mut config = build_config(addr);
+    config.environment = environment;
+    let (mut client, _rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
     let order = make_limit_order(
@@ -2860,6 +2933,7 @@ async fn test_modify_order_signs_modify_sendtx() {
     assert_eq!(info["Index"], 281_476_929_510_111_i64);
     assert_eq!(info["BaseAmount"], 100);
     assert_eq!(info["Price"], 240_000);
+    assert_eq!(info["L2TxAttributes"], expected_attributes);
 
     client.disconnect().await.expect("disconnect");
 }

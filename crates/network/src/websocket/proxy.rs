@@ -17,7 +17,7 @@
 //!
 //! HTTP and HTTPS proxy URLs are supported. An HTTPS proxy adds TLS to the proxy hop; a `wss`
 //! target adds a separate TLS session after the tunnel is established. URL user information
-//! becomes Basic proxy authentication, and credential‑bearing values are redacted from `Debug`
+//! becomes Basic proxy authentication, and credential-bearing values are redacted from `Debug`
 //! output.
 //!
 //! The tunnel accepts only a `2xx` response and bounds response headers before parsing. It returns
@@ -517,7 +517,7 @@ where
     Ok(())
 }
 
-/// Wraps a stream in a `rustls`‑backed TLS session using `webpki_roots`.
+/// Wraps a stream in a `rustls`-backed TLS session using `webpki_roots`.
 async fn wrap_tls<S>(stream: S, server_name: &str) -> Result<TlsStream<S>, TransportError>
 where
     S: AsyncRead + AsyncWrite + Unpin,

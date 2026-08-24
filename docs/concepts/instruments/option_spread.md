@@ -118,7 +118,7 @@ sr3_spread = OptionSpread(
 Representative adapters that create or consume `OptionSpread` instruments include:
 
 - [Databento](../../integrations/databento.md) for listed option spread markets.
-- [Interactive Brokers](../../integrations/interactive_brokers.md) for exchange‑defined option strategies.
+- [Interactive Brokers](../../integrations/interactive_brokers.md) for exchange-defined option strategies.
 
 ## Related guides
 

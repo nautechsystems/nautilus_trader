@@ -82,11 +82,12 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
     .build()?;
 ```
 
-For execution, set the matching environment variables before connecting:
+For execution, follow the [testnet account setup](../integrations/lighter.md#testnet-account-setup),
+then set the matching environment variables before connecting:
 
 ```bash
 export LIGHTER_TESTNET_ACCOUNT_INDEX="123456"
-export LIGHTER_TESTNET_API_KEY_INDEX="0"
+export LIGHTER_TESTNET_API_KEY_INDEX="4"
 export LIGHTER_TESTNET_API_SECRET="your-lighter-api-secret"
 ```
 

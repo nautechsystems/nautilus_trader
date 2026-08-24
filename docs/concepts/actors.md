@@ -2,7 +2,7 @@
 
 A data actor receives requested and subscribed data, handles system events, and manages component
 state. In Python, extend the `DataActor` class; in Rust, implement the `DataActor` trait. A strategy
-adds order‑management capabilities.
+adds order-management capabilities.
 
 **Capabilities**:
 
@@ -50,7 +50,7 @@ If supplied, the actor registers with that ID; otherwise a Python actor register
 name. Give each instance an explicit `actor_id` when running more than one instance of the same
 actor, because a duplicate ID is rejected at registration (a `RuntimeError` in Python).
 
-Treat configuration as construction data for the actor. Read user‑supplied settings through
+Treat configuration as construction data for the actor. Read user-supplied settings through
 `self.config`, and keep runtime state on the actor itself.
 
 :::info Rust implementation
@@ -60,8 +60,8 @@ A Rust actor without a configured `actor_id` registers as `DataActor` whatever i
 each Rust actor an explicit `actor_id`.
 
 Rust authors implement `DataActor` and use the facade methods on `self`.
-`DataActorNative` is native‑only access for runtime wiring and borrowed
-core state. Import it only for same‑binary performance paths or internal runtime wiring.
+`DataActorNative` is native-only access for runtime wiring and borrowed
+core state. Import it only for same-binary performance paths or internal runtime wiring.
 :::
 
 ## Lifecycle
@@ -89,7 +89,7 @@ Override these methods to hook into lifecycle events:
 | Method         | When called                                                                    |
 | -------------- | ------------------------------------------------------------------------------ |
 | `on_start()`   | Actor is starting; subscribe to data here.                                     |
-| `on_stop()`    | Actor is stopping; clean up actor‑owned resources.                             |
+| `on_stop()`    | Actor is stopping; clean up actor-owned resources.                             |
 | `on_resume()`  | Actor is resuming after it stopped or degraded.                                |
 | `on_reset()`   | Actor is resetting, including when the engine resets between backtest runs.    |
 | `on_degrade()` | Actor is entering a degraded state and may provide only partial functionality. |
@@ -236,7 +236,7 @@ Subscribing again does not change an existing priority; unsubscribe before subsc
 priority.
 
 `QueueStateChanged` includes the trader ID, runner channel, queue condition, condition state, queue
-depth, mean dispatch time, event ID, and timestamps. Delivery uses the typed in‑process message bus
+depth, mean dispatch time, event ID, and timestamps. Delivery uses the typed in-process message bus
 and has no external wire representation. See
 [Queue pressure monitoring](live.md#queue-pressure-monitoring) for the trigger and clear semantics.
 
@@ -298,10 +298,10 @@ priority.
 `SocketStateChanged` includes the trader ID, client ID, optional venue, stable endpoint label,
 transport state, event ID, and timestamps. `SocketState.CONNECTED` reports transport availability,
 not authentication, subscription replay, or adapter readiness. `SocketState.DISCONNECTED` reports
-the loss of an active transport. The endpoint is a non‑secret logical label, not a raw connection
+the loss of an active transport. The endpoint is a non-secret logical label, not a raw connection
 URL.
 
-Delivery uses the typed in‑process message bus and has no external wire representation. See
+Delivery uses the typed in-process message bus and has no external wire representation. See
 [Socket transport state](live.md#socket-transport-state) for supported adapters and the precise
 connection edge semantics.
 
@@ -336,7 +336,7 @@ def recover_market_socket(self) -> None:
     )
 ```
 
-This API is fire‑and‑observe. A successful return means the command passed local validation and was
+This API is fire-and-observe. A successful return means the command passed local validation and was
 queued. It does not acknowledge that the kernel accepted the request or that recovery completed.
 Subscribe with `subscribe_socket_state()` and inspect `SocketStateChanged` events for the same
 client and endpoint. An accepted request reports `SocketState.DISCONNECTED` as the transport enters
@@ -359,7 +359,7 @@ The system distinguishes between two data flows:
 
 1. **Request responses**:
    - Obtained through methods like `request_bars()`, `request_quotes()`, etc.
-   - Processed through type‑specific batch handlers such as `on_historical_bars()` and
+   - Processed through type-specific batch handlers such as `on_historical_bars()` and
      `on_historical_quotes()`.
    - Custom data uses `on_historical_data()` once per response. A scalar `CustomData` arrives as
      that object, while a batch arrives as one list, including an empty list.
@@ -463,6 +463,6 @@ derived values to a data actor when another component needs them. See
 
 ## Related guides
 
-- [Strategies](strategies.md): Strategies extend actors with order‑management capabilities.
+- [Strategies](strategies.md): Strategies extend actors with order-management capabilities.
 - [Data](data/): Data types and subscriptions available to actors.
 - [Message Bus](message_bus.md): The messaging system actors use for communication.

@@ -509,18 +509,19 @@ pub fn dispatch_ws_message(
         }
         OKXWsMessage::SendFailed {
             request_id,
-            client_order_id,
+            client_order_ids,
             op,
             error,
         } => {
             let failure = classify_okx_ws_failure(&error);
+            let is_ambiguous = matches!(failure, CommandFailure::Ambiguous(_));
             log::warn!(
                 "WebSocket send failed without structured venue response: \
-                 request_id={request_id}, client_order_id={client_order_id:?}, \
+                 request_id={request_id}, client_order_ids={client_order_ids:?}, \
                  op={op:?}, {failure:?}"
             );
 
-            if let Some(client_order_id) = client_order_id {
+            for client_order_id in client_order_ids {
                 let key = client_order_id.as_str();
 
                 match op {
@@ -529,8 +530,10 @@ pub fn dispatch_ws_message(
                         | OKXWsOperation::BatchOrders
                         | OKXWsOperation::OrderAlgo,
                     ) => {
-                        state.pending_orders.remove(key);
-                        emit_send_failed_submit(failure, state, emitter, clock, client_order_id);
+                        if !is_ambiguous {
+                            state.pending_orders.remove(key);
+                        }
+                        emit_send_failed_submit(&failure, state, emitter, clock, client_order_id);
                     }
                     Some(
                         OKXWsOperation::CancelOrder
@@ -538,11 +541,15 @@ pub fn dispatch_ws_message(
                         | OKXWsOperation::MassCancel
                         | OKXWsOperation::CancelAlgos,
                     ) => {
-                        state.pending_cancels.remove(key);
+                        if !is_ambiguous {
+                            state.pending_cancels.remove(key);
+                        }
                     }
                     Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
-                        state.pending_amends.remove(key);
-                        emit_send_failed_modify(failure, state, emitter, clock, client_order_id);
+                        if !is_ambiguous {
+                            state.pending_amends.remove(key);
+                        }
+                        emit_send_failed_modify(&failure, state, emitter, clock, client_order_id);
                     }
                     _ => {}
                 }
@@ -550,6 +557,17 @@ pub fn dispatch_ws_message(
         }
         OKXWsMessage::ChannelData { channel, .. } => {
             log::debug!("Ignoring data channel message on execution client: {channel:?}");
+        }
+        OKXWsMessage::SubscriptionFailed {
+            channel,
+            inst_id,
+            code,
+            msg,
+        } => {
+            log::error!(
+                "OKX rejected {channel:?} subscription for {inst_id:?} \
+                 (code={code}, msg={msg}); execution updates for it will not flow"
+            );
         }
         OKXWsMessage::LiquidationWarnings(warnings) => {
             for warning in warnings {
@@ -1355,7 +1373,7 @@ pub fn dispatch_execution_reports(
 }
 
 fn emit_send_failed_submit(
-    failure: CommandFailure,
+    failure: &CommandFailure,
     state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
     clock: &AtomicTime,
@@ -1377,14 +1395,14 @@ fn emit_send_failed_submit(
         ident.strategy_id,
         ident.instrument_id,
         client_order_id,
-        &reason,
+        reason,
         clock.get_time_ns(),
         false,
     );
 }
 
 fn emit_send_failed_modify(
-    failure: CommandFailure,
+    failure: &CommandFailure,
     state: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
     clock: &AtomicTime,
@@ -1406,7 +1424,7 @@ fn emit_send_failed_modify(
         ident.instrument_id,
         client_order_id,
         None,
-        &reason,
+        reason,
         clock.get_time_ns(),
     );
 }
@@ -1503,9 +1521,12 @@ pub fn emit_batch_cancel_failure(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_model::enums::{AccountType, OrderSide, OrderType};
     use rstest::rstest;
 
-    use super::format_order_response_reason;
+    use super::*;
+    use crate::websocket::error::OKXWsError;
 
     #[rstest]
     #[case("51000", "Rejected", "", "Rejected")]
@@ -1524,5 +1545,82 @@ mod tests {
             format_order_response_reason(s_code, s_msg, sub_code),
             expected
         );
+    }
+
+    #[rstest]
+    #[case::ambiguous(OKXWsError::SendFailed("connection reset".to_string()), true)]
+    #[case::not_sent(OKXWsError::NoActiveClient, false)]
+    fn send_failure_preserves_only_ambiguous_pending_orders(
+        #[case] error: OKXWsError,
+        #[case] expected_pending: bool,
+    ) {
+        let client_order_ids = [
+            ClientOrderId::from("O-batch-pending-1"),
+            ClientOrderId::from("O-batch-pending-2"),
+        ];
+        let state = WsDispatchState::default();
+        let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
+        let strategy_id = StrategyId::from("STRATEGY-001");
+
+        for client_order_id in client_order_ids {
+            state.pending_orders.insert(
+                client_order_id.to_string(),
+                PendingOrderInfo {
+                    trader_id: TraderId::from("TRADER-001"),
+                    strategy_id,
+                    instrument_id,
+                },
+            );
+            state.order_identities.insert(
+                client_order_id,
+                OrderIdentity {
+                    client_order_id,
+                    instrument_id,
+                    strategy_id,
+                    order_side: OrderSide::Buy,
+                    order_type: OrderType::Limit,
+                },
+            );
+        }
+
+        let clock = get_atomic_clock_realtime();
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            AccountId::from("OKX-001"),
+            AccountType::Margin,
+            None,
+        );
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let instruments = AtomicMap::new();
+        let mut fee_cache = AHashMap::new();
+        let mut filled_qty_cache = AHashMap::new();
+        let mut order_state_cache = AHashMap::new();
+
+        dispatch_ws_message(
+            OKXWsMessage::SendFailed {
+                request_id: "req-batch-send-failure".to_string(),
+                client_order_ids: client_order_ids.to_vec(),
+                op: Some(OKXWsOperation::BatchOrders),
+                error,
+            },
+            &emitter,
+            &state,
+            AccountId::from("OKX-001"),
+            &instruments,
+            &mut fee_cache,
+            &mut filled_qty_cache,
+            &mut order_state_cache,
+            clock,
+        );
+
+        for client_order_id in client_order_ids {
+            assert_eq!(
+                state.pending_orders.contains_key(client_order_id.as_str()),
+                expected_pending,
+                "pending state mismatch for {client_order_id}"
+            );
+        }
     }
 }

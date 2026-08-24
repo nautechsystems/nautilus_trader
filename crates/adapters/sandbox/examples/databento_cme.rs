@@ -98,6 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         leverages: ahash::AHashMap::new(),
         book_type: BookType::L1_MBP,
         fee_model: None,
+        fill_model: None,
         frozen_account: false,
         bar_execution: true,
         trade_execution: false,
@@ -107,6 +108,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         use_position_ids: true,
         use_random_ids: false,
         use_reduce_only: true,
+        queue_position: false,
+        liquidity_consumption: false,
+        bar_adaptive_high_low_ordering: false,
+        use_market_order_acks: false,
+        oto_full_trigger: false,
+        price_protection_points: 0,
     };
 
     let databento_factory = DatabentoDataClientFactory::new();

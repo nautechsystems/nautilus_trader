@@ -19,11 +19,11 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 | `quantity`              | `Quantity`                      | Required         | The order quantity.                                 |
 | `time_in_force`         | `TimeInForce`                   | Required         | The order time in force.                            |
 | `post_only`             | `bool`                          | Required         | If the order only provides liquidity.               |
-| `reduce_only`           | `bool`                          | Required         | If the order carries the reduce‑only instruction.   |
+| `reduce_only`           | `bool`                          | Required         | If the order carries the reduce-only instruction.   |
 | `quote_quantity`        | `bool`                          | Required         | If quantity is denominated in the quote currency.   |
 | `reconciliation`        | `bool`                          | Required         | If the event was generated during reconciliation.   |
 | `price`                 | `Price` or `None`               | `None`           | The limit price.                                    |
-| `activation_price`      | `Price` or `None`               | `None`           | The activation price for a trailing‑stop order.     |
+| `activation_price`      | `Price` or `None`               | `None`           | The activation price for a trailing-stop order.     |
 | `trigger_price`         | `Price` or `None`               | `None`           | The stop trigger price.                             |
 | `trigger_type`          | `TriggerType` or `None`         | `None`           | The trigger type.                                   |
 | `limit_offset`          | `Decimal` or `None`             | `None`           | The trailing offset for the limit price.            |

@@ -29,22 +29,37 @@ is_excluded() {
   return 1
 }
 
-files_to_check=()
+readable_files=()
+typography_files=()
 
 for file in "$@"; do
-  if [[ ! -r "$file" ]] || is_excluded "$file"; then
+  if [[ ! -r "$file" ]]; then
     continue
   fi
 
-  files_to_check+=("$file")
+  readable_files+=("$file")
+
+  if ! is_excluded "$file"; then
+    typography_files+=("$file")
+  fi
 done
 
-if [[ ${#files_to_check[@]} -eq 0 ]]; then
+if [[ ${#readable_files[@]} -eq 0 ]]; then
   echo "Unicode typography conventions are valid"
   exit 0
 fi
 
-matches=$(perl -Mutf8 -CSDA -ne '
+matches=$(
+  perl -Mutf8 -CSDA -ne '
+  if (index($_, "\x{2011}") >= 0) {
+    print "$ARGV:$.: U+2011 NON-BREAKING HYPHEN; use ASCII hyphen (-)\n";
+  }
+
+  close ARGV if eof;
+' "${readable_files[@]}"
+
+  if [[ ${#typography_files[@]} -gt 0 ]]; then
+    perl -Mutf8 -CSDA -ne '
   our %details;
   BEGIN {
     %details = (
@@ -72,7 +87,9 @@ matches=$(perl -Mutf8 -CSDA -ne '
   }
 
   close ARGV if eof;
-' "${files_to_check[@]}")
+' "${typography_files[@]}"
+  fi
+)
 
 if [[ -n "$matches" ]]; then
   printf '%s\n' "$matches"

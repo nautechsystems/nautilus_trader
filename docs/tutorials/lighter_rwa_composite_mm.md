@@ -86,12 +86,14 @@ inside the same event-driven runtime.
 
 The example reads credentials from environment variables and keeps the strategy
 parameters as editable Rust constants. It defaults to
-`LighterEnvironment::Testnet`, so set the testnet Lighter credentials:
+`LighterEnvironment::Testnet`, so follow the
+[testnet account setup](../integrations/lighter.md#testnet-account-setup) and set the testnet
+Lighter credentials:
 
 ```bash
 export DATABENTO_API_KEY="your-databento-api-key"
 export LIGHTER_TESTNET_ACCOUNT_INDEX="123456"
-export LIGHTER_TESTNET_API_KEY_INDEX="0"
+export LIGHTER_TESTNET_API_KEY_INDEX="4"
 export LIGHTER_TESTNET_API_SECRET="your-lighter-api-secret"
 ```
 
@@ -139,7 +141,7 @@ Lighter traded market:
 
 | Role              | Instrument ID       | Source    | Notes                                 |
 | ----------------- | ------------------- | --------- | ------------------------------------- |
-| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.MINI top‑of‑book quote updates.  |
+| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.MINI top-of-book quote updates.  |
 | Target instrument | `NVDA-PERP.LIGHTER` | Lighter   | RWA perpetual traded through Lighter. |
 
 Subscribing to `NVDA.EQUS` requests top-of-book (`mbp-1`) quotes for `NVDA` from
@@ -287,11 +289,11 @@ Databento residual remains zero until the first `NVDA.EQUS` quote arrives.
 | `signal_instrument_id`  | `NVDA.EQUS`         | Databento US Equities Mini signal feed.                        |
 | `trade_size`            | `0.05`              | Size per bid or ask.                                           |
 | `max_position`          | `0.20`              | Hard cap on net Lighter exposure.                              |
-| `half_spread_bps`       | `25`                | Half‑spread around the Lighter anchor.                         |
+| `half_spread_bps`       | `25`                | Half-spread around the Lighter anchor.                         |
 | `inventory_skew_factor` | `2.0`               | Price units per unit of net position.                          |
 | `signal_skew_factor`    | `55.0`              | Price units per unit of normalized Databento residual.         |
 | `signal_baseline`       | First signal mid    | Optional reference price for the Databento residual.           |
-| `requote_threshold_bps` | `5`                 | Anchor or signal‑impact move that triggers cancel and requote. |
+| `requote_threshold_bps` | `5`                 | Anchor or signal-impact move that triggers cancel and requote. |
 
 With a Lighter mid of `207.00` and `half_spread_bps=25`, the unskewed half
 spread is `0.5175` USD. If Databento is 30 bps above its baseline, a

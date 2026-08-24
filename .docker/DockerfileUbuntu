@@ -19,8 +19,8 @@
 
 FROM public.ecr.aws/docker/library/rust:1.98.0-slim-bookworm@sha256:94e9efa4033213dbb70d4f665527e7ece3944ddb7ba1dd2e43f6fd6e2490af58 AS rust-toolchain
 
-# Pin to specific digest for supply-chain security (ubuntu:22.04 as of 2026-04-30)
-FROM public.ecr.aws/docker/library/ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7
+# Pin to specific digest for supply-chain security (ubuntu:22.04 as of 2026-08-23)
+FROM public.ecr.aws/docker/library/ubuntu@sha256:2edbbc5dc405e9612ba3584ce95480277e3eb374407b5505fe26f17df77c7dbc
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV RUST_BACKTRACE=1

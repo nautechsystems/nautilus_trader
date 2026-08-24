@@ -2587,7 +2587,7 @@ fn test_process_cancel_command_order_not_found(
 }
 
 #[rstest]
-fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny, account_id: AccountId) {
+fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let order_event_handler = order_event_handler_with_cache(cache.clone());
     let mut engine_l2 = get_order_matching_engine_l2(
@@ -2624,6 +2624,7 @@ fn test_process_cancel_all_command(instrument_eth_usdt: InstrumentAny, account_i
         .client_order_id(client_order_id_1)
         .submit(true)
         .build();
+    let account_id = limit_order_1.account_id().unwrap();
     cache
         .borrow_mut()
         .add_order(limit_order_1.clone(), None, None, false)
@@ -2985,7 +2986,6 @@ fn test_iterate_purges_already_canceled_order_from_core(
 #[rstest]
 fn test_process_cancel_all_skips_orders_closed_by_contingent_cascade(
     instrument_eth_usdt: InstrumentAny,
-    account_id: AccountId,
     engine_config: OrderMatchingEngineConfig,
 ) {
     // Two OUO-linked limit orders. Cancelling the first leg cascades through
@@ -3028,6 +3028,7 @@ fn test_process_cancel_all_skips_orders_closed_by_contingent_cascade(
         .linked_order_ids(vec![client_order_id_2])
         .submit(true)
         .build();
+    let account_id = limit_order_1.account_id().unwrap();
 
     let mut limit_order_2 = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument_eth_usdt.id())

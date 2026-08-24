@@ -16,10 +16,10 @@ Rust toolchain at runtime.
 | Layer              | Responsibility                                                                                 |
 | ------------------ | ---------------------------------------------------------------------------------------------- |
 | Python application | Configuration, composition, user components, analysis, and integration with Python services.   |
-| PyO3 bindings      | Type conversion, argument validation, exceptions, and ownership‑safe wrappers over Rust state. |
+| PyO3 bindings      | Type conversion, argument validation, exceptions, and ownership-safe wrappers over Rust state. |
 | Rust core          | Domain types, engines, nodes, cache, portfolio, message bus, adapters, and persistence.        |
 
-Python objects such as `Cache` and `Portfolio` are wrappers over Rust‑owned state. Nodes and engines
+Python objects such as `Cache` and `Portfolio` are wrappers over Rust-owned state. Nodes and engines
 keep their internal runtime objects private and expose bounded inspection and control methods. This
 preserves one source of state while allowing Python code to configure the system and inspect its
 results.
@@ -31,7 +31,7 @@ callbacks:
 
 | Component            | Use                                                                           |
 | -------------------- | ----------------------------------------------------------------------------- |
-| `DataActor`          | Subscribe to data, handle events, and run non‑trading workflows.              |
+| `DataActor`          | Subscribe to data, handle events, and run non-trading workflows.              |
 | `Strategy`           | Implement trading decisions and submit orders.                                |
 | `ExecutionAlgorithm` | Split or schedule routed orders through the execution engine.                 |
 | `Controller`         | Create and manage actors and strategies through `ImportableControllerConfig`. |
@@ -40,10 +40,10 @@ Application code constructs configs, registers official adapter factories, and a
 `BacktestNode`, `BacktestEngine`, or `LiveNode`. Rust remains responsible for routing, engine state,
 order management, accounting, and venue clients.
 
-Callbacks execute synchronously on the event‑processing thread and must return promptly.
-Blocking I/O, model inference, or long calculations delay market‑data handling and order execution.
+Callbacks execute synchronously on the event-processing thread and must return promptly.
+Blocking I/O, model inference, or long calculations delay market-data handling and order execution.
 Offload that work to an executor or another process. See
-[Configure a live trading node](../how_to/configure_live_trading.md) for the live‑trading rule.
+[Configure a live trading node](../how_to/configure_live_trading.md) for the live-trading rule.
 
 ## Async execution
 
@@ -72,7 +72,7 @@ reporting startup complete, supervise the run task for its lifetime, and fail th
 task completes unexpectedly.
 
 See [Hosted event loops](live.md#hosted-event-loops) for the lifecycle, cancellation, fairness, and
-cache‑backing contract.
+cache-backing contract.
 
 ## Public API contract
 
@@ -86,8 +86,8 @@ validates bound arguments before Rust code runs and maps fallible operations to 
 Code should handle the documented exception type instead of depending on an internal Rust error
 representation.
 
-Generated stubs are source‑derived artifacts. Binding changes update the Rust source and regenerate
-the stubs; the checked‑in `.pyi` files are not independent API definitions.
+Generated stubs are source-derived artifacts. Binding changes update the Rust source and regenerate
+the stubs; the checked-in `.pyi` files are not independent API definitions.
 
 ## Ownership and lifecycle
 
@@ -98,7 +98,7 @@ Rust ownership remains visible at node boundaries:
   and report methods.
 - `LiveNode.run_async()` lends the node to its coroutine. State access through the node raises during
   the run, while `is_running` and `handle()` remain available. A `dispose()` call during the run is a
-  no‑op, not a deferred request. Call it again after the run finishes; objects captured before the
+  no-op, not a deferred request. Call it again after the run finishes; objects captured before the
   run remain available until then.
 - Concurrent `LiveNode` or `BacktestNode` instances in one process are not supported because their
   runtime state is not isolated. Dispose one node before starting the next, or use separate processes
@@ -114,9 +114,9 @@ and data types under `nautilus_trader.adapters`. Their integration guides define
 capabilities.
 
 :::note[Custom adapter support]
-The public Python API does not yet define an interface for implementing an out‑of‑tree adapter
+The public Python API does not yet define an interface for implementing an out-of-tree adapter
 entirely in Python. Official adapters remain usable from Python. Custom venue integrations
-currently use the Rust adapter traits. An out‑of‑tree Python adapter surface is planned; see
+currently use the Rust adapter traits. An out-of-tree Python adapter surface is planned; see
 [issue 4694](https://github.com/nautechsystems/nautilus_trader/issues/4694).
 :::
 
@@ -127,7 +127,7 @@ not by itself add a custom Python adapter interface.
 
 Use Python when application composition, rapid strategy development, analysis tools, or integration
 with the Python ecosystem matters. Use Rust when the application must run without a Python runtime
-or needs native traits and direct crate‑level control.
+or needs native traits and direct crate-level control.
 
 Both paths use the same Rust domain model and engines. The
 [Rust capability matrix](rust.md#capability-matrix) shows which components and official adapters

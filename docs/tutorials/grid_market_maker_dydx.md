@@ -158,7 +158,7 @@ strategy cancels all open orders and places a fresh grid:
 | `num_levels`            | `usize`        | `3`        | Number of buy and sell levels.                                           |
 | `grid_step_bps`         | `u32`          | `10`       | Grid spacing in basis points (10 = 0.1%).                                |
 | `skew_factor`           | `f64`          | `0.0`      | How aggressively to shift the grid based on inventory.                   |
-| `requote_threshold_bps` | `u32`          | `5`        | Minimum mid‑price move in bps before re‑quoting.                         |
+| `requote_threshold_bps` | `u32`          | `5`        | Minimum mid-price move in bps before re-quoting.                         |
 | `expire_time_secs`      | `Option<u64>`  | `None`     | Order expiry in seconds. Uses GTD when set, GTC otherwise.               |
 | `on_cancel_resubmit`    | `bool`         | `false`    | Resubmit grid on next quote after an unexpected cancel.                  |
 
@@ -428,7 +428,13 @@ fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         return Ok(()); // Mid hasn't moved enough, keep existing grid
     }
 
-    self.cancel_all_orders(instrument_id, None, None, None)?;
+    self.cancel_all_orders(
+        instrument_id,
+        None,
+        None,
+        true, // Restrict cancellation to this strategy.
+        None,
+    )?;
 
     let (net_position, worst_long, worst_short) = { /* ... */ };
 
@@ -572,10 +578,10 @@ DYDX_LOG=/tmp/dydx_main.log \
 | Log message                                         | Meaning                                                 |
 | --------------------------------------------------- | ------------------------------------------------------- |
 | `Requoting grid: mid=X, last_mid=Y`                 | Mid moved beyond threshold, refreshing grid.            |
-| `Submit short‑term order N`                         | Order submitted via short‑term broadcast path.          |
+| `Submit short-term order N`                         | Order submitted via short-term broadcast path.          |
 | `BatchCancel N short-term orders`                   | Batch cancel executed for expired/stale orders.         |
-| `benign cancel error, treating as success`          | Cancel for an already‑filled or expired order (normal). |
-| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto‑recovering.             |
+| `benign cancel error, treating as success`          | Cancel for an already-filled or expired order (normal). |
+| `Sequence mismatch detected, will resync and retry` | Cosmos SDK sequence error, auto-recovering.             |
 
 ### Expected behaviour patterns
 

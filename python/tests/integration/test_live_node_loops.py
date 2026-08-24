@@ -191,7 +191,7 @@ class TimerBurstActor(DataActor):
 
 
 @pytest.mark.parametrize("loop_runner", LOOP_RUNNERS)
-def test_host_loop_stall_under_a_timer_burst(loop_runner, capsys):
+def test_host_loop_stall_under_a_timer_burst(loop_runner):
     """
     Measure how long a dispatch batch holds the host loop when the runner is saturated.
 
@@ -240,11 +240,6 @@ def test_host_loop_stall_under_a_timer_burst(loop_runner, capsys):
 
     gaps.sort()
     p99 = gaps[int(len(gaps) * 0.99)]
-    with capsys.disabled():
-        print(
-            f"\n  burst={burst} fired={TimerBurstActor.fired} samples={len(gaps)} "
-            f"p99={p99 * 1000:.3f}ms max={gaps[-1] * 1000:.3f}ms",
-        )
 
     assert TimerBurstActor.fired == burst, "burst did not drain"
 

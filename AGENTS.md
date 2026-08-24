@@ -14,24 +14,24 @@ standard for correctness, reliability, testing, clarity, and maintainability.**
 - Match the existing style and use established functions, types, names, and dependencies.
 - Preserve exact arithmetic for prices, quantities, money, fees, and other discrete values. Use the
   project domain types or `Decimal`.
-- Do not add test‑only behavior, branches, attributes, or interfaces to production code.
+- Do not add test-only behavior, branches, attributes, or interfaces to production code.
 - Do not weaken, remove, bypass, or rewrite tests or required behavior merely to obtain a passing
   result. Fix the underlying problem and preserve the behavior the tests are intended to protect.
   Change a test only when the task intentionally changes the required behavior or when you can
   independently verify that the test is wrong.
-- Expose the minimum public API and keep the patch focused. Avoid drive‑by refactors, renames, and
+- Expose the minimum public API and keep the patch focused. Avoid drive-by refactors, renames, and
   abstractions unrelated to the contribution.
 - Change generated artifacts through their source and generator. Never edit them by hand.
 - Do not modify `RELEASES.md`. Maintainers keep it current.
 - Do not modify `.github/workflows` or `.github/actions` for an external contribution. These paths
-  are maintainer‑only.
+  are maintainer-only.
 - Do not use Conventional Commits syntax for commit messages or pull request titles.
 - Do not put an issue or pull request number in a commit subject or pull request title. A squash
   merge appends the number; reference issues from the commit body instead.
 
 ## Pull request readiness
 
-**Prepare a complete, review‑ready change before opening a pull request.**
+**Prepare a complete, review-ready change before opening a pull request.**
 
 Run the smallest relevant test while developing. Before opening or updating a pull request, run
 `make format`, `make pre-commit`, and all tests relevant to the change locally. Follow
@@ -65,6 +65,6 @@ contributor can push one coherent update.
   general, such as `Developed with assistance from AI.`
 - The project is neutral among AI labs, vendors, models, and tools, so do not name or promote a
   specific one as attribution in commit messages, pull request titles, or pull request descriptions.
-- Do not add an AI tool or model as an author, co‑author, or contributor.
+- Do not add an AI tool or model as an author, co-author, or contributor.
 - Do not add `Co-authored-by:` trailers for AI tools or models.
 - Do not add branded footers such as `Generated with ...` to commit messages or pull request text.

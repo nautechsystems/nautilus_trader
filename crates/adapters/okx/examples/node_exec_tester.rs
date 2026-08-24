@@ -17,6 +17,10 @@
 //!
 //! Edit the constants below to change the environment, target instrument, and order size.
 //!
+//! WARNING: With `DRY_RUN = false` this tester places REAL orders with REAL funds
+//! on the configured environment. Keep `DRY_RUN = true` unless you intend to
+//! trade live; dry-run mode logs the intended order flow without submitting.
+//!
 //! Run with: `cargo run --example okx-exec-tester --package nautilus-okx --features examples`
 //!
 //! Required credential environment variables:
@@ -42,6 +46,8 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
 const OKX_ENVIRONMENT: OKXEnvironment = OKXEnvironment::Live;
+/// Set to `false` to submit real orders. Dry-run mode logs order flow only.
+const DRY_RUN: bool = false;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "OKX-001";
 const NODE_NAME: &str = "OKX-EXEC-TESTER-001";
@@ -111,7 +117,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
-        .open_position_on_start_qty(order_qty.as_decimal())
+        .dry_run(DRY_RUN)
+        .maybe_open_position_on_start_qty((!DRY_RUN).then_some(order_qty.as_decimal()))
         .log_data(false)
         // .enable_limit_buys(false)
         // .enable_limit_sells(false)

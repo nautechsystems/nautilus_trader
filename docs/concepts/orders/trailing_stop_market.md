@@ -2,12 +2,12 @@
 
 `FIX OrdType <40>=3` (Stop) + trailing peg
 
-A *Trailing‑Stop‑Market* order keeps its stop trigger a fixed offset from the specified market
+A *Trailing-Stop-Market* order keeps its stop trigger a fixed offset from the specified market
 price as the market moves favorably. It releases a *Market* order when triggered.
 
 ## Use cases
 
-Use a *Trailing‑Stop‑Market* order to protect gains while allowing a position to continue through
+Use a *Trailing-Stop-Market* order to protect gains while allowing a position to continue through
 favorable moves. A tight offset can trigger on ordinary volatility, while a wide offset can give
 back more profit. The released *Market* order can also slip, be rejected, or remain unfilled on a
 sharp reversal.

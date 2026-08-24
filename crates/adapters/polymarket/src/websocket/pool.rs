@@ -25,7 +25,9 @@
 //! current shards are full at subscribe time. A secondary shard closes once it owns
 //! no assets; the primary shard (which carries new-market discovery) always
 //! persists. Each shard replays only its own subscriptions on reconnect because
-//! that state lives inside its own [`PolymarketWebSocketClient`].
+//! that state lives inside its own [`PolymarketWebSocketClient`]. When custom
+//! features are enabled, every shard requests asset-scoped best-bid/ask events,
+//! while secondary shards discard global discovery and resolution events.
 
 use std::sync::{
     Arc, Mutex as StdMutex,
@@ -34,17 +36,16 @@ use std::sync::{
 
 use ahash::AHashMap;
 use nautilus_common::live::get_runtime;
+use nautilus_live::SocketControlFactory;
 use nautilus_network::websocket::{TransportBackend, proxy::ProxyUrl};
 use ustr::Ustr;
 
 use super::{
+    MARKET_STREAMS_ENDPOINT,
     client::{PolymarketWebSocketClient, WsSubscriptionHandle},
-    messages::PolymarketWsMessage,
+    messages::{MarketWsMessage, PolymarketWsMessage},
 };
-use crate::common::{
-    consts::WS_DEFAULT_SUBSCRIPTIONS,
-    socket::{MARKET_STREAMS_ENDPOINT, SocketStatePublisher},
-};
+use crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS;
 
 // Primary shard carries new-market discovery and never auto-closes.
 const PRIMARY_SHARD_ID: usize = 0;
@@ -76,7 +77,7 @@ struct PoolInner {
     state: StdMutex<PoolState>,
     out_tx: StdMutex<Option<tokio::sync::mpsc::UnboundedSender<PolymarketWsMessage>>>,
     out_rx: StdMutex<Option<tokio::sync::mpsc::UnboundedReceiver<PolymarketWsMessage>>>,
-    socket_publisher: StdMutex<Option<SocketStatePublisher>>,
+    socket_factory: StdMutex<Option<SocketControlFactory>>,
     closed: AtomicBool,
 }
 
@@ -84,7 +85,6 @@ struct PoolInner {
 struct PoolState {
     shards: AHashMap<usize, ShardEntry>,
     assignments: AHashMap<Ustr, usize>,
-    next_shard_id: usize,
 }
 
 impl PoolState {
@@ -92,7 +92,6 @@ impl PoolState {
         Self {
             shards: AHashMap::new(),
             assignments: AHashMap::new(),
-            next_shard_id: PRIMARY_SHARD_ID + 1,
         }
     }
 }
@@ -158,12 +157,12 @@ impl PolymarketMarketConnectionPool {
 
     /// Configures socket state reporting and reconnect control for every connection in the pool.
     #[must_use]
-    pub(crate) fn with_socket_publisher(self, publisher: SocketStatePublisher) -> Self {
+    pub(crate) fn with_socket_factory(self, factory: SocketControlFactory) -> Self {
         *self
             .inner
-            .socket_publisher
+            .socket_factory
             .lock()
-            .expect("pool socket publisher mutex poisoned") = Some(publisher);
+            .expect("pool socket factory mutex poisoned") = Some(factory);
         self
     }
 
@@ -214,11 +213,6 @@ impl PolymarketMarketConnectionPool {
             .out_rx
             .lock()
             .expect("pool out_rx mutex poisoned") = Some(out_rx);
-
-        {
-            let mut state = self.inner.state.lock().expect("pool state mutex poisoned");
-            state.next_shard_id = PRIMARY_SHARD_ID + 1;
-        }
 
         self.inner.connect_new_shard(true).await?;
         Ok(())
@@ -424,7 +418,7 @@ impl PoolInner {
             state: StdMutex::new(PoolState::new()),
             out_tx: StdMutex::new(None),
             out_rx: StdMutex::new(None),
-            socket_publisher: StdMutex::new(None),
+            socket_factory: StdMutex::new(None),
             closed: AtomicBool::new(false),
         }
     }
@@ -522,23 +516,21 @@ impl PoolInner {
             anyhow::bail!("Market connection pool is closed");
         }
 
-        let subscribe_new_markets = is_primary && self.subscribe_new_markets;
         let id = if is_primary {
             PRIMARY_SHARD_ID
         } else {
-            let mut state = self.state.lock().expect("pool state mutex poisoned");
-            let id = state.next_shard_id;
-            state.next_shard_id += 1;
-            id
+            let state = self.state.lock().expect("pool state mutex poisoned");
+            available_shard_id(&state)
         };
-        let mut client = self.market_client(subscribe_new_markets, id);
+
+        let mut client = self.market_client(self.subscribe_new_markets, id);
         client.connect().await?;
 
         let handle = client.clone_subscription_handle();
         let rx = client
             .take_message_receiver()
             .ok_or_else(|| anyhow::anyhow!("Market shard receiver unavailable after connect"))?;
-        let forwarder = self.spawn_forwarder(rx);
+        let forwarder = self.spawn_forwarder(rx, is_primary);
 
         let mut state = self.state.lock().expect("pool state mutex poisoned");
         state.shards.insert(
@@ -567,19 +559,19 @@ impl PoolInner {
             self.transport_backend,
             self.proxy_url.clone(),
         );
-        let publisher = self
-            .socket_publisher
+        let factory = self
+            .socket_factory
             .lock()
-            .expect("pool socket publisher mutex poisoned")
+            .expect("pool socket factory mutex poisoned")
             .clone();
 
-        if let Some(publisher) = publisher {
+        if let Some(factory) = factory {
             let endpoint = if shard_id == PRIMARY_SHARD_ID {
                 MARKET_STREAMS_ENDPOINT.to_string()
             } else {
                 format!("{MARKET_STREAMS_ENDPOINT}-{shard_id}")
             };
-            client.with_socket_control(publisher.control(endpoint))
+            client.with_socket_control(factory.control(endpoint))
         } else {
             client
         }
@@ -588,6 +580,7 @@ impl PoolInner {
     fn spawn_forwarder(
         &self,
         mut rx: tokio::sync::mpsc::UnboundedReceiver<PolymarketWsMessage>,
+        is_primary: bool,
     ) -> tokio::task::JoinHandle<()> {
         let out_tx = self
             .out_tx
@@ -601,6 +594,10 @@ impl PoolInner {
             };
 
             while let Some(msg) = rx.recv().await {
+                if !should_forward_from_shard(&msg, is_primary) {
+                    continue;
+                }
+
                 if out_tx.send(msg).is_err() {
                     break;
                 }
@@ -611,7 +608,6 @@ impl PoolInner {
     fn drain_shards(&self) -> Vec<ShardEntry> {
         let mut state = self.state.lock().expect("pool state mutex poisoned");
         state.assignments.clear();
-        state.next_shard_id = PRIMARY_SHARD_ID + 1;
         state.shards.drain().map(|(_, shard)| shard).collect()
     }
 
@@ -625,6 +621,16 @@ impl PoolInner {
     }
 }
 
+fn should_forward_from_shard(message: &PolymarketWsMessage, is_primary: bool) -> bool {
+    is_primary
+        || !matches!(
+            message,
+            PolymarketWsMessage::Market(
+                MarketWsMessage::NewMarket(_) | MarketWsMessage::MarketResolved(_)
+            )
+        )
+}
+
 fn smallest_shard_with_capacity(state: &PoolState, max_subscriptions: usize) -> Option<usize> {
     state
         .shards
@@ -632,6 +638,14 @@ fn smallest_shard_with_capacity(state: &PoolState, max_subscriptions: usize) -> 
         .filter(|(_, shard)| shard.owned < max_subscriptions)
         .map(|(id, _)| *id)
         .min()
+}
+
+fn available_shard_id(state: &PoolState) -> usize {
+    let mut id = PRIMARY_SHARD_ID + 1;
+    while state.shards.contains_key(&id) {
+        id = id.checked_add(1).expect("market shard ID space exhausted");
+    }
+    id
 }
 
 async fn close_shard(mut shard: ShardEntry) {
@@ -698,10 +712,10 @@ mod tests {
         routing::get,
     };
     use nautilus_common::{
-        clients::{SocketReconnectRegistry, SocketReconnectRequestOutcome},
         live::runner::replace_system_event_sender,
         messages::{SystemEvent, system::SocketState},
     };
+    use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
     use nautilus_model::identifiers::ClientId;
     use rstest::rstest;
 
@@ -752,8 +766,64 @@ mod tests {
                 },
             );
         }
-        state.next_shard_id = owned.len();
         state
+    }
+
+    fn market_message(filename: &str) -> PolymarketWsMessage {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join(filename);
+        let json = std::fs::read_to_string(path).unwrap();
+        PolymarketWsMessage::Market(serde_json::from_str(&json).unwrap())
+    }
+
+    #[rstest]
+    #[case::primary_new_market("ws_market_new_market_msg.json", true, true)]
+    #[case::secondary_new_market("ws_market_new_market_msg.json", false, false)]
+    #[case::primary_resolution("ws_market_resolved_msg.json", true, true)]
+    #[case::secondary_resolution("ws_market_resolved_msg.json", false, false)]
+    #[case::secondary_best_bid_ask("ws_market_best_bid_ask_msg.json", false, true)]
+    fn shard_forwarding_keeps_global_events_on_primary(
+        #[case] filename: &str,
+        #[case] is_primary: bool,
+        #[case] expected: bool,
+    ) {
+        let message = market_message(filename);
+        assert_eq!(should_forward_from_shard(&message, is_primary), expected);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn secondary_forwarder_drops_global_events_and_keeps_best_bid_ask() {
+        let inner = PoolInner::new(None, TransportBackend::default(), true, 1);
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        *inner.out_tx.lock().expect("pool out_tx mutex poisoned") = Some(out_tx);
+        let (shard_tx, shard_rx) = tokio::sync::mpsc::unbounded_channel();
+        let forwarder = inner.spawn_forwarder(shard_rx, false);
+
+        shard_tx
+            .send(market_message("ws_market_new_market_msg.json"))
+            .unwrap();
+        shard_tx
+            .send(market_message("ws_market_resolved_msg.json"))
+            .unwrap();
+        shard_tx
+            .send(market_message("ws_market_best_bid_ask_msg.json"))
+            .unwrap();
+        drop(shard_tx);
+        forwarder.await.unwrap();
+
+        let forwarded = out_rx.try_recv().unwrap();
+        let PolymarketWsMessage::Market(MarketWsMessage::BestBidAsk(message)) = forwarded else {
+            panic!("unexpected forwarded message: {forwarded:?}");
+        };
+        assert_eq!(
+            message.asset_id,
+            Ustr::from(
+                "85354956062430465315924116860125388538595433819574542752031640332592237464430"
+            ),
+        );
+        assert!(out_rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -790,15 +860,18 @@ mod tests {
         let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
         replace_system_event_sender(system_tx);
         let registry = SocketReconnectRegistry::default();
-        let publisher = SocketStatePublisher::new(ClientId::from("POLYMARKET"), registry.clone())
-            .expect("system event sender should be initialized");
+        let factory = SocketControlFactory::with_registry(
+            ClientId::from("POLYMARKET"),
+            Some(*crate::common::consts::POLYMARKET_VENUE),
+            &registry,
+        );
         let pool = PolymarketMarketConnectionPool::new(
             Some(format!("ws://{addr}/ws/market")),
             false,
             TransportBackend::Tungstenite,
             1,
         )
-        .with_socket_publisher(publisher);
+        .with_socket_factory(factory);
 
         pool.connect().await.expect("connect primary shard");
         pool.handle()
@@ -826,11 +899,12 @@ mod tests {
                 Ustr::from("polymarket-market-streams-1"),
             ],
         );
+        let client_id = ClientId::from("POLYMARKET");
         let primary = registry
-            .get(Ustr::from(MARKET_STREAMS_ENDPOINT))
+            .handle(client_id, Ustr::from(MARKET_STREAMS_ENDPOINT))
             .expect("primary reconnect handle should be registered");
         let secondary = registry
-            .get(Ustr::from("polymarket-market-streams-1"))
+            .handle(client_id, Ustr::from("polymarket-market-streams-1"))
             .expect("secondary reconnect handle should be registered");
         assert_eq!(
             primary.request_reconnect(),
@@ -840,7 +914,7 @@ mod tests {
             .try_recv()
             .expect("selected shard should report reconnect state");
         let SystemEvent::SocketState(change) = event;
-        assert_eq!(change.client_id, ClientId::from("POLYMARKET"));
+        assert_eq!(change.client_id, client_id);
         assert_eq!(change.endpoint, Ustr::from(MARKET_STREAMS_ENDPOINT));
         assert_eq!(change.state, SocketState::Disconnected);
         assert_eq!(
@@ -849,6 +923,16 @@ mod tests {
         );
 
         pool.disconnect().await.expect("disconnect pool");
+        assert!(
+            registry
+                .handle(client_id, Ustr::from(MARKET_STREAMS_ENDPOINT))
+                .is_none()
+        );
+        assert!(
+            registry
+                .handle(client_id, Ustr::from("polymarket-market-streams-1"))
+                .is_none()
+        );
     }
 
     #[rstest]
@@ -863,6 +947,14 @@ mod tests {
     ) {
         let state = state_with_shards(owned);
         assert_eq!(smallest_shard_with_capacity(&state, max), expected);
+    }
+
+    #[rstest]
+    fn available_shard_id_reuses_lowest_closed_shard() {
+        let mut state = state_with_shards(&[1, 1, 1]);
+        state.shards.remove(&(PRIMARY_SHARD_ID + 1));
+
+        assert_eq!(available_shard_id(&state), PRIMARY_SHARD_ID + 1);
     }
 
     #[rstest]

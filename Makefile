@@ -848,7 +848,11 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-check-miri-toolchain.bash
 	$Q bash scripts/ci/test-check-nightly-merge-status.bash
 	$Q bash scripts/ci/test-check-workspace-test-coverage.bash
+	$Q bash scripts/ci/test-configure-r2-aws.bash
+	$Q bash scripts/ci/test-docker-workflow-scripts.bash
 	$Q bash scripts/ci/test-github-action-shas.bash
+	$Q bash scripts/ci/test-nightly-merge-workflow.bash
+	$Q bash scripts/ci/test-package-cli-artifact.bash
 	$Q bash scripts/ci/test-plan.bash
 	$Q bash scripts/ci/test-publish-cargo-crates-check.bash
 	$Q bash scripts/ci/test-publish-cli-r2-upload-installer.bash
@@ -856,6 +860,9 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-release-github-assets.bash
 	$Q bash scripts/ci/test-release-verification-retry.bash
 	$Q bash scripts/ci/test-rust-toolchain.bash
+	$Q bash scripts/ci/test-select-attestation-bundle.bash
+	$Q bash scripts/ci/test-tool-version-scripts.bash
+	$Q bash scripts/ci/test-validate-wheel-upload.bash
 	$Q bash scripts/ci/test-verify-published-registries-crates.bash
 	$Q bash scripts/test-check-cargo-cooldown.bash
 	$Q bash scripts/test-update-cargo-dependencies.bash

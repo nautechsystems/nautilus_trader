@@ -16,11 +16,11 @@ loading infrastructure. Optional PyO3 bindings expose the same implementation th
 
 ## NautilusTrader
 
-[NautilusTrader](https://nautilustrader.io) is an open‑source, production‑grade, Rust‑native
-engine for multi‑asset, multi‑venue trading systems.
+[NautilusTrader](https://nautilustrader.io) is an open-source, production-grade, Rust-native
+engine for multi-asset, multi-venue trading systems.
 
 The system spans research, deterministic simulation, and live execution within a single
-event‑driven architecture, providing research‑to‑live semantic parity.
+event-driven architecture, providing research-to-live semantic parity.
 
 ## What this crate provides
 
@@ -60,7 +60,7 @@ Use `127.0.0.1` unless you are connecting to a remote host.
 | Dockerized IB Gateway | Paper        |       `4002` |
 | Dockerized IB Gateway | Live         |       `4001` |
 
-This crate defaults to `4002`, which matches paper‑trading IB Gateway and the
+This crate defaults to `4002`, which matches paper-trading IB Gateway and the
 default Dockerized IB Gateway paper setup. If you are connecting to TWS or to a
 live Gateway session, set the port explicitly in your config.
 
@@ -75,7 +75,7 @@ NautilusTrader. The adapter does not convert these timestamps automatically at r
 - [Interactive Brokers integration guide](https://nautilustrader.io/docs/nightly/integrations/interactive_brokers/):
   setup, configuration, symbology, and usage.
 - [Rust node examples](examples): live data and execution testers.
-- [Python live‑node examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers):
+- [Python live-node examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/interactive_brokers):
   Python configuration examples.
 
 ## License
@@ -86,7 +86,7 @@ The source code for NautilusTrader is available on GitHub under the
 ---
 
 NautilusTrader™ is developed and maintained by Nautech Systems, a technology
-company specializing in the development of high‑performance trading systems.
+company specializing in the development of high-performance trading systems.
 For more information, visit <https://nautilustrader.io>.
 
 Use of this software is subject to the [Disclaimer](https://nautilustrader.io/legal/disclaimer/).
