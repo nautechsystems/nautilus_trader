@@ -115,7 +115,7 @@ pub struct BetfairBspBookDelta {
     pub ts_init: UnixNanos,
 }
 
-/// Marker emitted after all changes in a single MCM batch are processed.
+/// Marker emitted after all changes in an MCM sequence are processed.
 ///
 /// Strategies can use this to know when a coherent set of market updates
 /// has been fully delivered.

@@ -2,12 +2,12 @@
 
 `FIX OrdType <40>=K` (Market With Left Over as Limit)
 
-A *Market‑To‑Limit* order submits as a *Market* order. After the first fill, any unfilled quantity
+A *Market-To-Limit* order submits as a *Market* order. After the first fill, any unfilled quantity
 rests as a *Limit* order at that fill price.
 
 ## Use cases
 
-Use a *Market‑To‑Limit* order to take liquidity at the best available price without sweeping deeper
+Use a *Market-To-Limit* order to take liquidity at the best available price without sweeping deeper
 levels. This can suit thin books or larger orders where limiting further market impact matters. Any
 remainder can stay unfilled if the market moves away from the first fill price.
 

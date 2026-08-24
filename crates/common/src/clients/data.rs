@@ -18,7 +18,7 @@
 use async_trait::async_trait;
 use nautilus_model::identifiers::{ClientId, Venue};
 
-use super::{SocketReconnectRegistry, log_not_implemented};
+use super::log_not_implemented;
 use crate::messages::data::{
     RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
     RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
@@ -52,11 +52,6 @@ pub trait DataClient {
 
     /// Returns the optional venue this client is associated with.
     fn venue(&self) -> Option<Venue>;
-
-    /// Returns endpoint-level socket reconnect controls exposed by this client.
-    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
-        None
-    }
 
     /// Starts the data client.
     ///

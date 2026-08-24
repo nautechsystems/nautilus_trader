@@ -29,7 +29,7 @@ submission, without requiring external client libraries.
 
 | Product Type      | Data Feed | Trading | Notes                                                      |
 | ----------------- | --------- | ------- | ---------------------------------------------------------- |
-| Perpetual Futures | ✓         | ✓       | All perpetuals are USDC‑settled.                           |
+| Perpetual Futures | ✓         | ✓       | All perpetuals are USDC-settled.                           |
 | Spot              | -         | -       | dYdX offers spot on Solana; not supported by this adapter. |
 | Options           | -         | -       | *Not available on dYdX*.                                   |
 
@@ -67,8 +67,8 @@ The adapter communicates through three independent transport layers:
 
 | Layer     | Target    | Direction | Purpose                                              |
 | --------- | --------- | --------- | ---------------------------------------------------- |
-| HTTP      | Indexer   | Read‑only | Instrument metadata, historical data, account state. |
-| WebSocket | Indexer   | Read‑only | Real‑time market data, order/fill/position updates.  |
+| HTTP      | Indexer   | Read-only | Instrument metadata, historical data, account state. |
+| WebSocket | Indexer   | Read-only | Real-time market data, order/fill/position updates.  |
 | gRPC      | Validator | Write     | Order placement, cancellation, and batch operations. |
 
 ### Block-based settlement
@@ -162,7 +162,7 @@ the `-PERP` suffix for consistency with other adapters and to leave room for oth
 ## Orders capability
 
 dYdX supports perpetual futures trading with a full set of order types and execution
-features. The adapter automatically classifies each order as short‑term, long‑term, or conditional
+features. The adapter automatically classifies each order as short-term, long-term, or conditional
 from its type, time-in-force, and expiry, so no manual tagging is needed.
 
 ### Order types
@@ -171,10 +171,10 @@ from its type, time-in-force, and expiry, so no manual tagging is needed.
 | ---------------------- | ---------- | -------------------------------------------------- |
 | `MARKET`               | ✓          | Immediate execution at best available price.       |
 | `LIMIT`                | ✓          |                                                    |
-| `STOP_MARKET`          | ✓          | Stop‑loss conditional order, always stateful.      |
+| `STOP_MARKET`          | ✓          | Stop-loss conditional order, always stateful.      |
 | `STOP_LIMIT`           | ✓          | Conditional order, always stateful.                |
-| `MARKET_IF_TOUCHED`    | ✓          | Take‑profit market order, triggers on price touch. |
-| `LIMIT_IF_TOUCHED`     | ✓          | Take‑profit limit order, triggers on price touch.  |
+| `MARKET_IF_TOUCHED`    | ✓          | Take-profit market order, triggers on price touch. |
+| `LIMIT_IF_TOUCHED`     | ✓          | Take-profit limit order, triggers on price touch.  |
 | `TRAILING_STOP_MARKET` | -          | *Not supported*.                                   |
 | `TRAILING_STOP_LIMIT`  | -          | *Not supported*.                                   |
 
@@ -182,8 +182,8 @@ from its type, time-in-force, and expiry, so no manual tagging is needed.
 
 | Instruction   | Perpetuals | Notes                                                                                                                                                                                          |
 | ------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `post_only`   | ✓          | Supported on LIMIT, STOP_LIMIT, and LIMIT_IF_TOUCHED orders. A post‑only order priced to cross the spread is **accepted then immediately canceled** by the venue (not rejected with a reason). |
-| `reduce_only` | ✓          | Accepted by the chain **only on orders that execute immediately** (IOC). Anything else is rejected on‑chain with `code=9003`, `Reduce-only is currently disabled for non-IOC orders`.          |
+| `post_only`   | ✓          | Supported on LIMIT, STOP_LIMIT, and LIMIT_IF_TOUCHED orders. A post-only order priced to cross the spread is **accepted then immediately canceled** by the venue (not rejected with a reason). |
+| `reduce_only` | ✓          | Accepted by the chain **only on orders that execute immediately** (IOC). Anything else is rejected on-chain with `code=9003`, `Reduce-only is currently disabled for non-IOC orders`.          |
 
 How the adapter handles the flag depends on the order type:
 
@@ -209,7 +209,7 @@ Set `reduce_only` only on the first group, and only together with `IOC`.
 
 | Feature            | Perpetuals | Notes                                                                                                                                                                                     |
 | ------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Order modification | -          | Not supported. dYdX supports short‑term order [replacement](https://docs.dydx.xyz/concepts/trading/limit-orderbook#replacements) (same ID, higher GTB); not yet exposed as `ModifyOrder`. |
+| Order modification | -          | Not supported. dYdX supports short-term order [replacement](https://docs.dydx.xyz/concepts/trading/limit-orderbook#replacements) (same ID, higher GTB); not yet exposed as `ModifyOrder`. |
 | Bracket/OCO orders | -          | *Not supported*.                                                                                                                                                                          |
 | Iceberg orders     | -          | *Not supported*.                                                                                                                                                                          |
 
@@ -217,17 +217,17 @@ Set `reduce_only` only on the first group, and only together with `IOC`.
 
 | Operation    | Perpetuals | Notes                                                                                                                  |
 | ------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Batch submit | ✓          | Supported for long‑term `LIMIT` orders. Short‑term orders are submitted individually.                                  |
+| Batch submit | ✓          | Supported for long-term `LIMIT` orders. Short-term orders are submitted individually.                                  |
 | Batch modify | -          | *Not supported*.                                                                                                       |
-| Batch cancel | ✓          | Partitioned: short‑term orders use `MsgBatchCancel` (single gRPC call), long‑term orders use batched `MsgCancelOrder`. |
+| Batch cancel | ✓          | Partitioned: short-term orders use `MsgBatchCancel` (single gRPC call), long-term orders use batched `MsgCancelOrder`. |
 
 ### Position management
 
 | Feature          | Perpetuals | Notes                                                           |
 | ---------------- | ---------- | --------------------------------------------------------------- |
-| Query positions  | ✓          | Real‑time position updates.                                     |
+| Query positions  | ✓          | Real-time position updates.                                     |
 | Position mode    | -          | Netting only (see below).                                       |
-| Leverage control | -          | Set by each market's margin fractions; no per‑account override. |
+| Leverage control | -          | Set by each market's margin fractions; no per-account override. |
 | Margin mode      | -          | Cross margin only.                                              |
 
 :::note
@@ -241,7 +241,7 @@ dYdX nets positions (one position per instrument) at the venue level, so the ada
 | -------------------- | ---------- | ------------------------------ |
 | Query open orders    | ✓          | List all active orders.        |
 | Query order history  | ✓          | Historical order data.         |
-| Order status updates | ✓          | Real‑time order state changes. |
+| Order status updates | ✓          | Real-time order state changes. |
 | Trade history        | ✓          | Execution and fill reports.    |
 
 ### Contingent orders
@@ -251,13 +251,13 @@ dYdX nets positions (one position per instrument) at the venue level, so the ada
 | Order lists        | -          | *Not supported*.                                 |
 | OCO orders         | -          | *Not supported*.                                 |
 | Bracket orders     | -          | *Not supported*.                                 |
-| Conditional orders | ✓          | Stop, take‑profit market, and take‑profit limit. |
+| Conditional orders | ✓          | Stop, take-profit market, and take-profit limit. |
 
 ### Equity tier limit
 
-dYdX caps how many **stateful orders** (long‑term and conditional) a subaccount may hold open at
-once, based on the subaccount's net collateral. Short‑term orders are exempt from the cap.
-Submitting past the cap is rejected on‑chain with `code=10001` and a log message of the form
+dYdX caps how many **stateful orders** (long-term and conditional) a subaccount may hold open at
+once, based on the subaccount's net collateral. Short-term orders are exempt from the cap.
+Submitting past the cap is rejected on-chain with `code=10001` and a log message of the form
 `Opening order would exceed equity tier limit of N`. Cancel existing stateful orders before placing
 more, or split strategies across subaccounts.
 
@@ -277,16 +277,16 @@ The tiers are governance-adjustable. Query the live values from a node's
 ### MIT and LIT round-tripping
 
 dYdX's protocol uses a single `TAKE_PROFIT` order type with a price (`subticks`) and trigger
-price; whether it behaves as market‑on‑trigger or limit‑on‑trigger is implicit in the price. The
-adapter submits Nautilus `MARKET_IF_TOUCHED` as a take‑profit with the price set to the 5%
-pay‑through worst‑case, and `LIMIT_IF_TOUCHED` as a take‑profit at the user's limit price. Both
+price; whether it behaves as market-on-trigger or limit-on-trigger is implicit in the price. The
+adapter submits Nautilus `MARKET_IF_TOUCHED` as a take-profit with the price set to the 5%
+pay-through worst-case, and `LIMIT_IF_TOUCHED` as a take-profit at the user's limit price. Both
 forms are returned by the Indexer as `"type":"TAKE_PROFIT"`.
 
 On reconciliation, the adapter recovers the original Nautilus order type from how far the reported
 price sits from the trigger price. A drift of **2% or more** means the price came from the 5%
-pay‑through buffer, so the order is reconciled as `MARKET_IF_TOUCHED`; anything closer is treated as
-a user‑chosen limit and reconciled as `LIMIT_IF_TOUCHED`. The 2% threshold separates the pay‑through
-band from typical take‑profit limit offsets, which sit well under 1%.
+pay-through buffer, so the order is reconciled as `MARKET_IF_TOUCHED`; anything closer is treated as
+a user-chosen limit and reconciled as `LIMIT_IF_TOUCHED`. The 2% threshold separates the pay-through
+band from typical take-profit limit offsets, which sit well under 1%.
 
 ### Liquidation and ADL (deleveraging) handling
 
@@ -325,15 +325,15 @@ Upstream references:
 
 ### Order classification
 
-dYdX classifies every order into one of three on‑chain categories. The adapter
+dYdX classifies every order into one of three on-chain categories. The adapter
 automatically determines the category based on time-in-force and expiry, so no manual
 configuration is required.
 
 | Category    | Placement | Expiry          | Typical use                                       |
 | ----------- | --------- | --------------- | ------------------------------------------------- |
-| Short‑term  | In‑memory | Block height    | IOC, or orders expiring within 40 blocks.         |
-| Long‑term   | On‑chain  | Timestamp (UTC) | GTC/GTD with expiry beyond the short‑term window. |
-| Conditional | On‑chain  | Timestamp (UTC) | Stop‑loss and take‑profit triggers.               |
+| Short-term  | In-memory | Block height    | IOC, or orders expiring within 40 blocks.         |
+| Long-term   | On-chain  | Timestamp (UTC) | GTC/GTD with expiry beyond the short-term window. |
+| Conditional | On-chain  | Timestamp (UTC) | Stop-loss and take-profit triggers.               |
 
 At the protocol level, **all dYdX orders are limit orders**. The `MARKET` order type
 is a Nautilus convenience that the adapter implements as an aggressive IOC limit order
@@ -473,7 +473,7 @@ Long-term and conditional orders require proper Cosmos SDK sequence management:
 | Error code | Source             | Meaning                                          |
 | ---------- | ------------------ | ------------------------------------------------ |
 | `code=32`  | Cosmos SDK         | Account sequence mismatch                        |
-| `code=104` | dYdX authenticator | Signature verification failed (sequence‑related) |
+| `code=104` | dYdX authenticator | Signature verification failed (sequence-related) |
 
 Both trigger automatic resync + retry via the `RetryManager`.
 
@@ -549,7 +549,7 @@ automatically via `OrderMessageBuilder`, but understanding the parameters helps 
 
 | Parameter                     | Description                                             |
 | ----------------------------- | ------------------------------------------------------- |
-| `atomic_resolution`           | Exponent for converting human‑readable size to quantums |
+| `atomic_resolution`           | Exponent for converting human-readable size to quantums |
 | `quantum_conversion_exponent` | Exponent for converting quantums to tokens              |
 | `step_base_quantums`          | Minimum order size step in quantums                     |
 | `subticks_per_tick`           | Price granularity within each tick                      |
@@ -580,13 +580,13 @@ The adapter supports the following data subscriptions:
 | Data type            | Subscription | Historical request | Notes                                            |
 | -------------------- | ------------ | ------------------ | ------------------------------------------------ |
 | Trade ticks          | ✓            | ✓                  |                                                  |
-| Quote ticks          | ✓            | -                  | Synthesized from order book top‑of‑book.         |
+| Quote ticks          | ✓            | -                  | Synthesized from order book top-of-book.         |
 | Order book deltas    | ✓            | -                  | L2 depth only.                                   |
-| Order book snapshots | -            | ✓                  | One‑time snapshot via HTTP request.              |
+| Order book snapshots | -            | ✓                  | One-time snapshot via HTTP request.              |
 | Bars                 | ✓            | ✓                  | See supported resolutions below.                 |
 | Mark prices          | ✓            | -                  | Via markets channel.                             |
 | Index prices         | ✓            | -                  | Via markets channel.                             |
-| Funding rates        | ✓            | ✓                  | Real‑time via markets channel, history via HTTP. |
+| Funding rates        | ✓            | ✓                  | Real-time via markets channel, history via HTTP. |
 | Instrument status    | ✓            | -                  | Via markets channel.                             |
 
 ### Supported bar resolutions
@@ -757,8 +757,8 @@ wallet credentials.
 | `trader_id`         | Required  | Nautilus trader ID for the client.                                                |
 | `account_id`        | Required  | Nautilus account ID for the client.                                               |
 | `network`           | `MAINNET` | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                   |
-| `private_key`       | `None`    | Hex‑encoded signing key; falls back to the network‑specific environment variable. |
-| `wallet_address`    | `None`    | dYdX wallet address; falls back to the network‑specific environment variable.     |
+| `private_key`       | `None`    | Hex-encoded signing key; falls back to the network-specific environment variable. |
+| `wallet_address`    | `None`    | dYdX wallet address; falls back to the network-specific environment variable.     |
 | `subaccount_number` | `0`       | Subaccount number from `0` through `127`.                                         |
 | `proxy_url`         | `None`    | Optional proxy URL for HTTP and WebSocket use.                                    |
 
@@ -779,7 +779,7 @@ resolved automatically from environment variables based on the configured `netwo
 | Variable                      | Network | Description                                    |
 | ----------------------------- | ------- | ---------------------------------------------- |
 | `DYDX_WALLET_ADDRESS`         | Mainnet | Bech32-encoded wallet address (`dydx1...`).    |
-| `DYDX_PRIVATE_KEY`            | Mainnet | Hex‑encoded secp256k1 private key for signing. |
+| `DYDX_PRIVATE_KEY`            | Mainnet | Hex-encoded secp256k1 private key for signing. |
 | `DYDX_TESTNET_WALLET_ADDRESS` | Testnet | Testnet wallet address (`dydx1...`).           |
 | `DYDX_TESTNET_PRIVATE_KEY`    | Testnet | Testnet private key.                           |
 

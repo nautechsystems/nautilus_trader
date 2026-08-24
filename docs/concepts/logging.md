@@ -125,7 +125,7 @@ For detailed information about log file naming conventions and rotation behavior
 
 Rotation behavior depends on both the presence of a size limit and whether a custom file name is provided:
 
-- **Size‑based rotation**:
+- **Size-based rotation**:
   - Set `FileWriterConfig.file_rotate` to a `(max_file_size, max_backup_count)` tuple, such as
     `(100_000_000, 5)` for 100 MB and five backup files.
   - When writing a log entry would make the current file exceed this size, the file is closed and a new one is created.
@@ -218,8 +218,8 @@ export NAUTILUS_LOG="stdout=Info;fileout=Debug;RiskEngine=Error;is_colored"
 | `is_colored`          | Flag      | Enable ANSI colors (default: true).              |
 | `print_config`        | Flag      | Print config to stdout at startup.               |
 | `log_components_only` | Flag      | Only log components with explicit filters.       |
-| `<Component>`         | Log level | Component‑specific level (exact match).          |
-| `<module::path>`      | Log level | Module‑specific level (prefix match, Rust only). |
+| `<Component>`         | Log level | Component-specific level (exact match).          |
+| `<module::path>`      | Log level | Module-specific level (prefix match, Rust only). |
 
 Flags are enabled by their presence in the spec string (no value needed). Log levels are case-insensitive: `Off`, `Trace`, `Debug`, `Info`, `Warn`, `Error`.
 
@@ -276,7 +276,7 @@ Module path filtering is only available via the `NAUTILUS_LOG` environment varia
 :::warning
 If `log_components_only=True` (or `log_components_only` is present in the spec string) and
 `component_levels` is empty, no log messages will be emitted to stdout/stderr or files. Add at
-least one component filter or disable components‑only logging.
+least one component filter or disable components-only logging.
 :::
 
 ### Log colors
@@ -316,7 +316,7 @@ supports up to 255 concurrent guards.
 
 ## LogGuard: managing log lifecycle
 
-`init_logging` returns a `LogGuard` that tracks one user of the process‑global logging subsystem.
+`init_logging` returns a `LogGuard` that tracks one user of the process-global logging subsystem.
 `BacktestEngine` and `LiveNode` own their guards internally, so application code does not need to
 acquire a guard from an engine or node.
 
@@ -327,7 +327,7 @@ The logging system uses reference counting to track active `LogGuard` instances:
 - **Counter increments**: When a new `LogGuard` is created, an atomic counter is incremented.
 - **Counter decrements**: When a `LogGuard` is dropped, the counter is decremented.
 - **Last guard**: When the counter reaches zero, pending file logs are flushed and synced. The
-  process‑global logging thread stays available for later guards.
+  process-global logging thread stays available for later guards.
 - **Maximum guards**: The system supports up to 255 concurrent `LogGuard` instances. Attempting to create more raises a `ValueError` from `init_logging`, or a `RuntimeError` from engine or node creation.
 
 Abrupt termination can still lose buffered logs. Dispose engines and nodes normally, and retain the

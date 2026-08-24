@@ -40,11 +40,11 @@ space grows beyond hand-picked cases.
 | ------------------------ | ------------------------------------------------------------------------------- |
 | Unit test                | A single function or transition has a small, enumerable set of cases.           |
 | Parametrized test        | The same shape repeats across discrete inputs (order side, status, instrument). |
-| Property‑based test      | An invariant must hold for a whole class of inputs the mind cannot enumerate.   |
-| Integration test         | Multiple modules interact through a real (non‑mocked) engine or runtime.        |
-| Fuzz test                | Untrusted or adversarial bytes cross a parser, decoder, or wire‑format handler. |
+| Property-based test      | An invariant must hold for a whole class of inputs the mind cannot enumerate.   |
+| Integration test         | Multiple modules interact through a real (non-mocked) engine or runtime.        |
+| Fuzz test                | Untrusted or adversarial bytes cross a parser, decoder, or wire-format handler. |
 | Spec acceptance test     | Behaviour depends on a live venue contract (see `spec_exec_testing.md`).        |
-| Deterministic simulation | Correctness depends on task scheduling, timeouts, or wall‑clock ordering.       |
+| Deterministic simulation | Correctness depends on task scheduling, timeouts, or wall-clock ordering.       |
 | Formal verification      | A pure function has crisp invariants and a bounded input space worth a proof.   |
 
 The formal verification rung is aspirational: no Kani or Prusti harness has landed in
@@ -141,7 +141,7 @@ Use parametrized tests and fixtures (e.g., `@pytest.mark.parametrize`) to avoid 
 
 ### Python tests
 
-The Python test suite lives under `python/tests/` and tests the Rust‑backed PyO3 package. It requires
+The Python test suite lives under `python/tests/` and tests the Rust-backed PyO3 package. It requires
 a built extension module and uses the Python project under `python/`. From the repository root, run:
 
 ```bash
@@ -180,9 +180,9 @@ cargo nextest run --workspace --features "arrow,ffi,python,high-precision,stream
 
 :::info
 `cargo nextest` is the supported runner for the full Rust unit and integration suite. The suite
-relies on nextest's per‑test process isolation for process‑global and thread‑local state, including
+relies on nextest's per-test process isolation for process-global and thread-local state, including
 logging, the message bus, and deterministic test state. Plain `cargo test --workspace` runs a test
-binary's cases in a shared process, so it is not a supported full‑suite gate and is not guaranteed to
+binary's cases in a shared process, so it is not a supported full-suite gate and is not guaranteed to
 pass. Plain `cargo test` remains appropriate for doctests and focused tests that are known to work
 with the libtest runner.
 :::

@@ -18,6 +18,11 @@ fi
 
 TOOL_NAME="$1"
 
+if [[ ! "$TOOL_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+  echo "Error: Invalid cargo tool name: $TOOL_NAME" >&2
+  exit 1
+fi
+
 if [[ ! -f "$CARGO_TOML" ]]; then
   echo "Error: Cargo.toml not found at $CARGO_TOML" >&2
   exit 1
@@ -33,6 +38,11 @@ VERSION=$(awk -v tool="$TOOL_NAME" '
 
 if [[ -z "$VERSION" ]]; then
   echo "Error: Could not find $TOOL_NAME in [workspace.metadata.tools]" >&2
+  exit 1
+fi
+
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+  echo "Error: Invalid version for $TOOL_NAME: $VERSION" >&2
   exit 1
 fi
 

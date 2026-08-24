@@ -43,14 +43,14 @@ pub enum Message {
 }
 
 impl Message {
-    /// Constructs a text message from any string‑like value.
+    /// Constructs a text message from any string-like value.
     #[inline]
     #[must_use]
     pub fn text(s: impl Into<String>) -> Self {
         Self::Text(Bytes::from(s.into()))
     }
 
-    /// Borrows a text message as `&str` if the payload is valid UTF‑8.
+    /// Borrows a text message as `&str` if the payload is valid UTF-8.
     ///
     /// Validates on each call; for hot paths where the producer is trusted,
     /// callers can read the bytes directly via [`Self::as_bytes`] and feed

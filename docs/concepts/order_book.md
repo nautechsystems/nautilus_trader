@@ -15,14 +15,14 @@ Python strategy and actor API. Python exposes the book types as
 
 `OrderBook` instances are maintained per instrument for both backtesting and live trading:
 
-- `L3_MBO`: Level 3 market‑by‑order (MBO) data. Tracks every order at every price
+- `L3_MBO`: Level 3 market-by-order (MBO) data. Tracks every order at every price
   level, keyed by order ID. On each book side, an order ID maps to exactly one price
-  level: re‑adding an ID at a different price moves the order to the new level. MBP‑style
-  input uses a price‑derived ID. A zero order ID likewise signals missing identity, except
-  that top‑of‑book input uses the order side as its ID.
-- `L2_MBP`: Level 2 market‑by‑price (MBP) data. Aggregates orders by price level
+  level: re-adding an ID at a different price moves the order to the new level. MBP-style
+  input uses a price-derived ID. A zero order ID likewise signals missing identity, except
+  that top-of-book input uses the order side as its ID.
+- `L2_MBP`: Level 2 market-by-price (MBP) data. Aggregates orders by price level
   (one entry per price).
-- `L1_MBP`: Level 1 market‑by‑price (MBP) top‑of‑book data, also known as best bid
+- `L1_MBP`: Level 1 market-by-price (MBP) top-of-book data, also known as best bid
   and offer (BBO). Captures only the best prices.
 
 :::note
@@ -66,7 +66,7 @@ def on_book(self, order_book: OrderBook) -> None: ...
 
 ## Accessing the book
 
-The `OrderBook` exposes top‑of‑book accessors:
+The `OrderBook` exposes top-of-book accessors:
 
 ```rust
 let best_bid: Option<Price> = book.best_bid_price();
@@ -106,7 +106,7 @@ Call `book_check_integrity` to validate that the book state is consistent with i
 
 - **L1_MBP**: No more than one level per side.
 - **L2_MBP**: No more than one order per price level.
-- **L3_MBO**: No additional per‑level constraint; multiple orders may share a price.
+- **L3_MBO**: No additional per-level constraint; multiple orders may share a price.
 - **All types**: Best bid must not exceed best ask (crossed book). Locked markets
   (bid == ask) are considered valid.
 
@@ -119,9 +119,9 @@ cache. If no side is cached, an `Add` returns `BookIntegrityError::NoOrderSide`,
 or `Delete` is skipped. If the ID exists on both sides, an `Add` returns
 `BookIntegrityError::AmbiguousOrderSide`, while an `Update` or `Delete` is skipped with a warning.
 
-Out‑of‑order deltas and depth snapshots are applied rather than rejected, so a venue that replays
+Out-of-order deltas and depth snapshots are applied rather than rejected, so a venue that replays
 or reorders events still reaches the state those events describe. Only the book metadata is
-protected: `sequence` and `ts_last` are high‑water marks and never regress. A stale update logs one
+protected: `sequence` and `ts_last` are high-water marks and never regress. A stale update logs one
 warning for each field that regressed, `sequence` and `ts_event` independently, and how often it
 logs depends on how the update arrives:
 
@@ -138,7 +138,7 @@ this: a stale `QuoteTick` or `TradeTick` is skipped with a warning and leaves th
 ## Pretty printing
 
 Both `OrderBook` and `OwnOrderBook` provide a `pprint` method that returns the book as a
-human‑readable table:
+human-readable table:
 
 ```rust
 println!("{}", book.pprint(5, None));
@@ -177,7 +177,7 @@ Each `OwnBookOrder` carries:
 - `side`, `price`, and `size`: Order side, price, and remaining (leaves) quantity.
 - `order_type` and `time_in_force`: Order metadata retained for inspection.
 - `status`: Current order status, such as `SUBMITTED`, `ACCEPTED`, or `PENDING_CANCEL`.
-- `ts_last`: Timestamp of the latest order event applied to this own‑book order.
+- `ts_last`: Timestamp of the latest order event applied to this own-book order.
 - `ts_accepted`: Timestamp when the venue accepted the order, or zero before acceptance.
 - `ts_submitted`: Timestamp when the order was submitted, or zero before submission.
 - `ts_init`: Timestamp when the order was initialized.
@@ -188,10 +188,10 @@ The `status` and `ts_accepted` fields drive the optional filters described in
 ### Auditing
 
 The `audit_open_orders` method reconciles an own book against a set of valid client order
-IDs. Any own‑book order not in the provided set is removed and logged as an audit error.
-`Cache::audit_own_order_books` builds this set from open and in‑flight orders so submitted
+IDs. Any own-book order not in the provided set is removed and logged as an audit error.
+`Cache::audit_own_order_books` builds this set from open and in-flight orders so submitted
 orders are not removed during normal venue latency windows. Live systems can run this audit
-periodically through the own‑books audit interval.
+periodically through the own-books audit interval.
 
 ### Querying
 
@@ -231,7 +231,7 @@ giving access to the full set of analysis methods (`spread`, `midpoint`,
 
 ### Status and time filtering
 
-Filtered views support optional status and time‑based filtering for own orders:
+Filtered views support optional status and time-based filtering for own orders:
 
 ```rust
 let statuses = AHashSet::from([OrderStatus::Accepted]);
@@ -243,8 +243,8 @@ let filtered = book.filtered_view(Some(&own_book), None, Some(&statuses), None, 
 The `accepted_buffer_ns` parameter provides a grace period. When `ts_now` is set, the view includes
 an own order only when `ts_accepted + accepted_buffer_ns <= ts_now`. This excludes recently accepted
 orders that may not yet appear in the public book feed. The time check applies regardless of order
-status, so combine it with a status filter to exclude non‑accepted orders. Omitting `ts_now`
-disables acceptance‑time filtering, and a positive `accepted_buffer_ns` requires `ts_now`.
+status, so combine it with a status filter to exclude non-accepted orders. Omitting `ts_now`
+disables acceptance-time filtering, and a positive `accepted_buffer_ns` requires `ts_now`.
 
 ```rust
 // Only subtract orders accepted at least 500ms ago

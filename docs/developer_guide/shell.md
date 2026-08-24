@@ -15,8 +15,8 @@ truth.
 
 | Location       | Owns                                                                 | Delegates                                              |
 | -------------- | -------------------------------------------------------------------- | ------------------------------------------------------ |
-| GitHub Actions | Events, permissions, matrices, runners, secrets, and hosted actions  | Multi‑step shell behavior                              |
-| `Makefile`     | Discoverable tasks, dependencies, variables, and concurrency limits  | Non‑trivial control flow                               |
+| GitHub Actions | Events, permissions, matrices, runners, secrets, and hosted actions  | Multi-step shell behavior                              |
+| `Makefile`     | Discoverable tasks, dependencies, variables, and concurrency limits  | Non-trivial control flow                               |
 | Shell script   | Validation, reusable command sequences, retries, and transformations | Workflow orchestration and build dependency management |
 
 Prefer a script when:
@@ -49,8 +49,8 @@ shebang even when Make or GitHub Actions invokes the file through `bash` or `sh`
 direct callers use it to identify the interpreter.
 
 Bash is preferred for normal development, Make, and CI scripts because the repository already
-depends on it and its features make non‑trivial shell code clearer. These features include
-`pipefail`, `[[ ... ]]`, arrays, process substitution, and function‑local variables.
+depends on it and its features make non-trivial shell code clearer. These features include
+`pipefail`, `[[ ... ]]`, arrays, process substitution, and function-local variables.
 
 Use POSIX `sh` for a small bootstrap or wrapper only when avoiding a Bash dependency is part of its
 supported interface. Test the script under the target `/bin/sh`; simple syntax alone does not prove
@@ -75,9 +75,9 @@ portable alternatives include:
 | `readarray` / `mapfile`           | 4.0+         | `while read` loops                 |
 | `${var,,}` / `${var^^}`           | 4.0+         | `tr` for case conversion           |
 
-A CI‑only script may use a newer Bash version or platform‑specific tool when every workflow caller
+A CI-only script may use a newer Bash version or platform-specific tool when every workflow caller
 guarantees that environment. Document the constraint near the code that depends on it. A path under
-`scripts/ci/` does not by itself make a script Linux‑only because CI also uses macOS and Windows
+`scripts/ci/` does not by itself make a script Linux-only because CI also uses macOS and Windows
 runners.
 
 ### System utilities
@@ -87,30 +87,30 @@ capability or operating system and implement both forms.
 
 | Operation         | GNU form       | BSD or macOS form | Portable approach                                         |
 | ----------------- | -------------- | ----------------- | --------------------------------------------------------- |
-| In‑place `sed`    | `sed -i`       | `sed -i ''`       | Use a backup suffix such as `sed -i.bak`, then remove it. |
+| In-place `sed`    | `sed -i`       | `sed -i ''`       | Use a backup suffix such as `sed -i.bak`, then remove it. |
 | File size         | `stat -c '%s'` | `stat -f '%z'`    | Try or select the supported form.                         |
-| SHA‑256           | `sha256sum`    | `shasum -a 256`   | Detect the command and keep output handling equal.        |
+| SHA-256           | `sha256sum`    | `shasum -a 256`   | Detect the command and keep output handling equal.        |
 | Canonical path    | `readlink -f`  | No common form    | Avoid it or resolve from a known directory with `pwd`.    |
 | Extended matching | `grep -P`      | No common form    | Use `grep -E` when it expresses the same pattern.         |
 | Nanosecond time   | `date +%N`     | No common form    | Use an existing run ID or `$RANDOM` for cache busting.    |
 
 Quote paths and expansions so spaces do not change argument boundaries. Do not assume filesystem
-paths are case‑sensitive. Use repository‑relative paths only after resolving the repository root
+paths are case-sensitive. Use repository-relative paths only after resolving the repository root
 from the script location, not from the caller's working directory.
 
 Use only commands installed by the documented development or runner setup. If an optional command
 is necessary, check for it with `command -v` and report how to install or replace it. The repository
-stores text with LF endings through `.gitattributes`; do not add platform‑specific line endings.
+stores text with LF endings through `.gitattributes`; do not add platform-specific line endings.
 
 ## Place and name scripts
 
 - Put general development and maintenance commands under `scripts/`.
-- Put workflow‑specific build, test, publication, and verification commands under `scripts/ci/`.
-- Put repository checks invoked by pre‑commit under `.pre-commit-hooks/`.
-- Keep component‑specific scripts beside the component when moving them to `scripts/` would hide
+- Put workflow-specific build, test, publication, and verification commands under `scripts/ci/`.
+- Put repository checks invoked by pre-commit under `.pre-commit-hooks/`.
+- Keep component-specific scripts beside the component when moving them to `scripts/` would hide
   their ownership.
 
-- Under `scripts/` and in component directories, use lowercase kebab‑case. Name a regression script
+- Under `scripts/` and in component directories, use lowercase kebab-case. Name a regression script
   `test-<script-name>.bash` or `test-<script-name>.sh` to keep the tested pair together.
 - Under `.pre-commit-hooks/`, use lowercase snake_case and match the existing `check_*` and
   `test_check_*` name families.
@@ -137,7 +137,7 @@ Follow these requirements:
   text and exit nonzero for invalid input.
 - Quote parameter expansions. Use Bash arrays for argument lists instead of building a command
   string, and do not use `eval`.
-- Keep machine‑readable output on standard output and diagnostics on standard error when callers
+- Keep machine-readable output on standard output and diagnostics on standard error when callers
   capture the result.
 - Do not end routine status output with a terminating period. Keep punctuation when the output is
   a complete explanatory or diagnostic sentence.
@@ -172,13 +172,13 @@ GitHub Actions should provide workflow context through named environment variabl
 same script used locally where practical. The build workflow follows this boundary: it owns the
 Python matrix condition and `TARGET_DIR`, then invokes `scripts/ci/check-generated-drift.bash`.
 
-Keep GitHub‑specific output files such as `$GITHUB_OUTPUT` and `$GITHUB_ENV` at the workflow boundary
+Keep GitHub-specific output files such as `$GITHUB_OUTPUT` and `$GITHUB_ENV` at the workflow boundary
 when the script is also a local command. A script dedicated to GitHub Actions may write them when
 that integration is its stated purpose.
 
 ## Format and lint
 
-The pre‑commit configuration formats shell files with `shfmt` using two‑space indentation, indented
+The pre-commit configuration formats shell files with `shfmt` using two-space indentation, indented
 case branches, consistent redirect spacing, and the Bash parser. ShellCheck then checks quoting,
 expansion, control flow, portability, and common command errors. The pinned hooks in
 `.pre-commit-config.yaml` are the source of truth for tool versions and options.
@@ -206,20 +206,20 @@ runtime test.
 
 Run the smallest test that exercises the changed branches and failure paths. For logic that can
 regress independently of a workflow, add a companion shell test. This includes parsing,
-multi‑branch decisions, retries and cleanup, policy checks, and material external side effects. A
-domain‑level suite may cover cooperating scripts, and a thin wrapper does not need a one‑to‑one test
+multi-branch decisions, retries and cleanup, policy checks, and material external side effects. A
+domain-level suite may cover cooperating scripts, and a thin wrapper does not need a one-to-one test
 when that suite invokes it and proves its behavior.
 
 Each companion test:
 
 - Creates isolated state under `mktemp -d` and removes it on exit.
 - Supplies fake external commands through a temporary `PATH` instead of changing production code.
-- Uses distinct inputs and exact output, exit status, and side‑effect assertions.
+- Uses distinct inputs and exact output, exit status, and side-effect assertions.
 - Covers success, invalid input, dependency failure, and cleanup when those paths exist.
 - Fails when a required test command is unavailable; a passing skip does not validate behavior.
 - Runs from `make test-scripts`, which is the script test inventory used by CI.
 
-When a script has callers on multiple operating systems, exercise platform‑sensitive changes on
+When a script has callers on multiple operating systems, exercise platform-sensitive changes on
 each caller's relevant CI matrix. A Linux test plus clean ShellCheck output does not prove macOS or
 Windows behavior.
 

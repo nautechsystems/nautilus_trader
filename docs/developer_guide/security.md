@@ -8,7 +8,7 @@ Use this page with:
 - [Supply chain policy](https://nautilustrader.io/security/supply-chain/), which states the public
   dependency and release integrity commitments.
 - [Releases](releases.md), which documents the release workflow and checklist.
-- [Security Policy](../../SECURITY.md), which gives consumer‑facing verification commands.
+- [Security Policy](../../SECURITY.md), which gives consumer-facing verification commands.
 - [GitHub Actions overview](../../.github/OVERVIEW.md#security), which documents CI/CD controls.
 
 ## Security goals
@@ -114,7 +114,7 @@ digest to the expected GitHub Actions workflow identity.
   attestations, PyPI publish attestations, `.sigstore` bundles, and
   `.intoto.jsonl` envelopes record provenance.
 - Python sdists are published to GitHub Releases and PyPI. They use the same integrity and
-  provenance records as wheels but are not published to the wheel‑only package index.
+  provenance records as wheels but are not published to the wheel-only package index.
 - Rust crates are published to crates.io. The crates.io checksum and
   `crates-manifest.json` record integrity. crates.io `trustpub_data` records
   provenance unless an explicit manual exception is present.

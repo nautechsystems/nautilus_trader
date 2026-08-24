@@ -29,12 +29,9 @@ use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
-    live::{
-        runner::{get_data_event_sender, try_get_system_event_sender},
-        runtime::get_runtime,
-    },
+    live::{runner::get_data_event_sender, runtime::get_runtime},
     messages::{
-        DataEvent, SystemEvent,
+        DataEvent,
         data::{
             BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
             InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
@@ -46,7 +43,6 @@ use nautilus_common::{
             UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
             subscribe::SubscribeInstrumentStatus, unsubscribe::UnsubscribeInstrumentStatus,
         },
-        system::{SocketState as SystemSocketState, SocketStateChange},
     },
 };
 use nautilus_core::{
@@ -55,6 +51,7 @@ use nautilus_core::{
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControlFactory;
 use nautilus_model::{
     data::{BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick},
     enums::{
@@ -65,7 +62,6 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
-use nautilus_network::{SocketState, SocketStateSink};
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -192,7 +188,7 @@ impl BinanceFuturesDataClient {
 
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let system_sender = try_get_system_event_sender();
+        let socket_factory = SocketControlFactory::new(client_id, Some(*BINANCE_VENUE));
 
         let http_client = BinanceFuturesHttpClient::new(
             product_type,
@@ -226,17 +222,8 @@ impl BinanceFuturesDataClient {
             Some(BINANCE_WS_HEARTBEAT_SECS),
             config.transport_backend,
         )?
-        .with_proxy(config.proxy_url.clone());
-
-        let ws_client = if let Some(sender) = system_sender.as_ref() {
-            ws_client.with_state_sink(Self::socket_state_sink(
-                client_id,
-                MARKET_STREAMS_ENDPOINT,
-                sender.clone(),
-            ))
-        } else {
-            ws_client
-        };
+        .with_proxy(config.proxy_url.clone())
+        .with_socket_control(socket_factory.clone(), MARKET_STREAMS_ENDPOINT);
 
         let public_url = config.base_url_ws.clone().map_or_else(
             || get_ws_public_base_url(product_type, config.environment).to_string(),
@@ -260,17 +247,8 @@ impl BinanceFuturesDataClient {
             Some(BINANCE_WS_HEARTBEAT_SECS),
             config.transport_backend,
         )?
-        .with_proxy(config.proxy_url.clone());
-
-        let ws_public_client = if let Some(sender) = system_sender {
-            ws_public_client.with_state_sink(Self::socket_state_sink(
-                client_id,
-                PUBLIC_STREAMS_ENDPOINT,
-                sender,
-            ))
-        } else {
-            ws_public_client
-        };
+        .with_proxy(config.proxy_url.clone())
+        .with_socket_control(socket_factory, PUBLIC_STREAMS_ENDPOINT);
 
         Ok(Self {
             clock,
@@ -297,24 +275,6 @@ impl BinanceFuturesDataClient {
             force_order_all_market_stream_active: Arc::new(AtomicBool::new(false)),
             force_order_ws_lock: Arc::new(tokio::sync::Mutex::new(())),
             book_epoch: Arc::new(RwLock::new(0)),
-        })
-    }
-
-    fn socket_state_sink(
-        client_id: ClientId,
-        endpoint: &'static str,
-        system_sender: tokio::sync::mpsc::UnboundedSender<SystemEvent>,
-    ) -> SocketStateSink {
-        let endpoint = Ustr::from(endpoint);
-        SocketStateSink::new(move |state| {
-            let state = match state {
-                SocketState::Connected => SystemSocketState::Connected,
-                SocketState::Disconnected => SystemSocketState::Disconnected,
-            };
-            let change = SocketStateChange::new(client_id, Some(*BINANCE_VENUE), endpoint, state);
-            if let Err(e) = system_sender.send(SystemEvent::SocketState(change)) {
-                log::error!("Failed to emit socket state change: {e}");
-            }
         })
     }
 
@@ -460,18 +420,14 @@ impl BinanceFuturesDataClient {
             return Ok((pair.to_string(), "PERPETUAL".to_string()));
         }
 
-        let cache = http.instruments_cache();
-        let definition = cache
-            .get(&Ustr::from(symbol.as_str()))
+        let definition = http
+            .instrument_metadata(*instrument_id)
             .with_context(|| format!("missing COIN-M definition for {instrument_id}"))?;
-        let BinanceFuturesInstrument::CoinM(definition) = definition.value() else {
+        let BinanceFuturesInstrument::CoinM(definition) = definition else {
             anyhow::bail!("expected a COIN-M definition for {instrument_id}");
         };
 
-        Ok((
-            definition.pair.to_string(),
-            definition.contract_type.clone(),
-        ))
+        Ok((definition.pair.to_string(), definition.contract_type))
     }
 
     fn parse_open_interest_decimal(field: &str, value: &str) -> anyhow::Result<Decimal> {

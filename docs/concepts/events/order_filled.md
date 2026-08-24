@@ -13,7 +13,7 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 
 | Field            | Python type                | Required/default | Description                                                              |
 | ---------------- | -------------------------- | ---------------- | ------------------------------------------------------------------------ |
-| `venue_order_id` | `VenueOrderId`             | Required         | The venue‑assigned order identifier.                                     |
+| `venue_order_id` | `VenueOrderId`             | Required         | The venue-assigned order identifier.                                     |
 | `account_id`     | `AccountId`                | Required         | The account associated with the fill.                                    |
 | `trade_id`       | `TradeId`                  | Required         | The trade match ID assigned by the venue.                                |
 | `position_id`    | `PositionId` or `None`     | `None`           | The position ID associated with the fill.                                |
@@ -24,7 +24,7 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 | `currency`       | `Currency`                 | Required         | The currency of the fill price.                                          |
 | `commission`     | `Money` or `None`          | `None`           | The fill commission, if reported.                                        |
 | `liquidity_side` | `LiquiditySide`            | Required         | The execution liquidity side (`MAKER`, `TAKER`, or `NO_LIQUIDITY_SIDE`). |
-| `info`           | `dict[str, str]` or `None` | `None`           | Additional venue‑ or adapter‑specific fill metadata.                     |
+| `info`           | `dict[str, str]` or `None` | `None`           | Additional venue-specific or adapter-specific fill metadata.             |
 | `reconciliation` | `bool`                     | Required         | If the event was generated during reconciliation.                        |
 
 ## Example

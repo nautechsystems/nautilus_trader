@@ -44,7 +44,7 @@ use nautilus_core::{
     Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderType, TrailingOffsetType},
@@ -66,6 +66,7 @@ use crate::{
         submitter::{DEFINITIVE_SUBMIT_REJECTION, SubmitBroadcaster, SubmitBroadcasterConfig},
     },
     common::{
+        consts::BITMEX_VENUE,
         enums::{BitmexContingencyType, BitmexOrderType, BitmexPegPriceType, BitmexTimeInForce},
         parse::{parse_peg_offset_value, parse_peg_price_type},
     },
@@ -157,7 +158,12 @@ impl BitmexExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
         )
-        .context("failed to construct BitMEX execution websocket client")?;
+        .context("failed to construct BitMEX execution websocket client")?
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*BITMEX_VENUE),
+            "bitmex-user-streams",
+        ));
 
         let pool_size = config.submitter_pool_size.unwrap_or(1);
         let submitter_proxy_urls = match &config.submitter_proxy_urls {

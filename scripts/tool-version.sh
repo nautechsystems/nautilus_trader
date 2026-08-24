@@ -8,6 +8,11 @@ set -euo pipefail
 
 TOOL_NAME="${1:?Usage: tool-version.sh <tool-name>}"
 
+if [[ ! "$TOOL_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]]; then
+  echo "Error: Invalid tool name: $TOOL_NAME" >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TOOLS_TOML="${SCRIPT_DIR}/../tools.toml"
 
@@ -31,6 +36,11 @@ VERSION=$(awk -v section="[$TOOL_NAME]" '
 
 if [[ -z "$VERSION" ]]; then
   echo "Error: Could not find version for [$TOOL_NAME] in tools.toml" >&2
+  exit 1
+fi
+
+if [[ ! "$VERSION" =~ ^([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?(\+[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?|nightly-[0-9]{4}-[0-9]{2}-[0-9]{2})$ ]]; then
+  echo "Error: Invalid version for [$TOOL_NAME]: $VERSION" >&2
   exit 1
 fi
 

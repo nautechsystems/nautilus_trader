@@ -47,14 +47,15 @@ use futures_util::StreamExt;
 use nautilus_common::{
     cache::{Cache, ORDER_NOT_FOUND},
     clients::ExecutionClient,
-    live::runner::replace_exec_event_sender,
+    live::runner::{replace_exec_event_sender, replace_system_event_sender},
     messages::{
-        ExecutionEvent,
+        ExecutionEvent, SystemEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
             ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
@@ -69,7 +70,7 @@ use nautilus_derive::{
     execution::DeriveExecutionClient,
     http::models::DeriveInstrument,
 };
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::QuoteTick,
@@ -90,6 +91,7 @@ use nautilus_network::{http::HttpClient, websocket::TransportBackend};
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 const TEST_WALLET: &str = "0x000000000000000000000000000000000000aaaa";
 const TEST_SESSION_KEY: &str = "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd";
@@ -1098,12 +1100,13 @@ struct TestClient {
 }
 
 async fn build_client(rest_state: RestState, ws_state: WsState) -> TestClient {
-    build_client_with_config(rest_state, ws_state, |config| config).await
+    build_client_with_config(rest_state, ws_state, None, |config| config).await
 }
 
 async fn build_client_with_config(
     rest_state: RestState,
     ws_state: WsState,
+    registry: Option<&SocketReconnectRegistry>,
     configure: impl FnOnce(DeriveExecClientConfig) -> DeriveExecClientConfig,
 ) -> TestClient {
     let rest_addr = start_rest_server(rest_state).await;
@@ -1119,8 +1122,12 @@ async fn build_client_with_config(
     register_test_account(&cache, AccountId::from("DERIVE-001"));
 
     let config = configure(test_config(rest_addr, ws_addr));
-    let mut client = DeriveExecutionClient::new(build_core(cache.clone()), config)
-        .expect("client creation succeeds");
+    let client = || DeriveExecutionClient::new(build_core(cache.clone()), config);
+    let mut client = match registry {
+        Some(registry) => registry.scope(client),
+        None => client(),
+    }
+    .expect("client creation succeeds");
     // start() installs the freshly-replaced event sender on the emitter, so
     // tests that drain the receiver must call it before any emit_*.
     client.start().expect("start succeeds");
@@ -1356,7 +1363,14 @@ fn make_subscription_frame(channel: &str, data: &Value) -> Value {
 async fn test_exec_client_connect_subscribes_private_channels() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let mut tc =
+        build_client_with_config(rest_state, ws_state.clone(), Some(&registry), |config| {
+            config
+        })
+        .await;
 
     tc.client.connect().await.expect("connect succeeds");
 
@@ -1368,6 +1382,31 @@ async fn test_exec_client_connect_subscribes_private_channels() {
         "subscribe frame received",
     )
     .await;
+
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("derive-user-streams");
+    let client_id = ClientId::from("DERIVE");
+    let handle = registry.handle(client_id, endpoint).unwrap();
+
+    assert_eq!(change.client_id, client_id);
+    assert_eq!(change.venue, Some(*DERIVE_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     let frames = ws_state.subscribe_frames.lock().await.clone();
     let channels: Vec<String> = frames
@@ -1385,6 +1424,7 @@ async fn test_exec_client_connect_subscribes_private_channels() {
     assert!(channels.contains(&format!("{TEST_SUBACCOUNT}.balances")));
 
     tc.client.disconnect().await.expect("disconnect succeeds");
+    assert!(registry.handle(client_id, endpoint).is_none());
 }
 
 #[rstest]
@@ -1554,7 +1594,7 @@ async fn test_submit_order_limit_posts_signed_payload() {
 async fn test_submit_order_accepts_signature_ttl_above_minimum() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    let mut tc = build_client_with_config(rest_state, ws_state.clone(), |mut config| {
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), None, |mut config| {
         config.signature_expiry_secs = MIN_SIGNATURE_TTL.as_secs() + 1;
         config
     })
@@ -1615,7 +1655,7 @@ async fn test_deeply_paced_submit_builds_signature_after_matching_quota_wait() {
     // The fixed window is aligned to client construction, so measure from
     // before the build to bound the reset wait.
     let started = std::time::Instant::now();
-    let mut tc = build_client_with_config(rest_state, ws_state.clone(), |mut config| {
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), None, |mut config| {
         config.signature_expiry_secs = MIN_SIGNATURE_TTL.as_secs() + 1;
         config.max_matching_requests_per_second = Some(1);
         config
@@ -1693,7 +1733,8 @@ async fn test_global_matching_allowance_gates_distinct_instrument_until_window_r
         .duration_since(UNIX_EPOCH)
         .expect("system time is after unix epoch")
         .as_secs();
-    let mut tc = build_client_with_config(rest_state, ws_state.clone(), |config| config).await;
+    let mut tc =
+        build_client_with_config(rest_state, ws_state.clone(), None, |config| config).await;
     tc.client.connect().await.expect("connect succeeds");
 
     // Five ETH-PERP writes exhaust the Trader account-wide matching window
@@ -1790,7 +1831,7 @@ async fn test_submit_order_rejects_signature_ttl_minimum_or_lower_before_posting
 ) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    let mut tc = build_client_with_config(rest_state, ws_state.clone(), |mut config| {
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), None, |mut config| {
         config.signature_expiry_secs = signature_expiry_secs;
         config
     })
@@ -3489,7 +3530,7 @@ async fn test_modify_order_rejects_invalid_signature_ttl_before_posting_replace(
 ) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
-    let mut tc = build_client_with_config(rest_state, ws_state.clone(), |mut config| {
+    let mut tc = build_client_with_config(rest_state, ws_state.clone(), None, |mut config| {
         config.signature_expiry_secs = signature_expiry_secs;
         config
     })

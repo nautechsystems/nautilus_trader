@@ -6,11 +6,11 @@ Absolute numbers vary by machine; treat a result inside the recorded noise band 
 
 ## Canonical workload
 
-The matrix loads the first 10,000 rows of the checked‑in
+The matrix loads the first 10,000 rows of the checked-in
 `test_data/btc-perp-20211231-20220201_1m.csv` file. It normalizes prices and volumes to the
-instrument precision, then derives a zero‑spread quote from each raw close so `LAST` bars and
+instrument precision, then derives a zero-spread quote from each raw close so `LAST` bars and
 market orders share one deterministic recorded price stream. Every scenario processes the same
-10,000 quotes and 10,000 one‑minute bars with bypass logging, analysis disabled, default optional
+10,000 quotes and 10,000 one-minute bars with bypass logging, analysis disabled, default optional
 services, and one simulated venue.
 
 | Scenario                | Submitted | Rejected | Filled | Canceled | Positions | Accounts |
@@ -36,27 +36,27 @@ preserve exact `f64` bits; event counts, action counts, and account digests rema
 | Kernel               | Linux 7.0.0-28-generic                                                     |
 | Repository revision  | `31b04e2886369c8951872f84b5ad6169953b19aa`                                 |
 | Measured source tree | `7817e1e15122ecb6e749c33b8d6d093696cb96c6`                                 |
-| Benchmark executable | SHA‑256 `e28182146a5d344391894b6eac90efc5fa7effb370fa6d2025b8f3025ff9fa7d` |
+| Benchmark executable | SHA-256 `e28182146a5d344391894b6eac90efc5fa7effb370fa6d2025b8f3025ff9fa7d` |
 | Rust                 | `rustc 1.97.1`, LLVM 22.1.6                                                |
 | Cargo                | `cargo 1.97.1`                                                             |
 | Cargo features       | Crate default feature set (empty); standard precision                      |
 | Profile              | `bench-lto`: release, fat LTO, one codegen unit, full debug information    |
 
 The measured source tree contains staged changes on top of the repository revision above. Changes
-made after the measurement add feature‑specific result expectations outside the returned timing;
-they do not alter the standard‑precision fixture, engine configuration, actions, or `run()` path.
+made after the measurement add feature-specific result expectations outside the returned timing;
+they do not alter the standard-precision fixture, engine configuration, actions, or `run()` path.
 
 ## Measurement controls
 
 - CPU governor: observed `powersave`; no host state was changed.
 - Governor policy: the repository recommends `performance` for published numbers. Because this
   baseline used `powersave`, compare it only with runs under the same governor. Repeat the matrix
-  under `performance` before using it as a release or pull‑request headline baseline.
+  under `performance` before using it as a release or pull-request headline baseline.
 - ASLR: disabled per benchmark process with `setarch "$(uname -m)" -R`.
 - CPU scheduling: SMT and boost enabled; the benchmark thread was not pinned.
 - Machine state: benchmark runs started after other Rust builds on the host completed.
-- Warm‑up: 3 seconds per case before each measurement.
-- Sampling: 50 samples over a 5‑second target measurement period per case.
+- Warm-up: 3 seconds per case before each measurement.
+- Sampling: 50 samples over a 5-second target measurement period per case.
 - Run order: each round alternated `run_preloaded` and `load_build_run` for replay, scheduled
   market orders, passive limit orders, and bar EMA cross. The second and third rounds rotated the
   scenario order.
@@ -86,9 +86,9 @@ do
 done
 ```
 
-Criterion's `median.point_estimate` from each named baseline supplies the three per‑row values.
+Criterion's `median.point_estimate` from each named baseline supplies the three per-row values.
 
-For policy and the general noise‑reduction recipe, see
+For policy and the general noise-reduction recipe, see
 [`BENCHMARKING.md`](../../../BENCHMARKING.md) at the repository root.
 
 ## Absolute baseline
@@ -105,8 +105,8 @@ Lower is better. Each case processes 20,000 data events.
 ## Profile
 
 The host's `perf_event_paranoid=4` blocked `cargo flamegraph`; no kernel setting or privilege was
-changed. GNU `gprofng` 2.42 supplied unprivileged one‑millisecond clock sampling instead. The
-experiment is host‑local at `/tmp/nautilus-backtest-bar-ema.er`.
+changed. GNU `gprofng` 2.42 supplied unprivileged one-millisecond clock sampling instead. The
+experiment is host-local at `/tmp/nautilus-backtest-bar-ema.er`.
 
 ```bash
 setarch "$(uname -m)" -R gprofng collect app -p 1 -t 25s -F off \
@@ -118,19 +118,19 @@ setarch "$(uname -m)" -R gprofng collect app -p 1 -t 25s -F off \
 gprofng display text -functions /tmp/nautilus-backtest-bar-ema.er
 ```
 
-The executable name contains a Cargo‑generated artifact hash. The SHA‑256 in the environment table
+The executable name contains a Cargo-generated artifact hash. The SHA-256 in the environment table
 identifies the captured binary; after rebuilding, substitute the new `engine-*` path.
 
 The profile captured 13.502 seconds of CPU samples. Criterion's profile mode observes benchmark
-setup and post‑run fingerprint checks even though `iter_custom` excludes them from the reported
+setup and post-run fingerprint checks even though `iter_custom` excludes them from the reported
 median. `BacktestEngine::run` accounted for 3.098 seconds inclusive, so 10.404 seconds, or 77.1%,
 of the captured samples fell outside the timed region. Within the `run` stack, the largest visible
 descendant was `OrderMatchingEngine::process_trade_ticks_from_bar` at 1.858 seconds inclusive.
 `OrderBook::update_trade_tick` accounted for 1.244 seconds inclusive within that path.
 
-The profile identifies the bar‑execution trade‑tick path as the next candidate for investigation,
-starting with the order‑book updates beneath `process_trade_ticks_from_bar`. Each fixture row also
-supplies a quote at the same recorded close, so this target applies to the mixed quote‑and‑bar
+The profile identifies the bar-execution trade-tick path as the next candidate for investigation,
+starting with the order-book updates beneath `process_trade_ticks_from_bar`. Each fixture row also
+supplies a quote at the same recorded close, so this target applies to the mixed quote-and-bar
 workload rather than an isolated bar path. The profile alone does not justify a code change. This
 baseline includes no production optimization.
 
@@ -141,22 +141,22 @@ Keep the canonical Rust workloads in the existing nightly Criterion run. The
 state that `iter_custom` is unsupported, but this matrix needs `iter_custom` to return only the
 preloaded `run()` duration while constructing a fresh engine for every iteration. CodSpeed's
 [instrument documentation](https://codspeed.io/docs/instruments) also distinguishes its
-single‑run, hardware‑agnostic simulation from wall‑clock measurements on CodSpeed‑managed
-bare‑metal runners. Neither mode reproduces this fixed‑machine absolute baseline.
+single-run, hardware-agnostic simulation from wall-clock measurements on CodSpeed-managed
+bare-metal runners. Neither mode reproduces this fixed-machine absolute baseline.
 
 `nautilus-backtest` and its registered `engine` benchmark already run through the nightly
-Criterion workflow, so no registration change is required. Nightly uses the default non‑LTO
-`bench` profile with debug information disabled; its timings are not comparable to the fixed‑host
+Criterion workflow, so no registration change is required. Nightly uses the default non-LTO
+`bench` profile with debug information disabled; its timings are not comparable to the fixed-host
 `bench-lto` table. The canonical preflight checks every fingerprint during benchmark registration,
 and the integration test enforces them in the normal test lane. A mismatch also aborts the backtest
 benchmark binary, but the existing crate loop does not reliably propagate an intermediate crate
 failure after a later crate succeeds. Treat nightly as a measurement run rather than the semantic
-gate. This benchmark matrix does not change that failure policy, and pull‑request gating remains
+gate. This benchmark matrix does not change that failure policy, and pull-request gating remains
 deferred. Reconsider CodSpeed only if its Criterion compatibility supports the required timing
 boundary and the project chooses its managed hardware for the authoritative baseline.
 
 ## Deferred scope
 
 This first matrix does not measure peak RSS, broad catalog or streaming workloads, multiple
-venues, multiple instruments, trigger orders, additional cancel cases, or pull‑request gating.
+venues, multiple instruments, trigger orders, additional cancel cases, or pull-request gating.
 Stabilize the four canonical workloads before adding those dimensions.

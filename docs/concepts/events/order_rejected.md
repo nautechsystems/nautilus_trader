@@ -15,7 +15,7 @@ Beyond the [common Python order event fields](index.md#common-python-order-event
 | ---------------- | ----------- | ---------------- | ------------------------------------------------------------------------------ |
 | `account_id`     | `AccountId` | Required         | The account associated with the order.                                         |
 | `reason`         | `str`       | Required         | The order rejection reason.                                                    |
-| `due_post_only`  | `bool`      | `False`          | If rejected because it was post‑only and would execute immediately as a taker. |
+| `due_post_only`  | `bool`      | `False`          | If rejected because it was post-only and would execute immediately as a taker. |
 | `reconciliation` | `bool`      | Required         | If generated during reconciliation.                                            |
 
 ## Example

@@ -49,6 +49,7 @@ use nautilus_core::{
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::{Data, OrderBookDeltas, QuoteTick},
     enums::BookType,
@@ -122,7 +123,12 @@ impl KrakenFuturesDataClient {
             None,
             config.transport_backend,
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_control(SocketControl::new(
+            client_id,
+            Some(*KRAKEN_VENUE),
+            "kraken-futures-data-streams",
+        ));
 
         Ok(Self {
             clock: get_atomic_clock_realtime(),
@@ -482,6 +488,7 @@ impl DataClient for KrakenFuturesDataClient {
             task.abort();
         }
 
+        self.ws.deregister_socket_control();
         let mut ws = self.ws.clone();
         get_runtime().spawn(async move {
             let _ = ws.close().await;

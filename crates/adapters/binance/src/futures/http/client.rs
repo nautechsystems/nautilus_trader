@@ -22,13 +22,14 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use aws_lc_rs::digest;
 use dashmap::DashMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, nanos::UnixNanos, time::AtomicTime,
+    AtomicMap, consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, nanos::UnixNanos,
+    time::AtomicTime,
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, FundingRateUpdate, TradeTick},
@@ -38,10 +39,10 @@ use nautilus_model::{
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
-    instruments::any::InstrumentAny,
+    instruments::{Instrument, any::InstrumentAny},
     orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Price, Quantity},
+    types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_network::{
     http::{HttpClient, HttpResponse, Method, USER_AGENT},
@@ -1405,6 +1406,37 @@ impl BinanceFuturesInstrument {
         }
     }
 
+    /// Returns validated price and quantity precision values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either venue precision is outside the domain type range.
+    pub fn precisions(&self) -> BinanceFuturesHttpResult<(u8, u8)> {
+        let price_precision = u8::try_from(self.price_precision()).map_err(|_| {
+            BinanceFuturesHttpError::ValidationError(format!(
+                "Invalid Binance Futures price precision {} for {}",
+                self.price_precision(),
+                self.symbol()
+            ))
+        })?;
+        let quantity_precision = u8::try_from(self.quantity_precision()).map_err(|_| {
+            BinanceFuturesHttpError::ValidationError(format!(
+                "Invalid Binance Futures quantity precision {} for {}",
+                self.quantity_precision(),
+                self.symbol()
+            ))
+        })?;
+
+        if price_precision > FIXED_PRECISION || quantity_precision > FIXED_PRECISION {
+            return Err(BinanceFuturesHttpError::ValidationError(format!(
+                "Binance Futures precision exceeds maximum {FIXED_PRECISION} for {}: price={price_precision}, quantity={quantity_precision}",
+                self.symbol()
+            )));
+        }
+
+        Ok((price_precision, quantity_precision))
+    }
+
     /// Returns the Nautilus-formatted instrument ID.
     #[must_use]
     pub fn id(&self) -> InstrumentId {
@@ -1432,6 +1464,8 @@ pub struct BinanceFuturesHttpClient {
     product_type: BinanceProductType,
     clock: &'static AtomicTime,
     instruments: Arc<DashMap<Ustr, BinanceFuturesInstrument>>,
+    instruments_reconciliation: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instruments_load_lock: Arc<tokio::sync::Mutex<()>>,
     treat_expired_as_canceled: bool,
 }
 
@@ -1479,6 +1513,8 @@ impl BinanceFuturesHttpClient {
             product_type,
             clock,
             instruments: Arc::new(DashMap::new()),
+            instruments_reconciliation: Arc::new(AtomicMap::new()),
+            instruments_load_lock: Arc::new(tokio::sync::Mutex::new(())),
             treat_expired_as_canceled,
         })
     }
@@ -1501,18 +1537,56 @@ impl BinanceFuturesHttpClient {
         Arc::clone(&self.instruments)
     }
 
+    /// Returns the execution-owned parsed instrument for an exact ID.
+    pub(crate) fn instrument_reconciliation(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> Option<InstrumentAny> {
+        self.instruments_reconciliation.get_cloned(instrument_id)
+    }
+
     /// Returns whether this client has complete signing credentials.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
         self.inner.has_credentials()
     }
 
-    /// Replaces the precision lookup cache after a complete catalogue fetch.
-    pub fn replace_instruments(&self, instruments: Vec<(Ustr, BinanceFuturesInstrument)>) {
-        self.instruments.clear();
+    /// Replaces the raw instrument metadata after a complete catalogue fetch.
+    fn replace_instruments(
+        &self,
+        instruments: Vec<(Ustr, BinanceFuturesInstrument)>,
+    ) -> BinanceFuturesHttpResult<()> {
+        let mut snapshot = AHashMap::with_capacity(instruments.len());
         for (symbol, instrument) in instruments {
+            instrument.precisions()?;
+            if instrument.symbol() != symbol {
+                return Err(BinanceFuturesHttpError::ValidationError(format!(
+                    "Binance Futures catalogue key {symbol} does not match instrument symbol {}",
+                    instrument.symbol()
+                )));
+            }
+            let expected_id = format_instrument_id(&symbol, self.product_type);
+            if instrument.id() != expected_id {
+                return Err(BinanceFuturesHttpError::ValidationError(format!(
+                    "Binance Futures catalogue instrument ID {} does not match expected ID {expected_id}",
+                    instrument.id()
+                )));
+            }
+
+            if snapshot.insert(symbol, instrument).is_some() {
+                return Err(BinanceFuturesHttpError::ValidationError(format!(
+                    "Duplicate Binance Futures catalogue symbol {symbol}"
+                )));
+            }
+        }
+
+        let symbols: AHashSet<_> = snapshot.keys().copied().collect();
+        for (symbol, instrument) in snapshot {
             self.instruments.insert(symbol, instrument);
         }
+        self.instruments
+            .retain(|symbol, _| symbols.contains(symbol));
+        Ok(())
     }
 
     /// Returns server time.
@@ -1592,17 +1666,18 @@ impl BinanceFuturesHttpClient {
     ///
     /// Returns an error if the request fails or the product type is invalid.
     pub async fn exchange_info(&self) -> BinanceFuturesHttpResult<()> {
-        match self.product_type {
+        let _guard = self.instruments_load_lock.lock().await;
+        let instruments = match self.product_type {
             BinanceProductType::UsdM => {
                 let info: BinanceFuturesUsdExchangeInfo = self
                     .inner
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
 
-                for symbol in info.symbols {
-                    self.instruments
-                        .insert(symbol.symbol, BinanceFuturesInstrument::UsdM(symbol));
-                }
+                info.symbols
+                    .into_iter()
+                    .map(|symbol| (symbol.symbol, BinanceFuturesInstrument::UsdM(symbol)))
+                    .collect()
             }
             BinanceProductType::CoinM => {
                 let info: BinanceFuturesCoinExchangeInfo = self
@@ -1610,19 +1685,19 @@ impl BinanceFuturesHttpClient {
                     .get("exchangeInfo", None::<&()>, false, false)
                     .await?;
 
-                for symbol in info.symbols {
-                    self.instruments
-                        .insert(symbol.symbol, BinanceFuturesInstrument::CoinM(symbol));
-                }
+                info.symbols
+                    .into_iter()
+                    .map(|symbol| (symbol.symbol, BinanceFuturesInstrument::CoinM(symbol)))
+                    .collect()
             }
             _ => {
                 return Err(BinanceFuturesHttpError::ValidationError(
                     "Invalid product type for futures".to_string(),
                 ));
             }
-        }
+        };
 
-        Ok(())
+        self.replace_instruments(instruments)
     }
 
     /// Fetches exchange info and returns the current status of each symbol.
@@ -1695,6 +1770,7 @@ impl BinanceFuturesHttpClient {
         &self,
         config: &BinanceInstrumentProviderConfig,
     ) -> BinanceFuturesHttpResult<Vec<InstrumentAny>> {
+        let _guard = self.instruments_load_lock.lock().await;
         config
             .validate(self.product_type)
             .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?;
@@ -1703,6 +1779,7 @@ impl BinanceFuturesHttpClient {
         let ts_init = UnixNanos::default();
         let fallback_fees = self.futures_fallback_fees(config).await;
         let mut cache = Vec::new();
+        let mut reconciliation = AHashMap::new();
 
         let instruments = match self.product_type {
             BinanceProductType::UsdM => {
@@ -1716,6 +1793,10 @@ impl BinanceFuturesHttpClient {
                 for symbol in info.symbols {
                     let instrument_id =
                         format_instrument_id(&symbol.symbol, BinanceProductType::UsdM);
+                    cache.push((
+                        symbol.symbol,
+                        BinanceFuturesInstrument::UsdM(symbol.clone()),
+                    ));
 
                     if !selector.includes(
                         instrument_id,
@@ -1738,12 +1819,18 @@ impl BinanceFuturesHttpClient {
                         ts_init,
                         ts_init,
                     ) {
-                        Ok(instrument) => instruments.push(instrument),
+                        Ok(instrument) => {
+                            validate_reconciliation_instrument(
+                                &mut reconciliation,
+                                instrument_id,
+                                &instrument,
+                            )?;
+                            instruments.push(instrument);
+                        }
                         Err(e) => {
                             log_futures_instrument_parse_error(config, &symbol.symbol, &e);
                         }
                     }
-                    cache.push((symbol.symbol, BinanceFuturesInstrument::UsdM(symbol)));
                 }
 
                 log::debug!(
@@ -1762,6 +1849,10 @@ impl BinanceFuturesHttpClient {
                 for symbol in info.symbols {
                     let instrument_id =
                         format_instrument_id(&symbol.symbol, BinanceProductType::CoinM);
+                    cache.push((
+                        symbol.symbol,
+                        BinanceFuturesInstrument::CoinM(symbol.clone()),
+                    ));
 
                     if !selector.includes(
                         instrument_id,
@@ -1784,12 +1875,18 @@ impl BinanceFuturesHttpClient {
                         ts_init,
                         ts_init,
                     ) {
-                        Ok(instrument) => instruments.push(instrument),
+                        Ok(instrument) => {
+                            validate_reconciliation_instrument(
+                                &mut reconciliation,
+                                instrument_id,
+                                &instrument,
+                            )?;
+                            instruments.push(instrument);
+                        }
                         Err(e) => {
                             log_futures_instrument_parse_error(config, &symbol.symbol, &e);
                         }
                     }
-                    cache.push((symbol.symbol, BinanceFuturesInstrument::CoinM(symbol)));
                 }
 
                 log::debug!(
@@ -1805,7 +1902,8 @@ impl BinanceFuturesHttpClient {
             }
         };
 
-        self.replace_instruments(cache);
+        self.replace_instruments(cache)?;
+        self.instruments_reconciliation.store(reconciliation);
         Ok(instruments)
     }
 
@@ -2048,9 +2146,8 @@ impl BinanceFuturesHttpClient {
         price_match: Option<BinancePriceMatch>,
         good_till_date: Option<i64>,
     ) -> anyhow::Result<OrderStatusReport> {
-        let symbol = format_binance_symbol(&instrument_id);
-        let size_precision = self.get_size_precision(&symbol)?;
-        let price_precision = self.get_price_precision(&symbol)?;
+        let (symbol, price_precision, size_precision) =
+            self.cached_precisions_by_id(instrument_id)?;
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
@@ -2159,9 +2256,8 @@ impl BinanceFuturesHttpClient {
         working_type: Option<BinanceWorkingType>,
         good_till_date: Option<i64>,
     ) -> anyhow::Result<OrderStatusReport> {
-        let symbol = format_binance_symbol(&instrument_id);
-        let size_precision = self.get_size_precision(&symbol)?;
-        let price_precision = self.get_price_precision(&symbol)?;
+        let (symbol, price_precision, size_precision) =
+            self.cached_precisions_by_id(instrument_id)?;
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
@@ -2298,9 +2394,8 @@ impl BinanceFuturesHttpClient {
             "Either venue_order_id or client_order_id must be provided"
         );
 
-        let symbol = format_binance_symbol(&instrument_id);
-        let size_precision = self.get_size_precision(&symbol)?;
-        let price_precision = self.get_price_precision(&symbol)?;
+        let (symbol, price_precision, size_precision) =
+            self.cached_precisions_by_id(instrument_id)?;
 
         let binance_side = BinanceSide::try_from(order_side)?;
 
@@ -2664,36 +2759,6 @@ impl BinanceFuturesHttpClient {
         }))
     }
 
-    /// Returns the size precision for an instrument from the cache.
-    fn get_size_precision(&self, symbol: &str) -> anyhow::Result<u8> {
-        let instrument = self
-            .instruments
-            .get(&Ustr::from(symbol))
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
-
-        let precision = match instrument.value() {
-            BinanceFuturesInstrument::UsdM(s) => s.quantity_precision,
-            BinanceFuturesInstrument::CoinM(s) => s.quantity_precision,
-        };
-
-        Ok(precision as u8)
-    }
-
-    /// Returns the price precision for an instrument from the cache.
-    fn get_price_precision(&self, symbol: &str) -> anyhow::Result<u8> {
-        let instrument = self
-            .instruments
-            .get(&Ustr::from(symbol))
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {symbol}"))?;
-
-        let precision = match instrument.value() {
-            BinanceFuturesInstrument::UsdM(s) => s.price_precision,
-            BinanceFuturesInstrument::CoinM(s) => s.price_precision,
-        };
-
-        Ok(precision as u8)
-    }
-
     /// Requests the current account state.
     ///
     /// # Errors
@@ -2727,9 +2792,8 @@ impl BinanceFuturesHttpClient {
             "Either venue_order_id or client_order_id must be provided"
         );
 
-        let symbol = format_binance_symbol(&instrument_id);
-        let size_precision = self.get_size_precision(&symbol)?;
-        let price_precision = self.get_price_precision(&symbol)?;
+        let (symbol, price_precision, size_precision) =
+            self.cached_precisions_by_id(instrument_id)?;
 
         let order_id = venue_order_id
             .map(|id| id.inner().parse::<i64>())
@@ -2801,9 +2865,8 @@ impl BinanceFuturesHttpClient {
         for order in orders {
             let order_instrument_id = instrument_id
                 .unwrap_or_else(|| format_instrument_id(&order.symbol, self.product_type));
-
-            let price_precision = self.get_price_precision(&order.symbol).unwrap_or(8);
-            let size_precision = self.get_size_precision(&order.symbol).unwrap_or(8);
+            let (_, price_precision, size_precision) =
+                self.cached_precisions_by_id(order_instrument_id)?;
 
             match order.to_order_status_report(
                 account_id,
@@ -2839,9 +2902,8 @@ impl BinanceFuturesHttpClient {
         limit: Option<u32>,
         bnfcr_currency: Currency,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let symbol = format_binance_symbol(&instrument_id);
-        let size_precision = self.get_size_precision(&symbol)?;
-        let price_precision = self.get_price_precision(&symbol)?;
+        let (symbol, price_precision, size_precision) =
+            self.cached_precisions_by_id(instrument_id)?;
 
         let order_id = venue_order_id
             .map(|id| id.inner().parse::<i64>())
@@ -3099,17 +3161,27 @@ impl BinanceFuturesHttpClient {
         instrument_id: InstrumentId,
     ) -> anyhow::Result<(String, u8, u8)> {
         let symbol = format_binance_symbol(&instrument_id);
+        let instrument = self.instrument_metadata(instrument_id)?;
+        let (price_precision, size_precision) = instrument.precisions()?;
+
+        Ok((symbol, price_precision, size_precision))
+    }
+
+    pub(crate) fn instrument_metadata(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<BinanceFuturesInstrument> {
+        let symbol = format_binance_symbol(&instrument_id);
         let instrument = self
             .instruments
             .get(&Ustr::from(symbol.as_str()))
+            .map(|instrument| instrument.value().clone())
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+        if instrument.id() != instrument_id {
+            return Err(InstrumentLookupError::not_found(instrument_id).into());
+        }
 
-        let (price_precision, size_precision) = match instrument.value() {
-            BinanceFuturesInstrument::UsdM(s) => (s.price_precision, s.quantity_precision),
-            BinanceFuturesInstrument::CoinM(s) => (s.price_precision, s.quantity_precision),
-        };
-
-        Ok((symbol, price_precision as u8, size_precision as u8))
+        Ok(instrument)
     }
 
     /// Requests historical funding rates for an instrument.
@@ -3295,6 +3367,27 @@ fn parse_futures_commission_rates(
         response.maker_commission_rate.parse()?,
         response.taker_commission_rate.parse()?,
     ))
+}
+
+fn validate_reconciliation_instrument(
+    instruments: &mut AHashMap<InstrumentId, InstrumentAny>,
+    expected_id: InstrumentId,
+    instrument: &InstrumentAny,
+) -> BinanceFuturesHttpResult<()> {
+    let parsed_id = instrument.id();
+    if parsed_id != expected_id {
+        return Err(BinanceFuturesHttpError::ValidationError(format!(
+            "Parsed Binance Futures instrument ID {parsed_id} does not match expected ID {expected_id}"
+        )));
+    }
+
+    if instruments.insert(parsed_id, instrument.clone()).is_some() {
+        return Err(BinanceFuturesHttpError::ValidationError(format!(
+            "Duplicate parsed Binance Futures instrument ID {parsed_id}"
+        )));
+    }
+
+    Ok(())
 }
 
 fn log_futures_instrument_parse_error(
@@ -3809,6 +3902,53 @@ mod tests {
         assert_eq!(symbol, "BTCUSDT");
         assert_eq!(price_precision, 2);
         assert_eq!(size_precision, 3);
+    }
+
+    #[rstest]
+    fn test_cached_precisions_by_id_rejects_spot_alias() {
+        let client = create_test_client();
+        client.instruments_cache().insert(
+            Ustr::from("BTCUSDT"),
+            BinanceFuturesInstrument::UsdM(test_usdm_symbol()),
+        );
+
+        let error = client
+            .cached_precisions_by_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            InstrumentLookupError::not_found(InstrumentId::from("BTCUSDT.BINANCE")).to_string()
+        );
+    }
+
+    #[rstest]
+    fn test_invalid_precision_preserves_previous_raw_snapshot() {
+        let client = create_test_client();
+        let valid = test_usdm_symbol();
+        client
+            .replace_instruments(vec![(
+                valid.symbol,
+                BinanceFuturesInstrument::UsdM(valid.clone()),
+            )])
+            .unwrap();
+        let mut invalid = valid;
+        invalid.price_precision = i32::from(FIXED_PRECISION) + 1;
+
+        let error = client
+            .replace_instruments(vec![(
+                invalid.symbol,
+                BinanceFuturesInstrument::UsdM(invalid),
+            )])
+            .unwrap_err();
+        let retained = client
+            .instruments_cache()
+            .get(&Ustr::from("BTCUSDT"))
+            .map(|instrument| instrument.value().clone())
+            .unwrap();
+
+        assert!(error.to_string().contains("precision exceeds maximum"));
+        assert_eq!(retained.precisions().unwrap(), (2, 3));
     }
 
     #[rstest]

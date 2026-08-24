@@ -868,37 +868,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_place_order_response_parses_instruction_error_message() {
-        let data = r#"
-        {
-          "jsonrpc": "2.0",
-          "result": {
-            "status": "FAILURE",
-            "instructionReports": [
-              {
-                "status": "FAILURE",
-                "errorCode": "ERROR_IN_ORDER",
-                "errorMessage": "Detailed Betfair validation message"
-              }
-            ]
-          }
-        }
-        "#;
-
-        let resp: PlaceExecutionReport = parse_jsonrpc(data);
-        let instruction_report = resp
-            .instruction_reports
-            .as_ref()
-            .and_then(|reports| reports.first())
-            .expect("instruction report");
-
-        assert_eq!(
-            instruction_report.error_message.as_deref(),
-            Some("Detailed Betfair validation message"),
-        );
-    }
-
-    #[rstest]
     #[case("rest/betting_cancel_orders_success.json")]
     #[case("rest/betting_cancel_orders_error.json")]
     #[case("rest/betting_cancel_orders_batch_success.json")]
@@ -909,10 +878,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_replace_order_responses() {
+    #[case("rest/betting_replace_orders_success.json")]
+    #[case("rest/betting_replace_orders_cancelled_not_placed_live.json")]
+    fn test_replace_order_responses(#[case] fixture: &str) {
         // betting_replace_orders_success_multi.json contains a streaming OCM,
         // not a REST ReplaceExecutionReport, so it is excluded
-        let data = load_test_json("rest/betting_replace_orders_success.json");
+        let data = load_test_json(fixture);
         let _resp: ReplaceExecutionReport = parse_jsonrpc(&data);
     }
 

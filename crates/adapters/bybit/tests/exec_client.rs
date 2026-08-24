@@ -52,15 +52,16 @@ use nautilus_bybit::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    live::runner::set_exec_event_sender,
+    live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
-        ExecutionEvent,
+        ExecutionEvent, SystemEvent,
         execution::{CancelOrder, ExecutionReport, ModifyOrder, SubmitOrder},
+        system::SocketState,
     },
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos, params::Params};
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
@@ -833,8 +834,11 @@ async fn test_exec_client_creation() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_client_connect_disconnect() {
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
     let (addr, state) = start_test_server().await.unwrap();
-    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, cache) = registry.scope(|| create_test_execution_client(addr));
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
 
     client.connect().await.unwrap();
@@ -850,8 +854,47 @@ async fn test_exec_client_connect_disconnect() {
     )
     .await;
 
+    let mut connected = Vec::new();
+    while connected.len() < 2 {
+        let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let SystemEvent::SocketState(change) = event;
+        if change.state == SocketState::Connected {
+            connected.push(change.endpoint);
+        }
+    }
+    connected.sort_unstable();
+    let expected = vec![
+        Ustr::from("bybit-trading"),
+        Ustr::from("bybit-user-streams"),
+    ];
     assert!(client.is_connected());
     assert!(state.authenticated.load(Ordering::Relaxed));
+    assert_eq!(connected, expected);
+
+    for endpoint in &expected {
+        let handle = registry.handle(*BYBIT_CLIENT_ID, *endpoint).unwrap();
+        assert_eq!(
+            handle.request_reconnect(),
+            SocketReconnectRequestOutcome::Accepted
+        );
+    }
+
+    let mut disconnected = Vec::new();
+    while disconnected.len() < 2 {
+        let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let SystemEvent::SocketState(change) = event;
+        if change.state == SocketState::Disconnected {
+            disconnected.push(change.endpoint);
+        }
+    }
+    disconnected.sort_unstable();
+    assert_eq!(disconnected, expected);
 
     let subs = state.subscriptions.lock().await;
     assert!(subs.contains(&"order".to_string()));
@@ -862,6 +905,11 @@ async fn test_exec_client_connect_disconnect() {
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+    assert!(
+        expected
+            .iter()
+            .all(|endpoint| registry.handle(*BYBIT_CLIENT_ID, *endpoint).is_none())
+    );
 }
 
 #[rstest]

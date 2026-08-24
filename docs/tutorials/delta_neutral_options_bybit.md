@@ -142,7 +142,7 @@ overrides `enter_strangle` to `false` and `iv_param_key` to
 | `rehedge_interval_secs`   | `30`       | -                | Periodic rehedge timer interval.            |
 | `enter_strangle`          | `true`     | `false`          | Place entry orders when Greeks arrive.      |
 | `entry_iv_offset`         | `0.0`      | -                | Vol points below mark IV for entry pricing. |
-| `iv_param_key`            | `"px_vol"` | `"order_iv"`     | Adapter‑specific IV parameter key.          |
+| `iv_param_key`            | `"px_vol"` | `"order_iv"`     | Adapter-specific IV parameter key.          |
 
 The `iv_param_key` is the key difference between venues. Bybit uses
 `order_iv`, which the adapter maps to the `orderIv` field in the

@@ -18,15 +18,15 @@
 //! # Transition contract
 //!
 //! [`ConnectionMode`] is shared across transport tasks. Reconnect transitions use atomic
-//! compare‑and‑exchange operations so late reconnect work cannot overwrite a concurrent
-//! `Disconnect` or `Closed` state. Sink‑backed transitions pair each successful mode change with
+//! compare-and-exchange operations so late reconnect work cannot overwrite a concurrent
+//! `Disconnect` or `Closed` state. Sink-backed transitions pair each successful mode change with
 //! its semantic availability edge.
 //!
 //! # Session and controller fencing
 //!
-//! `ReadSessionFence` marks a reader as retired so its dispatch checks drop old‑transport messages
+//! `ReadSessionFence` marks a reader as retired so its dispatch checks drop old-transport messages
 //! after observing invalidation. `ControllerLifecycle` prevents retained reconnect handles from
-//! accepting work after shutdown and defers aborting the controller until each in‑flight request
+//! accepting work after shutdown and defers aborting the controller until each in-flight request
 //! reaches its handoff boundary.
 
 use std::sync::{

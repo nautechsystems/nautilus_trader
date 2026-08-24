@@ -36,7 +36,7 @@ use ahash::AHashSet;
 use dashmap::DashMap;
 use nautilus_common::{
     cache::InstrumentLookupError,
-    clients::{DataClient, SocketReconnectRegistry},
+    clients::DataClient,
     live::{get_runtime, runner::get_data_event_sender},
     messages::{
         DataEvent,
@@ -54,6 +54,7 @@ use nautilus_core::{
     AtomicMap, AtomicSet,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::{SocketControl, SocketControlFactory};
 use nautilus_model::{
     data::QuoteTick,
     enums::BookType,
@@ -77,10 +78,7 @@ use self::{
     subscriptions::{resolve_token_id_from, sync_ws_subscription_with_terminal_async},
 };
 use crate::{
-    common::{
-        consts::POLYMARKET_VENUE,
-        socket::{RTDS_STREAMS_ENDPOINT, SocketControl, SocketStatePublisher},
-    },
+    common::consts::POLYMARKET_VENUE,
     config::PolymarketDataClientConfig,
     filters::InstrumentFilter,
     http::{
@@ -90,7 +88,7 @@ use crate::{
     providers::PolymarketInstrumentProvider,
     resolve::ResolveWatchEntry,
     rtds::{PolymarketRtdsFeed, is_supported_rtds_data_type},
-    websocket::pool::PolymarketMarketConnectionPool,
+    websocket::{RTDS_STREAMS_ENDPOINT, pool::PolymarketMarketConnectionPool},
 };
 
 const NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP: usize = 64;
@@ -140,7 +138,6 @@ pub struct PolymarketDataClient {
     closed_condition_ids: Arc<StdMutex<AHashSet<String>>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     rtds_feed: PolymarketRtdsFeed,
-    socket_registry: SocketReconnectRegistry,
     rtds_socket_control: Option<SocketControl>,
     proxy_url: Option<ProxyUrl>,
 }
@@ -178,17 +175,9 @@ impl PolymarketDataClient {
     ) -> Self {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let socket_registry = SocketReconnectRegistry::default();
-        let state_publisher = SocketStatePublisher::new(client_id, socket_registry.clone());
-
-        let ws_client = if let Some(publisher) = state_publisher.as_ref() {
-            ws_client.with_socket_publisher(publisher.clone())
-        } else {
-            ws_client
-        };
-        let rtds_socket_control = state_publisher
-            .as_ref()
-            .map(|publisher| publisher.control(RTDS_STREAMS_ENDPOINT));
+        let socket_factory = SocketControlFactory::new(client_id, Some(*POLYMARKET_VENUE));
+        let ws_client = ws_client.with_socket_factory(socket_factory.clone());
+        let rtds_socket_control = Some(socket_factory.control(RTDS_STREAMS_ENDPOINT));
         let provider =
             PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
         let configured_fetch_max_concurrency = config.new_market_fetch_max_concurrency;
@@ -250,7 +239,6 @@ impl PolymarketDataClient {
                 proxy_url.clone(),
                 rtds_socket_control.clone(),
             ),
-            socket_registry,
             rtds_socket_control,
             proxy_url,
         }
@@ -429,10 +417,6 @@ impl DataClient for PolymarketDataClient {
 
     fn venue(&self) -> Option<Venue> {
         Some(*POLYMARKET_VENUE)
-    }
-
-    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
-        Some(&self.socket_registry)
     }
 
     fn start(&mut self) -> anyhow::Result<()> {

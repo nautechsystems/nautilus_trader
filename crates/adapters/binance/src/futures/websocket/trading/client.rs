@@ -35,6 +35,7 @@ use std::{
 use arc_swap::ArcSwap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::string::secret::REDACTED;
+use nautilus_live::SocketControl;
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
@@ -97,6 +98,7 @@ pub struct BinanceFuturesWsTradingClient {
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
     recv_window_ms: Option<u64>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Debug for BinanceFuturesWsTradingClient {
@@ -140,6 +142,7 @@ impl BinanceFuturesWsTradingClient {
             transport_backend,
             proxy_url: None,
             recv_window_ms: None,
+            socket_control: None,
         }
     }
 
@@ -147,6 +150,13 @@ impl BinanceFuturesWsTradingClient {
     #[must_use]
     pub fn with_proxy(mut self, proxy_url: Option<String>) -> Self {
         self.proxy_url = proxy_url;
+        self
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
         self
     }
 
@@ -219,17 +229,19 @@ impl BinanceFuturesWsTradingClient {
             binance_futures_ws_order_quota(),
         )];
 
-        let client = WebSocketClient::connect(
+        let client = WebSocketClient::connect_with_state_sink(
             config,
             Some(raw_handler),
             Some(ping_handler),
             keyed_quotas,
             Some(binance_futures_ws_order_quota()),
+            self.socket_control.as_ref().map(SocketControl::sink),
         )
         .await
         .map_err(|e| BinanceFuturesWsApiError::ConnectionError(e.to_string()))?;
 
         self.connection_mode.store(client.connection_mode_atomic());
+        let reconnect_handle = client.reconnect_handle();
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -255,6 +267,9 @@ impl BinanceFuturesWsTradingClient {
             .await
             .send(BinanceFuturesWsTradingCommand::SetClient(client))
             .map_err(|e| BinanceFuturesWsApiError::HandlerUnavailable(e.to_string()))?;
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
         let cancellation_token = self.cancellation_token.clone();
 
@@ -293,6 +308,10 @@ impl BinanceFuturesWsTradingClient {
             && let Ok(handle) = Arc::try_unwrap(handle)
         {
             let _ = handle.await;
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
         }
     }
 

@@ -20,7 +20,7 @@
 
 mod common;
 
-use std::{cell::RefCell, collections::HashSet, net::SocketAddr, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, net::SocketAddr, rc::Rc, time::Duration};
 
 use nautilus_architect_ax::{
     common::{
@@ -33,19 +33,20 @@ use nautilus_architect_ax::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    live::runner::set_exec_event_sender,
+    live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
-        ExecutionEvent,
+        ExecutionEvent, SystemEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, QueryAccount,
             QueryOrder, SubmitOrder,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
@@ -58,6 +59,7 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
+use ustr::Ustr;
 
 use crate::common::server::{load_test_data, start_test_server};
 
@@ -163,8 +165,11 @@ async fn test_exec_client_creation() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_client_connect_disconnect() {
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
     let (addr, _state) = start_test_server().await.unwrap();
-    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, cache) = registry.scope(|| create_test_execution_client(addr));
 
     // Pre-register account so await_account_registered succeeds
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -172,10 +177,33 @@ async fn test_exec_client_connect_disconnect() {
     assert!(!client.is_connected());
 
     client.connect().await.expect("Failed to connect");
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("architect-ax-user-streams");
+    let handle = registry.handle(*AX_CLIENT_ID, endpoint).unwrap();
+
     assert!(client.is_connected());
+    assert_eq!(change.client_id, *AX_CLIENT_ID);
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.expect("Failed to disconnect");
     assert!(!client.is_connected());
+    assert!(registry.handle(*AX_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]

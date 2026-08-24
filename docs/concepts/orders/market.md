@@ -3,12 +3,12 @@
 `FIX OrdType <40>=1`
 
 A *Market* order instructs the venue to trade a quantity immediately at the best available price.
-It can also carry time in force and reduce‑only instructions.
+It can also carry time in force and reduce-only instructions.
 
 ## Use cases
 
 Use a *Market* order when prompt execution matters more than the exact price, such as for urgent
-risk reduction or entry into a liquid, fast‑moving market. A *Market* order has no price protection:
+risk reduction or entry into a liquid, fast-moving market. A *Market* order has no price protection:
 it can incur spread costs and slippage, and the venue can still reject it or leave it unfilled when
 no market is available.
 

@@ -26,6 +26,7 @@ use std::{
 use arc_swap::ArcSwap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::AtomicMap;
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::BarType,
     enums::BarAggregation,
@@ -99,6 +100,7 @@ pub struct KrakenSpotWebSocketClient {
     l3_depths: Arc<std::sync::Mutex<ahash::AHashMap<String, u32>>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Clone for KrakenSpotWebSocketClient {
@@ -124,6 +126,7 @@ impl Clone for KrakenSpotWebSocketClient {
             l3_depths: Arc::clone(&self.l3_depths),
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
+            socket_control: self.socket_control.clone(),
         }
     }
 }
@@ -190,6 +193,20 @@ impl KrakenSpotWebSocketClient {
             l3_depths: Arc::new(std::sync::Mutex::new(ahash::AHashMap::new())),
             transport_backend,
             proxy_url,
+            socket_control: None,
+        }
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
+    }
+
+    pub(crate) fn deregister_socket_control(&self) {
+        if let Some(control) = &self.socket_control {
+            control.deregister();
         }
     }
 
@@ -279,12 +296,13 @@ impl KrakenSpotWebSocketClient {
             ),
         ];
 
-        let ws_client = WebSocketClient::connect(
+        let ws_client = WebSocketClient::connect_with_state_sink(
             ws_config,
             Some(raw_handler),
             None, // ping_handler
             keyed_quotas,
             None,
+            self.socket_control.as_ref().map(SocketControl::sink),
         )
         .await
         .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
@@ -292,6 +310,7 @@ impl KrakenSpotWebSocketClient {
         // Share connection state across clones via ArcSwap
         self.connection_mode
             .store(ws_client.connection_mode_atomic());
+        let reconnect_handle = ws_client.reconnect_handle();
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<KrakenSpotWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -303,6 +322,10 @@ impl KrakenSpotWebSocketClient {
             return Err(KrakenWsError::ConnectionError(format!(
                 "Failed to send WebSocketClient to handler: {e}"
             )));
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
         }
 
         let signal = self.signal.clone();
@@ -491,6 +514,10 @@ impl KrakenSpotWebSocketClient {
             depths.clear();
         }
         self.l2_depths.clear();
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
 
         Ok(())
     }

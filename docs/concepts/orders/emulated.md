@@ -25,7 +25,7 @@ Other `TriggerType` values describe trigger methods that some venues support, bu
 The choice of trigger type determines how the order emulation will behave:
 
 - For stop orders, the emulator compares the trigger price with the selected market data.
-- For trailing‑stop orders, it updates the trailing trigger from that market data.
+- For trailing-stop orders, it updates the trailing trigger from that market data.
 - For emulated `LIMIT` orders, it compares the limit price with that market data and releases a
   `MARKET` order when matched.
 
@@ -44,14 +44,14 @@ cost of market data processing provide practical limits.
 An emulated order progresses through these stages:
 
 1. A `Strategy` submits it through `submit_order`.
-1. The `RiskEngine` applies pre‑trade checks and may deny it.
+1. The `RiskEngine` applies pre-trade checks and may deny it.
 1. The `OrderEmulator` holds and monitors it locally.
 1. A matching market update transforms it into a `MARKET` or `LIMIT` order and releases it.
 1. The `RiskEngine` checks the released order again before venue submission.
 
 :::note
 Emulated orders pass through the normal risk controls. A strategy can modify or cancel them, and a
-cancel‑all request includes them.
+cancel-all request includes them.
 :::
 
 :::info
@@ -66,7 +66,7 @@ While the `OrderEmulator` holds an order:
 - It caches the original `SubmitOrder` command.
 - It processes the order in a local matching core.
 - It subscribes to the required quotes or trades if no matching subscription exists.
-- It accepts strategy modifications and market‑driven updates until release or cancellation.
+- It accepts strategy modifications and market-driven updates until release or cancellation.
 
 ### Released emulated orders
 
@@ -130,7 +130,7 @@ When working with emulated orders:
 
 1. Query the `Cache` instead of storing local order references.
 1. Account for the order type changing on release.
-1. Handle a denial at either the initial or release‑time risk check.
+1. Handle a denial at either the initial or release-time risk check.
 
 ## Related guides
 

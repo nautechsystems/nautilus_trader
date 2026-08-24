@@ -44,10 +44,11 @@ use axum::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    live::runner::set_exec_event_sender,
+    live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
-        ExecutionEvent,
+        ExecutionEvent, SystemEvent,
         execution::{BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder},
+        system::SocketState,
     },
     testing::wait_until_async,
 };
@@ -62,7 +63,7 @@ use nautilus_deribit::{
     http::models::DeribitProductType,
     websocket::enums::DeribitWsMethod,
 };
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TriggerType},
@@ -74,6 +75,7 @@ use nautilus_model::{
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 fn data_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_data")
@@ -643,8 +645,11 @@ async fn test_exec_client_creation() {
 #[rstest]
 #[tokio::test]
 async fn test_exec_client_connect_disconnect() {
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
     let (addr, state) = start_test_server().await.unwrap();
-    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, cache) = registry.scope(|| create_test_execution_client(addr));
     add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
 
     client.connect().await.unwrap();
@@ -654,9 +659,31 @@ async fn test_exec_client_connect_disconnect() {
         Duration::from_secs(10),
     )
     .await;
+    let event = tokio::time::timeout(Duration::from_secs(10), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("deribit-user-streams");
+    let handle = registry.handle(*DERIBIT_CLIENT_ID, endpoint).unwrap();
 
     assert!(client.is_connected());
     assert!(state.authenticated.load(Ordering::Relaxed));
+    assert_eq!(change.client_id, *DERIBIT_CLIENT_ID);
+    assert_eq!(change.venue, Some(*DERIBIT_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(10), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     let subs = state.subscriptions.lock().await;
     assert!(
@@ -675,6 +702,7 @@ async fn test_exec_client_connect_disconnect() {
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+    assert!(registry.handle(*DERIBIT_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]

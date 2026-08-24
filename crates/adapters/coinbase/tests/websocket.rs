@@ -44,7 +44,13 @@ use nautilus_coinbase::{
     common::enums::CoinbaseWsChannel,
     websocket::{client::CoinbaseWebSocketClient, handler::NautilusWsMessage},
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{
+    live::runner::replace_system_event_sender,
+    messages::{SystemEvent, system::SocketState},
+    testing::wait_until_async,
+};
+use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_model::identifiers::{ClientId, Venue};
 use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 use serde_json::Value;
@@ -206,12 +212,24 @@ fn ws_url(addr: SocketAddr) -> String {
 }
 
 #[rstest]
+#[case("coinbase-data-streams")]
+#[case("coinbase-user-streams")]
 #[tokio::test]
-async fn test_ws_connect_and_disconnect_lifecycle() {
+async fn test_ws_connect_and_disconnect_lifecycle(#[case] endpoint: &str) {
     let state = WsServerState::default();
     let addr = start_mock_ws_server(state.clone()).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let endpoint = Ustr::from(endpoint);
 
-    let mut client = CoinbaseWebSocketClient::new(&ws_url(addr), TransportBackend::default(), None);
+    let mut client = CoinbaseWebSocketClient::new(&ws_url(addr), TransportBackend::default(), None)
+        .with_socket_control(SocketControl::with_registry(
+            ClientId::from("COINBASE"),
+            Some(Venue::from("COINBASE")),
+            endpoint,
+            &registry,
+        ));
     assert!(!client.is_active());
 
     client.connect().await.unwrap();
@@ -226,7 +244,37 @@ async fn test_ws_connect_and_disconnect_lifecycle() {
     )
     .await;
 
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let handle = registry
+        .handle(ClientId::from("COINBASE"), endpoint)
+        .unwrap();
+
+    assert_eq!(change.client_id, ClientId::from("COINBASE"));
+    assert_eq!(change.venue, Some(Venue::from("COINBASE")));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
+
     client.disconnect().await;
+    assert!(
+        registry
+            .handle(ClientId::from("COINBASE"), endpoint)
+            .is_none()
+    );
 }
 
 #[rstest]

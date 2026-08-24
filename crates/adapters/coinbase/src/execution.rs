@@ -40,7 +40,7 @@ use nautilus_core::{
     MUTEX_POISONED, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
@@ -340,7 +340,12 @@ impl CoinbaseExecutionClient {
             credential,
             config.transport_backend,
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*COINBASE_VENUE),
+            "coinbase-user-streams",
+        ));
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(

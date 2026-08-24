@@ -15,7 +15,7 @@
 
 //! Network clients and connection policy for [NautilusTrader](https://nautilustrader.io).
 //!
-//! The crate provides asynchronous HTTP, reconnecting WebSocket, and suffix‑framed TCP clients,
+//! The crate provides asynchronous HTTP, reconnecting WebSocket, and suffix-framed TCP clients,
 //! together with rate limiting, retry, backoff, proxy, and TLS support.
 //!
 //! # NautilusTrader
@@ -38,7 +38,7 @@
 //!
 //! # Testing
 //!
-//! The crate includes standard integration tests and deterministic failure‑path tests using
+//! The crate includes standard integration tests and deterministic failure-path tests using
 //! `turmoil`.
 //!
 //! To run standard tests:
@@ -52,7 +52,7 @@
 //! ```
 //!
 //! The `turmoil` tests cover reconnections, partitions, and related network failures without
-//! relying on wall‑clock timing.
+//! relying on wall-clock timing.
 
 #![warn(rustc::all)]
 #![warn(clippy::pedantic)]

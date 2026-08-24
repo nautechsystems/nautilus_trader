@@ -141,7 +141,7 @@ to read them.
 | ----------------------------------------- | ------------------------------------------------------- |
 | `rust-toolchain.toml`                     | Rust toolchain.                                         |
 | `Cargo.toml` and `Cargo.lock`             | Rust workspace dependencies and exact resolution.       |
-| `Cargo.toml` `[workspace.metadata.tools]` | Cargo‑installable development tools.                    |
+| `Cargo.toml` `[workspace.metadata.tools]` | Cargo-installable development tools.                    |
 | `python/pyproject.toml`                   | Python dependencies and supported Python and uv ranges. |
 | `python/uv.lock`                          | Exact Python dependency resolution.                     |
 | `tools.toml`                              | External CLIs and binaries without a native manifest.   |
@@ -159,7 +159,7 @@ make outdated
 
 ### 3. Set up Git hooks
 
-Set up the file and commit‑message hooks, which run automatically when committing:
+Set up the file and commit-message hooks, which run automatically when committing:
 
 ```bash
 prek install
@@ -218,7 +218,7 @@ Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.u
 
 - **`required-version`**: local uv commands accept any patch release in the supported minor series.
   If your local uv is outside that range, `uv lock` and `uv sync` fail with a version mismatch.
-  `tools.toml` separately pins the exact version used by CI, Docker, pre‑commit, and
+  `tools.toml` separately pins the exact version used by CI, Docker, pre-commit, and
   `make update-uv`. The stub targets run through `make sync`, so they enforce the same supported
   range; see [Generated Python artifacts](rust.md#generated-python-artifacts).
 - **`exclude-newer = "7 days"`**: `uv lock` ignores package versions published within the last
@@ -240,8 +240,8 @@ Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.u
 ### Bypassing the cooldown
 
 When a security patch or critical bug fix must be pulled in immediately, review the release and
-override `exclude-newer` for that lock operation. Prefer a package‑scoped override so unrelated
-packages remain subject to the 7‑day default. Do not add persistent package overrides to
+override `exclude-newer` for that lock operation. Prefer a package-scoped override so unrelated
+packages remain subject to the 7-day default. Do not add persistent package overrides to
 `python/pyproject.toml`. All forms accept a timestamp, friendly duration, or ISO duration; package
 overrides additionally accept `false` to exempt a package from the cooldown entirely.
 
@@ -266,7 +266,7 @@ remains unchanged for subsequent runs.
 
 To support a new uv minor series, change `required-version` in `python/pyproject.toml`. To update the
 exact project version within that range, change `[uv].version` in `tools.toml`, the `rev` in
-`.pre-commit-config.yaml`, and each digest‑pinned uv Docker image. Run `make update-uv` to install the
+`.pre-commit-config.yaml`, and each digest-pinned uv Docker image. Run `make update-uv` to install the
 project version locally.
 
 ## Builds
@@ -311,7 +311,7 @@ Use the command that updates the affected artifact. The build targets call their
 | Cap'n Proto version in `tools.toml`                 | `./scripts/install-capnp.sh` | Cap'n Proto compiler.                             |
 
 The environment variables in [Configure environment variables](#4-configure-environment-variables)
-contain checkout‑specific paths. After switching checkouts, changing the selected Python version,
+contain checkout-specific paths. After switching checkouts, changing the selected Python version,
 or recreating `.venv`, activate that checkout's environment and export the variables again. Verify
 that the shell resolves Python from the expected checkout:
 
@@ -453,7 +453,7 @@ Please use this as development environment only. For production, use a proper an
 Use `make stop-services` to stop the containers without removing their data. Use
 `make purge-services` only when you intend to delete the development volumes.
 
-PostgreSQL‑backed tests can each maintain several connections. On a high‑core workstation, the
+PostgreSQL-backed tests can each maintain several connections. On a high-core workstation, the
 local nextest concurrency can exceed the development container's connection limit. Use the CI
 profile to match CI's lower concurrency:
 
@@ -486,7 +486,7 @@ normally `~/.cargo/bin`. Reinstall it after pulling changes to `crates/cli`, SQL
 or `schema/sql`. An installed CLI can otherwise remain older than the checkout while reading newer
 schema files from it.
 
-Before running repository‑dependent commands, check which binary the shell resolves and its version:
+Before running repository-dependent commands, check which binary the shell resolves and its version:
 
 ```bash
 command -v nautilus
@@ -510,13 +510,13 @@ NautilusTrader CLI with one of these methods:
 :::
 
 Windows source installs require GNU Make through MSYS2 or WSL. The nightly workflow also publishes
-a Windows x86‑64 CLI archive.
+a Windows x86-64 CLI archive.
 
 Run `nautilus --help` to view the available command groups.
 
 ### Database commands
 
-The database commands accept connection settings as command‑line arguments or through a `.env` file
+The database commands accept connection settings as command-line arguments or through a `.env` file
 in the current working directory or one of its parents. The CLI also accepts the corresponding
 environment variables.
 
@@ -547,7 +547,7 @@ nautilus database init --schema "$PWD/schema/sql"
 ```
 
 Use a CLI built from the same checkout as these schema files. The initialization is designed to be
-re‑run, including after an earlier run stopped partway through.
+re-run, including after an earlier run stopped partway through.
 
 :::danger
 `nautilus database drop` removes the target schema, privileges, role, and stored data. Use it only

@@ -15,7 +15,7 @@ Examples include `AAPL.XNAS`, `MSFT.XNAS`, and venue-specific ETF symbols.
 | `currency`        | `Currency`         | `Currency`         | Required         | Quote and settlement currency.           |
 | `price_precision` | `u8`               | `int`              | Required         | Decimal places allowed for prices.       |
 | `price_increment` | `Price`            | `Price`            | Required         | Smallest valid price step.               |
-| `lot_size`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Board lot or whole‑share lot size.       |
+| `lot_size`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Board lot or whole-share lot size.       |
 | `ts_event`        | `UnixNanos`        | `int`              | Required         | Event timestamp in nanoseconds.          |
 | `ts_init`         | `UnixNanos`        | `int`              | Required         | Initialization timestamp in nanoseconds. |
 | `isin`            | `Option<Ustr>`     | `str \| None`      | `None`           | International Securities ID when known.  |

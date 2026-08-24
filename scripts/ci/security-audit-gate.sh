@@ -32,9 +32,8 @@ set -euo pipefail
 #                               .cargo/audit.toml, .supply-chain/*
 #   - Toolchain config          .cargo/config.toml, rust-toolchain.toml,
 #                               tools.toml
-#   - Audit helpers             scripts/{cargo-tool-version,rust-toolchain,
-#                               uv-version}.sh,
-#                               .github/actions/*
+#   - Audit scripts             selected scripts/ci release, publication,
+#                               workflow, and validation scripts
 #   - CI config                 .pre-commit-config.yaml, .github/workflows/*
 
 emit() {
@@ -93,11 +92,14 @@ pattern+='|\.pre-commit-config\.yaml'
 pattern+='|python/(uv\.lock|pyproject\.toml)'
 pattern+='|deny\.toml|\.cargo/deny-fuzz\.toml|osv-scanner\.toml|\.supply-chain/.*'
 pattern+='|tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
-pattern+='|scripts/(cargo-tool-version|rust-toolchain|uv-version)\.sh'
+pattern+='|scripts/(cargo-tool-version|rust-toolchain|tool-version|uv-version)\.sh'
 pattern+='|scripts/purge-orphan-dev-wheels\.sh'
 pattern+='|scripts/ci/('
-pattern+='check-security-audit-result|check-security-gate-result|plan-wheel-publication|publish-wheels.*'
-pattern+='|security-audit-gate|test-publish-wheels|update-pyproject-version|validate-wheel-artifacts'
+pattern+='check-security-audit-result|check-security-gate-result|configure-r2-aws'
+pattern+='|create-docker-manifest|merge-nightly|package-cli-artifact|plan-nightly-merge'
+pattern+='|plan-wheel-publication|publish-wheels.*|save-docker-digest|security-audit-gate'
+pattern+='|select-attestation-bundle|test-publish-wheels|update-pyproject-version'
+pattern+='|validate-wheel-artifacts|validate-wheel-upload'
 pattern+=')\.(sh|bash)'
 pattern+='|\.github/actions/.*'
 pattern+='|\.github/workflows/.*'

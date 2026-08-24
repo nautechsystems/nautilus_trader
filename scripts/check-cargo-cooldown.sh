@@ -90,6 +90,14 @@ for tool in git curl jq awk date; do
   }
 done
 
+# Probe with a known timestamp because BSD date uses `-d` for a different
+# option and can succeed without parsing the supplied timestamp.
+if [[ $(date -u -d "1970-01-01T00:00:01Z" +%s 2> /dev/null) == "1" ]]; then
+  DATE_KIND=gnu
+else
+  DATE_KIND=bsd
+fi
+
 if [[ "$BASE_EXPLICIT" == false && -n "${CHANGED_BASE_SHA:-}" ]]; then
   resolved_base=""
   current_head=$(git rev-parse HEAD)
@@ -130,18 +138,24 @@ elif [[ -n "$SNAPSHOT_DIR" ]]; then
   exit 2
 fi
 
-# Convert an ISO-8601 UTC timestamp to epoch seconds, trying GNU date then BSD.
+# Convert an ISO-8601 UTC timestamp to epoch seconds with GNU or BSD date.
 # Fractional seconds are trimmed because BSD date cannot parse them.
 iso_to_epoch() {
   local iso=${1:0:19}
-  date -u -d "$iso" +%s 2> /dev/null ||
+  if [[ "$DATE_KIND" == gnu ]]; then
+    date -u -d "$iso" +%s 2> /dev/null
+  else
     date -j -u -f '%Y-%m-%dT%H:%M:%S' "$iso" +%s 2> /dev/null
+  fi
 }
 
-# Render epoch seconds as an ISO-8601 UTC timestamp, trying GNU date then BSD.
+# Render epoch seconds as an ISO-8601 UTC timestamp with GNU or BSD date.
 epoch_to_iso() {
-  date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2> /dev/null ||
+  if [[ "$DATE_KIND" == gnu ]]; then
+    date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2> /dev/null
+  else
     date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2> /dev/null
+  fi
 }
 
 # Read a scalar from a Cargo.toml table, matching the parsing style used by

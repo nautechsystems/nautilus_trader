@@ -31,6 +31,7 @@ use std::{
 use arc_swap::ArcSwap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::AtomicMap;
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::BarType,
     identifiers::{AccountId, InstrumentId},
@@ -106,6 +107,7 @@ pub struct CoinbaseWebSocketClient {
     task_handle: Option<tokio::task::JoinHandle<()>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Clone for CoinbaseWebSocketClient {
@@ -125,6 +127,7 @@ impl Clone for CoinbaseWebSocketClient {
             task_handle: None,
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
+            socket_control: self.socket_control.clone(),
         }
     }
 }
@@ -151,7 +154,15 @@ impl CoinbaseWebSocketClient {
             task_handle: None,
             transport_backend,
             proxy_url,
+            socket_control: None,
         }
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
     }
 
     /// Creates a new [`CoinbaseWebSocketClient`] with credentials for authenticated channels.
@@ -239,12 +250,13 @@ impl CoinbaseWebSocketClient {
             *COINBASE_WS_SUBSCRIPTION_QUOTA,
         )];
 
-        let client = WebSocketClient::connect(
+        let client = WebSocketClient::connect_with_state_sink(
             cfg,
             Some(message_handler),
             None,
             keyed_quotas,
             Some(*COINBASE_WS_CONNECTION_QUOTA),
+            self.socket_control.as_ref().map(SocketControl::sink),
         )
         .await?;
 
@@ -254,10 +266,15 @@ impl CoinbaseWebSocketClient {
         *self.cmd_tx.write().await = cmd_tx.clone();
         self.out_rx = Some(out_rx);
         self.connection_mode.store(client.connection_mode_atomic());
+        let reconnect_handle = client.reconnect_handle();
         log::debug!("Coinbase WebSocket connected: {}", self.url);
 
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
             anyhow::bail!("Failed to send SetClient command: {e}");
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
         }
 
         let instruments_vec: Vec<InstrumentAny> =
@@ -461,6 +478,10 @@ impl CoinbaseWebSocketClient {
             }
 
             tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
         }
     }
 

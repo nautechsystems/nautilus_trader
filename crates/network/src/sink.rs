@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Ordered availability‑edge publication for socket transports.
+//! Ordered availability-edge publication for socket transports.
 //!
 //! # Ordering
 //!

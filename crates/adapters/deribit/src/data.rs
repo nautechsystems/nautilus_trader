@@ -50,6 +50,7 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::{CustomData, Data, DataType, ForwardPrice},
     enums::BookType,
@@ -143,7 +144,12 @@ impl DeribitDataClient {
             config.environment,
             config.transport_backend,
             config.proxy_url.clone(),
-        )?;
+        )?
+        .with_socket_control(SocketControl::new(
+            client_id,
+            Some(*DERIBIT_VENUE),
+            "deribit-data-streams",
+        ));
 
         Ok(Self {
             client_id,

@@ -50,6 +50,7 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControlFactory;
 use nautilus_model::{
     data::{Data, InstrumentStatus},
     enums::{BookType, MarketStatusAction},
@@ -92,6 +93,7 @@ pub struct BitmexDataClient {
     config: BitmexDataClientConfig,
     http_client: BitmexHttpClient,
     ws_client: Option<BitmexWebSocketClient>,
+    socket_factory: SocketControlFactory,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     tasks: Vec<JoinHandle<()>>,
@@ -110,6 +112,7 @@ impl BitmexDataClient {
     pub fn new(client_id: ClientId, config: BitmexDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let socket_factory = SocketControlFactory::new(client_id, Some(*BITMEX_VENUE));
 
         let http_client = BitmexHttpClient::new(
             Some(config.http_base_url()),
@@ -133,6 +136,7 @@ impl BitmexDataClient {
             config,
             http_client,
             ws_client: None,
+            socket_factory,
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
@@ -655,7 +659,8 @@ impl DataClient for BitmexDataClient {
                 self.config.transport_backend,
                 self.config.proxy_url.clone(),
             )
-            .context("failed to construct BitMEX websocket client")?;
+            .context("failed to construct BitMEX websocket client")?
+            .with_socket_control(self.socket_factory.control("bitmex-data-streams"));
             self.ws_client = Some(ws);
         }
 

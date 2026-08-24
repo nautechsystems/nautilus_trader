@@ -54,9 +54,9 @@ The following product types are supported on Bybit:
 | --------------------------- | --------- | ----------------------------------------- |
 | Spot cryptocurrencies       | ✓         | Native spot markets with margin support.  |
 | Linear perpetual contracts  | ✓         | USDT/USDC margined perpetual swaps.       |
-| Linear futures contracts    | ✓         | Delivery‑settled linear futures.          |
-| Inverse perpetual contracts | ✓         | Coin‑margined perpetual swaps.            |
-| Inverse futures contracts   | ✓         | Coin‑margined delivery futures.           |
+| Linear futures contracts    | ✓         | Delivery-settled linear futures.          |
+| Inverse perpetual contracts | ✓         | Coin-margined perpetual swaps.            |
+| Inverse futures contracts   | ✓         | Coin-margined delivery futures.           |
 | Option contracts            | ✓         | European options settled in USDT or USDC. |
 
 ## Symbology
@@ -265,8 +265,8 @@ WebSocket.
 
 | Feature          | Spot | Linear | Inverse | Option | Notes                                                       |
 | ---------------- | ---- | ------ | ------- | ------ | ----------------------------------------------------------- |
-| Query positions  | -    | ✓      | ✓       | ✓      | Real‑time position updates.                                 |
-| Position mode    | -    | ✓      | ✓       | -      | One‑Way only for Options.                                   |
+| Query positions  | -    | ✓      | ✓       | ✓      | Real-time position updates.                                 |
+| Position mode    | -    | ✓      | ✓       | -      | One-Way only for Options.                                   |
 | Leverage control | -    | ✓      | ✓       | -      | Not applicable for Options.                                 |
 | Margin mode      | -    | ✓      | ✓       | ✓      | `ISOLATED_MARGIN`, `REGULAR_MARGIN`, or `PORTFOLIO_MARGIN`. |
 
@@ -277,7 +277,7 @@ the client connects.
 
 Bybit only accepts Both Sides mode on USDT linear perpetuals. Configure the position mode at Bybit,
 then pass `position_idx` through the order `params`: `1` for the long side or `2` for the short side.
-Use `0` or omit the parameter for one‑way mode.
+Use `0` or omit the parameter for one-way mode.
 
 Bybit documents these values in the V5 [switch position mode](https://bybit-exchange.github.io/docs/v5/position/position-mode)
 and [place order](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters)
@@ -301,8 +301,8 @@ params = {"position_idx": 1}  # 0 one-way, 1 long, 2 short
 
 | Feature              | Spot | Linear | Inverse | Option | Notes                                                 |
 | -------------------- | ---- | ------ | ------- | ------ | ----------------------------------------------------- |
-| Liquidation handling | -    | ✓      | ✓       | ✓      | Takeover fills flagged as exchange‑generated.         |
-| ADL handling         | -    | ✓      | ✓       | ✓      | Auto‑deleveraging fills flagged and logged.           |
+| Liquidation handling | -    | ✓      | ✓       | ✓      | Takeover fills flagged as exchange-generated.         |
+| ADL handling         | -    | ✓      | ✓       | ✓      | Auto-deleveraging fills flagged and logged.           |
 | ADL rank warnings    | -    | ✓      | ✓       | ✓      | Position reports logged when `adlRankIndicator >= 4`. |
 
 Bybit emits venue-initiated fills with `execType` set to:
@@ -340,7 +340,7 @@ Upstream references:
 | -------------------- | ---- | ------ | ------- | ------ | ------------------------------ |
 | Query open orders    | ✓    | ✓      | ✓       | ✓      | List all active orders.        |
 | Query order history  | ✓    | ✓      | ✓       | ✓      | Historical order data.         |
-| Order status updates | ✓    | ✓      | ✓       | ✓      | Real‑time order state changes. |
+| Order status updates | ✓    | ✓      | ✓       | ✓      | Real-time order state changes. |
 | Trade history        | ✓    | ✓      | ✓       | ✓      | Execution and fill reports.    |
 
 ### Contingent orders
@@ -350,7 +350,7 @@ Upstream references:
 | Order lists        | ✓    | ✓      | ✓       | ✓      | Submitted as a batch via WebSocket.    |
 | OCO orders         | -    | -      | -       | -      | Not implemented; submit legs yourself. |
 | Bracket orders     | -    | -      | -       | -      | Not implemented; submit legs yourself. |
-| Conditional orders | ✓    | ✓      | ✓       | -      | Stop and limit‑if‑touched orders.      |
+| Conditional orders | ✓    | ✓      | ✓       | -      | Stop and limit-if-touched orders.      |
 
 An order list is validated as a unit before any leg is sent. When one leg fails validation, that
 leg is denied with its specific reason and the remaining legs are denied with `ORDER_LIST_DENIED`,
@@ -375,7 +375,7 @@ Individual orders can be customized using the `params` dictionary when submittin
 | `sl_trigger_price` | `str` or `float` | Explicit SL trigger price sent alongside `stop_loss`.               |
 | `tpsl_mode`        | `str`            | TP/SL mode: `"Full"` or `"Partial"`.                                |
 | `close_on_trigger` | `bool`           | Close the position when TP/SL triggers.                             |
-| `position_idx`     | `int`            | Hedge‑mode position index. See [Hedge mode](#hedge-mode-bothsides). |
+| `position_idx`     | `int`            | Hedge-mode position index. See [Hedge mode](#hedge-mode-bothsides). |
 | `bbo_side_type`    | `str`            | Linear/inverse BBO side: `"Queue"` or `"Counterparty"`.             |
 | `bbo_level`        | `str` or `int`   | Linear/inverse BBO book level: `"1"` through `"5"`.                 |
 
@@ -478,12 +478,12 @@ channel:
 
 | Data type                  | Description                                                              |
 | -------------------------- | ------------------------------------------------------------------------ |
-| Quotes (bid/ask)           | Top‑of‑book prices and sizes for each option contract.                   |
+| Quotes (bid/ask)           | Top-of-book prices and sizes for each option contract.                   |
 | Greeks                     | Delta, gamma, vega, theta, plus bid/ask/mark IV. Bybit publishes no rho. |
 | Mark price                 | Exchange mark price for each option contract.                            |
 | Index price                | Underlying index price.                                                  |
-| Underlying (forward) price | Per‑expiry forward price, used for ATM determination.                    |
-| Open interest              | Per‑contract open interest.                                              |
+| Underlying (forward) price | Per-expiry forward price, used for ATM determination.                    |
+| Open interest              | Per-contract open interest.                                              |
 | Order book deltas          | L2 MBP updates from the option orderbook stream.                         |
 
 Subscribe to per-instrument Greeks or aggregate them into option chain
@@ -617,7 +617,7 @@ exceeds a bucket, requests are queued automatically, so manual throttling is rar
 | ------------------------------------ | -------------------- | ----------------------------------------- |
 | `bybit:global`                       | 10                   | Every HTTP request, across all endpoints. |
 | `bybit:/v5/account/repay`            | 1                    | Converting spot margin repayment.         |
-| `bybit:/v5/account/no-convert-repay` | 1                    | No‑convert spot margin repayment.         |
+| `bybit:/v5/account/no-convert-repay` | 1                    | No-convert spot margin repayment.         |
 | `bybit:<endpoint>`                   | 10                   | Default bucket for every other endpoint.  |
 
 The global bucket is the binding constraint: the adapter never issues more than 10 requests per

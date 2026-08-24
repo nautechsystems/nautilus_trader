@@ -2,15 +2,15 @@
 
 `FIX OrdType <40>=3` (Stop)
 
-A *Stop‑Market* order releases a *Market* order when its trigger price is reached. It is often
-used as a stop‑loss: a SELL order against a LONG position or a BUY order against a SHORT position.
+A *Stop-Market* order releases a *Market* order when its trigger price is reached. It is often
+used as a stop-loss: a SELL order against a LONG position or a BUY order against a SHORT position.
 
 ## Use cases
 
-Use a *Stop‑Market* order to prioritize execution after a price level is breached, such as for a
-protective stop‑loss or breakout entry. The trigger price is not a guaranteed fill price: a fast or
+Use a *Stop-Market* order to prioritize execution after a price level is breached, such as for a
+protective stop-loss or breakout entry. The trigger price is not a guaranteed fill price: a fast or
 gapping market can produce substantial slippage, and the released order can still be rejected or
-remain unfilled when no market is available. A *Stop‑Limit* provides price protection instead but
+remain unfilled when no market is available. A *Stop-Limit* provides price protection instead but
 may not fill.
 
 ## Example

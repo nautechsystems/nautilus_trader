@@ -1,0 +1,16 @@
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32099,
+    "message": "ANGX-0001",
+    "data": {
+      "APINGException": {
+        "requestUUID": "SANITIZED",
+        "errorCode": "TOO_MUCH_DATA",
+        "errorDetails": "MaxResults must be less than or equal to 1000"
+      },
+      "exceptionname": "APINGException"
+    }
+  },
+  "id": 3
+}

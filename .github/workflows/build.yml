@@ -58,7 +58,7 @@ jobs:
       wheel_version: ${{ steps.wheel-publication.outputs.wheel_version }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -74,7 +74,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -117,7 +117,7 @@ jobs:
       || fromJson('["self-hosted", "Linux", "X64", "build"]') }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -129,7 +129,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -189,7 +189,7 @@ jobs:
         ${{ github.event.pull_request.base.sha || github.event.before }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -201,7 +201,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           # Full history so changed-file scripts can resolve CHANGED_BASE_SHA.
@@ -230,7 +230,7 @@ jobs:
 
       - name: Install lychee
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
         with:
           tool: lychee@${{ env.LYCHEE_VERSION }}
         env:
@@ -244,7 +244,7 @@ jobs:
 
       - name: Install cargo-machete
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
         with:
           tool: cargo-machete@${{ env.CARGO_MACHETE_VERSION }}
 
@@ -319,7 +319,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -331,7 +331,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -464,7 +464,7 @@ jobs:
     # yamllint enable rule:line-length
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: >-
             ${{ env.AUDIT_PR == 'true' && 'audit'
@@ -476,7 +476,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -567,7 +567,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-linux-arm
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -576,7 +576,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -637,7 +637,7 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -646,7 +646,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -711,7 +711,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -760,7 +760,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/nightly'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -769,7 +769,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -862,7 +862,7 @@ jobs:
       PUBLISH_WHEEL_VERSION: ${{ needs.plan.outputs.wheel_version }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -874,7 +874,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -907,9 +907,10 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
+          prune-cache: true
 
       - name: Download built wheels
         # https://github.com/actions/download-artifact
@@ -951,7 +952,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -960,7 +961,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -981,7 +982,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -990,7 +991,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1016,7 +1017,7 @@ jobs:
       contents: read
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1028,7 +1029,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1060,7 +1061,7 @@ jobs:
       CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/release-docs-features-preflight
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1069,7 +1070,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1085,7 +1086,7 @@ jobs:
 
       - name: Install cargo-hack
         # https://github.com/taiki-e/install-action
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        uses: taiki-e/install-action@6c6fd71fe4fb72c3697d269963d0e15df8adedad # v2.85.10
         with:
           tool: cargo-hack
 
@@ -1118,7 +1119,7 @@ jobs:
       tag_name: ${{ steps.metadata.outputs.tag_name }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1127,7 +1128,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: true # Required for salsify action to push git tags
           fetch-depth: 2
@@ -1184,7 +1185,7 @@ jobs:
         id: create-release
         # zizmor: ignore[superfluous-actions] Retains idempotent draft updates and retries
         # https://github.com/softprops/action-gh-release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3.0.0
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -1203,7 +1204,7 @@ jobs:
       contents: read
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1214,7 +1215,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1251,7 +1252,7 @@ jobs:
       contents: write # Required for uploading release assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1260,7 +1261,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1300,7 +1301,7 @@ jobs:
       PUBLISH_WHEEL_VERSION: ${{ needs.tag-release.outputs.package_version }}
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1311,7 +1312,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1327,9 +1328,10 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: ${{ steps.uv-version.outputs.uv_version }}
+          prune-cache: true
 
       - name: Download built wheels
         # https://github.com/actions/download-artifact
@@ -1366,7 +1368,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1380,7 +1382,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1392,7 +1394,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1458,7 +1460,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1470,7 +1472,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1491,7 +1493,7 @@ jobs:
       - name: Authenticate to crates.io
         id: crates-io-auth
         # https://github.com/rust-lang/crates-io-auth-action
-        uses: rust-lang/crates-io-auth-action@bbd81622f20ce9e2dd9622e3218b975523e45bbe # v1.0.4
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
 
       - name: Publish Cargo crates
         env:
@@ -1521,7 +1523,7 @@ jobs:
       attestations: write # Required for GitHub artifact attestations
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1535,7 +1537,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1547,7 +1549,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1613,7 +1615,7 @@ jobs:
       contents: write # Required for uploading release integrity assets
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1629,7 +1631,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -1641,7 +1643,7 @@ jobs:
 
       - name: Install uv
         # https://github.com/astral-sh/setup-uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
@@ -1724,7 +1726,7 @@ jobs:
       contents: write # Required for publishing the draft release
     steps:
       # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+      - uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
           allowed-endpoints: >-
@@ -1734,7 +1736,7 @@ jobs:
 
       - name: Checkout repository
         # https://github.com/actions/checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 

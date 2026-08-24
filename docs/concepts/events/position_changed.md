@@ -17,7 +17,7 @@ to the opening snapshot fields, `PositionChanged` exposes:
 | `avg_px_close`    | `float` or `None` | The average close price so far, if any quantity has closed.  |
 | `realized_return` | `float`           | The realized return for the position.                        |
 | `realized_pnl`    | `Money` or `None` | The realized PnL, if available.                              |
-| `unrealized_pnl`  | `Money`           | Set to zero by the engine, not a mark‑to‑market calculation. |
+| `unrealized_pnl`  | `Money`           | Set to zero by the engine, not a mark-to-market calculation. |
 | `ts_opened`       | `int`             | UNIX timestamp (nanoseconds) when the position opened.       |
 
 ## Example
@@ -33,6 +33,6 @@ def on_position_changed(self, event: PositionChanged) -> None:
 
 ## Related guides
 
-- [Events](index.md) - Event categories, dispatch, and the fill‑to‑position chain.
+- [Events](index.md) - Event categories, dispatch, and the fill-to-position chain.
 - [Positions](../positions.md) - Position lifecycle, aggregation, and PnL.
 - [Orders](../orders/) - Orders whose fills open and close positions.

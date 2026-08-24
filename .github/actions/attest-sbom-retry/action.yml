@@ -26,7 +26,7 @@ runs:
       id: a1
       continue-on-error: true
       # https://github.com/actions/attest
-      uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
         subject-name: ${{ inputs.subject-name }}
         subject-digest: ${{ inputs.subject-digest }}
@@ -46,7 +46,7 @@ runs:
       if: steps.a1.outcome == 'failure'
       continue-on-error: true
       # https://github.com/actions/attest
-      uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
         subject-name: ${{ inputs.subject-name }}
         subject-digest: ${{ inputs.subject-digest }}
@@ -64,7 +64,7 @@ runs:
     - name: Attest SBOM (attempt 3/3, final)
       if: steps.a2.outcome == 'failure'
       # https://github.com/actions/attest
-      uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+      uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
       with:
         subject-name: ${{ inputs.subject-name }}
         subject-digest: ${{ inputs.subject-digest }}

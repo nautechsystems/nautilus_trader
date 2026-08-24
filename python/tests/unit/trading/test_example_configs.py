@@ -85,3 +85,25 @@ def test_delta_neutral_vol_config_iv_param_key_readback() -> None:
     )
 
     assert config.iv_param_key == "mark_iv"
+
+
+def test_grid_market_maker_config_client_order_id_settings() -> None:
+    config = GridMarketMakerConfig(
+        instrument_id=INSTRUMENT_ID,
+        max_position=Quantity.from_str("1"),
+        use_uuid_client_order_ids=True,
+        use_hyphens_in_client_order_ids=False,
+    )
+
+    assert config.use_uuid_client_order_ids is True
+    assert config.use_hyphens_in_client_order_ids is False
+
+
+def test_grid_market_maker_config_client_order_id_defaults() -> None:
+    config = GridMarketMakerConfig(
+        instrument_id=INSTRUMENT_ID,
+        max_position=Quantity.from_str("1"),
+    )
+
+    assert config.use_uuid_client_order_ids is False
+    assert config.use_hyphens_in_client_order_ids is True

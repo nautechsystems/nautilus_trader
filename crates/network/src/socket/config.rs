@@ -18,14 +18,14 @@
 //! # Reconnection strategy
 //!
 //! The default configuration uses unlimited reconnection attempts (`reconnect_max_attempts: None`).
-//! This suits long‑lived trading connections because:
+//! This suits long-lived trading connections because:
 //!
 //! - Venues may remain unavailable for an extended period and later recover.
 //! - Exponential backoff bounds retry frequency during the outage.
 //! - Automatic recovery avoids requiring manual intervention for a transient failure.
 //!
 //! A connection active for at least 10 seconds resets the attempt count and backoff delay.
-//! Shorter‑lived connections remain part of the same reconnect cycle. Use `Some(n)` primarily for
+//! Shorter-lived connections remain part of the same reconnect cycle. Use `Some(n)` primarily for
 //! tests, development, or connections that should stop retrying without intervention.
 
 use std::fmt::Debug;

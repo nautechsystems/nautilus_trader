@@ -112,6 +112,7 @@
 
 pub mod execution;
 pub mod runner;
+pub mod socket;
 
 #[cfg(feature = "fuzz")]
 #[doc(hidden)]
@@ -135,3 +136,7 @@ pub use nautilus_execution::client::core::ExecutionClientCore;
 pub use node::plugin;
 #[cfg(feature = "node")]
 pub use node::{builder, config};
+pub use socket::{
+    SocketControl, SocketControlFactory, SocketReconnectLookup, SocketReconnectRegistry,
+    SocketReconnectRequestOutcome,
+};

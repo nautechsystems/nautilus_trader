@@ -4,6 +4,7 @@ set -euo pipefail
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 SCRIPT="$REPO_ROOT/scripts/ci/check-nightly-merge-status.bash"
+PLAN_SCRIPT="$REPO_ROOT/scripts/ci/plan-nightly-merge.bash"
 WORKFLOW="$REPO_ROOT/.github/workflows/nightly-merge.yml"
 
 CASE_ROOT=$(mktemp -d)
@@ -406,14 +407,16 @@ expect_status 1
 expect_output ""
 expect_log "Successful develop build has an invalid head SHA"
 
-grep -Fq 'actions/workflows/build.yml/runs' "$WORKFLOW"
-grep -Fq '?branch=develop&event=push&per_page=100' "$WORKFLOW"
+grep -Fq 'actions/workflows/build.yml/runs' "$PLAN_SCRIPT"
+grep -Fq '?branch=develop&event=push&per_page=100' "$PLAN_SCRIPT"
 if grep -Fq 'status=success' "$WORKFLOW"; then
   echo "Nightly merge workflow must select successful runs locally"
   exit 1
 fi
-grep -Fq 'Accept: application/vnd.github+json' "$WORKFLOW"
-grep -Fq 'X-GitHub-Api-Version: 2022-11-28' "$WORKFLOW"
-grep -Fq -- '--fail-with-body' "$WORKFLOW"
+grep -Fq 'Accept: application/vnd.github+json' "$PLAN_SCRIPT"
+grep -Fq 'X-GitHub-Api-Version: 2022-11-28' "$PLAN_SCRIPT"
+grep -Fq -- '--fail-with-body' "$PLAN_SCRIPT"
+grep -Fq 'run: bash scripts/ci/plan-nightly-merge.bash' "$WORKFLOW"
+grep -Fq "run: bash scripts/ci/merge-nightly.bash \"\$DEVELOP_SHA\"" "$WORKFLOW"
 
 echo "Nightly merge status tests passed"

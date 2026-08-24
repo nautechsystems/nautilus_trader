@@ -18,12 +18,12 @@ and developers alike.
 
 ## Priorities
 
-1. **Stabilize the Rust‑native core**
+1. **Stabilize the Rust-native core**
 
    **Goal**: Mature the v2 runtime and improve its reliability, performance, and scalability.
    - Refine the Python bindings and Rust/Python interoperability through PyO3.
    - Close remaining feature and API gaps that fit the current project scope.
-   - Benchmark and tune performance‑critical paths.
+   - Benchmark and tune performance-critical paths.
 
 2. **Improve documentation and tutorials**
 

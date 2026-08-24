@@ -51,7 +51,7 @@ use nautilus_core::{
     AtomicMap, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
     data::QuoteTick,
@@ -201,7 +201,12 @@ impl DeriveExecutionClient {
             ws_credentials,
             config.max_matching_requests_per_second,
             config.max_per_instrument_matching_requests_per_second,
-        );
+        )
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*DERIVE_VENUE),
+            "derive-user-streams",
+        ));
 
         if let Some(secs) = config.ws_timeout_secs {
             ws_client.set_request_timeout(Duration::from_secs(secs));

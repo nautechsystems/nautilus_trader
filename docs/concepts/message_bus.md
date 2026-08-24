@@ -81,7 +81,7 @@ This guide explains the three primary messaging patterns available in NautilusTr
 | :------------------------------------ | :----------------------------------- | :---------------------------------------------------- |
 | **Custom data publish/subscribe**     | Structured trading data exchange     | Trading metrics, indicators, data needing persistence |
 | **Signal publish/subscribe**          | Lightweight notifications            | Simple alerts, flags, and status updates              |
-| **Rust MessageBus publish/subscribe** | Low‑level, typed topic communication | Native runtime components                             |
+| **Rust MessageBus publish/subscribe** | Low-level, typed topic communication | Native runtime components                             |
 
 Each approach serves different purposes. Use this guide to decide which pattern to use.
 
@@ -90,7 +90,7 @@ Each approach serves different purposes. Use this guide to decide which pattern 
 #### Concept
 
 The `MessageBus` is the central hub for all messages in NautilusTrader. Rust components can publish
-typed messages to named topics and subscribe handlers to those topics. This low‑level interface is
+typed messages to named topics and subscribe handlers to those topics. This low-level interface is
 not part of the Python actor or strategy surface.
 
 #### Benefits and use cases
@@ -245,7 +245,7 @@ def on_signal(self, signal):
 
 | **Use case**                           | **Recommended approach**            | **Setup required**                        |
 | :------------------------------------- | :---------------------------------- | :---------------------------------------- |
-| Native system‑level communication      | Rust `MessageBus` publish/subscribe | Typed topic and handler                   |
+| Native system-level communication      | Rust `MessageBus` publish/subscribe | Typed topic and handler                   |
 | Structured Python component data       | `DataActor` custom data methods     | `DataType`, `CustomData`, and `on_data()` |
 | Simple Python alerts and notifications | `DataActor` signal methods          | Signal name and `on_signal()`             |
 
@@ -257,7 +257,7 @@ external egress and ingress sides of the external bus. Rust-native live nodes us
 depend on Redis, a broker, shared-memory implementation, or socket protocol.
 
 :::info
-Redis is the built‑in external backing for serializable messages. The minimum supported Redis
+Redis is the built-in external backing for serializable messages. The minimum supported Redis
 version is 6.2, required for the `MINID` stream trimming used by autotrim.
 :::
 
@@ -321,8 +321,8 @@ from nautilus_trader.model import register_custom_data_class
 register_custom_data_class(MyData)
 ```
 
-The external‑client subscription registers the payload type for streaming, while
-`register_custom_data_class(...)` installs the process‑wide JSON decoder. Both registrations are
+The external-client subscription registers the payload type for streaming, while
+`register_custom_data_class(...)` installs the process-wide JSON decoder. Both registrations are
 required. See [Custom data](custom_data.md#registration-architecture) for the class requirements.
 
 For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
@@ -396,9 +396,9 @@ The Rust live runtime accepts `external_streams` in `MessageBusConfig`, and cons
 ingress is the concrete runtime source. Rust callers can install `RedisMessageBusConfig` with
 `LiveNodeBuilder::with_external_msgbus_factory`. Building fails when a factory is combined with
 separately injected egress or ingress. A factory always installs egress and creates ingress only when
-`external_streams` is non‑empty.
+`external_streams` is non-empty.
 
-Python exposes the same builder method for built‑in backing configs, currently
+Python exposes the same builder method for built-in backing configs, currently
 `RedisMessageBusConfig`. The existing `RedisMessageBusFactory` wrapper remains supported. Python
 does not accept arbitrary factory classes.
 

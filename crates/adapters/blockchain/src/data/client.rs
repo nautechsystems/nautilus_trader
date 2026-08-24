@@ -30,6 +30,7 @@ use nautilus_common::{
         },
     },
 };
+use nautilus_live::SocketControlFactory;
 use nautilus_model::{
     defi::{DefiData, DexType, PoolIdentifier, SharedChain, validation::validate_address},
     identifiers::{ClientId, Venue},
@@ -72,6 +73,7 @@ pub struct BlockchainDataClient {
     /// The core client instance that handles blockchain operations.
     /// Wrapped in Option to allow moving it into the background processing task.
     pub core_client: Option<BlockchainDataClientCore>,
+    socket_factory: SocketControlFactory,
     /// Channel receiver for messages from the HyperSync client.
     hypersync_rx: Option<tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>>,
     /// Channel sender for messages to the HyperSync client.
@@ -93,10 +95,12 @@ impl BlockchainDataClient {
         let chain = config.chain.clone();
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        let socket_factory = SocketControlFactory::new(client_id, None);
         Self {
             client_id,
             chain,
             core_client: None,
+            socket_factory,
             config,
             hypersync_rx: Some(hypersync_rx),
             hypersync_tx: Some(hypersync_tx),
@@ -135,6 +139,7 @@ impl BlockchainDataClient {
             Some(data_tx),
             cancellation_token.clone(),
         );
+        core_client.set_socket_control(self.socket_factory.control("blockchain-rpc"));
 
         let handle = get_runtime().spawn(async move {
             log::debug!("Started task 'process'");

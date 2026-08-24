@@ -93,27 +93,27 @@ The failure event depends on the command and when the failure becomes definitive
 | Submit or submit order list         | `OrderDenied`         | Local checks prevent submission; no `OrderSubmitted` event is emitted. |
 | Submit or submit order list         | `OrderRejected`       | The submit entered execution and was later proven unsuccessful.        |
 | Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.                    |
-| Cancel, cancel‑all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
+| Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
 
 For modify or cancel preparation, Nautilus emits the matching rejection only when the failure is
 attributable to that command and proves it was not sent. Otherwise, it logs the failure without
 inventing an outcome.
 
-A successful batch response can still contain definitive per‑order failures. A whole‑request
-failure without per‑order evidence does not prove that every child command failed.
+A successful batch response can still contain definitive per-order failures. A whole-request
+failure without per-order evidence does not prove that every child command failed.
 
 :::note[Unknown live outcomes]
 Transport errors, timeouts, disconnects, task cancellation, exhausted adapter request retries,
 missing acknowledgements, and parse failures after transmission usually leave the venue outcome
-unknown. HTTP status codes and rate limits are definitive only when venue‑specific semantics prove
+unknown. HTTP status codes and rate limits are definitive only when venue-specific semantics prove
 that the command was not accepted.
 
 The live engine initially keeps an unknown outcome in flight while stream updates, polling, queries,
-or reconciliation determine the venue state. A later in‑flight check can apply a terminal
+or reconciliation determine the venue state. A later in-flight check can apply a terminal
 reconciliation event after the configured retry limit.
 :::
 
-An **in‑flight order** is awaiting resolution:
+An **in-flight order** is awaiting resolution:
 
 - `SUBMITTED`: initial submission awaiting acceptance or rejection.
 - `PENDING_UPDATE`: modification awaiting confirmation.
@@ -128,17 +128,17 @@ A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reaso
 include a diagnostic suffix. Only the leading code is canonical. Messages use these forms:
 
 - `CODE` when the denial needs no diagnostic suffix.
-- `CODE: value` for one typed value or a free‑text diagnostic.
+- `CODE: value` for one typed value or a free-text diagnostic.
 - `CODE: key=value, key=value` when multiple typed values need disambiguation.
-- `CODE: value; free text` when one typed value precedes a free‑text diagnostic.
+- `CODE: value; free text` when one typed value precedes a free-text diagnostic.
 
 The table covers local denials emitted by execution algorithms and clients as well as the risk and
 execution engines. These codes are the source of truth for locally denied orders; venue rejections
-(`OrderRejected`) instead carry the venue‑provided meaning. Adapters remove protocol wrappers and
+(`OrderRejected`) instead carry the venue-provided meaning. Adapters remove protocol wrappers and
 bound untrusted venue text before emission without replacing it with a standardized local denial
 code.
 
-Price and quantity checks can also emit these code‑led reasons on `OrderModifyRejected`:
+Price and quantity checks can also emit these code-led reasons on `OrderModifyRejected`:
 
 - `PRICE_PRECISION_EXCEEDS_MAXIMUM`
 - `PRICE_NOT_POSITIVE`
@@ -147,9 +147,9 @@ Price and quantity checks can also emit these code‑led reasons on `OrderModify
 - `QUANTITY_BELOW_MINIMUM`
 
 For price reasons, `field` is `PRICE` or `TRIGGER_PRICE` and names the rejected command field.
-Other modification rejection reasons remain free‑form; `OrderDeniedCode` does not classify them.
+Other modification rejection reasons remain free-form; `OrderDeniedCode` does not classify them.
 
-`OrderRejected.due_post_only` is `true` only when venue evidence proves that a post‑only order would
+`OrderRejected.due_post_only` is `true` only when venue evidence proves that a post-only order would
 cross or immediately match. Other venue rejections leave it `false`.
 
 <!-- Generated from the `OrderDeniedReason` enum (crates/model). Regenerate with: cargo test -p nautilus-model regenerate_order_denied_reasons_doc -- --ignored -->
@@ -172,7 +172,7 @@ cross or immediately match. Other venue rejections leave it `false`.
 | `MISSING_TRIGGER_TYPE`                           | The order is missing a required trigger type.                              |
 | `MISSING_TRAILING_OFFSET`                        | The order is missing a required trailing offset.                           |
 | `INSTRUMENT_NOT_FOUND`                           | The instrument was not found in the cache.                                 |
-| `POSITION_NOT_FOUND`                             | The position for a reduce‑only order was not found.                        |
+| `POSITION_NOT_FOUND`                             | The position for a reduce-only order was not found.                        |
 | `MARKET_PRICE_UNAVAILABLE`                       | No market price is available for the order risk check.                     |
 | `TRAILING_STOP_CALCULATION_FAILED`               | The trailing stop trigger price could not be calculated.                   |
 | `NOTIONAL_CALCULATION_FAILED`                    | The order notional value could not be calculated.                          |
@@ -186,7 +186,7 @@ cross or immediately match. Other venue rejections leave it `false`.
 | `CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE`       | The cumulative order notional exceeds the account free balance.            |
 | `CUMULATIVE_INITIAL_MARGIN_CALCULATION_FAILED`   | The cumulative initial margin could not be calculated.                     |
 | `CUMULATIVE_INITIAL_MARGIN_EXCEEDS_FREE_BALANCE` | The cumulative initial margin exceeds the account free balance.            |
-| `REDUCE_ONLY_WOULD_INCREASE_POSITION`            | A reduce‑only order would increase the position.                           |
+| `REDUCE_ONLY_WOULD_INCREASE_POSITION`            | A reduce-only order would increase the position.                           |
 | `ORDER_LIST_INCOMPLETE`                          | The order list is missing orders in the cache.                             |
 | `ORDER_LIST_DENIED`                              | The order was denied because its order list failed risk checks.            |
 | `TRADING_HALTED`                                 | Trading is halted; new orders are denied.                                  |
@@ -201,7 +201,7 @@ cross or immediately match. Other venue rejections leave it `false`.
 | `UNSUPPORTED_ORDER_LIST`                         | The venue does not support the requested order list.                       |
 | `UNSUPPORTED_ORDER_TYPE`                         | The order type is not supported.                                           |
 | `UNSUPPORTED_TIME_IN_FORCE`                      | The order's time in force is not supported.                                |
-| `UNSUPPORTED_TP_SL`                              | The venue does not support the requested take‑profit/stop‑loss parameters. |
+| `UNSUPPORTED_TP_SL`                              | The venue does not support the requested take-profit/stop-loss parameters. |
 | `VALIDATION_FAILED`                              | The order failed validation before submission.                             |
 
 <!-- END GENERATED: order-denied-reasons -->
@@ -228,6 +228,9 @@ as a separate venue position.
 | `HEDGING`    | `HEDGING` | Multiple positions per instrument and strategy.                     |
 | `NETTING`    | `HEDGING` | One virtual position across the venue positions.                    |
 | `HEDGING`    | `NETTING` | Multiple virtual positions against the venue's single net position. |
+
+If a fill resolves to a cached position for a different instrument, the `ExecutionEngine` logs an
+error and drops the fill. The order remains non-terminal so a subsequent valid fill can be applied.
 
 ### OMS configuration
 
@@ -267,7 +270,7 @@ reopen:
 
 | `carry_replay_events_on_reopen` | Behavior                                                       |
 | ------------------------------- | -------------------------------------------------------------- |
-| `False` (default)               | Keeps only current‑cycle state, bounding the per‑fill cost.    |
+| `False` (default)               | Keeps only current-cycle state, bounding the per-fill cost.    |
 | `True`                          | Keeps earlier fills correctable while position state can grow. |
 
 Live trading pins the option `True`: `LiveExecEngineConfig` always carries the replay log, so a venue
@@ -578,7 +581,7 @@ Each venue publishes the conditions under which it acts:
 | Cboe US equities | Clearly erroneous executions (BZX Rule 11.17).           | [Clearly erroneous execution form](https://www.cboe.com/us/equities/trading/cee_form/).                                                          |
 | CME Group        | Trade cancellations and price adjustments (Rule 588).    | [CME rulebook chapter 5](https://www.cmegroup.com/rulebook/CME/I/5/5.pdf).                                                                       |
 | Betfair          | Voided bets, reported as cumulative size voided (`sv`).  | [Void bets on the Stream API](https://support.developer.betfair.com/hc/en-us/articles/360000391492-How-are-void-bets-treated-by-the-Stream-API). |
-| Polymarket       | `FAILED` trade status after an on‑chain revert or reorg. | [User channel](https://docs.polymarket.com/developers/CLOB/websocket/user-channel).                                                              |
+| Polymarket       | `FAILED` trade status after an on-chain revert or reorg. | [User channel](https://docs.polymarket.com/developers/CLOB/websocket/user-channel).                                                              |
 
 Nautilus adapters emit `OrderFillVoided` where the venue publishes the void on a stream the adapter
 consumes: [Betfair](../integrations/betfair.md#voided-fills) from the order change message `sv`
@@ -589,14 +592,14 @@ field, and
 
 The execution engine consumes four reconciliation report variants from live adapters. Each variant
 has a different normal role when its matching order is absent from the cache. Explicitly bounded
-history can instead use [order‑only fill projection](#order-only-fill-projection).
+history can instead use [order-only fill projection](#order-only-fill-projection).
 
-| Variant                | Purpose                  | Missing‑order action                                 |
+| Variant                | Purpose                  | Missing-order action                                 |
 | ---------------------- | ------------------------ | ---------------------------------------------------- |
 | `OrderStatusReport`    | Order state update.      | Creates an order and infers any reported fill.       |
 | `FillReport`           | Standalone fill.         | Creates a market order, then applies fill metadata.  |
 | `OrderWithFills`       | Order state plus fills.  | Creates an order, applies fills, and infers residue. |
-| `PositionStatusReport` | Venue position snapshot. | Logs the report; positions remain fill‑derived.      |
+| `PositionStatusReport` | Venue position snapshot. | Logs the report; positions remain fill-derived.      |
 
 ### When to use each variant
 

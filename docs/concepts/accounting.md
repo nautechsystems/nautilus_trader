@@ -13,7 +13,7 @@ configuration (starting balances, margin-model selection per venue), see
 
 When you attach a venue to the engine for either live trading or a backtest, you
 pick one of three accounting modes via `account_type`: Cash, Margin, or Betting.
-A fourth account type, Wallet, models on‑chain wallet state. The Blockchain
+A fourth account type, Wallet, models on-chain wallet state. The Blockchain
 adapter selects it, and its execution client is still in development.
 
 | Account type | Typical use case                                | What the engine locks                                                     |
@@ -46,9 +46,9 @@ is tracked in two scopes; see [Margin scopes](#margin-scopes) below.
 - **Locked balance**: funds reserved as collateral, not available for new orders.
 
 :::note
-Reduce‑only orders do not contribute to `balance_locked` on cash accounts and
+Reduce-only orders do not contribute to `balance_locked` on cash accounts and
 do not add to initial margin on margin accounts, since they can only decrease
-exposure. Wallet orders still reserve the input asset because the on‑chain
+exposure. Wallet orders still reserve the input asset because the on-chain
 transaction spends that asset even when the order reduces a position.
 :::
 
@@ -62,8 +62,8 @@ the stake required by the venue; leverage and margin do not apply.
 
 Wallet accounts represent blockchain wallets: unleveraged, multi-currency
 holdings of native and ERC-20 token balances with no margin and no borrowing.
-For reported states, `total` is the observed on‑chain balance; `locked` tracks
-local pending‑order reservations, and `free = total - locked`. Account state
+For reported states, `total` is the observed on-chain balance; `locked` tracks
+local pending-order reservations, and `free = total - locked`. Account state
 events contribute totals only: the account ignores incoming `locked` and `free`
 values, retains its local reservations, and rederives `free`. It rebuilds
 transient reservations from submitted and open orders during live startup.
@@ -73,7 +73,7 @@ terms. If the reserved amount exceeds the latest observed total, `locked` is
 capped at `total` and `free` remains zero until the balance or reservation
 changes.
 
-A balance with a negative total is rejected rather than applied. ERC‑20
+A balance with a negative total is rejected rather than applied. ERC-20
 allowances are spender authorizations and are never represented as balances or
 locked funds.
 
@@ -97,9 +97,9 @@ constructors that enforce the invariant centrally; prefer them over
 | --------------------------------------- | ------------------------------------------------------------------------ |
 | `AccountBalance::from_total_and_locked` | Venue reports total and locked; `free` is derived from the two.          |
 | `AccountBalance::from_total_and_free`   | Venue reports total and free; `locked` is derived from the two.          |
-| `AccountBalance::new`                   | All three values are already known and consistent (tests, pass‑through). |
+| `AccountBalance::new`                   | All three values are already known and consistent (tests, pass-through). |
 
-Each helper clamps the venue‑reported field into `[0, total]` when `total >= 0`,
+Each helper clamps the venue-reported field into `[0, total]` when `total >= 0`,
 so transient overshoots from venue rounding never leave the account in a broken
 state.
 
@@ -175,8 +175,8 @@ margins, ask by `Currency`.
 
 | Scope          | Queries                                                                      |
 | -------------- | ---------------------------------------------------------------------------- |
-| Per‑instrument | `margin`, `initial_margin`, and `maintenance_margin`                         |
-| Account‑wide   | `account_margin`, `account_initial_margin`, and `account_maintenance_margin` |
+| Per-instrument | `margin`, `initial_margin`, and `maintenance_margin`                         |
+| Account-wide   | `account_margin`, `account_initial_margin`, and `account_maintenance_margin` |
 | Both scopes    | `total_initial_margin` and `total_maintenance_margin`                        |
 
 The signatures below describe the Python bindings. Point queries return `None`
@@ -248,8 +248,8 @@ optional `account_id` to scope multi-account venues:
 - `portfolio.missing_price_instruments(venue, account_id=...) -> list[InstrumentId]`
 
 If both scope arguments are present, they must identify the same account. A missing price, failed
-target‑currency conversion, or arithmetic overflow invalidates the whole affected collection: a
-query never returns partial or mixed‑currency totals.
+target-currency conversion, or arithmetic overflow invalidates the whole affected collection: a
+query never returns partial or mixed-currency totals.
 
 See the [Portfolio guide](portfolio.md#equity-and-mark-to-market) for the equity
 formula, price fallback chain, base-currency conversion behavior, and the
@@ -389,9 +389,9 @@ Pick the scope that matches what the venue reports:
 
 | Venue reports                                  | Scope          | Emit with                                                  |
 | ---------------------------------------------- | -------------- | ---------------------------------------------------------- |
-| Per‑instrument (isolated positions)            | Per‑instrument | `MarginBalance::new(initial, maint, Some(id))`             |
-| Single aggregate per collateral (cross margin) | Account‑wide   | `MarginBalance::new(initial, maint, None)`                 |
-| Multiple aggregates, one per collateral        | Account‑wide   | One `MarginBalance` per currency with `instrument_id=None` |
+| Per-instrument (isolated positions)            | Per-instrument | `MarginBalance::new(initial, maint, Some(id))`             |
+| Single aggregate per collateral (cross margin) | Account-wide   | `MarginBalance::new(initial, maint, None)`                 |
+| Multiple aggregates, one per collateral        | Account-wide   | One `MarginBalance` per currency with `instrument_id=None` |
 
 :::note
 Synthetic `ACCOUNT.{VENUE}` or `ACCOUNT-{COIN}.{VENUE}` `InstrumentId`
@@ -401,7 +401,7 @@ are keyed by `currency`.
 
 ## Related guides
 
-- [Backtesting](backtesting/): starting balances, margin models, and backtest‑specific account
+- [Backtesting](backtesting/): starting balances, margin models, and backtest-specific account
   setup.
 - [Portfolio](portfolio.md): portfolio-level PnL, exposures, and currency
   conversion.

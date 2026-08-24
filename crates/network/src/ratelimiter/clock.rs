@@ -16,7 +16,7 @@
 //! Time sources for rate limiters.
 //!
 //! Custom time sources implement [`Reference`], [`Clock`], and `Add<Nanos>`. This supports
-//! deterministic tests without coupling rate‑limiting decisions to wall‑clock time.
+//! deterministic tests without coupling rate-limiting decisions to wall-clock time.
 
 use std::{
     fmt::Debug,

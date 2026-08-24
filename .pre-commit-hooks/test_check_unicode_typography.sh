@@ -55,6 +55,7 @@ while IFS='|' read -r codepoint name; do
   write_codepoint "$case_dir/$file" "$codepoint"
   expect_failure "$case_dir" "$file" "$name"
 done << 'CASES'
+2011|U+2011 NON-BREAKING HYPHEN
 2013|U+2013 EN DASH
 2014|U+2014 EM DASH
 2018|U+2018 LEFT SINGLE QUOTATION MARK
@@ -79,12 +80,16 @@ grep -Fq "second.txt:2: U+2014 EM DASH" "$batch_case/output.txt"
 
 allowed_case="$CASE_ROOT/allow-approved-codepoints"
 mkdir -p "$allowed_case"
-perl -CSDA -e 'print join(" ", map { chr hex } @ARGV), "\n"' 2011 2713 2717 > "$allowed_case/sample.txt"
+perl -CSDA -e 'print join(" ", map { chr hex } @ARGV), "\n"' 2713 2717 > "$allowed_case/sample.txt"
 expect_success "$allowed_case" sample.txt
 
 fixture_case="$CASE_ROOT/allow-unicode-fixture"
 write_codepoint "$fixture_case/sample.rs" 2014 " // unicode-typography: allow"
 expect_success "$fixture_case" sample.rs
+
+hyphen_fixture_case="$CASE_ROOT/reject-non-breaking-hyphen-fixture"
+write_codepoint "$hyphen_fixture_case/sample.rs" 2011 " // unicode-typography: allow"
+expect_failure "$hyphen_fixture_case" sample.rs "U+2011 NON-BREAKING HYPHEN"
 
 excluded_case="$CASE_ROOT/allow-excluded-paths"
 excluded_files=(
@@ -99,6 +104,19 @@ for file in "${excluded_files[@]}"; do
   write_codepoint "$excluded_case/$file" 2014
 done
 expect_success "$excluded_case" "${excluded_files[@]}"
+
+hyphen_excluded_case="$CASE_ROOT/reject-non-breaking-hyphen-in-excluded-paths"
+for file in "${excluded_files[@]}"; do
+  write_codepoint "$hyphen_excluded_case/$file" 2011
+done
+if run_hook "$hyphen_excluded_case" "${excluded_files[@]}"; then
+  echo "Expected Unicode typography hook to reject non-breaking hyphens in excluded paths"
+  cat "$hyphen_excluded_case/output.txt"
+  exit 1
+fi
+for file in "${excluded_files[@]}"; do
+  grep -Fq "$file:1: U+2011 NON-BREAKING HYPHEN" "$hyphen_excluded_case/output.txt"
+done
 
 authored_resource_case="$CASE_ROOT/reject-authored-resource"
 authored_resource_file="python/tests/integration/sample/resources/__init__.py"

@@ -1,12 +1,12 @@
 # Rust
 
 Rust's strong type system, ownership model, and predictable performance make it a natural fit for
-the mission‑critical core of NautilusTrader. Safe Rust prevents data races and many memory errors at
+the mission-critical core of NautilusTrader. Safe Rust prevents data races and many memory errors at
 compile time; `unsafe` code must make the invariants the compiler cannot check explicit.
 
-Use this reference when changing hand‑written Rust source, Cargo manifests, PyO3 bindings, or Rust
+Use this reference when changing hand-written Rust source, Cargo manifests, PyO3 bindings, or Rust
 tests. `rustfmt` and the workspace lints own general Rust style. This page documents
-NautilusTrader‑specific choices that are easy to miss during review.
+NautilusTrader-specific choices that are easy to miss during review.
 
 ## Sources of truth
 
@@ -36,7 +36,7 @@ outputs instead of editing generated files directly.
 
 - Use workspace inheritance for shared dependencies, for example
   `serde = { workspace = true }`. Pin a version in a crate only when the dependency is not
-  workspace‑managed.
+  workspace-managed.
 - Separate dependency groups with a blank line and alphabetize each group. Manifests normally group
   internal `nautilus-*` crates, required external crates, and optional external crates, but preserve
   a manifest's meaningful local groups.
@@ -51,7 +51,7 @@ outputs instead of editing generated files directly.
   `dydx-proto` with `prost` and `tonic`.
 - List only declared dependencies under `[package.metadata.cargo-machete] ignored`.
 - Remove a root `[workspace.dependencies]` entry when no crate uses it. Cargo tools kept only for CI
-  and top‑level workspace packages are exempt from this check.
+  and top-level workspace packages are exempt from this check.
 - Obtain `libfuzzer-sys` in adapter crates through `nautilus-live`; do not add it directly to an
   adapter manifest.
 
@@ -88,13 +88,13 @@ Place the optional `publish`, `build`, and `include` fields after `homepage.work
   while many adapter crates enable `high-precision` by default.
 - Include `"python"` in every `extension-module` feature that builds a Python artifact. Keep it next
   to `"pyo3/extension-module"`.
-- Propagate `high-precision` to dependent Nautilus crates that store or construct fixed‑point
+- Propagate `high-precision` to dependent Nautilus crates that store or construct fixed-point
   domain values.
-- Document public features in the crate‑level documentation.
+- Document public features in the crate-level documentation.
 
 ### Targets
 
-- Use snake_case filenames for `bin/` sources and kebab‑case executable names, for example
+- Use snake_case filenames for `bin/` sources and kebab-case executable names, for example
   `path = "bin/ws_data.rs"` and `name = "hyperliquid-ws-data"`.
 - Set `doc = false` on binary and example targets. Also set `test = false` on binary targets.
 - Order library crate types as `rlib`, `staticlib`, then `cdylib` when a crate produces more than
@@ -104,7 +104,7 @@ Place the optional `publish`, `build`, and `include` fields after `homepage.work
 
 ### File header requirements
 
-Copy the standard copyright and license header from a neighboring hand‑written Rust file. Generated
+Copy the standard copyright and license header from a neighboring hand-written Rust file. Generated
 files retain their generator header instead. The copyright hook checks the year.
 
 Change a generator input and rerun the generator instead of editing generated Rust, C headers,
@@ -118,9 +118,9 @@ external modules by these sections:
 1. `#[macro_use]` modules.
 1. Public modules.
 1. Restricted modules such as `pub(crate)`.
-1. Feature‑gated modules.
+1. Feature-gated modules.
 1. Private modules.
-1. Test‑only modules.
+1. Test-only modules.
 
 Alphabetize declarations within each section and leave one blank line between sections. The
 formatting hook enforces this order in `mod.rs` files.
@@ -138,7 +138,7 @@ Use the narrowest visibility that serves the caller. The workspace denies unreac
 
 ### Box-style banner comments
 
-Do not use box‑style banner or separator comments. Use modules and implementation blocks to express
+Do not use box-style banner or separator comments. Use modules and implementation blocks to express
 structure.
 
 ## Formatting and attributes
@@ -153,7 +153,7 @@ Leave one blank line:
 - Above standalone `if`, `match`, `for`, `while`, and `loop` expressions.
 - Above task spawn calls.
 
-The control‑flow and spawn rules do not apply when the expression starts a block, continues the
+The control-flow and spawn rules do not apply when the expression starts a block, continues the
 previous operation, or has an attached comment or attribute.
 
 Use inline format arguments for existing variables:
@@ -222,11 +222,11 @@ connect().context("BitMEX websocket did not become active")?;
 - Start messages with a capitalized word and omit terminal periods.
 - Use `// log-period-ok` on the call or within three lines above it when a terminal period is part of
   the logged value rather than sentence punctuation.
-- Keep connection and client lifecycle, reconnection, reconciliation, and mass‑status summaries at
+- Keep connection and client lifecycle, reconnection, reconciliation, and mass-status summaries at
   `INFO`.
-- Keep subscription detail, per‑order confirmations, instrument counts, authentication, and
+- Keep subscription detail, per-order confirmations, instrument counts, authentication, and
   WebSocket internals at `DEBUG`.
-- Log a warning or error when an unexpected, user‑actionable, or data‑loss condition is handled
+- Log a warning or error when an unexpected, user-actionable, or data-loss condition is handled
   locally. Do not log an error that continues to propagate through `?` or `anyhow::bail!`.
 - Leave a blank line above a log call unless it is the first line of the function.
 - Do not write to stdout or stderr or terminate the process from production library code. Binaries,
@@ -239,7 +239,7 @@ Synchronous core crates do not take Tokio as a regular dependency. The `common` 
 optional. The Tokio convention hook owns the exact crate list.
 
 Adapter production code uses the shared runtime because calls may arrive from Python threads without
-a thread‑local Tokio context:
+a thread-local Tokio context:
 
 ```rust
 use nautilus_common::live::get_runtime;
@@ -254,7 +254,7 @@ get_runtime().spawn(async move {
 - Use the runtime supplied by `#[tokio::test]` in tests; `tokio::spawn()` is valid there.
 - Put `// tokio-import-ok` on an import or spawn line only when the fully qualified form or shared
   runtime cannot serve that site.
-- Install a custom runtime before `LiveNode::build()` or any adapter use. Build a multi‑threaded
+- Install a custom runtime before `LiveNode::build()` or any adapter use. Build a multi-threaded
   runtime with all drivers enabled.
 - `set_runtime()` bypasses the default initializer, including Python initialization. With the
   `python` feature enabled, initialize Python before installing a custom runtime or keep the default
@@ -333,7 +333,7 @@ Choose a hash collection by iteration semantics and trust boundary:
 
 | Requirement                                    | Collection                |
 | ---------------------------------------------- | ------------------------- |
-| Observable insertion‑order iteration.          | `IndexMap` or `IndexSet`. |
+| Observable insertion-order iteration.          | `IndexMap` or `IndexSet`. |
 | Hot lookup with no observable iteration order. | `AHashMap` or `AHashSet`. |
 | Keys chosen by an untrusted third party.       | `HashMap` or `HashSet`.   |
 | External API requires a standard collection.   | `HashMap` or `HashSet`.   |
@@ -348,19 +348,19 @@ removal, since `shift_remove` is O(n); prefer `IndexMap` when insertion order is
 meaningful sequence. Use `shift_remove` when removal must preserve insertion order and `swap_remove`
 when it need not.
 
-`AHashMap` and `AHashSet` use a non‑cryptographic hasher. Do not use them where untrusted keys make
-hash‑flooding resistance part of the security boundary.
+`AHashMap` and `AHashSet` use a non-cryptographic hasher. Do not use them where untrusted keys make
+hash-flooding resistance part of the security boundary.
 
 ### Cache order access
 
-`Cache` hides its `SharedCell` order storage behind lifetime‑scoped accessors. Use `order_ref()` or
+`Cache` hides its `SharedCell` order storage behind lifetime-scoped accessors. Use `order_ref()` or
 `try_order_ref()` for scoped reads, `order_mut()` for an exclusive write borrow, and `order_owned()`
 or `try_order_owned()` when a snapshot must cross a boundary. The `try_*` forms return
 `OrderLookupError` when the order is absent.
 
-`order_mut()` requires `&mut Cache`, so adapter‑facing `CacheView` code cannot mutate orders. Drop an
-`OrderRef` or `OrderRefMut` before dispatching events or taking a borrow that can re‑enter the same
-order, then look up the order again for post‑event state.
+`order_mut()` requires `&mut Cache`, so adapter-facing `CacheView` code cannot mutate orders. Drop an
+`OrderRef` or `OrderRefMut` before dispatching events or taking a borrow that can re-enter the same
+order, then look up the order again for post-event state.
 
 ## Design by contract
 
@@ -368,12 +368,12 @@ Use the narrowest mechanism that expresses the contract:
 
 | Situation                                     | Mechanism                                    |
 | --------------------------------------------- | -------------------------------------------- |
-| Compile‑time state or ownership rule.         | Types, lifetimes, newtypes, and visibility.  |
+| Compile-time state or ownership rule.         | Types, lifetimes, newtypes, and visibility.  |
 | Public input precondition.                    | `check_*` from `nautilus_core::correctness`. |
 | Validated value construction.                 | `new_checked()` with a `new()` wrapper.      |
 | Recoverable parse, I/O, or network failure.   | `Result<T, E>`.                              |
 | Internal invariant the compiler cannot prove. | `debug_assert!`, covered by a targeted test. |
-| Soundness or always‑on invariant.             | `assert!` or a checked error path.           |
+| Soundness or always-on invariant.             | `assert!` or a checked error path.           |
 
 Place an assertion where the code first relies on the invariant. Never use `debug_assert!` for
 public input validation or a soundness condition because release builds remove it.
@@ -387,18 +387,18 @@ contract bug.
 ### Coverage and tone
 
 - Add doc comments to public items. Document private behavior with a normal comment only when
-  non‑obvious context prevents a likely misreading.
-- Add module documentation to public modules and modules with a non‑obvious contract. Do not add
+  non-obvious context prevents a likely misreading.
+- Add module documentation to public modules and modules with a non-obvious contract. Do not add
   boilerplate to a private leaf module.
 - Use the indicative mood: "Returns the account ID", not "Return the account ID".
 - End public field and enum variant documentation with a period.
 - Match documentation density to neighboring items. Do not add filler comments to make a bare block
   look uniform.
-- Put important context for private fields in the type‑level documentation instead of documenting
+- Put important context for private fields in the type-level documentation instead of documenting
   each field.
 
 Document public functions when their contract is not fully clear from the type and name. Cover
-fallible conditions, panic conditions, safety obligations, and non‑obvious input semantics.
+fallible conditions, panic conditions, safety obligations, and non-obvious input semantics.
 
 ### Rustdoc sections
 
@@ -434,7 +434,7 @@ Use `# Errors` only on a function that returns `Result`, `PyResult`, or `Option`
 when the function can panic, and remove the section instead of saying that the function does not
 panic.
 
-The documentation hook recognizes direct panic sites in a `Result`‑returning function. Put
+The documentation hook recognizes direct panic sites in a `Result`-returning function. Put
 `// panics-doc-ok` immediately above the doc block when a called function supplies the documented
 panic. Use `// errors-doc-ok` in the same position only for a special error contract that the
 signature check cannot recognize.
@@ -445,7 +445,7 @@ signature check cannot recognize.
 
 | Fence          | Behavior                  | Use for                                                |
 | -------------- | ------------------------- | ------------------------------------------------------ |
-| `rust`         | Compiled and run.         | Self‑contained examples with no external dependencies. |
+| `rust`         | Compiled and run.         | Self-contained examples with no external dependencies. |
 | `rust,no_run`  | Compiled, not run.        | Examples needing a catalog, network, or venue.         |
 | `ignore`       | Neither compiled nor run. | Pseudocode; state why it cannot compile.               |
 | `compile_fail` | Must fail to compile.     | Demonstrating a rejected usage.                        |
@@ -463,7 +463,7 @@ cannot import the item they document.
 ### PyO3 names and errors
 
 - Prefix a Rust function renamed with `#[pyo3(name = "...")]` with `py_`.
-- When a binding needs a Rust‑only wrapper type, prefix it with `Py` and expose the Python name
+- When a binding needs a Rust-only wrapper type, prefix it with `Py` and expose the Python name
   without that prefix.
 - Use `nautilus_trader.adapters.<adapter_name>` for public adapter stub metadata. Runtime module
   paths use `nautilus_trader._libnautilus.<adapter_name>`.
@@ -481,7 +481,7 @@ Keep each submodule registration as `let n = "<name>"` followed by one
 
 ### PyO3 enums
 
-Python‑exposed integer enums use `frozen`, `eq`, `eq_int`, `from_py_object`, and
+Python-exposed integer enums use `frozen`, `eq`, `eq_int`, `from_py_object`, and
 `rename_all = "SCREAMING_SNAKE_CASE"`.
 
 Do not add PyO3's `hash` attribute to an `eq_int` enum. Its generated hash differs from Python's hash
@@ -499,7 +499,7 @@ impl MyEnum {
 
 ### Type stub annotations
 
-Every Python‑exposed type and function needs the matching `pyo3-stub-gen` annotation:
+Every Python-exposed type and function needs the matching `pyo3-stub-gen` annotation:
 
 | PyO3 construct    | Stub annotation                                 |
 | ----------------- | ----------------------------------------------- |
@@ -524,7 +524,7 @@ wrapper doc comments under `crates/**/src/python/`. Regenerate both with:
 make py-stubs
 ```
 
-Run the target after changing a Python‑exposed Rust item, its stub annotation, its core doc comments,
+Run the target after changing a Python-exposed Rust item, its stub annotation, its core doc comments,
 or adapter feature wiring. Commit every changed generated artifact with the source change.
 
 The stub generator removes `extension-module` before invoking Cargo. Add a feature that is enabled
@@ -542,7 +542,7 @@ regenerate. The doc sync:
 
 - Preserves `# Errors` and `# Safety`.
 - Drops `# Panics` so a panic contract does not cross the Python API boundary.
-- Removes Rust intra‑doc links.
+- Removes Rust intra-doc links.
 - Converts Rust `::` paths to Python `.` paths.
 
 ### Rust-Python object ownership
@@ -551,18 +551,18 @@ regenerate. The doc sync:
 interpreter or with `nautilus_core::python::clone_py_object`. An extra `Arc<Py<T>>` is normally
 unnecessary because `Py<T>` already provides shared ownership.
 
-Cloning a Python reference does not break a cycle. Use a Python weak reference when a back‑reference
+Cloning a Python reference does not break a cycle. Use a Python weak reference when a back-reference
 must not keep its target alive.
 
 ## Testing conventions
 
 - Use `mod tests` for ordinary inline tests.
-- Use `#[rstest]` instead of `#[test]`, including for a non‑parameterized test.
-- Use `#[tokio::test]` for a non‑parameterized async test.
-- Keep `#[cfg(test)]` on test modules and test‑only files. Do not add test behavior or interfaces to
+- Use `#[rstest]` instead of `#[test]`, including for a non-parameterized test.
+- Use `#[tokio::test]` for a non-parameterized async test.
+- Keep `#[cfg(test)]` on test modules and test-only files. Do not add test behavior or interfaces to
   production code.
 - Store JSON fixtures under the crate's `test_data/` directory and load them with `include_str!`.
-- Use distinct, non‑default inputs and exact expected values. Assert every stable field.
+- Use distinct, non-default inputs and exact expected values. Assert every stable field.
 - Group assertions after setup and actions unless the test checks stepwise state changes.
 - Do not use Arrange, Act, Assert separator comments.
 
@@ -624,7 +624,7 @@ Unsafe code must make its proof obligations reviewable:
   hold at that site.
 - Wrap each unsafe operation in its own `unsafe { ... }` block. Workspace crates deny
   `unsafe_op_in_unsafe_fn`.
-- Use always‑on checks for null, alignment, provenance, and other soundness conditions.
+- Use always-on checks for null, alignment, provenance, and other soundness conditions.
 - Add targeted tests for observable behavior around unsafe code. Tests support the proof but do not
   establish soundness.
 - Treat an unsafe `Send` or `Sync` implementation as a proof over all reachable state, aliases,
@@ -637,14 +637,14 @@ allocation after transfer and must call the matching `vec_drop_*` function exact
 
 The actor registry, component registry, and message bus use `thread_local!` storage. Objects
 registered on one thread are not visible from another. `LiveNodeHandle` is the intended
-cross‑thread control surface.
+cross-thread control surface.
 
 Keep an `ActorRef` within one synchronous scope. Do not store it in a struct, hold it across
-`.await`, or send it to another thread. Capture the actor ID in long‑lived callbacks and look up the
+`.await`, or send it to another thread. Capture the actor ID in long-lived callbacks and look up the
 actor each time the callback runs.
 
 The component registry rejects aliased mutable access with a scoped borrow guard. Do not make
-component lifecycle operations re‑entrant.
+component lifecycle operations re-entrant.
 
 ## Other generated artifacts
 
@@ -658,7 +658,7 @@ cargo check -q -p nautilus-core --features ffi
 cargo check -q -p nautilus-model --features ffi,python,high-precision
 ```
 
-The crate‑local `cbindgen.toml` files define the header layout for native consumers. Do not add an
+The crate-local `cbindgen.toml` files define the header layout for native consumers. Do not add an
 `ffi` feature or `src/ffi` module to another workspace crate.
 
 ### Cap'n Proto schemas
@@ -670,7 +670,7 @@ Schema files live under `crates/serialization/schemas/capnp/`, and generated Rus
 - Do not remove fields or reuse field numbers. Mark obsolete fields as deprecated in comments.
 - Regenerate with `make regen-capnp`.
 - Review `git diff crates/serialization/generated/capnp`.
-- Run `make check-capnp-schemas` to verify the checked‑in output.
+- Run `make check-capnp-schemas` to verify the checked-in output.
 - Test the serialization crate with `make cargo-test-crate-nautilus-serialization`.
 
 Install the pinned compiler as described in

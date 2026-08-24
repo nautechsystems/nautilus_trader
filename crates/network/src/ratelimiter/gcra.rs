@@ -17,7 +17,7 @@ use std::{cmp, fmt::Display, time::Duration};
 
 use super::{StateStore, clock, nanos::Nanos, quota::Quota};
 
-/// Rate‑limiting parameters captured for a rejected decision.
+/// Rate-limiting parameters captured for a rejected decision.
 ///
 /// `t` is one cell's weight in time, `tau` is the burst capacity in time, and `tat` is the
 /// theoretical arrival time used to calculate the next admissible request.
@@ -52,7 +52,7 @@ pub struct NotUntil<P: clock::Reference> {
 }
 
 impl<P: clock::Reference> NotUntil<P> {
-    /// Creates a `NotUntil` as a negative rate‑limiting result.
+    /// Creates a `NotUntil` as a negative rate-limiting result.
     #[inline]
     pub(crate) const fn new(state: StateSnapshot, start: P) -> Self {
         Self { state, start }

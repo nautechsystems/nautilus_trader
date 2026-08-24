@@ -49,6 +49,7 @@ use nautilus_core::{
     nanos::UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControlFactory;
 use nautilus_model::{
     data::{BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick},
     enums::{
@@ -281,6 +282,7 @@ impl BinanceSpotDataClient {
             None
         };
 
+        let socket_factory = SocketControlFactory::new(client_id, Some(*BINANCE_VENUE));
         let ws_client = match spot_market_data_mode {
             // SBE streams require Ed25519 authentication
             BinanceSpotMarketDataMode::Sbe => SpotWsClient::Sbe(
@@ -291,7 +293,8 @@ impl BinanceSpotDataClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )?
-                .with_proxy(config.proxy_url.clone()),
+                .with_proxy(config.proxy_url.clone())
+                .with_socket_control(socket_factory, "binance-spot-sbe-data-streams"),
             ),
             BinanceSpotMarketDataMode::Json => SpotWsClient::JsonPublic(
                 BinanceSpotPublicJsonWebSocketClient::new(
@@ -303,7 +306,8 @@ impl BinanceSpotDataClient {
                     Some(BINANCE_WS_HEARTBEAT_SECS),
                     config.transport_backend,
                 )
-                .with_proxy(config.proxy_url.clone()),
+                .with_proxy(config.proxy_url.clone())
+                .with_socket_control(socket_factory, "binance-spot-json-data-streams"),
             ),
         };
         let data_sender = get_data_event_sender();

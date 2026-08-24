@@ -87,7 +87,7 @@ pub enum TransportBackend {
 /// - Runs the reader in an internal task.
 /// - Supports automatic reconnection with exponential backoff.
 /// - Applies `reconnect_*`, `heartbeat_timeout_secs`, and `idle_timeout_ms` settings.
-/// - Suits long‑lived connections and callback‑based APIs.
+/// - Suits long-lived connections and callback-based APIs.
 ///
 /// ## Stream mode
 ///
@@ -131,7 +131,7 @@ pub struct WebSocketConfig {
     /// up early during a reconnect as well as failing a connection attempt faster; keep it above
     /// the reconnect backoff.
     ///
-    /// Only applies to handler mode and must be non‑zero when set. Stream mode ignores this field
+    /// Only applies to handler mode and must be non-zero when set. Stream mode ignores this field
     /// and bounds its connection attempt at 10 seconds.
     #[serde(default)]
     pub connect_timeout_ms: Option<u64>,

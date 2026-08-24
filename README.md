@@ -82,7 +82,7 @@ execution, while Python serves as the control plane. The same architecture, exec
 semantics, and time model operate across both environments, allowing strategies to move
 from research to production without reimplementation.
 
-Python bindings are provided via [PyO3](https://pyo3.rs) for the Rust‑native v2 runtime.
+Python bindings are provided via [PyO3](https://pyo3.rs) for the Rust-native v2 runtime.
 During the v2 transition, v1 receives only critical security backports on the `develop_v1` branch.
 See the [v2 migration guide](https://github.com/nautechsystems/nautilus_trader/blob/develop/MIGRATION_V2.md) for migration steps and compatibility details.
 No Rust toolchain is required to install prebuilt wheels.
@@ -117,7 +117,7 @@ The following integrations are currently supported; see [docs/integrations/](htt
 | [Derive](https://www.derive.xyz)                          | `DERIVE`              | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/derive.md)              |
 | [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/dydx.md)                |
 | [Hyperliquid](https://hyperliquid.xyz)                    | `HYPERLIQUID`         | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/hyperliquid.md)         |
-| [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi‑venue) | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/interactive_brokers.md) |
+| [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/interactive_brokers.md) |
 | [Kraken](https://kraken.com)                              | `KRAKEN`              | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/kraken.md)              |
 | [Lighter](https://lighter.xyz)                            | `LIGHTER`             | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/lighter.md)             |
 | [OKX](https://okx.com)                                    | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green) | [Guide](docs/integrations/okx.md)                 |
@@ -139,7 +139,7 @@ See the [Integrations](https://nautilustrader.io/docs/latest/integrations/) docu
 ## Roadmap
 
 The [Roadmap](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md) outlines NautilusTrader's strategic direction.
-Current priorities include stabilizing the Rust‑native core, improving documentation, and enhancing code ergonomics.
+Current priorities include stabilizing the Rust-native core, improving documentation, and enhancing code ergonomics.
 
 The open-source project focuses on single-node backtesting and live trading for individual and small-team quantitative traders.
 UI dashboards, distributed orchestration, and built-in AI/ML tooling are out of scope to maintain focus on the core engine and ecosystem sustainability.
@@ -230,7 +230,7 @@ which differ in their internal bit-width and maximum decimal precision.
 
 > [!NOTE]
 >
-> By default, the official Python wheels ship in high‑precision (128‑bit) mode on all supported platforms.
+> By default, the official Python wheels ship in high-precision (128-bit) mode on all supported platforms.
 >
 > For pure Rust crates, high-precision works on all platforms (including Windows) since Rust handles
 > `i128`/`u128` via software emulation. The default is standard-precision unless you explicitly enable
@@ -314,7 +314,7 @@ This process also helps preserve compute resources and provides easy access to t
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
 
 - `develop` wheels use the version suffix `.devYYYYMMDD+run`.
-- `nightly` wheels use `.devYYYYMMDD` when the base version is already a pre‑release, and
+- `nightly` wheels use `.devYYYYMMDD` when the base version is already a pre-release, and
   `aYYYYMMDD` otherwise.
 
 | Platform           | Develop | Nightly |
@@ -593,7 +593,7 @@ Commit the generated `.pyi` files and PyO3 wrapper doc comments changed by this 
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader.
 Its key benefit is isolating each test in its own process, ensuring test reliability
 by avoiding interference. See the [Rust testing guidance](docs/developer_guide/testing.md#rust-tests)
-for details about full‑suite support and the limits of plain `cargo test`.
+for details about full-suite support and the limits of plain `cargo test`.
 
 You can install cargo-nextest by running:
 
@@ -607,10 +607,10 @@ cargo install cargo-nextest
 
 ## Contributing
 
-Thank you for considering a contribution to NautilusTrader. We welcome high‑quality work that
+Thank you for considering a contribution to NautilusTrader. We welcome high-quality work that
 improves the project. Before starting a substantial change, open an
 [issue](https://github.com/nautechsystems/nautilus_trader/issues) to discuss the problem and approach
-with the team. Small, self‑contained fixes do not require prior agreement.
+with the team. Small, self-contained fixes do not require prior agreement.
 
 Before getting started, be sure to review the [open-source scope](https://github.com/nautechsystems/nautilus_trader/blob/develop/ROADMAP.md#open-source-scope) outlined in the project's roadmap to understand what's in and out of scope.
 

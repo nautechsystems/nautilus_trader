@@ -16,12 +16,12 @@ Benchmarks provide absolute measurements for workload sizing, implementation
 comparisons, and decisions about whether an optimization justifies its
 complexity.
 
-Back‑to‑back comparisons show whether a proposed change shifts performance.
+Back-to-back comparisons show whether a proposed change shifts performance.
 This evidence is most useful when both runs use the same workload, toolchain,
 machine, and measurement controls.
 
 Choose a measurement based on the question it must answer. Criterion reports
-elapsed time for representative work, iai provides an instruction‑count signal
+elapsed time for representative work, iai provides an instruction-count signal
 for small and deterministic operations, and a profile identifies where a
 workload spends its time. A workload may support more than one measurement,
 but each result must follow its tool's method.
@@ -36,12 +36,12 @@ Apply these principles when adding or evaluating benchmarks.
 hot path, what inputs we judged realistic, and what the resulting cost looked
 like at a point in time. Future contributors read benchmarks to understand
 where time goes and which behavior a performance change must preserve. An
-unexplained regression is a code‑review concern.
+unexplained regression is a code-review concern.
 
 **Prefer measuring real units of work.** A benchmark that times a meaningful
 public method on a populated structure is more useful than one that times a
 private implementation detail. The public method usually survives refactoring
-and continues to represent user‑visible work.
+and continues to represent user-visible work.
 
 **Target hot paths.** Adding a benchmark because the code is convenient to
 drive does not justify the maintenance cost. New benchmarks should target hot
@@ -49,7 +49,7 @@ paths or work under active optimization.
 
 **Compare equivalent wall-clock runs.** Wall-clock figures vary with cache
 sizes, microarchitecture, frequency behavior, thermal state, scheduler
-decisions, and ASLR. Compare back‑to‑back on the same machine under the same
+decisions, and ASLR. Compare back-to-back on the same machine under the same
 controls when evaluating a delta. Use a designated, documented performance
 host for authoritative absolute baselines; treat other machines as local
 evidence.
@@ -103,11 +103,11 @@ user-observable performance than a single-function microbenchmark. Examples
 live under `crates/backtest/benches/`, `crates/data/benches/`, and
 `crates/live/benches/`.
 
-The backtest engine benchmark covers single‑stream and multi‑stream market
+The backtest engine benchmark covers single-stream and multi-stream market
 data replay plus representative order workloads. Its
-[canonical v2 matrix](crates/backtest/benches/BENCHMARKS.md) replays checked‑in
-raw data with replay‑only, scheduled market‑order, passive limit‑order, and
-bar‑strategy scenarios. Each scenario checks an exact semantic fingerprint
+[canonical v2 matrix](crates/backtest/benches/BENCHMARKS.md) replays checked-in
+raw data with replay-only, scheduled market-order, passive limit-order, and
+bar-strategy scenarios. Each scenario checks an exact semantic fingerprint
 before Criterion measures either preloaded `run()` time or full data loading,
 engine setup, and `run()` time.
 
@@ -151,9 +151,9 @@ Add the suite path and runner command with any future Python CI integration.
 
 | Task                                                  | Tool                                                      | Result                                    |
 | ----------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------- |
-| Measure elapsed time or compare implementations       | [Criterion](https://docs.rs/criterion/latest/criterion/)  | Wall‑clock time with confidence intervals |
-| Detect instruction‑count changes in a small operation | [iai](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions under Cachegrind |
-| Locate work inside a representative slow path         | [flamegraph](https://github.com/flamegraph-rs/flamegraph) | Sampled call‑stack profile                |
+| Measure elapsed time or compare implementations       | [Criterion](https://docs.rs/criterion/latest/criterion/)  | Wall-clock time with confidence intervals |
+| Detect instruction-count changes in a small operation | [iai](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions under Cachegrind |
+| Locate work inside a representative slow path         | [flamegraph](https://github.com/flamegraph-rs/flamegraph) | Sampled call-stack profile                |
 
 Criterion produces wall-clock numbers. They reflect what the user actually
 experiences but vary with CPU frequency, thermal state, scheduler decisions,
@@ -178,7 +178,7 @@ Record benchmark results according to how readers will use them.
 `target/criterion/<group>/<id>/report/index.html`. Criterion's saved
 baselines in the same directory support local back-to-back comparisons.
 
-**Component baseline reports.** A checked‑in `BENCHMARKS.md` records a
+**Component baseline reports.** A checked-in `BENCHMARKS.md` records a
 reproducible baseline, its revision, and the measurement method. Refresh that
 report explicitly when a new baseline replaces the published one.
 
@@ -193,7 +193,7 @@ detailed result tables in the pull request.
 
 The repository does not maintain a separate historical benchmark database.
 Pull request descriptions and Git history retain historical comparisons,
-while checked‑in component reports publish the reproducible baseline for their
+while checked-in component reports publish the reproducible baseline for their
 stated revision.
 
 ---

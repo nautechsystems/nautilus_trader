@@ -1,7 +1,7 @@
 # Data Testing Spec
 
 This section defines a rigorous test matrix for validating adapter data
-functionality using the Rust `DataTester` actor. Python exposes it as a built‑in
+functionality using the Rust `DataTester` actor. Python exposes it as a built-in
 actor configured through `nautilus_trader.testkit.DataTesterConfig`; Rust code
 imports it from `nautilus_testkit::testers`. Each test case is identified by a
 prefixed ID (e.g. TC-D01) and grouped by functionality.
@@ -68,6 +68,29 @@ let tester = DataTester::new(tester_config);
 node.add_actor(tester)?;
 node.run().await?;
 ```
+
+## Timestamp scale
+
+Nautilus stores `ts_event` and `ts_init` as Unix nanoseconds (`UnixNanos`). Every data
+message that carries those fields must use that scale, not leftover seconds, milliseconds,
+or microseconds.
+
+- A value below `10^16` is not a plausible Unix-nanosecond timestamp (`10^16` ns is about
+  116 days after 1970-01-01) and usually means the adapter left the venue scale unconverted.
+- Second-precision venue times that were converted correctly end in `000000000` and still
+  pass: that is coarse precision, not a scale error.
+- Live stream `ts_event` should be near wall-clock time for the session. Historical
+  request results may be older and still valid if the scale is nanoseconds.
+- `ts_init` is the local clock when Nautilus created the object. Small `ts_event` >
+  `ts_init` skew is possible when the venue clock is ahead.
+
+`DataTester` warns when `ts_event` or `ts_init` fails the scale check on instruments,
+quotes, trades, bars, book deltas, book depth, mark and index prices, funding rates,
+instrument status and close, option greeks, and historical batches of those types.
+It does not check reconstructed books in `on_book`. Treat a warning as a failure for the
+case that produced the message.
+
+---
 
 Each group below begins with a summary table, followed by detailed test cards.
 Test IDs use spaced numbering to allow insertion without renumbering.
@@ -168,7 +191,7 @@ Test order book subscription modes and snapshot requests.
 | TC-D10 | Subscribe book deltas      | Stream `OrderBookDeltas` updates.   | No book support.  |
 | TC-D11 | Subscribe book at interval | Periodic `OrderBook` snapshots.     | No book support.  |
 | TC-D12 | Subscribe book depth       | `OrderBookDepth10` snapshots.       | No book depth.    |
-| TC-D13 | Request book snapshot      | One‑time book snapshot request.     | No book snapshot. |
+| TC-D13 | Request book snapshot      | One-time book snapshot request.     | No book snapshot. |
 | TC-D14 | Managed book from deltas   | Build local book from delta stream. | No book support.  |
 
 Python uses `BookType.L2_MBP` for these scenarios. The Rust builder can override `book_type` when
@@ -275,7 +298,7 @@ DataTesterConfig::builder()
 | Field              | Value                                                         |
 | ------------------ | ------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, instrument loaded.                         |
-| **Action**         | DataTester requests a one‑time order book snapshot.           |
+| **Action**         | DataTester requests a one-time order book snapshot.           |
 | **Event sequence** | Book snapshot received via historical data callback.          |
 | **Pass criteria**  | Snapshot contains bid/ask levels with valid prices and sizes. |
 | **Skip when**      | Adapter does not support book snapshot requests.              |
@@ -828,8 +851,8 @@ Test actor lifecycle behavior: unsubscribe handling and custom parameters.
 | TC     | Name                    | Description                                | Skip when         |
 | ------ | ----------------------- | ------------------------------------------ | ----------------- |
 | TC-D70 | Unsubscribe on stop     | Unsubscribe from data feeds on actor stop. | No unsub support. |
-| TC-D71 | Custom subscribe params | Adapter‑specific subscription parameters.  | N/A.              |
-| TC-D72 | Custom request params   | Adapter‑specific request parameters.       | N/A.              |
+| TC-D71 | Custom subscribe params | Adapter-specific subscription parameters.  | N/A.              |
+| TC-D72 | Custom request params   | Adapter-specific request parameters.       | N/A.              |
 
 ### TC-D70: Unsubscribe on stop
 
@@ -869,10 +892,10 @@ DataTesterConfig::builder()
 | Field              | Value                                                                  |
 | ------------------ | ---------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, adapter accepts additional subscription parameters. |
-| **Action**         | Subscribe with adapter‑specific `subscribe_params`.                    |
+| **Action**         | Subscribe with adapter-specific `subscribe_params`.                    |
 | **Event sequence** | Subscription established with custom parameters applied.               |
-| **Pass criteria**  | Data flows with adapter‑specific parameters in effect.                 |
-| **Skip when**      | N/A (adapter‑specific).                                                |
+| **Pass criteria**  | Data flows with adapter-specific parameters in effect.                 |
+| **Skip when**      | N/A (adapter-specific).                                                |
 
 **Rust config:**
 
@@ -894,7 +917,7 @@ DataTesterConfig::builder()
 **Considerations:**
 
 - `subscribe_params` is opaque to the DataTester and passed through to the adapter.
-- The Python `DataTesterConfig` constructor does not expose this Rust‑only field.
+- The Python `DataTesterConfig` constructor does not expose this Rust-only field.
 - Consult the adapter's guide for supported parameters.
 
 ### TC-D72: Custom request params
@@ -902,10 +925,10 @@ DataTesterConfig::builder()
 | Field              | Value                                                                |
 | ------------------ | -------------------------------------------------------------------- |
 | **Prerequisite**   | Adapter connected, adapter accepts additional request parameters.    |
-| **Action**         | Request data with adapter‑specific `request_params`.                 |
+| **Action**         | Request data with adapter-specific `request_params`.                 |
 | **Event sequence** | Request fulfilled with custom parameters applied.                    |
-| **Pass criteria**  | Historical data received with adapter‑specific parameters in effect. |
-| **Skip when**      | N/A (adapter‑specific).                                              |
+| **Pass criteria**  | Historical data received with adapter-specific parameters in effect. |
+| **Skip when**      | N/A (adapter-specific).                                              |
 
 **Rust config:**
 
@@ -927,7 +950,7 @@ DataTesterConfig::builder()
 **Considerations:**
 
 - `request_params` is opaque to the DataTester and passed through to the adapter.
-- The Python `DataTesterConfig` constructor does not expose this Rust‑only field.
+- The Python `DataTesterConfig` constructor does not expose this Rust-only field.
 - Consult the adapter's guide for supported parameters.
 
 ---
@@ -935,7 +958,7 @@ DataTesterConfig::builder()
 ## DataTester configuration reference
 
 The Python constructor accepts the parameters below. Defaults are resolved values after
-construction. Historical quote, trade, and bar requests use a one‑hour lookback; funding rate
+construction. Historical quote, trade, and bar requests use a one-hour lookback; funding rate
 requests use seven days. The lookback is not configurable through `DataTesterConfig`.
 
 | Parameter                     | Type                 | Default | Affects groups  |
