@@ -720,6 +720,30 @@ impl PolymarketRtdsFeed {
             .expect("RTDS socket registration mutex poisoned") = registration;
         log::debug!("Polymarket RTDS WebSocket connected: {}", self.inner.url);
 
+        // Tokio cancellation is cooperative. Quiesce the previous loop before
+        // activating the replacement so an admitted old-loop tail cannot emit
+        // after newer data from the new connection.
+        let old_handle = self
+            .inner
+            .message_task_handle
+            .lock()
+            .expect("RTDS message_task_handle mutex poisoned")
+            .take();
+        if let Some(old_handle) = old_handle {
+            old_handle.abort();
+            if let Err(e) = old_handle.await
+                && !e.is_cancelled()
+            {
+                log::error!("Previous RTDS message loop failed during replacement: {e:?}");
+            }
+        }
+
+        *self
+            .inner
+            .ws_client
+            .lock()
+            .expect("RTDS ws_client mutex poisoned") = Some(Arc::clone(&ws));
+
         let feed = self.clone();
         let ws_for_task = Arc::clone(&ws);
         let handle = get_runtime().spawn(async move {
@@ -728,19 +752,9 @@ impl PolymarketRtdsFeed {
 
         *self
             .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned") = Some(Arc::clone(&ws));
-
-        if let Some(old_handle) = self
-            .inner
             .message_task_handle
             .lock()
-            .expect("RTDS message_task_handle mutex poisoned")
-            .replace(handle)
-        {
-            old_handle.abort();
-        }
+            .expect("RTDS message_task_handle mutex poisoned") = Some(handle);
 
         Ok(true)
     }
@@ -2430,6 +2444,139 @@ mod tests {
         assert_eq!(payload.value, exact_value);
         assert_eq!(payload.observation_timestamp_ms, observation_timestamp_ms);
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_quiesces_old_twap_tail_before_new_loop_delivery() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            data_tx,
+        );
+        let data_type = crypto_twap_data_type("BTC/USD", 60);
+        feed.track_subscribe(data_type)
+            .expect("track 60-second TWAP");
+
+        let envelope: RtdsEnvelope = serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("parse TWAP envelope");
+        let message_timestamp_ms = envelope.timestamp;
+        let payload: CryptoTwapPayloadRaw =
+            serde_json::from_value(envelope.payload).expect("parse TWAP payload");
+        let symbol_lower = payload.symbol.to_ascii_lowercase();
+        let observation_timestamp_ms = payload.timestamp;
+        let exact_value =
+            decimal_from_signed_e18("full_accuracy_value", &payload.full_accuracy_value)
+                .expect("parse exact TWAP value");
+        let ts_event = unix_nanos_from_millis("payload.timestamp", observation_timestamp_ms)
+            .expect("parse TWAP event timestamp");
+
+        let (admitted_tx, admitted_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let old_feed = feed.clone();
+        let old_symbol = symbol_lower.clone();
+        let old_handle = get_runtime().spawn(async move {
+            let data_types = old_feed
+                .admit_twap_observation(
+                    RtdsTopic::CryptoPricesTwapSixty,
+                    &old_symbol,
+                    observation_timestamp_ms,
+                    exact_value,
+                )
+                .expect("admit old-loop TWAP tail")
+                .expect("old-loop TWAP tail should be selected");
+            admitted_tx
+                .send(())
+                .expect("signal old-loop TWAP admission");
+            release_rx
+                .recv()
+                .expect("release old-loop TWAP emission tail");
+
+            let custom_payload = Arc::new(PolymarketRtdsCryptoTwap::new(
+                old_symbol,
+                RtdsCryptoTwapWindow::SixtySeconds.seconds(),
+                exact_value,
+                observation_timestamp_ms,
+                message_timestamp_ms,
+                ts_event,
+                old_feed.inner.clock.get_time_ns(),
+            ));
+            old_feed.emit_custom_payload(&custom_payload, data_types);
+        });
+        *feed
+            .inner
+            .message_task_handle
+            .lock()
+            .expect("RTDS message_task_handle mutex poisoned") = Some(old_handle);
+        admitted_rx
+            .await
+            .expect("old-loop TWAP admission signal dropped");
+
+        let connect_task = tokio::spawn({
+            let feed = feed.clone();
+            async move { feed.connect().await }
+        });
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { state.connection_count().await >= 1 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let mut newer: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse newer TWAP frame");
+        newer["payload"]["timestamp"] = json!(observation_timestamp_ms + 1);
+        state.send_text_to_all(newer.to_string()).await;
+
+        let early_event = tokio::time::timeout(Duration::from_millis(250), data_rx.recv())
+            .await
+            .ok()
+            .flatten();
+        release_tx
+            .send(())
+            .expect("release old-loop TWAP emission tail");
+        connect_task
+            .await
+            .expect("join RTDS connect task")
+            .expect("connect RTDS feed");
+
+        let observation_timestamp = |event| {
+            let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+                panic!("expected custom data event");
+            };
+            custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketRtdsCryptoTwap>()
+                .expect("PolymarketRtdsCryptoTwap")
+                .observation_timestamp_ms
+        };
+        let mut timestamps = Vec::new();
+        if let Some(event) = early_event {
+            timestamps.push(observation_timestamp(event));
+        }
+        while timestamps.len() < 2 {
+            let event = tokio::time::timeout(Duration::from_secs(5), data_rx.recv())
+                .await
+                .expect("TWAP delivery timeout")
+                .expect("TWAP data channel closed");
+            timestamps.push(observation_timestamp(event));
+        }
+
+        assert_eq!(
+            timestamps,
+            [observation_timestamp_ms, observation_timestamp_ms + 1],
+            "a replacement message loop must not overtake an admitted old-loop TWAP tail",
+        );
+        assert!(data_rx.try_recv().is_err());
+        feed.disconnect().await;
     }
 
     #[rstest]
