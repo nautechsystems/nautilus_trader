@@ -60,6 +60,26 @@ impl SocketStateSink {
         }
     }
 
+    /// Returns a sink that invokes `callback` before forwarding each state to this sink.
+    #[must_use]
+    pub fn with_callback<F>(self, callback: F) -> Self
+    where
+        F: Fn(SocketState) + Send + Sync + 'static,
+    {
+        let Self {
+            callback: forwarded,
+            transition_lock,
+        } = self;
+
+        Self {
+            callback: Arc::new(move |state| {
+                callback(state);
+                forwarded(state);
+            }),
+            transition_lock,
+        }
+    }
+
     pub(crate) fn transition(
         &self,
         value: &AtomicU8,
@@ -202,6 +222,28 @@ mod tests {
                 SocketState::Connected,
             ]
         );
+    }
+
+    #[rstest]
+    fn state_sink_with_callback_runs_before_forwarded_sink() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let forwarded_calls = Arc::clone(&calls);
+        let sink = SocketStateSink::new(move |_| {
+            forwarded_calls.lock().unwrap().push("forwarded");
+        });
+        let transition_lock = Arc::clone(&sink.transition_lock);
+        let callback_calls = Arc::clone(&calls);
+        let sink = sink.with_callback(move |_| {
+            callback_calls.lock().unwrap().push("callback");
+        });
+        let mode = AtomicU8::new(ConnectionMode::Reconnect.as_u8());
+
+        assert_eq!(
+            ConnectionMode::complete_reconnect_with_sink(&mode, Some(&sink)),
+            ReconnectOutcome::Reconnected
+        );
+        assert!(Arc::ptr_eq(&sink.transition_lock, &transition_lock));
+        assert_eq!(*calls.lock().unwrap(), vec!["callback", "forwarded"]);
     }
 
     #[rstest]

@@ -71,6 +71,37 @@ fn create_test_data_client(
     (client, rx)
 }
 
+async fn connect_data_market_ready(client: &mut BetfairDataClient) {
+    client.connect().await.unwrap();
+    let instrument_id = nautilus_betfair::common::parse::make_instrument_id(
+        "1.180294978",
+        6_146_434,
+        rust_decimal::Decimal::ZERO,
+    );
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            None,
+            Some(*BETFAIR_VENUE),
+            UUID4::new(),
+            nautilus_core::UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    assert!(client.is_connected());
+}
+
+fn current_market_message(message: &str) -> String {
+    let mut value: Value = serde_json::from_str(message).unwrap();
+    value["id"] = Value::from(2);
+    value.to_string()
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_data_client_connect_disconnect() {
@@ -93,6 +124,7 @@ async fn test_data_client_connect_disconnect() {
         .await
         .expect("stream authentication should complete")
         .expect("mock stream should remain available");
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
     assert!(client.is_connected());
     assert!(state.login_count.load(std::sync::atomic::Ordering::Relaxed) > 0);
 
@@ -515,12 +547,12 @@ async fn test_mcm_handler_emits_book_deltas() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
-    let mcm_fixture = load_fixture("stream/mcm_UPDATE.json");
+    let mcm_fixture = current_market_message(&load_fixture("stream/mcm_UPDATE.json"));
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         // Allow subscribe to complete before sending data
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -536,7 +568,7 @@ async fn test_mcm_handler_emits_book_deltas() {
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_data_market_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -562,12 +594,12 @@ async fn test_mcm_handler_emits_trades() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
-    let mcm_fixture = load_fixture("stream/mcm_UPDATE_tv.json");
+    let mcm_fixture = current_market_message(&load_fixture("stream/mcm_UPDATE_tv.json"));
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -582,7 +614,7 @@ async fn test_mcm_handler_emits_trades() {
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_data_market_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -613,12 +645,12 @@ async fn test_data_client_handles_heartbeat_gracefully() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
-    let heartbeat_fixture = load_fixture("stream/mcm_HEARTBEAT.json");
+    let heartbeat_fixture = current_market_message(&load_fixture("stream/mcm_HEARTBEAT.json"));
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -633,7 +665,7 @@ async fn test_data_client_handles_heartbeat_gracefully() {
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_data_market_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -661,12 +693,12 @@ async fn test_data_client_emits_instrument_before_status_on_market_definition() 
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
-    let md_fixture = load_fixture("stream/mcm_UPDATE_md.json");
+    let md_fixture = current_market_message(&load_fixture("stream/mcm_UPDATE_md.json"));
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -681,7 +713,7 @@ async fn test_data_client_emits_instrument_before_status_on_market_definition() 
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_data_market_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -741,12 +773,12 @@ async fn test_data_client_handles_sub_image_snapshot() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
-    let sub_image_fixture = load_fixture("stream/mcm_SUB_IMAGE.json");
+    let sub_image_fixture = current_market_message(&load_fixture("stream/mcm_SUB_IMAGE.json"));
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -761,7 +793,7 @@ async fn test_data_client_handles_sub_image_snapshot() {
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_data_market_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -813,12 +845,12 @@ async fn test_data_client_handles_resub_delta_emits_deltas() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
-    let resub_fixture = load_fixture("stream/mcm_RESUB_DELTA.json");
+    let resub_fixture = current_market_message(&load_fixture("stream/mcm_RESUB_DELTA.json"));
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -833,7 +865,7 @@ async fn test_data_client_handles_resub_delta_emits_deltas() {
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_data_market_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -895,12 +927,12 @@ async fn test_data_client_handles_live_race_message_emits_deltas(
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
-    let fixture = load_fixture(fixture_path);
+    let fixture = current_market_message(&load_fixture(fixture_path));
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -915,7 +947,7 @@ async fn test_data_client_handles_live_race_message_emits_deltas(
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_data_market_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -954,12 +986,12 @@ async fn test_data_client_handles_bsp_settled_emits_close_status() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
-    let settled_fixture = load_fixture("stream/mcm_BSP_settled.json");
+    let settled_fixture = current_market_message(&load_fixture("stream/mcm_BSP_settled.json"));
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -974,7 +1006,7 @@ async fn test_data_client_handles_bsp_settled_emits_close_status() {
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_data_market_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1022,11 +1054,12 @@ async fn test_data_client_handles_bsp_sub_image_emits_instrument_and_deltas() {
         .and_then(|arr| arr.first())
         .expect("expected at least one BSP frame")
         .to_string();
+    let first_frame = current_market_message(&first_frame);
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, mut write_half) = accept_and_auth(&listener).await;
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -1041,7 +1074,7 @@ async fn test_data_client_handles_bsp_sub_image_emits_instrument_and_deltas() {
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_data_market_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1253,6 +1286,7 @@ async fn test_data_client_reset_clears_state() {
     });
 
     client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
     assert!(client.is_connected());
 
     client.reset().unwrap();

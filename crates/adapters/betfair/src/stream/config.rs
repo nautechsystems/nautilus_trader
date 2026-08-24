@@ -15,7 +15,12 @@
 
 //! Configuration for the Betfair stream client.
 
-use crate::common::consts::{BETFAIR_STREAM_HOST, BETFAIR_STREAM_PORT};
+use crate::common::consts::{
+    BETFAIR_STREAM_HOST, BETFAIR_STREAM_PORT, BETFAIR_STREAM_SERVER_HEARTBEAT_MS,
+};
+
+pub const BETFAIR_STREAM_HEARTBEAT_MIN_MS: u64 = 500;
+pub const BETFAIR_STREAM_HEARTBEAT_MAX_MS: u64 = 5_000;
 
 /// Configuration for the Betfair Exchange Stream API client.
 #[derive(Debug, Clone)]
@@ -26,8 +31,10 @@ pub struct BetfairStreamConfig {
     pub port: u16,
     /// Optional interval between outbound client heartbeat messages in seconds (default: `None`).
     pub heartbeat_secs: Option<u64>,
-    /// Dead-peer timeout in seconds; reconnects when no bytes arrive (default: 60).
-    pub heartbeat_timeout_secs: u64,
+    /// Optional dead-peer timeout override in seconds.
+    ///
+    /// When unset, the timeout is two server heartbeat intervals.
+    pub heartbeat_timeout_secs: Option<u64>,
     /// Initial reconnection back-off delay in milliseconds (default: 2 000).
     pub reconnect_delay_initial_ms: u64,
     /// Maximum reconnection back-off delay in milliseconds (default: 30 000).
@@ -43,11 +50,49 @@ impl Default for BetfairStreamConfig {
             host: BETFAIR_STREAM_HOST.to_string(),
             port: BETFAIR_STREAM_PORT,
             heartbeat_secs: None,
-            heartbeat_timeout_secs: 60,
+            heartbeat_timeout_secs: None,
             reconnect_delay_initial_ms: 2_000,
             reconnect_delay_max_ms: 30_000,
             use_tls: true,
         }
+    }
+}
+
+impl BetfairStreamConfig {
+    #[must_use]
+    pub fn dead_peer_timeout_secs(&self) -> u64 {
+        self.heartbeat_timeout_secs.unwrap_or(
+            BETFAIR_STREAM_SERVER_HEARTBEAT_MS
+                .saturating_mul(2)
+                .div_ceil(1_000),
+        )
+    }
+
+    /// Validates heartbeat settings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an outbound interval is zero or an explicit dead-peer timeout is
+    /// shorter than two server intervals.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.heartbeat_secs == Some(0) {
+            anyhow::bail!("heartbeat_secs must be positive when set");
+        }
+
+        let minimum_timeout = BETFAIR_STREAM_SERVER_HEARTBEAT_MS
+            .saturating_mul(2)
+            .div_ceil(1_000);
+
+        if let Some(timeout_secs) = self.heartbeat_timeout_secs
+            && timeout_secs < minimum_timeout
+        {
+            anyhow::bail!(
+                "heartbeat_timeout_secs must cover at least two server heartbeat intervals \
+                 ({minimum_timeout}s), was {timeout_secs}s",
+            );
+        }
+
+        Ok(())
     }
 }
 
@@ -63,9 +108,20 @@ mod tests {
         assert_eq!(config.host, BETFAIR_STREAM_HOST);
         assert_eq!(config.port, BETFAIR_STREAM_PORT);
         assert_eq!(config.heartbeat_secs, None);
-        assert_eq!(config.heartbeat_timeout_secs, 60);
+        assert_eq!(config.heartbeat_timeout_secs, None);
+        assert_eq!(config.dead_peer_timeout_secs(), 10);
         assert_eq!(config.reconnect_delay_initial_ms, 2_000);
         assert_eq!(config.reconnect_delay_max_ms, 30_000);
         assert!(config.use_tls);
+    }
+
+    #[rstest]
+    fn test_stream_config_rejects_short_dead_peer_override() {
+        let config = BetfairStreamConfig {
+            heartbeat_timeout_secs: Some(9),
+            ..Default::default()
+        };
+
+        assert!(config.validate().is_err());
     }
 }

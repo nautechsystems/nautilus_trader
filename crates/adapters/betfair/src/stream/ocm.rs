@@ -32,7 +32,7 @@ use crate::{
     stream::parse::FillTracker,
 };
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct PendingReplaceState {
     pub(crate) total_quantity: Option<Quantity>,
     pub(crate) old_terminal: bool,
@@ -55,7 +55,7 @@ struct PendingReductionState {
 /// cleanup. The first REST, OCM, or reconciliation observation with active quantity at least the
 /// requested quantity and below the original confirms the reduction; later observations are
 /// no-ops.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct OcmState {
     /// Tracks cumulative per-bet fill and void state for deduplication and reconciliation.
     pub fill_tracker: FillTracker,

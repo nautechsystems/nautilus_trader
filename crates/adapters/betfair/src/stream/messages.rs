@@ -592,6 +592,17 @@ impl Authentication {
             session,
         }
     }
+
+    /// Creates a correlated authentication request.
+    #[must_use]
+    pub fn with_id(app_key: String, session: String, id: u64) -> Self {
+        Self {
+            op: STREAM_OP_AUTHENTICATION.to_string(),
+            id: Some(id),
+            app_key,
+            session,
+        }
+    }
 }
 
 /// Market subscription request.

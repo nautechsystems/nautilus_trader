@@ -57,7 +57,7 @@ class BetfairDataConfig:
     @property
     def stream_heartbeat_secs(self) -> int | None: ...
     @property
-    def stream_heartbeat_timeout_secs(self) -> int: ...
+    def stream_heartbeat_timeout_secs(self) -> int | None: ...
     @property
     def stream_reconnect_delay_initial_ms(self) -> int: ...
     @property
@@ -92,7 +92,7 @@ class BetfairDataConfig:
         stream_host: str | None = None,
         stream_port: int | None = None,
         stream_heartbeat_secs: int | None = None,
-        stream_heartbeat_timeout_secs: int = 60,
+        stream_heartbeat_timeout_secs: int | None = None,
         stream_reconnect_delay_initial_ms: int = 2000,
         stream_reconnect_delay_max_ms: int = 30000,
         stream_use_tls: bool = True,
@@ -125,7 +125,7 @@ class BetfairExecConfig:
     @property
     def stream_heartbeat_secs(self) -> int | None: ...
     @property
-    def stream_heartbeat_timeout_secs(self) -> int: ...
+    def stream_heartbeat_timeout_secs(self) -> int | None: ...
     @property
     def stream_reconnect_delay_initial_ms(self) -> int: ...
     @property
@@ -162,7 +162,7 @@ class BetfairExecConfig:
         stream_host: str | None = None,
         stream_port: int | None = None,
         stream_heartbeat_secs: int | None = None,
-        stream_heartbeat_timeout_secs: int = 60,
+        stream_heartbeat_timeout_secs: int | None = None,
         stream_reconnect_delay_initial_ms: int = 2000,
         stream_reconnect_delay_max_ms: int = 30000,
         stream_use_tls: bool = True,

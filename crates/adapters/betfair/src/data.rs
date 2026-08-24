@@ -646,6 +646,10 @@ impl DataClient for BetfairDataClient {
 
     fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::SeqCst)
+            && self.stream_client.as_ref().is_some_and(|client| {
+                client.is_authenticated()
+                    && (self.subscribed_market_ids.is_empty() || client.is_market_ready())
+            })
     }
 
     fn is_disconnected(&self) -> bool {
@@ -653,7 +657,7 @@ impl DataClient for BetfairDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected.load(Ordering::Acquire) {
             return Ok(());
         }
 
@@ -711,7 +715,7 @@ impl DataClient for BetfairDataClient {
             session_token,
             handler,
             self.stream_config.clone(),
-            HeartbeatTimeoutSource::Outbound,
+            HeartbeatTimeoutSource::Server,
             state_sink,
         )
         .await
@@ -985,7 +989,7 @@ impl DataClient for BetfairDataClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
+        if !self.is_connected.load(Ordering::Acquire) {
             return Ok(());
         }
 
