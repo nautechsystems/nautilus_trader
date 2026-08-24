@@ -55,7 +55,9 @@ use nautilus_common::{
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, SystemEvent,
-        execution::{CancelOrder, ExecutionReport, ModifyOrder, SubmitOrder},
+        execution::{
+            CancelOrder, ExecutionReport, GeneratePositionStatusReports, ModifyOrder, SubmitOrder,
+        },
         system::SocketState,
     },
     testing::wait_until_async,
@@ -704,6 +706,16 @@ fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    create_test_execution_client_with_config(create_test_exec_config(addr))
+}
+
+fn create_test_execution_client_with_config(
+    config: BybitExecutionClientConfig,
+) -> (
+    BybitExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BYBIT-001");
     let client_id = *BYBIT_CLIENT_ID;
@@ -721,8 +733,6 @@ fn create_test_execution_client(
         cache.clone(),
     );
 
-    let config = create_test_exec_config(addr);
-
     // Event channel must be set before creating client due to thread-local storage
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
@@ -730,6 +740,43 @@ fn create_test_execution_client(
     let client = BybitExecutionClient::new(core, config).unwrap();
 
     (client, rx, cache)
+}
+
+#[rstest]
+#[case(true, 1)]
+#[case(false, 0)]
+#[tokio::test]
+async fn test_exec_client_scoped_spot_position_reports_follow_config(
+    #[case] use_spot_position_reports: bool,
+    #[case] expected_reports: usize,
+) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![BybitProductType::Spot];
+    config.use_spot_position_reports = use_spot_position_reports;
+    let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+
+    let reports = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(InstrumentId::from("ETHUSDT-SPOT.BYBIT")),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), expected_reports);
+    if use_spot_position_reports {
+        assert_eq!(reports[0].instrument_id, "ETHUSDT-SPOT.BYBIT".into());
+    }
+
+    client.disconnect().await.unwrap();
 }
 
 fn create_test_demo_execution_client(

@@ -136,6 +136,7 @@ impl BybitExecutionClient {
             config.recv_window_ms,
             config.proxy_url.clone(),
         )?;
+        http_client.set_use_spot_position_reports(config.use_spot_position_reports);
 
         let mut ws_private = BybitWebSocketClient::new_private(
             config.environment,
@@ -1064,25 +1065,17 @@ impl ExecutionClient for BybitExecutionClient {
 
         if let Some(instrument_id) = cmd.instrument_id {
             let product_type = self.get_product_type_for_instrument(instrument_id);
-
-            // Skip Spot - positions API only supports derivatives
-            if product_type != BybitProductType::Spot {
-                let mut fetched = self
-                    .http_client
-                    .request_position_status_reports(
-                        self.core.account_id,
-                        product_type,
-                        Some(instrument_id),
-                    )
-                    .await?;
-                reports.append(&mut fetched);
-            }
+            let mut fetched = self
+                .http_client
+                .request_position_status_reports(
+                    self.core.account_id,
+                    product_type,
+                    Some(instrument_id),
+                )
+                .await?;
+            reports.append(&mut fetched);
         } else {
             for product_type in self.product_types() {
-                // Skip Spot - positions API only supports derivatives
-                if product_type == BybitProductType::Spot {
-                    continue;
-                }
                 let mut fetched = self
                     .http_client
                     .request_position_status_reports(self.core.account_id, product_type, None)

@@ -2438,7 +2438,7 @@ impl BybitHttpClient {
     async fn generate_spot_position_reports_from_wallet(
         &self,
         account_id: AccountId,
-        instrument_id: Option<InstrumentId>,
+        instrument_id: InstrumentId,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let params = BybitWalletBalanceParams {
             account_type: BybitAccountType::Unified,
@@ -2461,92 +2461,40 @@ impl BybitHttpClient {
 
         let mut reports = Vec::new();
 
-        if let Some(instrument_id) = instrument_id {
-            if let Some(instrument) = self
-                .instruments_cache
-                .get_cloned(&instrument_id.symbol.inner())
-            {
-                let base_currency = instrument
-                    .base_currency()
-                    .expect("SPOT instrument should have base currency");
-                let coin = base_currency.code;
-                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
+        if let Some(instrument) = self
+            .instruments_cache
+            .get_cloned(&instrument_id.symbol.inner())
+        {
+            let base_currency = instrument
+                .base_currency()
+                .expect("SPOT instrument should have base currency");
+            let coin = base_currency.code;
+            let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
-                let side = if wallet_balance > Decimal::ZERO {
-                    PositionSideSpecified::Long
-                } else if wallet_balance < Decimal::ZERO {
-                    PositionSideSpecified::Short
-                } else {
-                    PositionSideSpecified::Flat
-                };
+            let side = if wallet_balance > Decimal::ZERO {
+                PositionSideSpecified::Long
+            } else if wallet_balance < Decimal::ZERO {
+                PositionSideSpecified::Short
+            } else {
+                PositionSideSpecified::Flat
+            };
 
-                let abs_balance = wallet_balance.abs();
-                let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
+            let abs_balance = wallet_balance.abs();
+            let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
 
-                let report = PositionStatusReport::new(
-                    account_id,
-                    instrument_id,
-                    side,
-                    quantity,
-                    ts_init,
-                    ts_init,
-                    None,
-                    None,
-                    None,
-                );
+            let report = PositionStatusReport::new(
+                account_id,
+                instrument_id,
+                side,
+                quantity,
+                ts_init,
+                ts_init,
+                None,
+                None,
+                None,
+            );
 
-                reports.push(report);
-            }
-        } else {
-            // Generate reports for all SPOT instruments with non-zero balance
-            let instruments_guard = self.instruments_cache.load();
-            for (symbol, instrument) in instruments_guard.iter() {
-                // Only consider SPOT instruments
-                if !symbol.as_str().ends_with("-SPOT") {
-                    continue;
-                }
-
-                let base_currency = match instrument.base_currency() {
-                    Some(currency) => currency,
-                    None => continue,
-                };
-
-                let coin = base_currency.code;
-                let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
-
-                if wallet_balance.is_zero() {
-                    continue;
-                }
-
-                let side = if wallet_balance > Decimal::ZERO {
-                    PositionSideSpecified::Long
-                } else if wallet_balance < Decimal::ZERO {
-                    PositionSideSpecified::Short
-                } else {
-                    PositionSideSpecified::Flat
-                };
-
-                let abs_balance = wallet_balance.abs();
-                let quantity = Quantity::from_decimal_dp(abs_balance, instrument.size_precision())?;
-
-                if quantity.is_zero() {
-                    continue;
-                }
-
-                let report = PositionStatusReport::new(
-                    account_id,
-                    instrument.id(),
-                    side,
-                    quantity,
-                    ts_init,
-                    ts_init,
-                    None,
-                    None,
-                    None,
-                );
-
-                reports.push(report);
-            }
+            reports.push(report);
         }
 
         Ok(reports)
@@ -4758,6 +4706,9 @@ impl BybitHttpClient {
         // Handle SPOT position reports via wallet balances if flag is enabled
         if product_type == BybitProductType::Spot {
             if self.use_spot_position_reports.load(Ordering::Relaxed) {
+                let Some(instrument_id) = instrument_id else {
+                    return Ok(Vec::new());
+                };
                 return self
                     .generate_spot_position_reports_from_wallet(account_id, instrument_id)
                     .await;
