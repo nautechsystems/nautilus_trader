@@ -5828,7 +5828,8 @@ mod tests {
         cache.borrow_mut().update_order(&event).unwrap();
 
         let mut manager =
-            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default());
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
         manager.register_inflight(client_order_id);
         manager.order_query_recency.mark(client_order_id);
         manager
