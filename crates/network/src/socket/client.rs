@@ -737,11 +737,39 @@ impl SocketClientInner {
             let mut write_buf: Vec<u8> = Vec::new();
 
             loop {
-                if matches!(
-                    ConnectionMode::from_atomic(&connection_state),
-                    ConnectionMode::Disconnect | ConnectionMode::Closed
-                ) {
+                let mode = ConnectionMode::from_atomic(&connection_state);
+                if matches!(mode, ConnectionMode::Disconnect | ConnectionMode::Closed) {
                     break;
+                }
+
+                if mode.is_active() && !reconnect_buffer.is_empty() {
+                    let drain_result = dst::time::timeout(
+                        Duration::from_secs(WRITE_TIMEOUT_SECS),
+                        Self::drain_reconnect_buffer(
+                            &mut reconnect_buffer,
+                            &mut active_writer,
+                            &suffix,
+                        ),
+                    )
+                    .await;
+                    let send_error = drain_result.unwrap_or_else(|_| {
+                        log::warn!(
+                            "Timed out draining reconnect buffer after {WRITE_TIMEOUT_SECS}s, {} messages remain",
+                            reconnect_buffer.len()
+                        );
+                        true
+                    });
+
+                    if send_error
+                        && ConnectionMode::request_reconnect_with_sink(
+                            &connection_state,
+                            state_sink.as_ref(),
+                        )
+                    {
+                        log::warn!("Writer triggering reconnect");
+                        state_notify.notify_one();
+                    }
+                    continue;
                 }
 
                 match dst::time::timeout(check_interval, writer_rx.recv()).await {
@@ -785,9 +813,11 @@ impl SocketClientInner {
                                     );
                                 }
                             }
-                            WriterCommand::Send(data) if mode.is_reconnect() => {
+                            WriterCommand::Send(data)
+                                if mode.is_reconnect() || !reconnect_buffer.is_empty() =>
+                            {
                                 log::debug!(
-                                    "Buffering message while reconnecting ({} bytes)",
+                                    "Buffering message until reconnect drain completes ({} bytes)",
                                     data.len()
                                 );
                                 reconnect_buffer.push_back(data);
@@ -2218,6 +2248,29 @@ mod rust_tests {
         }
     }
 
+    struct FailingWriter;
+
+    impl AsyncWrite for FailingWriter {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &[u8],
+        ) -> Poll<std::io::Result<usize>> {
+            Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "test writer failure",
+            )))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
     struct RecordingWriter {
         bytes: Arc<StdMutex<Vec<u8>>>,
     }
@@ -2849,6 +2902,131 @@ mod rust_tests {
         write_task.await.unwrap();
 
         assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_send_after_writer_update_drains_when_reconnect_completes() {
+        type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let initial_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::new(StdMutex::new(Vec::new())),
+        });
+        let (writer_tx, writer_rx) =
+            tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+        let write_task = SocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            initial_writer,
+            writer_rx,
+            b"\r\n".to_vec(),
+            None,
+        );
+
+        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let new_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::clone(&recorded),
+        });
+        let (update_tx, update_rx) = oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(new_writer, update_tx))
+            .unwrap();
+        assert!(update_rx.await.unwrap());
+
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"late")))
+            .unwrap();
+        yield_now().await;
+
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"new")))
+            .unwrap();
+        tokio::time::advance(Duration::from_millis(
+            CONNECTION_STATE_CHECK_INTERVAL_MS * 2,
+        ))
+        .await;
+        yield_now().await;
+
+        let actual = recorded.lock().unwrap().clone();
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+
+        assert_eq!(actual, b"late\r\nnew\r\n");
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_active_reconnect_buffer_write_failure_reconnects_and_retries() {
+        type TestWriter = Pin<Box<dyn AsyncWrite + Send>>;
+
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
+        let state_notify = Arc::new(tokio::sync::Notify::new());
+        let initial_writer: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::new(StdMutex::new(Vec::new())),
+        });
+        let (writer_tx, writer_rx) =
+            tokio::sync::mpsc::unbounded_channel::<WriterCommand<TestWriter>>();
+        let states = Arc::new(StdMutex::new(Vec::new()));
+        let states_callback = Arc::clone(&states);
+        let sink = SocketStateSink::new(move |state| {
+            states_callback.lock().unwrap().push(state);
+        });
+        let write_task = SocketClientInner::spawn_write_task(
+            Arc::clone(&connection_state),
+            Arc::clone(&state_notify),
+            initial_writer,
+            writer_rx,
+            b"\r\n".to_vec(),
+            Some(sink),
+        );
+
+        let (update_tx, update_rx) = oneshot::channel();
+        let failing_writer: TestWriter = Box::pin(FailingWriter);
+        writer_tx
+            .send(WriterCommand::Update(failing_writer, update_tx))
+            .unwrap();
+        assert!(update_rx.await.unwrap());
+
+        writer_tx
+            .send(WriterCommand::Send(Bytes::from_static(b"late")))
+            .unwrap();
+        yield_now().await;
+        connection_state.store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        tokio::time::advance(Duration::from_millis(
+            CONNECTION_STATE_CHECK_INTERVAL_MS * 2,
+        ))
+        .await;
+        yield_now().await;
+
+        assert_eq!(
+            ConnectionMode::from_atomic(&connection_state),
+            ConnectionMode::Reconnect
+        );
+        assert_eq!(*states.lock().unwrap(), vec![SocketState::Disconnected]);
+
+        let recorded = Arc::new(StdMutex::new(Vec::new()));
+        let replacement: TestWriter = Box::pin(RecordingWriter {
+            bytes: Arc::clone(&recorded),
+        });
+        let (retry_tx, retry_rx) = oneshot::channel();
+        writer_tx
+            .send(WriterCommand::Update(replacement, retry_tx))
+            .unwrap();
+        assert!(retry_rx.await.unwrap());
+
+        connection_state.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+        state_notify.notify_waiters();
+        drop(writer_tx);
+        write_task.await.unwrap();
+
+        assert_eq!(recorded.lock().unwrap().as_slice(), b"late\r\n");
     }
 
     #[rstest]

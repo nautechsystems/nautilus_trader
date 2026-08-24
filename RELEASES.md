@@ -14,6 +14,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed rate-limit requests consuming quota before all applicable limits were available
+- Fixed reconnect-buffered socket messages stalling or being overtaken by newer messages
 - Fixed Betfair modify recovery after ambiguous REST outcomes and instruction failures
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
 - Fixed Polymarket user WebSocket subscriptions to cover all account orders and trades
