@@ -3670,6 +3670,82 @@ mod tests {
     }
 
     #[rstest]
+    fn test_modify_order_prefers_emulator_over_algorithm_for_emulated_algorithm_order() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (algo_handler, algo_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("TWAP.execute")));
+        msgbus::register_any("TWAP.execute".into(), algo_handler);
+
+        let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-20250208-EMULATED-ALGO-MODIFY-001"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .exec_algorithm_id(ExecAlgorithmId::from("TWAP"))
+            .exec_spawn_id(ClientOrderId::from("O-20250208-EMULATED-ALGO-MODIFY-001"))
+            .build();
+        order
+            .apply(OrderEventAny::Emulated(
+                OrderEmulatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .build(),
+            ))
+            .unwrap();
+
+        // An `Emulated` order satisfies both `is_emulated` and `is_active_local`, so this
+        // order matches the emulator branch and the algorithm branch at once.
+        assert!(order.is_emulated());
+        assert!(order.is_active_local());
+        assert!(order.exec_algorithm_id().is_some());
+
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_order(
+                order.client_order_id(),
+                None,
+                None,
+                Some(Price::from("52000.0")),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let emulator_messages = emulator_messages.get_messages();
+        assert_eq!(emulator_messages.len(), 1);
+        assert!(matches!(
+            emulator_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert!(algo_messages.get_messages().is_empty());
+        assert!(risk_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
     fn test_modify_order_marks_order_pending_update_locally_before_send() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
