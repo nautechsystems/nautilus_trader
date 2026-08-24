@@ -602,12 +602,14 @@ self.cancel_all_orders(self.instrument_id)
 ```
 
 :::warning
-Pass `strategy_only=False` to use the broad cancellation path. Matching open and in-flight orders
-produce a `CancelAllOrders` command for the execution engine, emulated orders produce one for the
-`OrderEmulator`, and execution algorithm orders are canceled individually. When the adapter uses a
-venue-native bulk endpoint, this can reduce cancel request volume for strategies with many matching
-venue orders. The broad commands can cancel matching orders associated with other strategies, so
-use this option only when that scope is intended.
+Pass `strategy_only=False` to use the broad cancellation path. The strategy sends one
+`CancelAllOrders` command even when its cache has no matching order. The execution engine resolves
+one execution client and account, then routes venue, emulated, and execution-algorithm cancellation
+within that boundary. Matching orders associated with other strategies may be canceled, but orders
+assigned to other execution clients remain untouched. Use broad mode only when that cross-strategy
+scope is intended. See
+[Cancel-all routing](execution.md#cancel-all-routing) for the complete flow and client-selection
+rules.
 :::
 
 #### Modifying orders

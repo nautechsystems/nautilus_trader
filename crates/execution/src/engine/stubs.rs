@@ -60,6 +60,7 @@ pub struct StubExecutionClient {
     dispose_count: Rc<Cell<usize>>,
     submitted_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     modified_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
+    cancel_all_commands: Rc<RefCell<Vec<CancelAllOrders>>>,
     queried_account_ids: Rc<RefCell<Vec<AccountId>>>,
     registered_external_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,
     handles_all_order_venues: bool,
@@ -92,6 +93,7 @@ impl StubExecutionClient {
             dispose_count: Rc::new(Cell::new(0)),
             submitted_order_ids: Rc::new(RefCell::new(Vec::new())),
             modified_order_ids: Rc::new(RefCell::new(Vec::new())),
+            cancel_all_commands: Rc::new(RefCell::new(Vec::new())),
             queried_account_ids: Rc::new(RefCell::new(Vec::new())),
             registered_external_order_ids: Rc::new(RefCell::new(Vec::new())),
             handles_all_order_venues: false,
@@ -144,6 +146,12 @@ impl StubExecutionClient {
     #[must_use]
     pub fn modified_order_ids(&self) -> Rc<RefCell<Vec<ClientOrderId>>> {
         self.modified_order_ids.clone()
+    }
+
+    /// Returns a shared handle to the received cancel-all commands.
+    #[must_use]
+    pub fn cancel_all_commands(&self) -> Rc<RefCell<Vec<CancelAllOrders>>> {
+        self.cancel_all_commands.clone()
     }
 
     /// Returns a shared handle to the queried account IDs.
@@ -286,7 +294,8 @@ impl ExecutionClient for StubExecutionClient {
         Ok(()) // Stub implementation always succeeds
     }
 
-    fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
+    fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
+        self.cancel_all_commands.borrow_mut().push(cmd);
         Ok(()) // Stub implementation always succeeds
     }
 

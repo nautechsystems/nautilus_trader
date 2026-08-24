@@ -58,7 +58,8 @@ use nautilus_model::{
     },
     events::{OrderEventAny, OrderFilled},
     identifiers::{
-        ActorId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, Venue,
+        AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
+        StrategyId, Symbol, TradeId, Venue,
     },
     instruments::{
         CryptoPerpetual, Equity, Instrument, InstrumentAny, OptionContract,
@@ -4949,6 +4950,349 @@ struct CancelOnStop {
     trade_size: Quantity,
     limit_price: Price,
     placed: bool,
+}
+
+struct CancelAllSeeder {
+    core: StrategyCore,
+    orders: Vec<(InstrumentId, OrderSide)>,
+    submitted: Vec<bool>,
+    recorded: Rc<RefCell<Vec<ClientOrderId>>>,
+}
+
+impl CancelAllSeeder {
+    fn new(
+        orders: Vec<(InstrumentId, OrderSide)>,
+        recorded: Rc<RefCell<Vec<ClientOrderId>>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("CANCEL-SEEDER-001")),
+            order_id_tag: Some("701".to_string()),
+            ..Default::default()
+        };
+        let submitted = vec![false; orders.len()];
+        Self {
+            core: StrategyCore::new(config),
+            orders,
+            submitted,
+            recorded,
+        }
+    }
+
+    fn submit_resting_order(
+        &mut self,
+        index: usize,
+        instrument_id: InstrumentId,
+        side: OrderSide,
+    ) -> anyhow::Result<()> {
+        let price = match side {
+            OrderSide::Buy => Price::from("900.00"),
+            OrderSide::Sell => Price::from("1100.00"),
+            OrderSide::NoOrderSide => anyhow::bail!("order side must be specified"),
+        };
+        let order = self.order().limit(
+            instrument_id,
+            side,
+            Quantity::from("1.000"),
+            price,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.recorded.borrow_mut().push(order.client_order_id());
+        self.submit_order(order, None, None, None)?;
+        self.submitted[index] = true;
+        Ok(())
+    }
+}
+
+nautilus_strategy!(CancelAllSeeder);
+
+impl Debug for CancelAllSeeder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CancelAllSeeder)).finish()
+    }
+}
+
+impl DataActor for CancelAllSeeder {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        let mut instrument_ids: Vec<_> = self
+            .orders
+            .iter()
+            .map(|(instrument_id, _)| *instrument_id)
+            .collect();
+        instrument_ids.sort_unstable();
+        instrument_ids.dedup();
+
+        for instrument_id in instrument_ids {
+            self.subscribe_quotes(instrument_id, None, None);
+        }
+        Ok(())
+    }
+
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        let pending: Vec<_> = self
+            .orders
+            .iter()
+            .enumerate()
+            .filter(|(index, (instrument_id, _))| {
+                !self.submitted[*index] && *instrument_id == quote.instrument_id
+            })
+            .map(|(index, (instrument_id, side))| (index, *instrument_id, *side))
+            .collect();
+
+        for (index, instrument_id, side) in pending {
+            self.submit_resting_order(index, instrument_id, side)?;
+        }
+        Ok(())
+    }
+}
+
+struct CancelAllCaller {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    order_sides: Vec<OrderSide>,
+    cancel_side: Option<OrderSide>,
+    strategy_only: bool,
+    quote_count: usize,
+    recorded: Rc<RefCell<Vec<ClientOrderId>>>,
+}
+
+impl CancelAllCaller {
+    fn new(
+        instrument_id: InstrumentId,
+        order_sides: Vec<OrderSide>,
+        cancel_side: Option<OrderSide>,
+        strategy_only: bool,
+        recorded: Rc<RefCell<Vec<ClientOrderId>>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("CANCEL-CALLER-001")),
+            order_id_tag: Some("702".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            order_sides,
+            cancel_side,
+            strategy_only,
+            quote_count: 0,
+            recorded,
+        }
+    }
+
+    fn submit_resting_order(&mut self, side: OrderSide) -> anyhow::Result<()> {
+        let price = match side {
+            OrderSide::Buy => Price::from("900.00"),
+            OrderSide::Sell => Price::from("1100.00"),
+            OrderSide::NoOrderSide => anyhow::bail!("order side must be specified"),
+        };
+        let order = self.order().limit(
+            self.instrument_id,
+            side,
+            Quantity::from("1.000"),
+            price,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.recorded.borrow_mut().push(order.client_order_id());
+        self.submit_order(order, None, None, None)
+    }
+}
+
+nautilus_strategy!(CancelAllCaller);
+
+impl Debug for CancelAllCaller {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(CancelAllCaller)).finish()
+    }
+}
+
+impl DataActor for CancelAllCaller {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        if quote.instrument_id != self.instrument_id {
+            return Ok(());
+        }
+
+        self.quote_count += 1;
+        if self.quote_count == 1 {
+            for side in self.order_sides.clone() {
+                self.submit_resting_order(side)?;
+            }
+        } else if self.quote_count == 2 {
+            self.cancel_all_orders(
+                self.instrument_id,
+                self.cancel_side,
+                None,
+                self.strategy_only,
+                None,
+            )?;
+        }
+        Ok(())
+    }
+}
+
+#[rstest]
+#[case(true, OrderSide::NoOrderSide, true)]
+#[case(true, OrderSide::Buy, false)]
+#[case(false, OrderSide::NoOrderSide, false)]
+#[case(false, OrderSide::Buy, true)]
+#[case(false, OrderSide::Sell, false)]
+fn test_cancel_all_orders_scope_matrix(
+    #[case] strategy_only: bool,
+    #[case] cancel_side: OrderSide,
+    #[case] caller_present: bool,
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let target = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let target_id = target.id();
+    let mut other = crypto_perpetual_ethusdt;
+    other.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    other.raw_symbol = Symbol::from("BTCUSDT");
+    let other = InstrumentAny::CryptoPerpetual(other);
+    let other_id = other.id();
+    engine.add_instrument(&target).unwrap();
+    engine.add_instrument(&other).unwrap();
+
+    let sibling_ids = Rc::new(RefCell::new(Vec::new()));
+    let caller_ids = Rc::new(RefCell::new(Vec::new()));
+    engine
+        .add_strategy(CancelAllSeeder::new(
+            vec![
+                (target_id, OrderSide::Buy),
+                (target_id, OrderSide::Sell),
+                (other_id, OrderSide::Buy),
+            ],
+            Rc::clone(&sibling_ids),
+        ))
+        .unwrap();
+    engine
+        .add_strategy(CancelAllCaller::new(
+            target_id,
+            caller_present
+                .then_some(OrderSide::Buy)
+                .into_iter()
+                .collect(),
+            (cancel_side != OrderSide::NoOrderSide).then_some(cancel_side),
+            strategy_only,
+            Rc::clone(&caller_ids),
+        ))
+        .unwrap();
+
+    engine
+        .add_data(
+            vec![
+                quote(other_id, "1000.00", "1001.00", 1_000_000_000),
+                quote(target_id, "1000.00", "1001.00", 2_000_000_000),
+                quote(target_id, "1000.00", "1001.00", 3_000_000_000),
+            ],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let sibling_ids = sibling_ids.borrow();
+    let caller_ids = caller_ids.borrow();
+    assert_eq!(sibling_ids.len(), 3);
+    assert_eq!(caller_ids.len(), usize::from(caller_present));
+    let cache = engine.kernel().cache.borrow();
+    let side_matches =
+        |order_side| cancel_side == OrderSide::NoOrderSide || order_side == cancel_side;
+    let mut expected_canceled: Vec<ClientOrderId> = if strategy_only {
+        caller_ids
+            .iter()
+            .copied()
+            .filter(|client_order_id| {
+                side_matches(cache.order(client_order_id).unwrap().order_side())
+            })
+            .collect()
+    } else {
+        sibling_ids
+            .iter()
+            .chain(caller_ids.iter())
+            .copied()
+            .filter(|client_order_id| {
+                let order = cache.order(client_order_id).unwrap();
+                order.instrument_id() == target_id && side_matches(order.order_side())
+            })
+            .collect()
+    };
+    expected_canceled.sort_unstable();
+
+    let all_ids: Vec<_> = sibling_ids
+        .iter()
+        .chain(caller_ids.iter())
+        .copied()
+        .collect();
+    let mut actual_canceled = Vec::new();
+
+    for client_order_id in &all_ids {
+        let order = cache.order(client_order_id).unwrap();
+        let expected_strategy = if sibling_ids.contains(client_order_id) {
+            StrategyId::from("CANCEL-SEEDER-001-701")
+        } else {
+            StrategyId::from("CANCEL-CALLER-001-702")
+        };
+        let should_cancel = expected_canceled.contains(client_order_id);
+
+        assert_eq!(order.client_order_id(), *client_order_id);
+        assert_eq!(order.strategy_id(), expected_strategy);
+        assert_eq!(
+            order.status(),
+            if should_cancel {
+                OrderStatus::Canceled
+            } else {
+                OrderStatus::Accepted
+            }
+        );
+        assert_eq!(order.account_id(), Some(AccountId::from("BINANCE-001")));
+        assert_eq!(
+            cache.client_id(client_order_id).copied(),
+            Some(ClientId::from("BINANCE"))
+        );
+
+        if order.is_canceled() {
+            actual_canceled.push(*client_order_id);
+        }
+    }
+    actual_canceled.sort_unstable();
+
+    assert_eq!(actual_canceled, expected_canceled);
+    assert!(
+        sibling_ids.iter().any(|client_order_id| {
+            cache
+                .order(client_order_id)
+                .is_some_and(|order| order.instrument_id() == other_id && order.is_open())
+        }),
+        "the other-instrument order must survive"
+    );
 }
 
 impl CancelOnStop {

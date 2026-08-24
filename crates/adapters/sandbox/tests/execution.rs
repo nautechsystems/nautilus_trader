@@ -24,7 +24,7 @@ use nautilus_common::{
     live::set_exec_event_sender,
     messages::{
         ExecutionEvent,
-        execution::{SubmitOrder, SubmitOrderList, TradingCommand},
+        execution::{CancelAllOrders, SubmitOrder, SubmitOrderList, TradingCommand},
     },
     msgbus::{
         self, MessageBus, MessagingSwitchboard, TypedHandler,
@@ -52,14 +52,14 @@ use nautilus_model::{
     },
     events::{AccountState, OrderEventAny, OrderFilled, PositionClosed, PositionEvent},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, TradeId,
-        TraderId, Venue,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+        TradeId, TraderId, Venue,
     },
     instruments::{
         CryptoPerpetual, Instrument, InstrumentAny,
         stubs::{binary_option, crypto_perpetual_ethusdt},
     },
-    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     types::{Currency, Money, Price, Quantity},
 };
@@ -3298,6 +3298,288 @@ fn test_initialized_ioc_market_order_cancels_remainder_through_live_runner(
     assert_eq!(cached_order.leaves_qty(), Quantity::from("1.000"));
 
     context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case(None, OrderSide::NoOrderSide)]
+#[case(Some("SANDBOX-A"), OrderSide::Buy)]
+#[case(Some("SANDBOX-B"), OrderSide::Sell)]
+fn test_cancel_all_orders_routes_by_client_account_and_side(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] selected_client: Option<&str>,
+    #[case] selected_side: OrderSide,
+) {
+    struct SeededOrder {
+        client_order_id: ClientOrderId,
+        client_id: ClientId,
+        account_id: AccountId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        side: OrderSide,
+        status: OrderStatus,
+    }
+
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let InstrumentAny::CryptoPerpetual(mut other) = instrument.clone() else {
+        panic!("Expected crypto perpetual fixture");
+    };
+    other.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    other.raw_symbol = "BTCUSDT".into();
+    let other = InstrumentAny::CryptoPerpetual(other);
+    let instrument_id = instrument.id();
+    let other_instrument_id = other.id();
+    let venue = instrument_id.venue;
+    let client_a_id = ClientId::new("SANDBOX-A");
+    let client_b_id = ClientId::new("SANDBOX-B");
+    let account_a_id = AccountId::from("BINANCE-001");
+    let account_b_id = AccountId::from("BINANCE-002");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+
+    {
+        let mut cache = cache.borrow_mut();
+        cache.add_instrument(instrument).unwrap();
+        cache.add_instrument(other).unwrap();
+        cache
+            .add_quote(create_quote_tick(instrument_id, 1000.0, 1001.0))
+            .unwrap();
+        cache
+            .add_quote(create_quote_tick(other_instrument_id, 2000.0, 2001.0))
+            .unwrap();
+    }
+
+    let create_client = |client_id: ClientId, account_id: AccountId| {
+        let config = create_config(trader_id, account_id, venue);
+        let core = ExecutionClientCore::new(
+            trader_id,
+            client_id,
+            venue,
+            config.oms_type,
+            config.account_id,
+            config.account_type,
+            config.base_currency,
+            cache.clone(),
+        );
+        SandboxExecutionClient::new(core, config, clock.clone(), cache.clone())
+    };
+    let mut client_a = create_client(client_a_id, account_a_id);
+    let mut client_b = create_client(client_b_id, account_b_id);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    client_a.start().unwrap();
+    client_b.start().unwrap();
+
+    let mut orders = Vec::new();
+    let resting_orders = [
+        (
+            &client_a,
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-001"),
+            instrument_id,
+            OrderSide::Buy,
+            ClientOrderId::from("O-A-BUY-ACCEPTED"),
+        ),
+        (
+            &client_a,
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-002"),
+            instrument_id,
+            OrderSide::Sell,
+            ClientOrderId::from("O-A-SELL-ACCEPTED"),
+        ),
+        (
+            &client_a,
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-001"),
+            other_instrument_id,
+            OrderSide::Buy,
+            ClientOrderId::from("O-A-OTHER-BUY-ACCEPTED"),
+        ),
+        (
+            &client_b,
+            client_b_id,
+            account_b_id,
+            StrategyId::from("STRATEGY-B-001"),
+            instrument_id,
+            OrderSide::Buy,
+            ClientOrderId::from("O-B-BUY-ACCEPTED"),
+        ),
+        (
+            &client_b,
+            client_b_id,
+            account_b_id,
+            StrategyId::from("STRATEGY-B-002"),
+            instrument_id,
+            OrderSide::Sell,
+            ClientOrderId::from("O-B-SELL-ACCEPTED"),
+        ),
+    ];
+
+    for (client, client_id, account_id, strategy_id, order_instrument_id, side, order_id) in
+        resting_orders
+    {
+        let price = match side {
+            OrderSide::Buy => Price::from("900.00"),
+            OrderSide::Sell => Price::from("1100.00"),
+            _ => unreachable!(),
+        };
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(order_instrument_id)
+            .client_order_id(order_id)
+            .side(side)
+            .price(price)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), false)
+            .unwrap();
+        client
+            .submit_order(SubmitOrder::from_order(
+                &order,
+                trader_id,
+                Some(client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            ))
+            .unwrap();
+        let events = apply_order_events_from_channel(&cache, &mut rx);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0], OrderEventAny::Submitted(_)));
+        assert!(matches!(events[1], OrderEventAny::Accepted(_)));
+        orders.push(SeededOrder {
+            client_order_id: order_id,
+            client_id,
+            account_id,
+            strategy_id,
+            instrument_id: order_instrument_id,
+            side,
+            status: OrderStatus::Accepted,
+        });
+    }
+
+    for (client_id, account_id, strategy_id, side, order_id) in [
+        (
+            client_a_id,
+            account_a_id,
+            StrategyId::from("STRATEGY-A-002"),
+            OrderSide::Buy,
+            ClientOrderId::from("O-A-BUY-SUBMITTED"),
+        ),
+        (
+            client_b_id,
+            account_b_id,
+            StrategyId::from("STRATEGY-B-001"),
+            OrderSide::Sell,
+            ClientOrderId::from("O-B-SELL-SUBMITTED"),
+        ),
+    ] {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(order_id)
+            .side(side)
+            .price(Price::from("950.00"))
+            .quantity(Quantity::from("2.000"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        let mut cache = cache.borrow_mut();
+        cache
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        cache.update_order(&submitted).unwrap();
+        orders.push(SeededOrder {
+            client_order_id: order_id,
+            client_id,
+            account_id,
+            strategy_id,
+            instrument_id,
+            side,
+            status: OrderStatus::Submitted,
+        });
+    }
+
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    engine.register_client(Box::new(client_a)).unwrap();
+    engine.register_default_client(Box::new(client_b));
+    let command_client = selected_client.map(ClientId::new);
+    let routed_client = command_client.unwrap_or(client_a_id);
+    let routed_account = if routed_client == client_a_id {
+        account_a_id
+    } else {
+        account_b_id
+    };
+    let command = CancelAllOrders::new(
+        trader_id,
+        command_client,
+        StrategyId::from("CANCEL-CALLER-001"),
+        instrument_id,
+        selected_side,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    engine.execute(TradingCommand::CancelAllOrders(command));
+
+    let events = apply_order_events_from_channel(&cache, &mut rx);
+    let canceled: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Canceled(canceled) => Some(canceled),
+            _ => None,
+        })
+        .collect();
+    let expected_ids: ahash::AHashSet<_> = orders
+        .iter()
+        .filter(|order| {
+            order.client_id == routed_client
+                && order.account_id == routed_account
+                && order.instrument_id == instrument_id
+                && (selected_side == OrderSide::NoOrderSide || order.side == selected_side)
+        })
+        .map(|order| order.client_order_id)
+        .collect();
+    let actual_ids: ahash::AHashSet<_> =
+        canceled.iter().map(|event| event.client_order_id).collect();
+
+    assert_eq!(actual_ids, expected_ids);
+
+    for event in canceled {
+        let order = orders
+            .iter()
+            .find(|order| order.client_order_id == event.client_order_id)
+            .unwrap();
+        assert_eq!(event.strategy_id, order.strategy_id);
+        assert_eq!(event.account_id, Some(routed_account));
+    }
+    let cache = cache.borrow();
+    for order in &orders {
+        let cached = cache.order(&order.client_order_id).unwrap();
+        let expected_status = if expected_ids.contains(&order.client_order_id) {
+            OrderStatus::Canceled
+        } else {
+            order.status
+        };
+        assert_eq!(cached.status(), expected_status);
+        assert_eq!(cached.strategy_id(), order.strategy_id);
+        assert_eq!(cached.account_id(), Some(order.account_id));
+        assert_eq!(
+            cache.client_id(&order.client_order_id),
+            Some(&order.client_id)
+        );
+    }
+    drop(cache);
+    engine.stop();
 }
 
 // Regression test for https://github.com/nautechsystems/nautilus_trader/issues/3732

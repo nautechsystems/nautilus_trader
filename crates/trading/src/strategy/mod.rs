@@ -941,8 +941,10 @@ pub trait Strategy: DataActor {
     /// Cancels all open orders for the given instrument.
     ///
     /// When `strategy_only` is `true`, only orders associated with this strategy are canceled. When
-    /// `false`, [`CancelAllOrders`] commands are sent to the execution engine and order emulator as
-    /// applicable, and may cancel orders associated with other strategies for the same instrument.
+    /// `false`, one [`CancelAllOrders`] command is sent even when the cache has no matching order.
+    /// The execution engine selects the explicit, venue-routed, or default client and may cancel
+    /// orders associated with other strategies for the same instrument, client, and account. It
+    /// does not broadcast across execution clients.
     ///
     /// # Errors
     ///
@@ -964,6 +966,25 @@ pub trait Strategy: DataActor {
         let trader_id = registered_trader_id(core)?;
         let strategy_id = registered_strategy_id(core)?;
         let ts_init = core.clock_mut().timestamp_ns();
+
+        if !strategy_only {
+            let command_id = UUID4::new();
+            let command = CancelAllOrders::new(
+                trader_id,
+                client_id,
+                strategy_id,
+                instrument_id,
+                order_side.unwrap_or(OrderSide::NoOrderSide),
+                command_id,
+                ts_init,
+                params,
+                Some(command_id),
+            );
+
+            send_exec_command(TradingCommand::CancelAllOrders(command));
+            return Ok(());
+        }
+
         let cache = core.cache_ref();
 
         let mut open_order_ids: Vec<ClientOrderId> = cache
@@ -1025,45 +1046,38 @@ pub trait Strategy: DataActor {
             );
         }
 
-        if strategy_only {
-            let matches_client = |client_order_id: &ClientOrderId| {
-                client_id.is_none_or(|client_id| {
-                    cache
-                        .client_id(client_order_id)
-                        .is_none_or(|order_client_id| *order_client_id == client_id)
-                })
-            };
+        let matches_client = |client_order_id: &ClientOrderId| {
+            client_id.is_none_or(|client_id| {
+                cache
+                    .client_id(client_order_id)
+                    .is_none_or(|order_client_id| *order_client_id == client_id)
+            })
+        };
 
-            open_order_ids.retain(&matches_client);
-            emulated_order_ids.retain(&matches_client);
-            inflight_order_ids.retain(&matches_client);
-            algo_order_ids.retain(&matches_client);
-        }
+        open_order_ids.retain(&matches_client);
+        emulated_order_ids.retain(&matches_client);
+        inflight_order_ids.retain(&matches_client);
+        algo_order_ids.retain(&matches_client);
 
         let open_count = open_order_ids.len();
         let emulated_count = emulated_order_ids.len();
         let inflight_count = inflight_order_ids.len();
         let algo_count = algo_order_ids.len();
 
-        let mut cancel_routes = Vec::new();
-
-        if strategy_only {
-            cancel_routes.extend(
-                open_order_ids
-                    .iter()
-                    .chain(&emulated_order_ids)
-                    .chain(&inflight_order_ids)
-                    .chain(&algo_order_ids)
-                    .map(|client_order_id| {
-                        (
-                            *client_order_id,
-                            client_id.or_else(|| cache.client_id(client_order_id).copied()),
-                        )
-                    }),
-            );
-            cancel_routes.sort_by_key(|(client_order_id, _)| *client_order_id);
-            cancel_routes.dedup_by_key(|(client_order_id, _)| *client_order_id);
-        }
+        let mut cancel_routes: Vec<_> = open_order_ids
+            .iter()
+            .chain(&emulated_order_ids)
+            .chain(&inflight_order_ids)
+            .chain(&algo_order_ids)
+            .map(|client_order_id| {
+                (
+                    *client_order_id,
+                    client_id.or_else(|| cache.client_id(client_order_id).copied()),
+                )
+            })
+            .collect();
+        cancel_routes.sort_by_key(|(client_order_id, _)| *client_order_id);
+        cancel_routes.dedup_by_key(|(client_order_id, _)| *client_order_id);
 
         drop(cache);
 
@@ -1096,59 +1110,19 @@ pub trait Strategy: DataActor {
             );
         }
 
-        if strategy_only {
-            let mut first_error = None;
+        let mut first_error = None;
 
-            for (client_order_id, client_id) in cancel_routes {
-                if let Err(e) = self.cancel_order(client_order_id, client_id, params.clone()) {
-                    if first_error.is_none() {
-                        first_error = Some(e);
-                    } else {
-                        log::error!("Error canceling {client_order_id}: {e}");
-                    }
+        for (client_order_id, client_id) in cancel_routes {
+            if let Err(e) = self.cancel_order(client_order_id, client_id, params.clone()) {
+                if first_error.is_none() {
+                    first_error = Some(e);
+                } else {
+                    log::error!("Error canceling {client_order_id}: {e}");
                 }
             }
-
-            return first_error.map_or(Ok(()), Err);
         }
 
-        if open_count > 0 || inflight_count > 0 {
-            let command = CancelAllOrders::new(
-                trader_id,
-                client_id,
-                strategy_id,
-                instrument_id,
-                order_side.unwrap_or(OrderSide::NoOrderSide),
-                UUID4::new(),
-                ts_init,
-                params.clone(),
-                None, // correlation_id
-            );
-
-            send_exec_command(TradingCommand::CancelAllOrders(command));
-        }
-
-        if emulated_count > 0 {
-            let command = CancelAllOrders::new(
-                trader_id,
-                client_id,
-                strategy_id,
-                instrument_id,
-                order_side.unwrap_or(OrderSide::NoOrderSide),
-                UUID4::new(),
-                ts_init,
-                params,
-                None, // correlation_id
-            );
-
-            send_emulator_command(TradingCommand::CancelAllOrders(command));
-        }
-
-        for client_order_id in algo_order_ids {
-            self.cancel_order(client_order_id, client_id, None)?;
-        }
-
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     /// Closes a position by submitting a market order for the opposite side.
@@ -2351,7 +2325,7 @@ mod tests {
         msgbus::{
             self, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
             stubs::{
-                TypedIntoMessageSavingHandler, TypedMessageSavingHandler,
+                TypedIntoMessageSavingHandler, TypedMessageSavingHandler, get_any_saving_handler,
                 get_typed_into_message_saving_handler, get_typed_message_saving_handler,
             },
         },
@@ -3786,22 +3760,134 @@ mod tests {
             exec_handler,
         );
 
-        let order = make_accepted_market_order("O-20250208-CANCEL-ALL-COMMAND-001");
-        add_order_to_cache(&strategy, &order);
-        strategy.core.cache_rc().borrow_mut().build_index();
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
 
         strategy
-            .cancel_all_orders(order.instrument_id(), None, None, false, None)
+            .cancel_all_orders(instrument_id, None, None, false, None)
             .unwrap();
 
         let messages = exec_messages.get_messages();
         assert_eq!(messages.len(), 1);
-        assert!(matches!(
-            messages.first(),
-            Some(TradingCommand::CancelAllOrders(command))
-                if command.strategy_id == order.strategy_id()
-                    && command.instrument_id == order.instrument_id()
-        ));
+        let Some(TradingCommand::CancelAllOrders(command)) = messages.first() else {
+            panic!("Expected a CancelAllOrders command, was {messages:?}");
+        };
+        assert_eq!(command.strategy_id, StrategyId::from("TEST-001"));
+        assert_eq!(command.instrument_id, instrument_id);
+        assert_eq!(command.client_id, None);
+        assert_eq!(command.order_side, OrderSide::NoOrderSide);
+        assert_eq!(command.correlation_id, Some(command.command_id));
+        assert_eq!(command.causation_id, None);
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_without_strategy_only_delegates_local_routing_with_params() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let exec_algorithm_id = ExecAlgorithmId::from("ALGO-001");
+        let algorithm_endpoint = format!("{exec_algorithm_id}.execute");
+        let (algorithm_handler, algorithm_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("ALGO-001.execute")));
+        msgbus::register_any(algorithm_endpoint.into(), algorithm_handler);
+
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let sibling_strategy_id = StrategyId::from("SIBLING-001");
+        let selected_client = ClientId::from("CLIENT-001");
+        let account_id = AccountId::from("ACC-001");
+
+        let mut open_order = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(sibling_strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-BROAD-OPEN-001"))
+            .side(OrderSide::Buy)
+            .price(Price::from("49000.0"))
+            .quantity(Quantity::from(100_000))
+            .build();
+        open_order
+            .apply(TestOrderEventStubs::submitted(&open_order, account_id))
+            .unwrap();
+        open_order
+            .apply(TestOrderEventStubs::accepted(
+                &open_order,
+                account_id,
+                VenueOrderId::from("V-BROAD-OPEN-001"),
+            ))
+            .unwrap();
+        let emulated_order = OrderTestBuilder::new(OrderType::StopMarket)
+            .strategy_id(sibling_strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-BROAD-EMULATED-001"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let algorithm_order_id = ClientOrderId::from("O-BROAD-ALGO-001");
+        let algorithm_order = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(sibling_strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(algorithm_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(algorithm_order_id)
+            .build();
+
+        {
+            let cache_rc = strategy.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            for order in [&open_order, &emulated_order, &algorithm_order] {
+                cache
+                    .add_order(order.clone(), None, Some(selected_client), true)
+                    .unwrap();
+            }
+            cache.build_index();
+        }
+
+        let mut params = Params::new();
+        params.insert(
+            "routing_hint".to_string(),
+            Value::String("broad_cancel".to_string()),
+        );
+        strategy
+            .cancel_all_orders(
+                instrument_id,
+                Some(OrderSide::Buy),
+                Some(selected_client),
+                false,
+                Some(params.clone()),
+            )
+            .unwrap();
+
+        let exec_messages = exec_messages.get_messages();
+        let Some(TradingCommand::CancelAllOrders(exec_command)) = exec_messages.first() else {
+            panic!("Expected an execution CancelAllOrders command, was {exec_messages:?}");
+        };
+
+        assert_eq!(exec_messages.len(), 1);
+        assert!(emulator_messages.get_messages().is_empty());
+        assert!(algorithm_messages.get_messages().is_empty());
+        assert_eq!(exec_command.client_id, Some(selected_client));
+        assert_eq!(exec_command.strategy_id, StrategyId::from("TEST-001"));
+        assert_eq!(exec_command.instrument_id, instrument_id);
+        assert_eq!(exec_command.order_side, OrderSide::Buy);
+        assert_eq!(exec_command.params.as_ref(), Some(&params));
+        assert_eq!(exec_command.correlation_id, Some(exec_command.command_id));
+        assert_eq!(exec_command.causation_id, None);
     }
 
     #[rstest]
