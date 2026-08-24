@@ -2174,6 +2174,7 @@ mod tests {
             serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
                 .expect("parse TWAP fixture");
         let payload = update["payload"].as_object_mut().expect("payload object");
+
         match display_value {
             Some(value) => {
                 payload.insert("value".to_string(), value);
@@ -2221,6 +2222,7 @@ mod tests {
             .expect("adjacent exact TWAP update");
 
         let mut values = Vec::new();
+
         for _ in 0..2 {
             let DataEvent::Data(NautilusData::Custom(custom)) =
                 rx.try_recv().expect("custom data event")
