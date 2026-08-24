@@ -3472,8 +3472,9 @@ impl ExecutionManager {
 
     /// Observes an incoming execution report and updates tracking state.
     ///
-    /// This should be called **before** the report is dispatched to the execution
-    /// engine, so that the manager's state is current when periodic checks run.
+    /// Legacy ingress calls this **before** dispatch so the manager's state is current when
+    /// periodic checks run. Source-bound strict ingress calls it only after successful engine
+    /// reconciliation so a rejected report cannot mutate tracking state.
     ///
     /// Updates performed per report variant:
     /// - `Order`: updates reconciliation tracking based on order status

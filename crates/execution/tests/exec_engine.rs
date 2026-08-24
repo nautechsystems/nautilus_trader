@@ -20,7 +20,7 @@
 mod cache_database;
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::HashSet,
     future::Future,
     pin::pin,
@@ -39,11 +39,12 @@ use nautilus_common::{
         ExecutionReport,
         execution::{
             BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount,
-            SubmitOrder, SubmitOrderList, TradingCommand,
+            SourcedExecutionReport, SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
     msgbus::{
-        self, MessageBus, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
+        self, MessageBus, MessagingSwitchboard, ShareableMessageHandler, TypedHandler,
+        TypedIntoHandler,
         stubs::{
             TypedIntoMessageSavingHandler, get_any_saving_handler,
             get_typed_into_message_saving_handler,
@@ -13137,6 +13138,691 @@ fn create_order_status_report(
         None,
     )
     .with_price(Price::from("1.00000"))
+}
+
+fn register_sourced_report_client(
+    execution_engine: &mut ExecutionEngine,
+    client_id: ClientId,
+    account_id: AccountId,
+    venue: Venue,
+    handles_all_order_venues: bool,
+) -> StubExecutionClient {
+    let client = StubExecutionClient::new(client_id, account_id, venue, OmsType::Netting, None);
+    let client = if handles_all_order_venues {
+        client.with_handles_all_order_venues()
+    } else {
+        client
+    };
+    let handle = client.clone();
+    execution_engine.register_client(Box::new(client)).unwrap();
+    handle
+}
+
+fn add_accepted_sourced_order(
+    execution_engine: &mut ExecutionEngine,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    source_client_id: ClientId,
+) -> OrderAny {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .price(Price::from("1.00000"))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(source_client_id), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        venue_order_id,
+    ));
+    execution_engine
+        .cache()
+        .borrow()
+        .order(&client_order_id)
+        .unwrap()
+        .clone()
+}
+
+#[derive(Clone, Copy, Debug)]
+enum SourcedPilotReportKind {
+    Order,
+    Fill,
+}
+
+fn create_sourced_pilot_report(
+    report_kind: SourcedPilotReportKind,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+) -> ExecutionReport {
+    match report_kind {
+        SourcedPilotReportKind::Order => {
+            let mut report = create_order_status_report(
+                Some(client_order_id),
+                venue_order_id,
+                instrument_id,
+                OrderStatus::Canceled,
+                Quantity::from(100_000),
+                Quantity::from(0),
+            );
+            report.account_id = account_id;
+            ExecutionReport::Order(Box::new(report))
+        }
+        SourcedPilotReportKind::Fill => {
+            let mut report = create_fill_report(
+                instrument_id,
+                Some(client_order_id),
+                venue_order_id,
+                TradeId::from("T-SOURCED-PREFLIGHT"),
+                Quantity::from(100_000),
+                Price::from("1.00000"),
+            );
+            report.account_id = account_id;
+            ExecutionReport::Fill(Box::new(report))
+        }
+    }
+}
+
+fn subscribe_sourced_raw_report_counter(
+    report_kind: SourcedPilotReportKind,
+) -> (
+    msgbus::MStr<msgbus::Pattern>,
+    ShareableMessageHandler,
+    Rc<Cell<usize>>,
+) {
+    let raw_count = Rc::new(Cell::new(0));
+    let raw_count_for_handler = Rc::clone(&raw_count);
+    let (raw_topic, raw_handler) = match report_kind {
+        SourcedPilotReportKind::Order => (
+            MessagingSwitchboard::reconciliation_raw_order_status_report_topic(),
+            ShareableMessageHandler::from_typed(move |_report: &OrderStatusReport| {
+                raw_count_for_handler.set(raw_count_for_handler.get() + 1);
+            }),
+        ),
+        SourcedPilotReportKind::Fill => (
+            MessagingSwitchboard::reconciliation_raw_fill_report_topic(),
+            ShareableMessageHandler::from_typed(move |_report: &FillReport| {
+                raw_count_for_handler.set(raw_count_for_handler.get() + 1);
+            }),
+        ),
+    };
+    let raw_pattern: msgbus::MStr<msgbus::Pattern> = raw_topic.into();
+    msgbus::subscribe_any(raw_pattern, raw_handler.clone(), None);
+
+    (raw_pattern, raw_handler, raw_count)
+}
+
+#[rstest]
+#[case::order(SourcedPilotReportKind::Order)]
+#[case::fill(SourcedPilotReportKind::Fill)]
+fn test_reconcile_sourced_report_registers_unknown_order_with_exact_source(
+    execution_engine: ExecutionEngine,
+    #[case] report_kind: SourcedPilotReportKind,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut execution_engine = execution_engine;
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let venue_client = register_sourced_report_client(
+        &mut execution_engine,
+        ClientId::from("VENUE-A"),
+        AccountId::test_default(),
+        instrument.id().venue,
+        false,
+    );
+    let source_client_id = ClientId::from("SOURCE-B");
+    let source_client = register_sourced_report_client(
+        &mut execution_engine,
+        source_client_id,
+        AccountId::test_default(),
+        Venue::from("BROKER-B"),
+        true,
+    );
+    let venue_registrations = venue_client.registered_external_order_ids();
+    let source_registrations = source_client.registered_external_order_ids();
+    let client_order_id = ClientOrderId::from("O-SOURCED-EXACT");
+    let venue_order_id = VenueOrderId::from("V-SOURCED-EXACT");
+    let report = match report_kind {
+        SourcedPilotReportKind::Order => {
+            ExecutionReport::Order(Box::new(create_order_status_report(
+                Some(client_order_id),
+                venue_order_id,
+                instrument.id(),
+                OrderStatus::Accepted,
+                Quantity::from(100_000),
+                Quantity::from(0),
+            )))
+        }
+        SourcedPilotReportKind::Fill => ExecutionReport::Fill(Box::new(create_fill_report(
+            instrument.id(),
+            Some(client_order_id),
+            venue_order_id,
+            TradeId::from("T-SOURCED-EXACT"),
+            Quantity::from(100_000),
+            Price::from("1.00000"),
+        ))),
+    };
+    let sourced = SourcedExecutionReport::new(source_client_id, report);
+    let execution_engine = Rc::new(RefCell::new(execution_engine));
+
+    ExecutionEngine::reconcile_sourced_execution_report(&execution_engine, &sourced).unwrap();
+
+    assert!(venue_registrations.borrow().is_empty());
+    assert_eq!(source_registrations.borrow().as_slice(), &[client_order_id]);
+    let execution_engine = execution_engine.borrow();
+    assert_eq!(execution_engine.report_count(), 1);
+    let cache = execution_engine.cache().borrow();
+    assert!(cache.order_exists(&client_order_id));
+    assert_eq!(cache.client_id(&client_order_id), Some(&source_client_id));
+}
+
+#[rstest]
+#[case::order(SourcedPilotReportKind::Order, OrderStatus::Accepted)]
+#[case::fill(SourcedPilotReportKind::Fill, OrderStatus::Filled)]
+fn test_reconcile_sourced_report_completes_exact_source_after_database_add_failure(
+    execution_engine: ExecutionEngine,
+    #[case] report_kind: SourcedPilotReportKind,
+    #[case] expected_status: OrderStatus,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut execution_engine = execution_engine;
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let venue_client = register_sourced_report_client(
+        &mut execution_engine,
+        ClientId::from("VENUE-A"),
+        AccountId::test_default(),
+        instrument.id().venue,
+        false,
+    );
+    let source_client_id = ClientId::from("SOURCE-B");
+    let source_client = register_sourced_report_client(
+        &mut execution_engine,
+        source_client_id,
+        AccountId::test_default(),
+        Venue::from("BROKER-B"),
+        true,
+    );
+    let venue_registrations = venue_client.registered_external_order_ids();
+    let source_registrations = source_client.registered_external_order_ids();
+    let (database, control) = FailNthAddOrderDatabase::create();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .set_database(Box::new(database));
+    control.set_fail_add_order_on(Some(1));
+
+    let client_order_id = ClientOrderId::from("O-SOURCED-DB-FAIL");
+    let venue_order_id = VenueOrderId::from("V-SOURCED-DB-FAIL");
+    let report = match report_kind {
+        SourcedPilotReportKind::Order => {
+            ExecutionReport::Order(Box::new(create_order_status_report(
+                Some(client_order_id),
+                venue_order_id,
+                instrument.id(),
+                OrderStatus::Accepted,
+                Quantity::from(100_000),
+                Quantity::from(0),
+            )))
+        }
+        SourcedPilotReportKind::Fill => ExecutionReport::Fill(Box::new(create_fill_report(
+            instrument.id(),
+            Some(client_order_id),
+            venue_order_id,
+            TradeId::from("T-SOURCED-DB-FAIL"),
+            Quantity::from(100_000),
+            Price::from("1.00000"),
+        ))),
+    };
+    let sourced = SourcedExecutionReport::new(source_client_id, report);
+    let execution_engine = Rc::new(RefCell::new(execution_engine));
+
+    ExecutionEngine::reconcile_sourced_execution_report(&execution_engine, &sourced).unwrap();
+
+    assert_eq!(control.add_order_calls(), 1);
+    assert!(venue_registrations.borrow().is_empty());
+    assert_eq!(source_registrations.borrow().as_slice(), &[client_order_id]);
+    let execution_engine = execution_engine.borrow();
+    assert_eq!(execution_engine.report_count(), 1);
+    let cache = execution_engine.cache().borrow();
+    let cached = cache.order(&client_order_id).unwrap();
+    assert_eq!(cached.status(), expected_status);
+    assert_eq!(cache.client_id(&client_order_id), Some(&source_client_id));
+}
+
+#[rstest]
+fn test_reconcile_sourced_order_report_publishes_bare_raw_payload(
+    execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut execution_engine = execution_engine;
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    let source_client_id = ClientId::from("SOURCE");
+    register_sourced_report_client(
+        &mut execution_engine,
+        source_client_id,
+        AccountId::test_default(),
+        instrument.id().venue,
+        false,
+    );
+    let report = create_order_status_report(
+        Some(ClientOrderId::from("O-RAW-SOURCED")),
+        VenueOrderId::from("V-RAW-SOURCED"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+    let sourced = SourcedExecutionReport::new(
+        source_client_id,
+        ExecutionReport::Order(Box::new(report.clone())),
+    );
+    let raw_topic = MessagingSwitchboard::reconciliation_raw_order_status_report_topic();
+    let raw_pattern: msgbus::MStr<msgbus::Pattern> = raw_topic.into();
+    let (raw_handler, raw_saver) = get_any_saving_handler::<OrderStatusReport>(None);
+    msgbus::subscribe_any(raw_pattern, raw_handler.clone(), None);
+    let execution_engine = Rc::new(RefCell::new(execution_engine));
+
+    ExecutionEngine::reconcile_sourced_execution_report(&execution_engine, &sourced).unwrap();
+
+    msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+    assert_eq!(raw_saver.get_messages(), vec![report]);
+}
+
+#[rstest]
+fn test_reconcile_sourced_fill_report_publishes_bare_raw_payload(
+    execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut execution_engine = execution_engine;
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    let source_client_id = ClientId::from("SOURCE");
+    register_sourced_report_client(
+        &mut execution_engine,
+        source_client_id,
+        AccountId::test_default(),
+        instrument.id().venue,
+        false,
+    );
+    let report = create_fill_report(
+        instrument.id(),
+        Some(ClientOrderId::from("O-RAW-SOURCED-FILL")),
+        VenueOrderId::from("V-RAW-SOURCED-FILL"),
+        TradeId::from("T-RAW-SOURCED-FILL"),
+        Quantity::from(100_000),
+        Price::from("1.00000"),
+    );
+    let sourced = SourcedExecutionReport::new(
+        source_client_id,
+        ExecutionReport::Fill(Box::new(report.clone())),
+    );
+    let raw_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
+    let raw_pattern: msgbus::MStr<msgbus::Pattern> = raw_topic.into();
+    let (raw_handler, raw_saver) = get_any_saving_handler::<FillReport>(None);
+    msgbus::subscribe_any(raw_pattern, raw_handler.clone(), None);
+    let execution_engine = Rc::new(RefCell::new(execution_engine));
+
+    ExecutionEngine::reconcile_sourced_execution_report(&execution_engine, &sourced).unwrap();
+
+    msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+    assert_eq!(raw_saver.get_messages(), vec![report]);
+}
+
+#[rstest]
+#[case::order(SourcedPilotReportKind::Order)]
+#[case::fill(SourcedPilotReportKind::Fill)]
+fn test_reconcile_sourced_report_rejects_unregistered_source_before_raw_publish(
+    execution_engine: ExecutionEngine,
+    #[case] report_kind: SourcedPilotReportKind,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-SOURCED-UNREGISTERED");
+    let report = create_sourced_pilot_report(
+        report_kind,
+        AccountId::test_default(),
+        instrument.id(),
+        client_order_id,
+        VenueOrderId::from("V-SOURCED-UNREGISTERED"),
+    );
+    let sourced = SourcedExecutionReport::new(ClientId::from("UNREGISTERED"), report);
+    let (raw_pattern, raw_handler, raw_count) = subscribe_sourced_raw_report_counter(report_kind);
+    let execution_engine = Rc::new(RefCell::new(execution_engine));
+
+    let result = ExecutionEngine::reconcile_sourced_execution_report(&execution_engine, &sourced);
+
+    msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+    assert!(result.is_err());
+    assert_eq!(raw_count.get(), 0);
+    let execution_engine = execution_engine.borrow();
+    assert_eq!(execution_engine.report_count(), 0);
+    assert_eq!(execution_engine.event_count(), 0);
+    assert!(
+        !execution_engine
+            .cache()
+            .borrow()
+            .order_exists(&client_order_id)
+    );
+}
+
+#[rstest]
+#[case::order_wrong_account(SourcedPilotReportKind::Order, true, false)]
+#[case::order_unhandled_venue(SourcedPilotReportKind::Order, false, true)]
+#[case::fill_wrong_account(SourcedPilotReportKind::Fill, true, false)]
+#[case::fill_unhandled_venue(SourcedPilotReportKind::Fill, false, true)]
+fn test_reconcile_sourced_report_rejects_scope_before_raw_publish(
+    execution_engine: ExecutionEngine,
+    #[case] report_kind: SourcedPilotReportKind,
+    #[case] wrong_account: bool,
+    #[case] unhandled_venue: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut execution_engine = execution_engine;
+    let source_client_id = ClientId::from("SOURCE");
+    register_sourced_report_client(
+        &mut execution_engine,
+        source_client_id,
+        AccountId::test_default(),
+        Venue::from("SIM"),
+        false,
+    );
+    let client_order_id = ClientOrderId::from("O-SOURCED-SCOPE");
+    let instrument_id = if unhandled_venue {
+        InstrumentId::from("AUDUSD.OTHER")
+    } else {
+        InstrumentId::from("AUDUSD.SIM")
+    };
+    let report = create_sourced_pilot_report(
+        report_kind,
+        if wrong_account {
+            AccountId::from("WRONG-ACCOUNT")
+        } else {
+            AccountId::test_default()
+        },
+        instrument_id,
+        client_order_id,
+        VenueOrderId::from("V-SOURCED-SCOPE"),
+    );
+    let sourced = SourcedExecutionReport::new(source_client_id, report);
+    let (raw_pattern, raw_handler, raw_count) = subscribe_sourced_raw_report_counter(report_kind);
+    let execution_engine = Rc::new(RefCell::new(execution_engine));
+
+    let result = ExecutionEngine::reconcile_sourced_execution_report(&execution_engine, &sourced);
+
+    msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+    assert!(result.is_err());
+    assert_eq!(raw_count.get(), 0);
+    let execution_engine = execution_engine.borrow();
+    assert_eq!(execution_engine.report_count(), 0);
+    assert_eq!(execution_engine.event_count(), 0);
+    assert!(
+        !execution_engine
+            .cache()
+            .borrow()
+            .order_exists(&client_order_id)
+    );
+}
+
+#[rstest]
+#[case::order(SourcedPilotReportKind::Order)]
+#[case::fill(SourcedPilotReportKind::Fill)]
+fn test_reconcile_sourced_report_rejects_cached_origin_before_raw_publish(
+    execution_engine: ExecutionEngine,
+    #[case] report_kind: SourcedPilotReportKind,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut execution_engine = execution_engine;
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    let source_client_id = ClientId::from("SOURCE");
+    register_sourced_report_client(
+        &mut execution_engine,
+        source_client_id,
+        AccountId::test_default(),
+        instrument.id().venue,
+        false,
+    );
+    let client_order_id = ClientOrderId::from("O-SOURCED-ORIGIN");
+    let venue_order_id = VenueOrderId::from("V-SOURCED-ORIGIN");
+    let order = add_accepted_sourced_order(
+        &mut execution_engine,
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        ClientId::from("OTHER"),
+    );
+    let report = create_sourced_pilot_report(
+        report_kind,
+        AccountId::test_default(),
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+    );
+    let sourced = SourcedExecutionReport::new(source_client_id, report);
+    let (raw_pattern, raw_handler, raw_count) = subscribe_sourced_raw_report_counter(report_kind);
+    let event_count = execution_engine.event_count();
+    let order_event_count = order.event_count();
+    let execution_engine = Rc::new(RefCell::new(execution_engine));
+
+    let result = ExecutionEngine::reconcile_sourced_execution_report(&execution_engine, &sourced);
+
+    msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+    assert!(result.is_err());
+    assert_eq!(raw_count.get(), 0);
+    let execution_engine = execution_engine.borrow();
+    assert_eq!(execution_engine.report_count(), 0);
+    assert_eq!(execution_engine.event_count(), event_count);
+    let cache = execution_engine.cache().borrow();
+    let cached = cache.order(&client_order_id).unwrap();
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.event_count(), order_event_count);
+    assert_eq!(
+        cache.client_id(&client_order_id),
+        Some(&ClientId::from("OTHER"))
+    );
+}
+
+#[rstest]
+#[case::order(SourcedPilotReportKind::Order)]
+#[case::fill(SourcedPilotReportKind::Fill)]
+fn test_reconcile_sourced_report_rejects_conflicting_order_ids_before_raw_publish(
+    execution_engine: ExecutionEngine,
+    #[case] report_kind: SourcedPilotReportKind,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut execution_engine = execution_engine;
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    let source_client_id = ClientId::from("SOURCE");
+    let source_client = register_sourced_report_client(
+        &mut execution_engine,
+        source_client_id,
+        AccountId::test_default(),
+        instrument.id().venue,
+        false,
+    );
+    let source_registrations = source_client.registered_external_order_ids();
+    let client_order_id_a = ClientOrderId::from("O-SOURCED-DUAL-A");
+    let client_order_id_b = ClientOrderId::from("O-SOURCED-DUAL-B");
+    let venue_order_id_a = VenueOrderId::from("V-SOURCED-DUAL-A");
+    let venue_order_id_b = VenueOrderId::from("V-SOURCED-DUAL-B");
+    let order_a = add_accepted_sourced_order(
+        &mut execution_engine,
+        instrument.id(),
+        client_order_id_a,
+        venue_order_id_a,
+        source_client_id,
+    );
+    let order_b = add_accepted_sourced_order(
+        &mut execution_engine,
+        instrument.id(),
+        client_order_id_b,
+        venue_order_id_b,
+        source_client_id,
+    );
+    let report = create_sourced_pilot_report(
+        report_kind,
+        AccountId::test_default(),
+        instrument.id(),
+        client_order_id_a,
+        venue_order_id_b,
+    );
+    let sourced = SourcedExecutionReport::new(source_client_id, report);
+    let (raw_pattern, raw_handler, raw_count) = subscribe_sourced_raw_report_counter(report_kind);
+    let event_count = execution_engine.event_count();
+    let execution_engine = Rc::new(RefCell::new(execution_engine));
+
+    let result = ExecutionEngine::reconcile_sourced_execution_report(&execution_engine, &sourced);
+
+    msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+    assert!(result.is_err());
+    assert_eq!(raw_count.get(), 0);
+    assert!(source_registrations.borrow().is_empty());
+    let execution_engine = execution_engine.borrow();
+    assert_eq!(execution_engine.report_count(), 0);
+    assert_eq!(execution_engine.event_count(), event_count);
+    let cache = execution_engine.cache().borrow();
+    let cached_a = cache.order(&client_order_id_a).unwrap();
+    let cached_b = cache.order(&client_order_id_b).unwrap();
+    assert_eq!(cached_a.status(), OrderStatus::Accepted);
+    assert_eq!(cached_b.status(), OrderStatus::Accepted);
+    assert_eq!(cached_a.event_count(), order_a.event_count());
+    assert_eq!(cached_b.event_count(), order_b.event_count());
+}
+
+#[rstest]
+#[case::order(SourcedPilotReportKind::Order)]
+#[case::fill(SourcedPilotReportKind::Fill)]
+fn test_reconcile_sourced_report_rechecks_source_after_raw_publish(
+    execution_engine: ExecutionEngine,
+    #[case] report_kind: SourcedPilotReportKind,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut execution_engine = execution_engine;
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    let source_client_id = ClientId::from("SOURCE");
+    register_sourced_report_client(
+        &mut execution_engine,
+        source_client_id,
+        AccountId::test_default(),
+        instrument.id().venue,
+        false,
+    );
+    let client_order_id = ClientOrderId::from("O-SOURCED-SECOND-FENCE");
+    let venue_order_id = VenueOrderId::from("V-SOURCED-SECOND-FENCE");
+    let order = add_accepted_sourced_order(
+        &mut execution_engine,
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+        source_client_id,
+    );
+    let report = create_sourced_pilot_report(
+        report_kind,
+        AccountId::test_default(),
+        instrument.id(),
+        client_order_id,
+        venue_order_id,
+    );
+    let sourced = SourcedExecutionReport::new(source_client_id, report);
+    let execution_engine = Rc::new(RefCell::new(execution_engine));
+    let raw_count = Rc::new(Cell::new(0));
+    let raw_count_for_handler = raw_count.clone();
+    let engine_for_handler = execution_engine.clone();
+    let raw_handler = match report_kind {
+        SourcedPilotReportKind::Order => {
+            ShareableMessageHandler::from_typed(move |_report: &OrderStatusReport| {
+                raw_count_for_handler.set(raw_count_for_handler.get() + 1);
+                engine_for_handler
+                    .borrow_mut()
+                    .deregister_client(source_client_id)
+                    .unwrap();
+            })
+        }
+        SourcedPilotReportKind::Fill => {
+            ShareableMessageHandler::from_typed(move |_report: &FillReport| {
+                raw_count_for_handler.set(raw_count_for_handler.get() + 1);
+                engine_for_handler
+                    .borrow_mut()
+                    .deregister_client(source_client_id)
+                    .unwrap();
+            })
+        }
+    };
+    let raw_topic = match report_kind {
+        SourcedPilotReportKind::Order => {
+            MessagingSwitchboard::reconciliation_raw_order_status_report_topic()
+        }
+        SourcedPilotReportKind::Fill => {
+            MessagingSwitchboard::reconciliation_raw_fill_report_topic()
+        }
+    };
+    let raw_pattern: msgbus::MStr<msgbus::Pattern> = raw_topic.into();
+    msgbus::subscribe_any(raw_pattern, raw_handler.clone(), None);
+    let event_count = execution_engine.borrow().event_count();
+
+    let result = ExecutionEngine::reconcile_sourced_execution_report(&execution_engine, &sourced);
+
+    msgbus::unsubscribe_any(raw_pattern, &raw_handler);
+    assert!(result.is_err());
+    assert_eq!(raw_count.get(), 1);
+    let execution_engine = execution_engine.borrow();
+    assert!(execution_engine.get_client(&source_client_id).is_none());
+    assert_eq!(execution_engine.report_count(), 0);
+    assert_eq!(execution_engine.event_count(), event_count);
+    let cached = execution_engine
+        .cache()
+        .borrow()
+        .order(&client_order_id)
+        .unwrap()
+        .clone();
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.event_count(), order.event_count());
 }
 
 #[rstest]

@@ -26,7 +26,7 @@
 //! |-- core: ExecutionClientCore    (identity + connection state)
 //! `-- emitter: ExecutionEventEmitter   (event generation + async dispatch)
 //!     |-- factory: OrderEventFactory
-//!     `-- sender: ArcSwapOption<Sender>   (set in start())
+//!     `-- target: ArcSwapOption<Legacy | Sourced>   (set in start())
 //! ```
 
 use std::sync::Arc;
@@ -52,25 +52,47 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 
+use crate::runner::SourcedExecutionEventSink;
+
+#[derive(Debug, Clone)]
+enum ExecutionEventTarget {
+    Legacy(tokio::sync::mpsc::UnboundedSender<ExecutionEvent>),
+    Sourced(SourcedExecutionEventSink),
+}
+
+impl ExecutionEventTarget {
+    fn send(
+        &self,
+        event: ExecutionEvent,
+    ) -> Result<(), Box<tokio::sync::mpsc::error::SendError<ExecutionEvent>>> {
+        match self {
+            Self::Legacy(sender) => sender.send(event).map_err(Box::new),
+            Self::Sourced(sink) => sink.send(event),
+        }
+    }
+}
+
 /// Event emitter for live trading - combines event generation with async dispatch.
 ///
 /// This struct wraps an [`OrderEventFactory`] for event construction and an unbounded
-/// channel sender for async dispatch. It provides `emit_*` convenience methods that
+/// dispatch target. It provides `emit_*` convenience methods that
 /// generate and send events in a single call.
 ///
-/// The sender is set during the adapter's `start()` phase via [`set_sender`](Self::set_sender).
-/// Clones share the sender slot and observe later sender installations and replacements.
+/// The dispatch target is set during the adapter's `start()` phase via
+/// [`set_sender`](Self::set_sender) or [`set_sourced_sink`](Self::set_sourced_sink).
+/// Clones share the target slot and observe later target installations and replacements.
 #[derive(Debug, Clone)]
 pub struct ExecutionEventEmitter {
     clock: &'static AtomicTime,
     factory: OrderEventFactory,
-    sender: Arc<ArcSwapOption<tokio::sync::mpsc::UnboundedSender<ExecutionEvent>>>,
+    target: Arc<ArcSwapOption<ExecutionEventTarget>>,
 }
 
 impl ExecutionEventEmitter {
     /// Creates a new [`ExecutionEventEmitter`] with no sender.
     ///
-    /// Call [`set_sender`](Self::set_sender) in the adapter's `start()` method.
+    /// Call [`set_sender`](Self::set_sender) or [`set_sourced_sink`](Self::set_sourced_sink) in the
+    /// adapter's `start()` method.
     #[must_use]
     pub fn new(
         clock: &'static AtomicTime,
@@ -82,7 +104,7 @@ impl ExecutionEventEmitter {
         Self {
             clock,
             factory: OrderEventFactory::new(trader_id, account_id, account_type, base_currency),
-            sender: Arc::new(ArcSwapOption::empty()),
+            target: Arc::new(ArcSwapOption::empty()),
         }
     }
 
@@ -94,13 +116,20 @@ impl ExecutionEventEmitter {
     ///
     /// Call in the adapter's `start()` method.
     pub fn set_sender(&mut self, sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>) {
-        self.sender.store(Some(Arc::new(sender)));
+        self.target
+            .store(Some(Arc::new(ExecutionEventTarget::Legacy(sender))));
+    }
+
+    /// Sets a source-bound sink. Call in an opted-in adapter's `start()`.
+    pub fn set_sourced_sink(&mut self, sink: SourcedExecutionEventSink) {
+        self.target
+            .store(Some(Arc::new(ExecutionEventTarget::Sourced(sink))));
     }
 
     /// Returns true if the sender is initialized for this emitter and its clones.
     #[must_use]
     pub fn is_initialized(&self) -> bool {
-        self.sender.load().is_some()
+        self.target.load().is_some()
     }
 
     /// Returns the trader ID.
@@ -425,20 +454,20 @@ impl ExecutionEventEmitter {
     ///
     /// Returns an error if the sender is uninitialized or its receiver is closed.
     pub fn try_send_order_event(&self, event: OrderEventAny) -> anyhow::Result<()> {
-        let sender = self.sender.load();
-        let sender = sender
+        let target = self.target.load();
+        let target = target
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Cannot send order event: sender not initialized"))?;
-        sender
+        target
             .send(ExecutionEvent::Order(event))
             .map_err(|e| anyhow::anyhow!("Failed to send order event: {e}"))
     }
 
     /// Emits a batch of order submitted events as a single channel message.
     pub fn send_order_submitted_batch(&self, batch: OrderSubmittedBatch) {
-        let sender = self.sender.load();
-        if let Some(sender) = sender.as_ref() {
-            if let Err(e) = sender.send(ExecutionEvent::OrderSubmittedBatch(batch)) {
+        let target = self.target.load();
+        if let Some(target) = target.as_ref() {
+            if let Err(e) = target.send(ExecutionEvent::OrderSubmittedBatch(batch)) {
                 log::warn!("Failed to send order submitted batch: {e}");
             }
         } else {
@@ -448,9 +477,9 @@ impl ExecutionEventEmitter {
 
     /// Emits a batch of order accepted events as a single channel message.
     pub fn send_order_accepted_batch(&self, batch: OrderAcceptedBatch) {
-        let sender = self.sender.load();
-        if let Some(sender) = sender.as_ref() {
-            if let Err(e) = sender.send(ExecutionEvent::OrderAcceptedBatch(batch)) {
+        let target = self.target.load();
+        if let Some(target) = target.as_ref() {
+            if let Err(e) = target.send(ExecutionEvent::OrderAcceptedBatch(batch)) {
                 log::warn!("Failed to send order accepted batch: {e}");
             }
         } else {
@@ -460,9 +489,9 @@ impl ExecutionEventEmitter {
 
     /// Emits a batch of order canceled events as a single channel message.
     pub fn send_order_canceled_batch(&self, batch: OrderCanceledBatch) {
-        let sender = self.sender.load();
-        if let Some(sender) = sender.as_ref() {
-            if let Err(e) = sender.send(ExecutionEvent::OrderCanceledBatch(batch)) {
+        let target = self.target.load();
+        if let Some(target) = target.as_ref() {
+            if let Err(e) = target.send(ExecutionEvent::OrderCanceledBatch(batch)) {
                 log::warn!("Failed to send order canceled batch: {e}");
             }
         } else {
@@ -478,11 +507,11 @@ impl ExecutionEventEmitter {
     }
 
     fn try_send_account_state(&self, state: AccountState) -> anyhow::Result<()> {
-        let sender = self.sender.load();
-        let sender = sender
+        let target = self.target.load();
+        let target = target
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Cannot send account state: sender not initialized"))?;
-        sender
+        target
             .send(ExecutionEvent::Account(state))
             .map_err(|e| anyhow::anyhow!("Failed to send account state: {e}"))
     }
@@ -500,11 +529,11 @@ impl ExecutionEventEmitter {
     ///
     /// Returns an error if the sender is not initialized or the receiving channel is closed.
     pub fn try_send_execution_report(&self, report: ExecutionReport) -> anyhow::Result<()> {
-        let sender = self.sender.load();
-        let sender = sender.as_ref().ok_or_else(|| {
+        let target = self.target.load();
+        let target = target.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Cannot send execution report: sender not initialized")
         })?;
-        sender
+        target
             .send(ExecutionEvent::Report(report))
             .map_err(|e| anyhow::anyhow!("Failed to send execution report: {e}"))
     }
@@ -533,22 +562,26 @@ impl ExecutionEventEmitter {
 #[cfg(test)]
 mod tests {
     use nautilus_core::time::get_atomic_clock_static;
-    use nautilus_model::events::order::spec::OrderSubmittedSpec;
+    use nautilus_common::live::runner::get_exec_event_sender;
+    use nautilus_model::{
+        enums::PositionSide, events::order::spec::OrderSubmittedSpec, identifiers::ClientId,
+    };
     use rstest::rstest;
 
     use super::*;
+    use crate::runner::{AsyncRunner, ExecutionEventIngress, get_sourced_exec_event_sink};
 
-    fn create_emitter() -> ExecutionEventEmitter {
+    fn test_emitter() -> ExecutionEventEmitter {
         ExecutionEventEmitter::new(
             get_atomic_clock_static(),
-            TraderId::from("TRADER-001"),
-            AccountId::from("SIM-001"),
-            AccountType::Cash,
+            TraderId::from("TESTER-001"),
+            AccountId::from("BYBIT-001"),
+            AccountType::Margin,
             None,
         )
     }
 
-    fn create_order_event() -> OrderEventAny {
+    fn test_order_event() -> OrderEventAny {
         OrderEventAny::Submitted(
             OrderSubmittedSpec::builder()
                 .client_order_id(ClientOrderId::from("O-001"))
@@ -556,16 +589,30 @@ mod tests {
         )
     }
 
+    fn test_position_report() -> PositionStatusReport {
+        PositionStatusReport::new(
+            AccountId::from("BYBIT-001"),
+            InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
+            PositionSide::Long,
+            Quantity::from(1),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+            Some(PositionId::from("P-BYBIT-001")),
+            None,
+        )
+    }
+
     #[rstest]
     fn test_clone_before_set_sender_observes_sender() {
-        let mut emitter = create_emitter();
+        let mut emitter = test_emitter();
         let cloned = emitter.clone();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
         emitter.set_sender(tx);
 
         assert!(cloned.is_initialized());
-        cloned.send_order_event(create_order_event());
+        cloned.send_order_event(test_order_event());
         assert!(matches!(
             rx.try_recv(),
             Ok(ExecutionEvent::Order(OrderEventAny::Submitted(_)))
@@ -573,14 +620,65 @@ mod tests {
     }
 
     #[rstest]
+    fn test_clone_before_set_sourced_sink_observes_sink() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let source_client_id = ClientId::from("BYBIT");
+        let mut emitter = test_emitter();
+        let cloned = emitter.clone();
+
+        emitter.set_sourced_sink(get_sourced_exec_event_sink(source_client_id));
+
+        assert!(cloned.is_initialized());
+        cloned.send_position_report(test_position_report());
+        let (mut channels, mut sourced_rx) = runner.take_channels_with_sourced();
+        assert!(channels.exec_evt_rx.try_recv().is_err());
+        let Some(ExecutionEventIngress::Sourced(sourced)) =
+            sourced_rx.try_recv(&mut channels.exec_evt_rx)
+        else {
+            panic!("expected sourced execution event");
+        };
+        assert_eq!(sourced.client_id, source_client_id);
+        assert!(matches!(
+            sourced.event,
+            ExecutionEvent::Report(ExecutionReport::Position(_))
+        ));
+    }
+
+    #[rstest]
+    fn test_sourced_target_replaces_legacy_target() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let source_client_id = ClientId::from("BYBIT");
+        let mut emitter = test_emitter();
+        emitter.set_sender(get_exec_event_sender());
+        emitter.set_sourced_sink(get_sourced_exec_event_sink(source_client_id));
+
+        emitter.send_position_report(test_position_report());
+
+        let (mut channels, mut sourced_rx) = runner.take_channels_with_sourced();
+        assert!(channels.exec_evt_rx.try_recv().is_err());
+        let Some(ExecutionEventIngress::Sourced(sourced)) =
+            sourced_rx.try_recv(&mut channels.exec_evt_rx)
+        else {
+            panic!("expected sourced execution event");
+        };
+        assert_eq!(sourced.client_id, source_client_id);
+        assert!(matches!(
+            sourced.event,
+            ExecutionEvent::Report(ExecutionReport::Position(_))
+        ));
+    }
+
+    #[rstest]
     fn test_set_sender_replaces_existing_sender() {
-        let mut emitter = create_emitter();
+        let mut emitter = test_emitter();
         let (tx_a, mut rx_a) = tokio::sync::mpsc::unbounded_channel();
         let (tx_b, mut rx_b) = tokio::sync::mpsc::unbounded_channel();
 
         emitter.set_sender(tx_a);
         emitter.set_sender(tx_b);
-        emitter.send_order_event(create_order_event());
+        emitter.send_order_event(test_order_event());
 
         assert!(matches!(
             rx_a.try_recv(),
@@ -594,16 +692,68 @@ mod tests {
 
     #[rstest]
     fn test_never_initialized_sender_drops_or_errors() {
-        let emitter = create_emitter();
+        let emitter = test_emitter();
 
-        emitter.send_order_event(create_order_event());
+        emitter.send_order_event(test_order_event());
         let error = emitter
-            .try_send_order_event(create_order_event())
+            .try_send_order_event(test_order_event())
             .unwrap_err();
 
         assert_eq!(
             error.to_string(),
             "Cannot send order event: sender not initialized"
         );
+    }
+
+    #[rstest]
+    fn test_closed_sourced_target_returns_report_error_without_legacy_fallback() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let mut emitter = test_emitter();
+        emitter.set_sender(get_exec_event_sender());
+        emitter.set_sourced_sink(get_sourced_exec_event_sink(ClientId::from("BYBIT")));
+        let (mut channels, sourced_rx) = runner.take_channels_with_sourced();
+        drop(sourced_rx);
+
+        let result = emitter
+            .try_send_execution_report(ExecutionReport::Position(Box::new(test_position_report())));
+
+        assert!(result.is_err());
+        assert!(channels.exec_evt_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_closed_sourced_target_returns_order_error_without_legacy_fallback() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let mut emitter = test_emitter();
+        emitter.set_sender(get_exec_event_sender());
+        emitter.set_sourced_sink(get_sourced_exec_event_sink(ClientId::from("BYBIT")));
+        let (mut channels, sourced_rx) = runner.take_channels_with_sourced();
+        drop(sourced_rx);
+
+        let result = emitter.try_send_order_event(OrderEventAny::Submitted(
+            OrderSubmittedSpec::builder().build(),
+        ));
+
+        assert!(result.is_err());
+        assert!(channels.exec_evt_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_legacy_target_remains_unchanged() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let mut emitter = test_emitter();
+        emitter.set_sender(get_exec_event_sender());
+
+        emitter.send_position_report(test_position_report());
+
+        let (mut channels, mut sourced_rx) = runner.take_channels_with_sourced();
+        assert!(matches!(
+            channels.exec_evt_rx.try_recv().unwrap(),
+            ExecutionEvent::Report(ExecutionReport::Position(_))
+        ));
+        assert!(sourced_rx.try_recv(&mut channels.exec_evt_rx).is_none());
     }
 }

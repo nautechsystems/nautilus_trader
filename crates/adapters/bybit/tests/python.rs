@@ -34,7 +34,10 @@ use nautilus_common::{
 };
 use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
-use pyo3::{Py, Python, types::PyModule};
+use pyo3::{
+    Py, Python,
+    types::{PyAnyMethods, PyDict, PyDictMethods, PyModule},
+};
 use rstest::rstest;
 
 const SMOKE_API_KEY: &str = "test_key";
@@ -50,6 +53,7 @@ fn test_bybit_python_factories_extract_from_registry() {
         register_bybit_python_module(py);
         assert_data_factory_extracts_from_python_object(py);
         assert_exec_factory_extracts_from_python_object(py);
+        assert_exec_config_sourced_event_opt_in(py);
     });
 }
 
@@ -162,4 +166,31 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(bybit_config.product_types, [BybitProductType::Linear]);
     assert_eq!(client.client_id(), ClientId::from("BYBIT-EXEC-EXTRACTED"));
     assert_eq!(client.account_id(), account_id);
+}
+
+fn assert_exec_config_sourced_event_opt_in(py: Python<'_>) {
+    let config_type = py.get_type::<BybitExecutionClientConfig>();
+    let default_config = config_type
+        .call0()
+        .expect("default config should construct");
+    let default_enabled = default_config
+        .getattr("use_sourced_execution_events")
+        .expect("sourced event getter should exist")
+        .extract::<bool>()
+        .expect("sourced event getter should return bool");
+    assert!(!default_enabled);
+
+    let kwargs = PyDict::new(py);
+    kwargs
+        .set_item("use_sourced_execution_events", true)
+        .expect("sourced event opt-in should be accepted");
+    let enabled_config = config_type
+        .call((), Some(&kwargs))
+        .expect("opted-in config should construct");
+    let enabled = enabled_config
+        .getattr("use_sourced_execution_events")
+        .expect("sourced event getter should exist")
+        .extract::<bool>()
+        .expect("sourced event getter should return bool");
+    assert!(enabled);
 }

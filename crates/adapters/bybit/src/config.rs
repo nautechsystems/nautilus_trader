@@ -230,6 +230,9 @@ pub struct BybitExecutionClientConfig {
     /// coverage as unavailable.
     #[builder(default)]
     pub use_spot_position_reports: bool,
+    /// Whether to route this client's execution events through the source-bound ingress.
+    #[builder(default)]
+    pub use_sourced_execution_events: bool,
     /// Whether to automatically repay SPOT margin borrows after BUY orders tracked by
     /// this client and reported on the standard `execution` channel (not `execution.fast`)
     /// fully fill.
@@ -262,6 +265,7 @@ nautilus_core::impl_pyo3_config_getters!(BybitExecutionClientConfig {
     recv_window_ms: u64,
     account_id: Option<AccountId>,
     use_spot_position_reports: bool,
+    use_sourced_execution_events: bool,
     auto_repay_spot_borrows: bool,
     margin_mode: Option<BybitMarginMode>,
     transport_backend: TransportBackend,
@@ -436,6 +440,7 @@ mod tests {
         assert_eq!(config.product_types, vec![BybitProductType::Linear]);
         assert_eq!(config.http_timeout_secs, 60);
         assert_eq!(config.heartbeat_interval_secs, 20);
+        assert!(!config.use_sourced_execution_events);
     }
 
     #[rstest]
@@ -525,6 +530,18 @@ http_timeout_secs = 45
             expected.heartbeat_interval_secs,
         );
         assert_eq!(config.recv_window_ms, expected.recv_window_ms);
+        assert_eq!(
+            config.use_sourced_execution_events,
+            expected.use_sourced_execution_events,
+        );
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_enables_sourced_execution_events() {
+        let config: BybitExecutionClientConfig =
+            toml::from_str("use_sourced_execution_events = true").unwrap();
+
+        assert!(config.use_sourced_execution_events);
     }
 }

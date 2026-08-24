@@ -94,7 +94,7 @@ use nautilus_common::{
         data::DataCommand,
         execution::{
             GenerateFillReports, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            TradingCommand,
+            SourcedExecutionReport, TradingCommand,
         },
         system::{QueueStateChanged, ReconnectSocket, SocketStateChange, SocketStateChanged},
     },
@@ -134,7 +134,10 @@ use crate::{
             request_targeted_order_reports,
         },
     },
-    runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
+    runner::{
+        AsyncRunner, AsyncRunnerChannels, ExecutionEventIngress, PendingRunnerEvent,
+        SourcedExecutionEvent, SourcedExecutionIngress,
+    },
     socket::{SocketReconnectLookup, SocketReconnectRegistry},
 };
 
@@ -163,6 +166,14 @@ pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
 /// `Pending`. Under a host event loop that starves the adapter I/O tasks feeding those channels,
 /// which shows up as lapsed heartbeats and reconnects rather than as backpressure.
 const DISPATCHES_PER_YIELD: usize = 64;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StrictSourcedReportResult {
+    PreflightRejected,
+    RecentlyProcessed,
+    ReconciliationRejected,
+    Applied,
+}
 
 /// High-level abstraction for a live Nautilus system node.
 ///
@@ -576,6 +587,9 @@ impl LiveNode {
             PendingRunnerEvent::SystemEvent(event) => self.process_system_event(event),
             PendingRunnerEvent::SystemCommand(command) => self.process_system_command(command),
             PendingRunnerEvent::ExecEvent(event) => self.process_exec_event(event),
+            PendingRunnerEvent::SourcedExecEvent(event) => {
+                self.process_sourced_exec_event(event);
+            }
             PendingRunnerEvent::ExecCommand(command) => self.process_exec_command(command),
             PendingRunnerEvent::DataEvent(event) => AsyncRunner::handle_data_event(event),
             PendingRunnerEvent::DataCommand(command) => AsyncRunner::handle_data_command(command),
@@ -990,6 +1004,7 @@ impl LiveNode {
         };
         runner.bind_senders();
 
+        let (channels, mut sourced_exec_ingress) = runner.take_channels_with_sourced();
         let AsyncRunnerChannels {
             mut time_evt_rx,
             mut system_evt_rx,
@@ -998,7 +1013,7 @@ impl LiveNode {
             mut exec_cmd_rx,
             mut data_evt_rx,
             mut data_cmd_rx,
-        } = runner.take_channels();
+        } = channels;
 
         log::info!("Event loop starting");
 
@@ -1034,6 +1049,7 @@ impl LiveNode {
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
                     &mut exec_evt_rx,
+                    &mut sourced_exec_ingress,
                     &mut exec_cmd_rx,
                     &mut data_evt_rx,
                     &mut data_cmd_rx,
@@ -1065,6 +1081,7 @@ impl LiveNode {
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
+            &mut sourced_exec_ingress,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
@@ -1078,6 +1095,7 @@ impl LiveNode {
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
                 &mut exec_evt_rx,
+                &mut sourced_exec_ingress,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
@@ -1090,6 +1108,7 @@ impl LiveNode {
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
                 &mut exec_evt_rx,
+                &mut sourced_exec_ingress,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
@@ -1117,6 +1136,7 @@ impl LiveNode {
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
+            &mut sourced_exec_ingress,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
@@ -1130,6 +1150,7 @@ impl LiveNode {
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
+            &mut sourced_exec_ingress,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
@@ -1152,6 +1173,7 @@ impl LiveNode {
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
                     &mut exec_evt_rx,
+                    &mut sourced_exec_ingress,
                     &mut exec_cmd_rx,
                     &mut data_evt_rx,
                     &mut data_cmd_rx,
@@ -1173,6 +1195,7 @@ impl LiveNode {
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
                 &mut exec_evt_rx,
+                &mut sourced_exec_ingress,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
@@ -1191,6 +1214,7 @@ impl LiveNode {
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
                 &mut exec_evt_rx,
+                &mut sourced_exec_ingress,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
@@ -1209,6 +1233,7 @@ impl LiveNode {
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
                 &mut exec_evt_rx,
+                &mut sourced_exec_ingress,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
@@ -1231,6 +1256,7 @@ impl LiveNode {
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
                 &mut exec_evt_rx,
+                &mut sourced_exec_ingress,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
@@ -1246,6 +1272,7 @@ impl LiveNode {
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
                 &mut exec_evt_rx,
+                &mut sourced_exec_ingress,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
@@ -1261,6 +1288,7 @@ impl LiveNode {
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
                 &mut exec_evt_rx,
+                &mut sourced_exec_ingress,
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
@@ -1280,6 +1308,7 @@ impl LiveNode {
                 data_evt: &mut data_evt_rx,
                 data_cmd: &mut data_cmd_rx,
                 exec_evt: &mut exec_evt_rx,
+                sourced_exec: &mut sourced_exec_ingress,
                 exec_cmd: &mut exec_cmd_rx,
             };
             self.finish_startup_trader(Some(&mut receivers)).await
@@ -1608,6 +1637,7 @@ impl LiveNode {
                         RunnerChannelQueueDepths::from_receivers(
                             &time_evt_rx,
                             &exec_evt_rx,
+                            &sourced_exec_ingress,
                             &exec_cmd_rx,
                             &data_evt_rx,
                             &data_cmd_rx,
@@ -1713,15 +1743,20 @@ impl LiveNode {
                     }
                     self.process_system_command(command);
                 }
-                Some(evt) = exec_evt_rx.recv() => {
+                Some(ingress) = sourced_exec_ingress.recv(&mut exec_evt_rx) => {
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
-                        log::debug!("Residual exec event: {evt:?}");
+                        log::debug!("Residual exec event: {ingress:?}");
                         residual_events += 1;
                     }
 
-                    self.process_exec_event(evt);
+                    match ingress {
+                        ExecutionEventIngress::Legacy(event) => self.process_exec_event(event),
+                        ExecutionEventIngress::Sourced(event) => {
+                            self.process_sourced_exec_event(event);
+                        }
+                    }
                     record_runner_dispatch(
                         &metrics,
                         SystemChannel::ExecEvents,
@@ -1828,6 +1863,7 @@ impl LiveNode {
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
+            &mut sourced_exec_ingress,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
@@ -1982,8 +2018,91 @@ impl LiveNode {
         };
 
         self.dispatch_exec_event_and_commit_fill(event);
+        self.clear_closed_recon_tracking(&close_ids);
+    }
 
-        for client_order_id in &close_ids {
+    fn process_sourced_exec_event(&mut self, event: SourcedExecutionEvent) {
+        let SourcedExecutionEvent { client_id, event } = event;
+        let event = match event {
+            ExecutionEvent::Report(
+                report @ (ExecutionReport::Order(_) | ExecutionReport::Fill(_)),
+            ) => {
+                self.process_strict_sourced_exec_report(client_id, report);
+                return;
+            }
+            event => event,
+        };
+
+        let Some(close_ids) = self.observe_exec_event_before_dispatch(&event) else {
+            return;
+        };
+
+        let recent_fill_candidate = match &event {
+            ExecutionEvent::Order(OrderEventAny::Filled(fill)) => Some(fill.clone()),
+            _ => None,
+        };
+        AsyncRunner::handle_sourced_exec_event(SourcedExecutionEvent { client_id, event });
+
+        if let Some(fill) = &recent_fill_candidate {
+            self.exec_manager.commit_recent_fill_if_applied(fill);
+        }
+
+        self.clear_closed_recon_tracking(&close_ids);
+    }
+
+    /// Validates and applies a strict sourced report before mutating manager observation state.
+    ///
+    /// The preflight precedes recent-fill deduplication. The shared engine entry applies both
+    /// validation fences and returns a result, so manager activity and close tracking are updated
+    /// only after the report was accepted by the engine.
+    fn process_strict_sourced_exec_report(
+        &mut self,
+        client_id: ClientId,
+        report: ExecutionReport,
+    ) -> StrictSourcedReportResult {
+        let sourced = SourcedExecutionReport::new(client_id, report);
+
+        if let Err(e) = self
+            .kernel
+            .exec_engine
+            .borrow()
+            .preflight_sourced_execution_report(&sourced)
+        {
+            log::error!("Cannot dispatch sourced execution report: {e:#}");
+            return StrictSourcedReportResult::PreflightRejected;
+        }
+
+        if let ExecutionReport::Fill(fill_report) = &sourced.report
+            && self.exec_manager.is_fill_recently_processed(
+                fill_report.account_id,
+                fill_report.instrument_id,
+                fill_report.trade_id,
+            )
+        {
+            log::debug!(
+                "Skipping recently processed sourced fill report: {}",
+                fill_report.trade_id,
+            );
+            return StrictSourcedReportResult::RecentlyProcessed;
+        }
+
+        if let Err(e) =
+            ExecutionEngine::reconcile_sourced_execution_report(&self.kernel.exec_engine, &sourced)
+        {
+            log::error!("Cannot reconcile sourced execution report: {e:#}");
+            return StrictSourcedReportResult::ReconciliationRejected;
+        }
+
+        self.exec_manager.observe_execution_report(&sourced.report);
+        if let Some(client_order_id) = Self::closed_order_report_client_order_id(&sourced.report) {
+            self.clear_closed_recon_tracking(&[client_order_id]);
+        }
+
+        StrictSourcedReportResult::Applied
+    }
+
+    fn clear_closed_recon_tracking(&mut self, close_ids: &[ClientOrderId]) {
+        for client_order_id in close_ids {
             let is_closed = self
                 .kernel
                 .cache()
@@ -2174,6 +2293,7 @@ impl LiveNode {
                 receivers.system_evt,
                 receivers.system_cmd,
                 receivers.exec_evt,
+                receivers.sourced_exec,
                 receivers.exec_cmd,
                 receivers.data_evt,
                 receivers.data_cmd,
@@ -2231,8 +2351,13 @@ impl LiveNode {
                     self.process_system_command(command);
                     processed += 1;
                 }
-                Some(event) = receivers.exec_evt.recv() => {
-                    self.process_exec_event(event);
+                Some(ingress) = receivers.sourced_exec.recv(receivers.exec_evt) => {
+                    match ingress {
+                        ExecutionEventIngress::Legacy(event) => self.process_exec_event(event),
+                        ExecutionEventIngress::Sourced(event) => {
+                            self.process_sourced_exec_event(event);
+                        }
+                    }
                     processed += 1;
                 }
                 Some(command) = receivers.exec_cmd.recv() => {
@@ -2334,11 +2459,16 @@ impl LiveNode {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "all runner receivers are drained together"
+    )]
     fn drain_channels(
         time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
         system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
         exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        sourced_exec: &mut SourcedExecutionIngress,
         exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
         data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
@@ -2368,8 +2498,13 @@ impl LiveNode {
             drained += 1;
         }
 
-        while let Ok(evt) = exec_evt_rx.try_recv() {
-            AsyncRunner::handle_exec_event(evt);
+        while let Some(ingress) = sourced_exec.try_recv(exec_evt_rx) {
+            match ingress {
+                ExecutionEventIngress::Legacy(event) => AsyncRunner::handle_exec_event(event),
+                ExecutionEventIngress::Sourced(event) => {
+                    AsyncRunner::handle_sourced_exec_event(event);
+                }
+            }
             drained += 1;
         }
 
@@ -3611,6 +3746,7 @@ struct RunnerReceivers<'a> {
     system_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
     system_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
     exec_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    sourced_exec: &'a mut SourcedExecutionIngress,
     exec_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     data_evt: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd: &'a mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
@@ -3661,6 +3797,7 @@ fn flush_all_pending(
     system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
     system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    sourced_exec: &mut SourcedExecutionIngress,
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
@@ -3686,33 +3823,8 @@ fn flush_all_pending(
         pending.data_cmds.push(cmd);
     }
 
-    while let Ok(evt) = exec_evt_rx.try_recv() {
-        match evt {
-            ExecutionEvent::Account(_) => {
-                AsyncRunner::handle_exec_event(evt);
-            }
-            ExecutionEvent::Report(report) => {
-                pending.exec_reports.push(report);
-            }
-            ExecutionEvent::Order(order_evt) => {
-                pending.order_evts.push(order_evt);
-            }
-            ExecutionEvent::OrderSubmittedBatch(batch) => {
-                for submitted in batch {
-                    pending.order_evts.push(OrderEventAny::Submitted(submitted));
-                }
-            }
-            ExecutionEvent::OrderAcceptedBatch(batch) => {
-                for accepted in batch {
-                    pending.order_evts.push(OrderEventAny::Accepted(accepted));
-                }
-            }
-            ExecutionEvent::OrderCanceledBatch(batch) => {
-                for canceled in batch {
-                    pending.order_evts.push(OrderEventAny::Canceled(canceled));
-                }
-            }
-        }
+    while let Some(ingress) = sourced_exec.try_recv(exec_evt_rx) {
+        pending.buffer_execution_ingress(ingress);
     }
 
     while let Ok(cmd) = exec_cmd_rx.try_recv() {
@@ -3724,8 +3836,9 @@ fn flush_all_pending(
 
 /// Drives a future to completion while buffering channel events.
 ///
-/// Time events are handled immediately. Account events are forwarded directly.
-/// All other events are buffered in `pending` for later processing.
+/// Time events are handled immediately. Legacy account events are forwarded directly.
+/// All sourced execution events are buffered FIFO within their lane; every other execution event
+/// is buffered in its existing legacy pending category.
 #[expect(
     clippy::too_many_arguments,
     reason = "startup buffering owns one future plus the pending state and all runner receivers"
@@ -3737,6 +3850,7 @@ async fn drive_with_event_buffering<F: std::future::Future>(
     system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
     system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    sourced_exec: &mut SourcedExecutionIngress,
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
@@ -3759,36 +3873,8 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             Some(command) = system_cmd_rx.recv() => {
                 pending.system_commands.push(command);
             }
-            Some(evt) = exec_evt_rx.recv() => {
-                // Account events are safe to process immediately. Report and
-                // Order events need ExecEngine borrow_mut which may conflict
-                // with the borrow held by the driven future.
-                match evt {
-                    ExecutionEvent::Account(_) => {
-                        AsyncRunner::handle_exec_event(evt);
-                    }
-                    ExecutionEvent::Report(report) => {
-                        pending.exec_reports.push(report);
-                    }
-                    ExecutionEvent::Order(order_evt) => {
-                        pending.order_evts.push(order_evt);
-                    }
-                    ExecutionEvent::OrderSubmittedBatch(batch) => {
-                        for submitted in batch {
-                            pending.order_evts.push(OrderEventAny::Submitted(submitted));
-                        }
-                    }
-                    ExecutionEvent::OrderAcceptedBatch(batch) => {
-                        for accepted in batch {
-                            pending.order_evts.push(OrderEventAny::Accepted(accepted));
-                        }
-                    }
-                    ExecutionEvent::OrderCanceledBatch(batch) => {
-                        for canceled in batch {
-                            pending.order_evts.push(OrderEventAny::Canceled(canceled));
-                        }
-                    }
-                }
+            Some(ingress) = sourced_exec.recv(exec_evt_rx) => {
+                pending.buffer_execution_ingress(ingress);
             }
             Some(cmd) = exec_cmd_rx.recv() => {
                 pending.exec_cmds.push(cmd);
@@ -3811,6 +3897,7 @@ struct PendingEvents {
     data_cmds: Vec<DataCommand>,
     exec_reports: Vec<ExecutionReport>,
     order_evts: Vec<OrderEventAny>,
+    sourced_exec_evts: Vec<SourcedExecutionEvent>,
     exec_cmds: Vec<TradingCommandMessage>,
 }
 
@@ -3822,6 +3909,7 @@ impl PendingEvents {
             && self.data_cmds.is_empty()
             && self.exec_reports.is_empty()
             && self.order_evts.is_empty()
+            && self.sourced_exec_evts.is_empty()
             && self.exec_cmds.is_empty()
     }
 
@@ -3857,16 +3945,19 @@ impl PendingEvents {
             + self.data_cmds.len()
             + self.exec_reports.len()
             + self.order_evts.len()
+            + self.sourced_exec_evts.len()
             + self.exec_cmds.len();
 
         if total > 0 {
             log::debug!(
                 "Processing {total} events/commands queued during startup \
-                 (data_evts={}, data_cmds={}, exec_reports={}, order_evts={}, exec_cmds={})",
+                 (data_evts={}, data_cmds={}, exec_reports={}, order_evts={}, \
+                 sourced_exec_evts={}, exec_cmds={})",
                 self.data_evts.len(),
                 self.data_cmds.len(),
                 self.exec_reports.len(),
                 self.order_evts.len(),
+                self.sourced_exec_evts.len(),
                 self.exec_cmds.len()
             );
         }
@@ -3887,8 +3978,35 @@ impl PendingEvents {
             AsyncRunner::handle_exec_event(ExecutionEvent::Order(evt));
         }
 
+        for evt in self.sourced_exec_evts.drain(..) {
+            AsyncRunner::handle_sourced_exec_event(evt);
+        }
+
         for cmd in self.exec_cmds.drain(..) {
             AsyncRunner::handle_trading_command(cmd);
+        }
+    }
+
+    fn buffer_execution_ingress(&mut self, ingress: ExecutionEventIngress) {
+        match ingress {
+            ExecutionEventIngress::Sourced(event) => self.sourced_exec_evts.push(event),
+            ExecutionEventIngress::Legacy(event) => match event {
+                ExecutionEvent::Account(_) => AsyncRunner::handle_exec_event(event),
+                ExecutionEvent::Report(report) => self.exec_reports.push(report),
+                ExecutionEvent::Order(order_evt) => self.order_evts.push(order_evt),
+                ExecutionEvent::OrderSubmittedBatch(batch) => {
+                    self.order_evts
+                        .extend(batch.into_iter().map(OrderEventAny::Submitted));
+                }
+                ExecutionEvent::OrderAcceptedBatch(batch) => {
+                    self.order_evts
+                        .extend(batch.into_iter().map(OrderEventAny::Accepted));
+                }
+                ExecutionEvent::OrderCanceledBatch(batch) => {
+                    self.order_evts
+                        .extend(batch.into_iter().map(OrderEventAny::Canceled));
+                }
+            },
         }
     }
 
@@ -4554,6 +4672,165 @@ mod tests {
 
         let close_ids = node.observe_exec_event_before_dispatch(&event);
         assert_eq!(close_ids, None);
+    }
+
+    #[rstest]
+    fn test_sourced_runtime_report_validates_before_exact_source_dispatch() {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("SourcedReportNode".to_string(), Some(config)).unwrap();
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let account_id = AccountId::from("SHARED-SOURCED-ACCOUNT");
+        let venue_client_id = ClientId::from("VENUE-SOURCED-A");
+        let source_client_id = ClientId::from("SOURCE-SOURCED-B");
+        let venue_client = StubExecutionClient::new(
+            venue_client_id,
+            account_id,
+            instrument_id.venue,
+            OmsType::Netting,
+            None,
+        );
+        let venue_registrations = venue_client.registered_external_order_ids();
+        let source_client = StubExecutionClient::new(
+            source_client_id,
+            account_id,
+            Venue::from("SOURCE-SOURCED-B"),
+            OmsType::Netting,
+            None,
+        )
+        .with_handles_all_order_venues();
+        let source_registrations = source_client.registered_external_order_ids();
+        {
+            let mut engine = node.kernel.exec_engine.borrow_mut();
+            engine.register_client(Box::new(venue_client)).unwrap();
+            engine.register_client(Box::new(source_client)).unwrap();
+            engine
+                .cache()
+                .borrow_mut()
+                .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+                .unwrap();
+        }
+
+        let invalid_order_id = ClientOrderId::from("O-SOURCED-INVALID");
+        let valid_order_id = ClientOrderId::from("O-SOURCED-VALID");
+        let report = |client_order_id, venue_order_id| {
+            ExecutionReport::Order(Box::new(OrderStatusReport::new(
+                account_id,
+                instrument_id,
+                Some(client_order_id),
+                venue_order_id,
+                OrderSide::Buy.into(),
+                OrderType::Market,
+                TimeInForce::Gtc,
+                OrderStatus::Accepted,
+                Quantity::from("1.0"),
+                Quantity::from("0.0"),
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+                UnixNanos::from(3),
+                None,
+            )))
+        };
+
+        node.process_sourced_exec_event(SourcedExecutionEvent {
+            client_id: ClientId::from("UNREGISTERED-SOURCE"),
+            event: ExecutionEvent::Report(report(
+                invalid_order_id,
+                VenueOrderId::from("V-SOURCED-INVALID"),
+            )),
+        });
+        assert!(
+            node.kernel
+                .cache
+                .borrow()
+                .order(&invalid_order_id)
+                .is_none()
+        );
+        assert!(venue_registrations.borrow().is_empty());
+        assert!(source_registrations.borrow().is_empty());
+
+        node.process_sourced_exec_event(SourcedExecutionEvent {
+            client_id: source_client_id,
+            event: ExecutionEvent::Report(report(
+                valid_order_id,
+                VenueOrderId::from("V-SOURCED-VALID"),
+            )),
+        });
+
+        assert_eq!(
+            node.kernel.cache.borrow().client_id(&valid_order_id),
+            Some(&source_client_id)
+        );
+        assert!(venue_registrations.borrow().is_empty());
+        assert_eq!(source_registrations.borrow().as_slice(), &[valid_order_id]);
+    }
+
+    #[rstest]
+    fn test_sourced_recent_fill_runs_preflight_before_deduplication() {
+        let (mut node, fill_event, instrument) =
+            recent_fill_test_fixture("SourcedRecentFillPreflightNode");
+        let OrderEventAny::Filled(fill) = fill_event else {
+            unreachable!();
+        };
+        let ExecutionEvent::Report(ExecutionReport::Fill(report)) = fill_report_event(&fill) else {
+            unreachable!();
+        };
+        node.exec_manager.mark_fill_processed(
+            report.account_id,
+            report.instrument_id,
+            report.trade_id,
+        );
+
+        let report_count = node.kernel.exec_engine.borrow().report_count();
+        let event_count = node.kernel.exec_engine.borrow().event_count();
+        let cached_event_count = node
+            .kernel
+            .cache
+            .borrow()
+            .order(&fill.client_order_id)
+            .unwrap()
+            .event_count();
+
+        let rejected = node.process_strict_sourced_exec_report(
+            ClientId::from("UNREGISTERED-SOURCE"),
+            ExecutionReport::Fill(Box::new((*report).clone())),
+        );
+
+        let source_client_id = ClientId::from("TEST-RECENT-FILL");
+        let source_client = StubExecutionClient::new(
+            source_client_id,
+            report.account_id,
+            instrument.id().venue,
+            OmsType::Netting,
+            None,
+        );
+        let source_registrations = source_client.registered_external_order_ids();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(source_client))
+            .unwrap();
+
+        let deduplicated = node
+            .process_strict_sourced_exec_report(source_client_id, ExecutionReport::Fill(report));
+
+        assert_eq!(rejected, StrictSourcedReportResult::PreflightRejected);
+        assert_eq!(deduplicated, StrictSourcedReportResult::RecentlyProcessed);
+        assert!(source_registrations.borrow().is_empty());
+        let engine = node.kernel.exec_engine.borrow();
+        assert_eq!(engine.report_count(), report_count);
+        assert_eq!(engine.event_count(), event_count);
+        let cache = engine.cache().borrow();
+        let cached = cache.order(&fill.client_order_id).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Accepted);
+        assert_eq!(cached.event_count(), cached_event_count);
     }
 
     #[rstest]
@@ -8096,6 +8373,9 @@ mod tests {
         let (data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (_sourced_exec_evt_tx, sourced_exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SourcedExecutionEvent>();
+        let mut sourced_exec = SourcedExecutionIngress::new(sourced_exec_evt_rx);
         let (exec_cmd_tx, mut exec_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
@@ -8128,6 +8408,7 @@ mod tests {
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
+            &mut sourced_exec,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
@@ -8189,6 +8470,9 @@ mod tests {
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (_sourced_exec_evt_tx, sourced_exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SourcedExecutionEvent>();
+        let mut sourced_exec = SourcedExecutionIngress::new(sourced_exec_evt_rx);
         let (_exec_cmd_tx, mut exec_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
@@ -8203,6 +8487,7 @@ mod tests {
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
+            &mut sourced_exec,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
@@ -8225,6 +8510,9 @@ mod tests {
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (_sourced_exec_evt_tx, sourced_exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SourcedExecutionEvent>();
+        let mut sourced_exec = SourcedExecutionIngress::new(sourced_exec_evt_rx);
         let (_exec_cmd_tx, mut exec_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
@@ -8238,6 +8526,7 @@ mod tests {
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
+            &mut sourced_exec,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
@@ -8248,6 +8537,72 @@ mod tests {
         assert!(pending.order_evts.is_empty());
         assert!(pending.exec_cmds.is_empty());
         assert!(exec_evt_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_shutdown_drain_processes_sourced_lane_fifo() {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let received_handler = received.clone();
+        msgbus::register_account_state_endpoint(
+            MessagingSwitchboard::portfolio_update_account(),
+            TypedHandler::from(move |account: &AccountState| {
+                received_handler.borrow_mut().push(account.account_id);
+            }),
+        );
+
+        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
+        let (_system_evt_tx, mut system_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
+        let (_system_cmd_tx, mut system_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
+        let (_exec_evt_tx, mut exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (sourced_exec_evt_tx, sourced_exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SourcedExecutionEvent>();
+        let mut sourced_exec = SourcedExecutionIngress::new(sourced_exec_evt_rx);
+        let (_exec_cmd_tx, mut exec_cmd_rx) =
+            tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
+        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+
+        for account_id in ["SOURCE-DRAIN-001", "SOURCE-DRAIN-002"] {
+            sourced_exec_evt_tx
+                .send(SourcedExecutionEvent {
+                    client_id: ClientId::from("SOURCE-DRAIN"),
+                    event: ExecutionEvent::Account(AccountState::new(
+                        AccountId::from(account_id),
+                        AccountType::Cash,
+                        vec![],
+                        vec![],
+                        true,
+                        UUID4::new(),
+                        UnixNanos::from(1),
+                        UnixNanos::from(2),
+                        None,
+                    )),
+                })
+                .unwrap();
+        }
+
+        LiveNode::drain_channels(
+            &mut time_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
+            &mut exec_evt_rx,
+            &mut sourced_exec,
+            &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+        );
+
+        assert_eq!(
+            received.borrow().as_slice(),
+            &[
+                AccountId::from("SOURCE-DRAIN-001"),
+                AccountId::from("SOURCE-DRAIN-002")
+            ]
+        );
     }
 
     #[rstest]
@@ -8271,6 +8626,44 @@ mod tests {
         pending.data_cmds.push(stub_data_command());
 
         assert!(!pending.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_buffers_sourced_execution_lane_in_fifo_order() {
+        use nautilus_model::{events::order::spec::OrderSubmittedSpec, identifiers::ClientOrderId};
+
+        let source_id = ClientId::from("SOURCE-PENDING");
+        let mut pending = PendingEvents::default();
+        for client_order_id in ["O-SOURCED-001", "O-SOURCED-002"] {
+            pending.buffer_execution_ingress(ExecutionEventIngress::Sourced(
+                SourcedExecutionEvent {
+                    client_id: source_id,
+                    event: ExecutionEvent::Order(OrderEventAny::Submitted(
+                        OrderSubmittedSpec::builder()
+                            .client_order_id(ClientOrderId::from(client_order_id))
+                            .build(),
+                    )),
+                },
+            ));
+        }
+
+        let buffered_ids = pending
+            .sourced_exec_evts
+            .iter()
+            .map(|sourced| match &sourced.event {
+                ExecutionEvent::Order(event) => event.client_order_id(),
+                _ => panic!("Expected sourced order event"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            buffered_ids,
+            [
+                ClientOrderId::from("O-SOURCED-001"),
+                ClientOrderId::from("O-SOURCED-002")
+            ]
+        );
+        assert!(pending.exec_reports.is_empty());
+        assert!(pending.order_evts.is_empty());
     }
 
     #[rstest]
@@ -8400,6 +8793,9 @@ mod tests {
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (_sourced_exec_evt_tx, sourced_exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SourcedExecutionEvent>();
+        let mut sourced_exec = SourcedExecutionIngress::new(sourced_exec_evt_rx);
         let (_exec_cmd_tx, mut exec_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
@@ -8413,6 +8809,7 @@ mod tests {
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
+            &mut sourced_exec,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
@@ -8434,6 +8831,9 @@ mod tests {
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
             tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (_sourced_exec_evt_tx, sourced_exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SourcedExecutionEvent>();
+        let mut sourced_exec = SourcedExecutionIngress::new(sourced_exec_evt_rx);
         let (_exec_cmd_tx, mut exec_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
 
@@ -8447,6 +8847,7 @@ mod tests {
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
+            &mut sourced_exec,
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,

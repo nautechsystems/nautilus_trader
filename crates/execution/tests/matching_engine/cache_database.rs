@@ -61,6 +61,11 @@ impl FailNthAddOrderDatabaseControl {
         state.add_order_calls = 0;
     }
 
+    #[allow(dead_code, reason = "used by the execution engine test target")]
+    pub(super) fn add_order_calls(&self) -> usize {
+        self.state.lock().unwrap().add_order_calls
+    }
+
     #[allow(
         dead_code,
         reason = "used by the exec_engine test target sharing this module"

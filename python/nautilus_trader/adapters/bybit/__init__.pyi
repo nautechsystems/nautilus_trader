@@ -126,6 +126,8 @@ class BybitExecutionClientConfig:
     @property
     def use_spot_position_reports(self) -> bool: ...
     @property
+    def use_sourced_execution_events(self) -> bool: ...
+    @property
     def auto_repay_spot_borrows(self) -> bool: ...
     @property
     def margin_mode(self) -> BybitMarginMode | None: ...
@@ -150,6 +152,7 @@ class BybitExecutionClientConfig:
         recv_window_ms: int | None = None,
         account_id: model.AccountId | None = None,
         use_spot_position_reports: bool | None = None,
+        use_sourced_execution_events: bool | None = None,
         auto_repay_spot_borrows: bool | None = None,
         margin_mode: BybitMarginMode | None = None,
         transport_backend: network.TransportBackend | None = None,

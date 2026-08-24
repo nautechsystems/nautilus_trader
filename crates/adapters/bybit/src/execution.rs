@@ -28,11 +28,15 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
     live::runner::get_exec_event_sender,
-    messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+    messages::{
+        ExecutionEvent,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
+            SubmitOrder, SubmitOrderList,
+        },
     },
 };
 use nautilus_core::{
@@ -43,6 +47,7 @@ use nautilus_core::{
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControl,
     execution::failure::CommandFailure,
+    runner::{SourcedExecutionEventSink, get_sourced_exec_event_sink},
     task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
@@ -99,6 +104,7 @@ pub struct BybitExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
     config: BybitExecutionClientConfig,
+    use_sourced_execution_events: bool,
     emitter: ExecutionEventEmitter,
     http_client: BybitHttpClient,
     ws_private: BybitWebSocketClient,
@@ -176,6 +182,7 @@ impl BybitExecutionClient {
         }
         ws_trade.set_recv_window_ms(config.recv_window_ms);
 
+        let use_sourced_execution_events = config.use_sourced_execution_events;
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
             clock,
@@ -192,6 +199,7 @@ impl BybitExecutionClient {
             core,
             clock,
             config,
+            use_sourced_execution_events,
             emitter,
             http_client,
             ws_private,
@@ -366,6 +374,23 @@ impl BybitExecutionClient {
         }
 
         Ok(reports)
+    }
+
+    fn bind_execution_event_target(&mut self) {
+        self.bind_execution_event_target_with(get_exec_event_sender, get_sourced_exec_event_sink);
+    }
+
+    fn bind_execution_event_target_with(
+        &mut self,
+        legacy_sender: impl FnOnce() -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+        sourced_sink: impl FnOnce(ClientId) -> SourcedExecutionEventSink,
+    ) {
+        if self.use_sourced_execution_events {
+            self.emitter
+                .set_sourced_sink(sourced_sink(self.core.client_id));
+        } else {
+            self.emitter.set_sender(legacy_sender());
+        }
     }
 
     fn resolve_position_idx(
@@ -947,8 +972,7 @@ impl ExecutionClient for BybitExecutionClient {
             return Ok(());
         }
 
-        let sender = get_exec_event_sender();
-        self.emitter.set_sender(sender);
+        self.bind_execution_event_target();
         self.core.set_started();
 
         let http_client = self.http_client.clone();
@@ -2249,7 +2273,11 @@ impl BybitExecutionClient {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc, time::Duration};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+        time::Duration,
+    };
 
     use nautilus_common::{
         cache::Cache,
@@ -2260,7 +2288,7 @@ mod tests {
         },
     };
     use nautilus_core::{Params, UUID4};
-    use nautilus_live::ExecutionClientCore;
+    use nautilus_live::{ExecutionClientCore, runner::AsyncRunner};
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderStatus},
         events::OrderEventAny,
@@ -2276,7 +2304,9 @@ mod tests {
         enums::BybitMarketUnit,
     };
 
-    fn test_execution_client() -> (BybitExecutionClient, Rc<RefCell<Cache>>) {
+    fn test_execution_client_with_sourced_events(
+        use_sourced_execution_events: bool,
+    ) -> (BybitExecutionClient, Rc<RefCell<Cache>>) {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let core = ExecutionClientCore::new(
             TraderId::from("TESTER-001"),
@@ -2291,10 +2321,44 @@ mod tests {
         let config = BybitExecutionClientConfig {
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
+            use_sourced_execution_events,
             ..Default::default()
         };
 
         (BybitExecutionClient::new(core, config).unwrap(), cache)
+    }
+
+    fn test_execution_client() -> (BybitExecutionClient, Rc<RefCell<Cache>>) {
+        test_execution_client_with_sourced_events(false)
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_sourced_execution_event_setting_is_frozen_at_construction(#[case] enabled: bool) {
+        let (mut client, _cache) = test_execution_client_with_sourced_events(enabled);
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let legacy_calls = Cell::new(0);
+        let sourced_calls = Cell::new(0);
+
+        assert_eq!(client.use_sourced_execution_events, enabled);
+        client.config.use_sourced_execution_events = !enabled;
+        assert_eq!(client.use_sourced_execution_events, enabled);
+        client.bind_execution_event_target_with(
+            || {
+                legacy_calls.set(legacy_calls.get() + 1);
+                get_exec_event_sender()
+            },
+            |client_id| {
+                sourced_calls.set(sourced_calls.get() + 1);
+                assert_eq!(client_id, *BYBIT_CLIENT_ID);
+                get_sourced_exec_event_sink(client_id)
+            },
+        );
+
+        assert_eq!(legacy_calls.get(), (!enabled) as usize);
+        assert_eq!(sourced_calls.get(), enabled as usize);
     }
 
     async fn wait_for_spawned_tasks(client: &BybitExecutionClient) {

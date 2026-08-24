@@ -15,20 +15,21 @@
 
 //! Async event loop runner for live and sandbox trading nodes.
 //!
-//! `AsyncRunner` owns seven tokio mpsc channel pairs plus a shutdown
-//! signal channel. Construction creates the channels without side
+//! `AsyncRunner` owns the seven public tokio mpsc channel pairs, an internal
+//! sourced-execution sidecar pair, and a shutdown signal channel. Construction creates the channels without side
 //! effects. The sender halves are placed into thread-local storage
 //! via [`AsyncRunner::bind_senders`] so that adapters and engine
 //! components can resolve them through the `get_*_sender()` accessors
 //! in `nautilus_common::runner` and `nautilus_common::live::runner`.
 //!
-//! Channel pairs:
+//! Public channel pairs:
 //!
 //! - **Time events**: timer callbacks dispatched by the clock.
 //! - **System events**: system notifications handled by the live node.
 //! - **System commands**: control requests handled by the live node.
 //! - **Execution events**: fills, order updates, and account state from
-//!   execution clients to the execution engine.
+//!   execution clients to the execution engine. Opted-in clients use a private
+//!   source-bound sidecar lane; legacy clients retain the public execution channel.
 //! - **Trading commands**: deferred order actions routed to their direct endpoint.
 //! - **Data events**: market data from adapters to the data engine.
 //! - **Data commands**: subscribe/unsubscribe requests to data clients.
@@ -58,8 +59,11 @@
 //! - Only one runner at a time should own the TLS slots on a given
 //!   thread. `bind_senders` overwrites any existing TLS contents on the
 //!   thread, so the last caller wins.
+//! - The legacy and sourced execution lanes each preserve FIFO order. Fair
+//!   arbitration prevents either ready lane from starving, but no global order
+//!   is defined across the two lanes.
 
-use std::{fmt::Debug, sync::Arc};
+use std::{cell::RefCell, fmt::Debug, sync::Arc};
 
 use nautilus_common::{
     live::runner::{
@@ -67,8 +71,9 @@ use nautilus_common::{
         replace_system_event_sender,
     },
     messages::{
-        DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent, data::DataCommand,
-        execution::TradingCommand,
+        DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent,
+        data::DataCommand,
+        execution::{SourcedExecutionReport, TradingCommand},
     },
     msgbus::{self, MessagingSwitchboard},
     runner::{
@@ -77,7 +82,180 @@ use nautilus_common::{
         replace_time_event_sender,
     },
 };
-use nautilus_model::events::OrderEventAny;
+use nautilus_model::{events::OrderEventAny, identifiers::ClientId};
+
+thread_local! {
+    static SOURCED_EXEC_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SourcedExecutionEvent>>> = const { RefCell::new(None) };
+}
+
+/// An execution-event sender permanently bound to one execution client.
+///
+/// Sending through this sink uses only the sourced ingress lane. A closed sourced lane returns
+/// the original event to the caller and never falls back to the legacy lane.
+#[derive(Clone, Debug)]
+#[doc(hidden)]
+pub struct SourcedExecutionEventSink {
+    client_id: ClientId,
+    sender: tokio::sync::mpsc::UnboundedSender<SourcedExecutionEvent>,
+}
+
+impl SourcedExecutionEventSink {
+    pub(crate) fn new(
+        client_id: ClientId,
+        sender: tokio::sync::mpsc::UnboundedSender<SourcedExecutionEvent>,
+    ) -> Self {
+        Self { client_id, sender }
+    }
+
+    /// Sends an execution event through the sourced ingress lane.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original event when the sourced ingress receiver is closed.
+    pub(crate) fn send(
+        &self,
+        event: ExecutionEvent,
+    ) -> Result<(), Box<tokio::sync::mpsc::error::SendError<ExecutionEvent>>> {
+        self.sender
+            .send(SourcedExecutionEvent::new(self.client_id, event))
+            .map_err(|e| Box::new(tokio::sync::mpsc::error::SendError(e.0.event)))
+    }
+}
+
+/// Returns a sourced execution-event sink bound to `client_id` for the current thread.
+///
+/// # Panics
+///
+/// Panics if no async runner has bound the sourced ingress sender on this thread.
+#[must_use]
+#[doc(hidden)]
+pub fn get_sourced_exec_event_sink(client_id: ClientId) -> SourcedExecutionEventSink {
+    SOURCED_EXEC_EVENT_SENDER.with(|sender| {
+        SourcedExecutionEventSink::new(
+            client_id,
+            sender
+                .borrow()
+                .as_ref()
+                .expect("sourced execution-event sender is not bound")
+                .clone(),
+        )
+    })
+}
+
+fn replace_sourced_exec_event_sender(
+    sender: tokio::sync::mpsc::UnboundedSender<SourcedExecutionEvent>,
+) {
+    SOURCED_EXEC_EVENT_SENDER.with(|slot| {
+        *slot.borrow_mut() = Some(sender);
+    });
+}
+
+#[derive(Debug)]
+pub(crate) struct SourcedExecutionEvent {
+    pub(crate) client_id: ClientId,
+    pub(crate) event: ExecutionEvent,
+}
+
+impl SourcedExecutionEvent {
+    const fn new(client_id: ClientId, event: ExecutionEvent) -> Self {
+        Self { client_id, event }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum ExecutionEventIngress {
+    Legacy(ExecutionEvent),
+    Sourced(SourcedExecutionEvent),
+}
+
+#[derive(Debug)]
+pub(crate) struct SourcedExecutionIngress {
+    receiver: tokio::sync::mpsc::UnboundedReceiver<SourcedExecutionEvent>,
+    prefer_sourced: bool,
+}
+
+impl SourcedExecutionIngress {
+    pub(crate) const fn new(
+        receiver: tokio::sync::mpsc::UnboundedReceiver<SourcedExecutionEvent>,
+    ) -> Self {
+        Self {
+            receiver,
+            prefer_sourced: false,
+        }
+    }
+
+    #[cfg(any(test, feature = "node"))]
+    pub(crate) fn len(&self) -> usize {
+        self.receiver.len()
+    }
+
+    /// Receives fairly from the independent legacy and sourced execution lanes.
+    ///
+    /// Arbitration preserves FIFO within each lane and guarantees bounded progress when both
+    /// lanes remain ready, without defining a global order across lanes.
+    pub(crate) async fn recv(
+        &mut self,
+        legacy_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) -> Option<ExecutionEventIngress> {
+        let ingress = if self.prefer_sourced {
+            tokio::select! {
+                biased;
+
+                Some(event) = self.receiver.recv() => {
+                    Some(ExecutionEventIngress::Sourced(event))
+                }
+                Some(event) = legacy_rx.recv() => {
+                    Some(ExecutionEventIngress::Legacy(event))
+                }
+                else => None,
+            }
+        } else {
+            tokio::select! {
+                biased;
+
+                Some(event) = legacy_rx.recv() => {
+                    Some(ExecutionEventIngress::Legacy(event))
+                }
+                Some(event) = self.receiver.recv() => {
+                    Some(ExecutionEventIngress::Sourced(event))
+                }
+                else => None,
+            }
+        };
+
+        if let Some(ingress) = &ingress {
+            self.prefer_sourced = matches!(ingress, ExecutionEventIngress::Legacy(_));
+        }
+
+        ingress
+    }
+
+    #[cfg(any(test, feature = "node"))]
+    pub(crate) fn try_recv(
+        &mut self,
+        legacy_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) -> Option<ExecutionEventIngress> {
+        let ingress = if self.prefer_sourced {
+            self.receiver
+                .try_recv()
+                .map(ExecutionEventIngress::Sourced)
+                .or_else(|_| legacy_rx.try_recv().map(ExecutionEventIngress::Legacy))
+                .ok()
+        } else {
+            legacy_rx
+                .try_recv()
+                .map(ExecutionEventIngress::Legacy)
+                .or_else(|_| self.receiver.try_recv().map(ExecutionEventIngress::Sourced))
+                .ok()
+        };
+
+        if let Some(ingress) = &ingress {
+            self.prefer_sourced = matches!(ingress, ExecutionEventIngress::Legacy(_));
+        }
+
+        ingress
+    }
+}
 
 /// Asynchronous implementation of `DataCommandSender` for live environments.
 #[derive(Debug)]
@@ -171,6 +349,7 @@ pub(crate) enum PendingRunnerEvent {
     SystemEvent(SystemEvent),
     SystemCommand(SystemCommand),
     ExecEvent(ExecutionEvent),
+    SourcedExecEvent(SourcedExecutionEvent),
     ExecCommand(TradingCommandMessage),
     DataEvent(DataEvent),
     DataCommand(DataCommand),
@@ -184,6 +363,8 @@ pub struct AsyncRunner {
     signal_rx: tokio::sync::mpsc::UnboundedReceiver<()>,
     signal_tx: tokio::sync::mpsc::UnboundedSender<()>,
     exec_evt_tx: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
+    sourced_exec_ingress: SourcedExecutionIngress,
+    sourced_exec_evt_tx: tokio::sync::mpsc::UnboundedSender<SourcedExecutionEvent>,
     exec_cmd_tx: tokio::sync::mpsc::UnboundedSender<TradingCommandMessage>,
     data_evt_tx: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     data_cmd_tx: tokio::sync::mpsc::UnboundedSender<DataCommand>,
@@ -231,6 +412,8 @@ impl AsyncRunner {
         let (system_cmd_tx, system_cmd_rx) = unbounded_channel::<SystemCommand>();
         let (signal_tx, signal_rx) = unbounded_channel::<()>();
         let (exec_evt_tx, exec_evt_rx) = unbounded_channel::<ExecutionEvent>();
+        let (sourced_exec_evt_tx, sourced_exec_evt_rx) =
+            unbounded_channel::<SourcedExecutionEvent>();
         let (exec_cmd_tx, exec_cmd_rx) = unbounded_channel::<TradingCommandMessage>();
         let (data_evt_tx, data_evt_rx) = unbounded_channel::<DataEvent>();
         let (data_cmd_tx, data_cmd_rx) = unbounded_channel::<DataCommand>();
@@ -251,6 +434,8 @@ impl AsyncRunner {
             signal_rx,
             signal_tx,
             exec_evt_tx,
+            sourced_exec_ingress: SourcedExecutionIngress::new(sourced_exec_evt_rx),
+            sourced_exec_evt_tx,
             exec_cmd_tx,
             data_evt_tx,
             data_cmd_tx,
@@ -269,6 +454,7 @@ impl AsyncRunner {
         replace_system_event_sender(self.system_evt_tx.clone());
         replace_system_command_sender(self.system_cmd_tx.clone());
         replace_exec_event_sender(self.exec_evt_tx.clone());
+        replace_sourced_exec_event_sender(self.sourced_exec_evt_tx.clone());
         replace_exec_cmd_sender(Arc::new(AsyncTradingCommandSender::new(
             self.exec_cmd_tx.clone(),
         )));
@@ -300,6 +486,15 @@ impl AsyncRunner {
     #[must_use]
     pub fn take_channels(self) -> AsyncRunnerChannels {
         self.channels
+    }
+
+    /// Consumes the runner and returns its public channels plus the internal sourced sidecar.
+    #[must_use]
+    #[cfg(any(test, feature = "node"))]
+    pub(crate) fn take_channels_with_sourced(
+        self,
+    ) -> (AsyncRunnerChannels, SourcedExecutionIngress) {
+        (self.channels, self.sourced_exec_ingress)
     }
 
     /// Flushes all pending data events and commands from the channels.
@@ -389,8 +584,15 @@ impl AsyncRunner {
                 Some(command) = self.channels.system_cmd_rx.recv() => {
                     log::error!("System command {command:?} requires the LiveNode runner");
                 },
-                Some(evt) = self.channels.exec_evt_rx.recv() => {
-                    Self::handle_exec_event(evt);
+                Some(ingress) = self.sourced_exec_ingress.recv(
+                    &mut self.channels.exec_evt_rx,
+                ) => {
+                    match ingress {
+                        ExecutionEventIngress::Legacy(event) => Self::handle_exec_event(event),
+                        ExecutionEventIngress::Sourced(event) => {
+                            Self::handle_sourced_exec_event(event);
+                        }
+                    }
                 },
                 Some(cmd) = self.channels.exec_cmd_rx.recv() => {
                     Self::handle_trading_command(cmd);
@@ -509,6 +711,32 @@ impl AsyncRunner {
         }
     }
 
+    /// Handles an execution event from a source-bound ingress lane.
+    ///
+    /// Only order and fill reports use strict source-aware reconciliation. Every other event
+    /// retains its existing legacy dispatch semantics without being requeued.
+    #[inline]
+    pub(crate) fn handle_sourced_exec_event(event: SourcedExecutionEvent) {
+        let SourcedExecutionEvent { client_id, event } = event;
+        match event {
+            ExecutionEvent::Report(
+                report @ (ExecutionReport::Order(_) | ExecutionReport::Fill(_)),
+            ) => {
+                Self::handle_sourced_exec_report(client_id, report);
+            }
+            event => Self::handle_exec_event(event),
+        }
+    }
+
+    #[inline]
+    fn handle_sourced_exec_report(client_id: ClientId, report: ExecutionReport) {
+        let endpoint = MessagingSwitchboard::exec_engine_reconcile_sourced_execution_report();
+        msgbus::send_sourced_execution_report(
+            endpoint,
+            SourcedExecutionReport::new(client_id, report),
+        );
+    }
+
     #[inline]
     pub fn handle_exec_report(report: ExecutionReport) {
         let endpoint = MessagingSwitchboard::exec_engine_reconcile_execution_report();
@@ -526,6 +754,7 @@ impl AsyncRunner {
             self.channels.system_evt_rx.len(),
             self.channels.system_cmd_rx.len(),
             self.channels.exec_evt_rx.len(),
+            self.sourced_exec_ingress.len(),
             self.channels.exec_cmd_rx.len(),
             self.channels.data_evt_rx.len(),
             self.channels.data_cmd_rx.len(),
@@ -549,27 +778,28 @@ impl AsyncRunner {
             PendingRunnerEvent::SystemCommand,
             &mut process,
         );
-        processed += poll_channel(
+        processed += poll_execution_channels(
             &mut self.channels.exec_evt_rx,
+            &mut self.sourced_exec_ingress,
             pending.3,
-            PendingRunnerEvent::ExecEvent,
+            pending.4,
             &mut process,
         );
         processed += poll_channel(
             &mut self.channels.exec_cmd_rx,
-            pending.4,
+            pending.5,
             PendingRunnerEvent::ExecCommand,
             &mut process,
         );
         processed += poll_channel(
             &mut self.channels.data_evt_rx,
-            pending.5,
+            pending.6,
             PendingRunnerEvent::DataEvent,
             &mut process,
         );
         processed += poll_channel(
             &mut self.channels.data_cmd_rx,
-            pending.6,
+            pending.7,
             PendingRunnerEvent::DataCommand,
             &mut process,
         );
@@ -589,8 +819,17 @@ impl AsyncRunner {
             Some(command) = self.channels.system_cmd_rx.recv() => {
                 Some(PendingRunnerEvent::SystemCommand(command))
             }
-            Some(event) = self.channels.exec_evt_rx.recv() => {
-                Some(PendingRunnerEvent::ExecEvent(event))
+            Some(ingress) = self.sourced_exec_ingress.recv(
+                &mut self.channels.exec_evt_rx,
+            ) => {
+                match ingress {
+                    ExecutionEventIngress::Legacy(event) => {
+                        Some(PendingRunnerEvent::ExecEvent(event))
+                    }
+                    ExecutionEventIngress::Sourced(event) => {
+                        Some(PendingRunnerEvent::SourcedExecEvent(event))
+                    }
+                }
             }
             Some(command) = self.channels.exec_cmd_rx.recv() => {
                 Some(PendingRunnerEvent::ExecCommand(command))
@@ -604,6 +843,65 @@ impl AsyncRunner {
             else => None,
         }
     }
+}
+
+#[cfg(feature = "node")]
+fn poll_execution_channels(
+    legacy_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    sourced: &mut SourcedExecutionIngress,
+    legacy_pending: usize,
+    sourced_pending: usize,
+    process: &mut impl FnMut(PendingRunnerEvent),
+) -> usize {
+    let mut processed = 0;
+    let mut legacy_remaining = legacy_pending;
+    let mut sourced_remaining = sourced_pending;
+
+    while legacy_remaining > 0 || sourced_remaining > 0 {
+        let ingress = if sourced.prefer_sourced {
+            let sourced = (sourced_remaining > 0)
+                .then(|| sourced.receiver.try_recv().ok())
+                .flatten()
+                .map(ExecutionEventIngress::Sourced);
+            sourced.or_else(|| {
+                (legacy_remaining > 0)
+                    .then(|| legacy_rx.try_recv().ok())
+                    .flatten()
+                    .map(ExecutionEventIngress::Legacy)
+            })
+        } else {
+            let legacy = (legacy_remaining > 0)
+                .then(|| legacy_rx.try_recv().ok())
+                .flatten()
+                .map(ExecutionEventIngress::Legacy);
+            legacy.or_else(|| {
+                (sourced_remaining > 0)
+                    .then(|| sourced.receiver.try_recv().ok())
+                    .flatten()
+                    .map(ExecutionEventIngress::Sourced)
+            })
+        };
+        let Some(ingress) = ingress else {
+            break;
+        };
+
+        let event = match ingress {
+            ExecutionEventIngress::Legacy(event) => {
+                legacy_remaining -= 1;
+                sourced.prefer_sourced = true;
+                PendingRunnerEvent::ExecEvent(event)
+            }
+            ExecutionEventIngress::Sourced(event) => {
+                sourced_remaining -= 1;
+                sourced.prefer_sourced = false;
+                PendingRunnerEvent::SourcedExecEvent(event)
+            }
+        };
+        process(event);
+        processed += 1;
+    }
+
+    processed
 }
 
 #[cfg(feature = "node")]
@@ -644,7 +942,7 @@ mod tests {
             execution::{CancelAllOrders, TradingCommand},
             system::{ReconnectSocket, SocketState, SocketStateChange},
         },
-        msgbus::{TypedIntoHandler, stubs::get_typed_into_message_saving_handler},
+        msgbus::{TypedHandler, TypedIntoHandler, stubs::get_typed_into_message_saving_handler},
         runner::{
             TimeEventMessage, get_data_cmd_sender, get_time_event_sender, get_trading_cmd_sender,
             replace_exec_cmd_sender, try_get_time_event_sender, try_get_trading_cmd_sender,
@@ -652,11 +950,11 @@ mod tests {
         timer::{TimeEvent, TimeEventCallback},
     };
     use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_execution::engine::ExecutionEngine;
+    use nautilus_execution::engine::{ExecutionEngine, stubs::StubExecutionClient};
     use nautilus_model::{
         data::{Data, DataType, quote::QuoteTick},
         enums::{
-            AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+            AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
             TimeInForce,
         },
         events::{
@@ -668,7 +966,8 @@ mod tests {
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
             TraderId, Venue, VenueOrderId,
         },
-        reports::{FillReport, OrderStatusReport, PositionStatusReport},
+        instruments::{Instrument, stubs::audusd_sim},
+        reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
         types::{Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -725,6 +1024,7 @@ mod tests {
         let (data_evt_tx, _) = tokio::sync::mpsc::unbounded_channel();
         let (data_cmd_tx, _) = tokio::sync::mpsc::unbounded_channel();
         let (exec_evt_tx, _) = tokio::sync::mpsc::unbounded_channel();
+        let (sourced_exec_evt_tx, sourced_exec_evt_rx) = tokio::sync::mpsc::unbounded_channel();
         let (exec_cmd_tx, _) = tokio::sync::mpsc::unbounded_channel();
 
         AsyncRunner {
@@ -741,6 +1041,8 @@ mod tests {
             system_evt_tx,
             system_cmd_tx,
             exec_evt_tx,
+            sourced_exec_ingress: SourcedExecutionIngress::new(sourced_exec_evt_rx),
+            sourced_exec_evt_tx,
             exec_cmd_tx,
             data_evt_tx,
             data_cmd_tx,
@@ -821,6 +1123,17 @@ mod tests {
             signal_tx,
         );
         runner.bind_senders();
+        runner
+            .sourced_exec_evt_tx
+            .send(SourcedExecutionEvent::new(
+                ClientId::from("SOURCE-POLL"),
+                ExecutionEvent::Order(OrderEventAny::Submitted(
+                    OrderSubmittedSpec::builder()
+                        .client_order_id(ClientOrderId::from("O-SOURCED-POLL-001"))
+                        .build(),
+                )),
+            ))
+            .unwrap();
         get_system_command_sender()
             .send(test_system_command())
             .unwrap();
@@ -846,6 +1159,10 @@ mod tests {
                 processed_by_channel[3] += 1;
                 processed_order.push("exec_event");
             }
+            PendingRunnerEvent::SourcedExecEvent(_) => {
+                processed_by_channel[3] += 1;
+                processed_order.push("sourced_exec_event");
+            }
             PendingRunnerEvent::ExecCommand(_) => {
                 processed_by_channel[4] += 1;
                 processed_order.push("exec_command");
@@ -870,22 +1187,113 @@ mod tests {
             _ => panic!("Unexpected runner event"),
         });
 
-        assert_eq!(first, 8);
+        assert_eq!(first, 9);
         assert_eq!(second, 1);
-        assert_eq!(processed_by_channel, [1, 2, 1, 1, 1, 2, 1]);
+        assert_eq!(processed_by_channel, [1, 2, 1, 2, 1, 2, 1]);
         assert_eq!(
-            processed_order,
-            [
-                "time",
-                "system_event",
-                "system_event",
-                "system_command",
-                "exec_event",
-                "exec_command",
-                "data_event",
-                "data_command",
-                "data_event",
-            ]
+            &processed_order[..4],
+            ["time", "system_event", "system_event", "system_command"]
+        );
+        let mut execution_lanes = processed_order[4..6].to_vec();
+        execution_lanes.sort_unstable();
+        assert_eq!(execution_lanes, ["exec_event", "sourced_exec_event"]);
+        assert_eq!(
+            &processed_order[6..],
+            ["exec_command", "data_event", "data_command", "data_event"]
+        );
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    fn test_poll_pending_new_sourced_event_does_not_displace_entry_legacy_events() {
+        let mut runner = AsyncRunner::new();
+        let sourced_tx = runner.sourced_exec_evt_tx.clone();
+        for client_order_id in ["O-LEGACY-SNAPSHOT-001", "O-LEGACY-SNAPSHOT-002"] {
+            runner
+                .exec_evt_tx
+                .send(ExecutionEvent::Order(OrderEventAny::Submitted(
+                    OrderSubmittedSpec::builder()
+                        .client_order_id(ClientOrderId::from(client_order_id))
+                        .build(),
+                )))
+                .unwrap();
+        }
+
+        let mut legacy_seen = 0;
+        let first = runner.poll_pending(|event| match event {
+            PendingRunnerEvent::ExecEvent(_) => {
+                legacy_seen += 1;
+                if legacy_seen == 1 {
+                    sourced_tx
+                        .send(SourcedExecutionEvent::new(
+                            ClientId::from("SOURCE-REENTRANT"),
+                            ExecutionEvent::Order(OrderEventAny::Submitted(
+                                OrderSubmittedSpec::builder()
+                                    .client_order_id(ClientOrderId::from("O-SOURCED-REENTRANT"))
+                                    .build(),
+                            )),
+                        ))
+                        .unwrap();
+                }
+            }
+            _ => panic!("Only entry-snapshot legacy events should be processed"),
+        });
+
+        assert_eq!(first, 2);
+        assert_eq!(legacy_seen, 2);
+        assert_eq!(runner.sourced_exec_ingress.len(), 1);
+        assert_eq!(
+            runner.poll_pending(|event| {
+                assert!(matches!(event, PendingRunnerEvent::SourcedExecEvent(_)));
+            }),
+            1
+        );
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    fn test_poll_pending_new_legacy_event_does_not_displace_entry_sourced_events() {
+        let mut runner = AsyncRunner::new();
+        let legacy_tx = runner.exec_evt_tx.clone();
+        for client_order_id in ["O-SOURCED-SNAPSHOT-001", "O-SOURCED-SNAPSHOT-002"] {
+            runner
+                .sourced_exec_evt_tx
+                .send(SourcedExecutionEvent::new(
+                    ClientId::from("SOURCE-SNAPSHOT"),
+                    ExecutionEvent::Order(OrderEventAny::Submitted(
+                        OrderSubmittedSpec::builder()
+                            .client_order_id(ClientOrderId::from(client_order_id))
+                            .build(),
+                    )),
+                ))
+                .unwrap();
+        }
+
+        let mut sourced_seen = 0;
+        let first = runner.poll_pending(|event| match event {
+            PendingRunnerEvent::SourcedExecEvent(_) => {
+                sourced_seen += 1;
+                if sourced_seen == 1 {
+                    legacy_tx
+                        .send(ExecutionEvent::Order(OrderEventAny::Submitted(
+                            OrderSubmittedSpec::builder()
+                                .client_order_id(ClientOrderId::from("O-LEGACY-REENTRANT"))
+                                .build(),
+                        )))
+                        .unwrap();
+                }
+            }
+            _ => panic!("Only entry-snapshot sourced events should be processed"),
+        });
+
+        assert_eq!(first, 2);
+        assert_eq!(sourced_seen, 2);
+        assert_eq!(runner.channels.exec_evt_rx.len(), 1);
+        assert_eq!(
+            runner.poll_pending(|event| {
+                assert!(matches!(event, PendingRunnerEvent::ExecEvent(_)));
+            }),
+            1
         );
     }
 
@@ -919,6 +1327,273 @@ mod tests {
             runner.recv().await,
             Some(PendingRunnerEvent::SystemCommand(_))
         ));
+    }
+
+    #[cfg(feature = "node")]
+    #[tokio::test]
+    async fn test_recv_fairly_services_ready_execution_lanes_without_starvation() {
+        let (_time_evt_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_data_cmd_tx, data_cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (signal_tx, signal_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut runner = create_test_runner(
+            time_evt_rx,
+            data_evt_rx,
+            data_cmd_rx,
+            exec_evt_rx,
+            exec_cmd_rx,
+            signal_rx,
+            signal_tx,
+        );
+
+        for index in 0..2 {
+            exec_evt_tx
+                .send(ExecutionEvent::Order(OrderEventAny::Submitted(
+                    OrderSubmittedSpec::builder()
+                        .client_order_id(ClientOrderId::from(format!("O-LEGACY-{index}")))
+                        .build(),
+                )))
+                .unwrap();
+            runner
+                .sourced_exec_evt_tx
+                .send(SourcedExecutionEvent::new(
+                    ClientId::from("SOURCE-RECV"),
+                    ExecutionEvent::Order(OrderEventAny::Submitted(
+                        OrderSubmittedSpec::builder()
+                            .client_order_id(ClientOrderId::from(format!("O-SOURCED-{index}")))
+                            .build(),
+                    )),
+                ))
+                .unwrap();
+        }
+
+        let mut legacy_ids = Vec::new();
+        let mut sourced_ids = Vec::new();
+
+        for _ in 0..4 {
+            match runner.recv().await.unwrap() {
+                PendingRunnerEvent::ExecEvent(ExecutionEvent::Order(event)) => {
+                    legacy_ids.push(event.client_order_id());
+                }
+                PendingRunnerEvent::SourcedExecEvent(SourcedExecutionEvent {
+                    event: ExecutionEvent::Order(event),
+                    ..
+                }) => {
+                    sourced_ids.push(event.client_order_id());
+                }
+                _ => panic!("Unexpected runner event"),
+            }
+        }
+
+        assert_eq!(
+            legacy_ids,
+            [
+                ClientOrderId::from("O-LEGACY-0"),
+                ClientOrderId::from("O-LEGACY-1")
+            ]
+        );
+        assert_eq!(
+            sourced_ids,
+            [
+                ClientOrderId::from("O-SOURCED-0"),
+                ClientOrderId::from("O-SOURCED-1")
+            ]
+        );
+    }
+
+    #[rstest]
+    fn test_sourced_sink_uses_only_source_bound_lane_for_entire_event_stream() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let source_id = ClientId::from("SOURCE-ONLY");
+        let sink = get_sourced_exec_event_sink(source_id);
+        let account = AccountState::new(
+            AccountId::from("SOURCE-ONLY-001"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        );
+        let report = PositionStatusReport::new(
+            AccountId::from("SOURCE-ONLY-001"),
+            InstrumentId::from("EUR/USD.SIM"),
+            PositionSide::Long,
+            Quantity::from(100_000),
+            UnixNanos::from(3),
+            UnixNanos::from(4),
+            None,
+            Some(PositionId::from("P-SOURCE-ONLY")),
+            None,
+        );
+
+        sink.send(ExecutionEvent::Account(account)).unwrap();
+        sink.send(ExecutionEvent::Report(ExecutionReport::Position(Box::new(
+            report,
+        ))))
+        .unwrap();
+
+        let (mut channels, mut sourced) = runner.take_channels_with_sourced();
+        let first = sourced.receiver.try_recv().unwrap();
+        let second = sourced.receiver.try_recv().unwrap();
+        assert_eq!(sink.client_id, source_id);
+        assert_eq!(first.client_id, source_id);
+        assert!(matches!(first.event, ExecutionEvent::Account(_)));
+        assert_eq!(second.client_id, source_id);
+        assert!(matches!(
+            second.event,
+            ExecutionEvent::Report(ExecutionReport::Position(_))
+        ));
+        assert!(channels.exec_evt_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_sourced_sink_closed_lane_returns_event_without_legacy_fallback() {
+        let (sourced_tx, sourced_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_legacy_tx, mut legacy_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        drop(sourced_rx);
+        let sink = SourcedExecutionEventSink::new(ClientId::from("SOURCE-CLOSED"), sourced_tx);
+
+        let error = sink
+            .send(ExecutionEvent::Account(AccountState::new(
+                AccountId::from("SOURCE-CLOSED-001"),
+                AccountType::Cash,
+                vec![],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+                None,
+            )))
+            .expect_err("closed sourced lane must return the original event");
+
+        assert!(matches!(error.0, ExecutionEvent::Account(_)));
+        assert!(legacy_rx.try_recv().is_err());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_standalone_runner_dispatches_sourced_non_report_event() {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        let mut runner = AsyncRunner::new();
+        let source_tx = runner.sourced_exec_evt_tx.clone();
+        let signal_tx = runner.signal_tx.clone();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let received_handler = received.clone();
+        msgbus::register_account_state_endpoint(
+            MessagingSwitchboard::portfolio_update_account(),
+            TypedHandler::from(move |account: &AccountState| {
+                received_handler.borrow_mut().push(account.account_id);
+                signal_tx.send(()).unwrap();
+            }),
+        );
+        source_tx
+            .send(SourcedExecutionEvent::new(
+                ClientId::from("SOURCE-STANDALONE"),
+                ExecutionEvent::Account(AccountState::new(
+                    AccountId::from("SOURCE-STANDALONE-001"),
+                    AccountType::Cash,
+                    vec![],
+                    vec![],
+                    true,
+                    UUID4::new(),
+                    UnixNanos::from(1),
+                    UnixNanos::from(2),
+                    None,
+                )),
+            ))
+            .unwrap();
+
+        runner.run().await;
+
+        assert_eq!(
+            received.borrow().as_slice(),
+            &[AccountId::from("SOURCE-STANDALONE-001")]
+        );
+    }
+
+    #[rstest]
+    fn test_sourced_non_strict_reports_dispatch_directly_to_legacy_endpoint() {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        let legacy_reports = Rc::new(RefCell::new(Vec::new()));
+        let legacy_handler = legacy_reports.clone();
+        msgbus::register_execution_report_endpoint(
+            MessagingSwitchboard::exec_engine_reconcile_execution_report(),
+            TypedIntoHandler::from(move |report: ExecutionReport| {
+                legacy_handler.borrow_mut().push(report);
+            }),
+        );
+        let strict_reports = Rc::new(RefCell::new(Vec::new()));
+        let strict_handler = strict_reports.clone();
+        msgbus::register_sourced_execution_report_endpoint(
+            MessagingSwitchboard::exec_engine_reconcile_sourced_execution_report(),
+            TypedIntoHandler::from(move |report: SourcedExecutionReport| {
+                strict_handler.borrow_mut().push(report);
+            }),
+        );
+        let source_client_id = ClientId::from("SOURCE-NON-STRICT");
+        let account_id = AccountId::from("SOURCE-NON-STRICT-001");
+        let instrument_id = InstrumentId::from("EUR/USD.SIM");
+        let order_report = OrderStatusReport::new(
+            account_id,
+            instrument_id,
+            Some(ClientOrderId::from("O-SOURCE-NON-STRICT")),
+            VenueOrderId::from("V-SOURCE-NON-STRICT"),
+            OrderSide::Buy.into(),
+            OrderType::Market,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from(100_000),
+            Quantity::from(0),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            UnixNanos::from(3),
+            None,
+        );
+        let position_report = PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from(100_000),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+            Some(PositionId::from("P-SOURCE-POSITION")),
+            None,
+        );
+        let mass_status = ExecutionMassStatus::new(
+            source_client_id,
+            account_id,
+            instrument_id.venue,
+            UnixNanos::from(4),
+            None,
+        );
+
+        for report in [
+            ExecutionReport::OrderWithFills(Box::new(order_report), Vec::new()),
+            ExecutionReport::Position(Box::new(position_report)),
+            ExecutionReport::MassStatus(Box::new(mass_status)),
+        ] {
+            AsyncRunner::handle_sourced_exec_event(SourcedExecutionEvent::new(
+                source_client_id,
+                ExecutionEvent::Report(report),
+            ));
+        }
+
+        assert!(matches!(
+            legacy_reports.borrow().as_slice(),
+            [
+                ExecutionReport::OrderWithFills(_, _),
+                ExecutionReport::Position(_),
+                ExecutionReport::MassStatus(_),
+            ]
+        ));
+        assert!(strict_reports.borrow().is_empty());
     }
 
     #[rstest]
@@ -1492,6 +2167,173 @@ mod tests {
             }
             _ => panic!("Expected OrderStatusReport"),
         }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum AmbiguousRuntimeReportKind {
+        OrderStatus,
+        Fill,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum RuntimeReportIngressLane {
+        Legacy,
+        Sourced,
+    }
+
+    #[rstest]
+    #[case::sourced_order(
+        AmbiguousRuntimeReportKind::OrderStatus,
+        RuntimeReportIngressLane::Sourced
+    )]
+    #[case::sourced_fill(AmbiguousRuntimeReportKind::Fill, RuntimeReportIngressLane::Sourced)]
+    #[case::legacy_order(
+        AmbiguousRuntimeReportKind::OrderStatus,
+        RuntimeReportIngressLane::Legacy
+    )]
+    #[case::legacy_fill(AmbiguousRuntimeReportKind::Fill, RuntimeReportIngressLane::Legacy)]
+    fn test_runtime_report_routing_respects_ingress_source_compatibility(
+        #[case] report_kind: AmbiguousRuntimeReportKind,
+        #[case] ingress_lane: RuntimeReportIngressLane,
+    ) {
+        std::thread::spawn(move || {
+            msgbus::get_message_bus().borrow_mut().dispose();
+
+            let clock = Rc::new(RefCell::new(TestClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::default()));
+            let exec_engine = Rc::new(RefCell::new(ExecutionEngine::new(
+                clock,
+                cache.clone(),
+                None,
+            )));
+            let instrument = audusd_sim();
+            let account_id = AccountId::from("SHARED-ACCOUNT");
+            let venue_router_id = ClientId::from("VENUE-A");
+            let source_id = ClientId::from("SOURCE-B");
+
+            let venue_router = StubExecutionClient::new(
+                venue_router_id,
+                account_id,
+                instrument.id().venue,
+                OmsType::Netting,
+                None,
+            );
+            let venue_router_registrations = venue_router.registered_external_order_ids();
+            let source = StubExecutionClient::new(
+                source_id,
+                account_id,
+                Venue::from("SOURCE-B"),
+                OmsType::Netting,
+                None,
+            )
+            .with_handles_all_order_venues();
+            let source_registrations = source.registered_external_order_ids();
+
+            {
+                let mut engine = exec_engine.borrow_mut();
+                engine.register_client(Box::new(venue_router)).unwrap();
+                engine.register_client(Box::new(source)).unwrap();
+                engine
+                    .cache()
+                    .borrow_mut()
+                    .add_instrument(instrument.clone().into())
+                    .unwrap();
+            }
+            ExecutionEngine::register_msgbus_handlers(&exec_engine);
+
+            let runner = AsyncRunner::new();
+            runner.bind_senders();
+            let (client_order_id, event) = match report_kind {
+                AmbiguousRuntimeReportKind::OrderStatus => {
+                    let client_order_id = ClientOrderId::from("O-RUNTIME-ORDER");
+                    let report = OrderStatusReport::new(
+                        account_id,
+                        instrument.id(),
+                        Some(client_order_id),
+                        VenueOrderId::from("V-RUNTIME-ORDER"),
+                        OrderSide::Buy.into(),
+                        OrderType::Market,
+                        TimeInForce::Gtc,
+                        OrderStatus::Accepted,
+                        Quantity::from(100_000),
+                        Quantity::from(0),
+                        UnixNanos::from(1),
+                        UnixNanos::from(2),
+                        UnixNanos::from(3),
+                        None,
+                    );
+                    (
+                        client_order_id,
+                        ExecutionEvent::Report(ExecutionReport::Order(Box::new(report))),
+                    )
+                }
+                AmbiguousRuntimeReportKind::Fill => {
+                    let client_order_id = ClientOrderId::from("O-RUNTIME-FILL");
+                    let report = FillReport::new(
+                        account_id,
+                        instrument.id(),
+                        VenueOrderId::from("V-RUNTIME-FILL"),
+                        TradeId::from("T-RUNTIME-FILL"),
+                        OrderSide::Buy,
+                        Quantity::from(100_000),
+                        Price::from("1.10000"),
+                        Money::from("1 USD"),
+                        LiquiditySide::Taker,
+                        Some(client_order_id),
+                        None,
+                        UnixNanos::from(1),
+                        UnixNanos::from(2),
+                        None,
+                    );
+                    (
+                        client_order_id,
+                        ExecutionEvent::Report(ExecutionReport::Fill(Box::new(report))),
+                    )
+                }
+            };
+
+            match ingress_lane {
+                RuntimeReportIngressLane::Sourced => {
+                    get_sourced_exec_event_sink(source_id).send(event).unwrap();
+                    let (channels, mut sourced) = runner.take_channels_with_sourced();
+                    AsyncRunner::handle_sourced_exec_event(
+                        sourced
+                            .receiver
+                            .try_recv()
+                            .expect("runtime report should reach the sourced execution-event lane"),
+                    );
+                    assert!(channels.exec_evt_rx.is_empty());
+                }
+                RuntimeReportIngressLane::Legacy => {
+                    get_exec_event_sender().send(event).unwrap();
+                    let (mut channels, sourced) = runner.take_channels_with_sourced();
+                    AsyncRunner::handle_exec_event(
+                        channels
+                            .exec_evt_rx
+                            .try_recv()
+                            .expect("runtime report should reach the legacy execution-event lane"),
+                    );
+                    assert_eq!(sourced.len(), 0);
+                }
+            }
+
+            let origin = cache.borrow().client_id(&client_order_id).copied();
+            let venue_router_registered = venue_router_registrations.borrow().clone();
+            let source_registered = source_registrations.borrow().clone();
+            let expected = match ingress_lane {
+                RuntimeReportIngressLane::Sourced => {
+                    (Some(source_id), Vec::new(), vec![client_order_id])
+                }
+                RuntimeReportIngressLane::Legacy => (None, vec![client_order_id], Vec::new()),
+            };
+            assert_eq!(
+                (origin, venue_router_registered, source_registered),
+                expected,
+                "only the opted-in sourced lane may enforce the emitting execution client",
+            );
+        })
+        .join()
+        .unwrap();
     }
 
     #[tokio::test]

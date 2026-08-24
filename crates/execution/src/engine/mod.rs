@@ -48,7 +48,8 @@ use nautilus_common::{
         ExecutionReport,
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
-            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+            QueryAccount, QueryOrder, SourcedExecutionReport, SubmitOrder, SubmitOrderList,
+            TradingCommand,
         },
     },
     msgbus::{
@@ -208,12 +209,23 @@ impl ExecutionEngine {
             }),
         );
 
-        let weak3 = weak;
+        let weak3 = weak.clone();
         msgbus::register_execution_report_endpoint(
             MessagingSwitchboard::exec_engine_reconcile_execution_report(),
             TypedIntoHandler::from(move |report: ExecutionReport| {
                 if let Some(rc) = weak3.upgrade() {
                     rc.borrow_mut().reconcile_execution_report(&report);
+                }
+            }),
+        );
+
+        msgbus::register_sourced_execution_report_endpoint(
+            MessagingSwitchboard::exec_engine_reconcile_sourced_execution_report(),
+            TypedIntoHandler::from(move |report: SourcedExecutionReport| {
+                if let Some(rc) = weak.upgrade()
+                    && let Err(e) = Self::reconcile_sourced_execution_report(&rc, &report)
+                {
+                    log::error!("Cannot reconcile sourced execution report: {e:#}");
                 }
             }),
         );
@@ -1045,6 +1057,205 @@ impl ExecutionEngine {
         self.cache.borrow_mut().flush_db();
     }
 
+    /// Validates a sourced runtime execution report without mutating engine state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the report is not an order or fill report, its source client is not
+    /// registered, its account or venue falls outside the source client's scope, or its order
+    /// identity conflicts with cached state.
+    pub fn preflight_sourced_execution_report(
+        &self,
+        sourced: &SourcedExecutionReport,
+    ) -> anyhow::Result<()> {
+        let client = self.clients.get(&sourced.client_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Execution report source {} is not registered",
+                sourced.client_id
+            )
+        })?;
+
+        match &sourced.report {
+            ExecutionReport::Order(report) => {
+                self.preflight_sourced_order_reference(
+                    client,
+                    report.account_id,
+                    report.instrument_id,
+                    report.client_order_id,
+                    report.venue_order_id,
+                )?;
+            }
+            ExecutionReport::Fill(report) => {
+                self.preflight_sourced_order_reference(
+                    client,
+                    report.account_id,
+                    report.instrument_id,
+                    report.client_order_id,
+                    report.venue_order_id,
+                )?;
+            }
+            report => {
+                anyhow::bail!("Sourced runtime reconciliation does not support {report} reports")
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Reconciles a sourced runtime order or fill report through both validation fences.
+    ///
+    /// The raw reconciliation topic retains its existing bare report payload. No engine borrow is
+    /// held while publishing, so subscribers may update state before the second validation fence.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error without applying the report if either validation fence fails.
+    pub fn reconcile_sourced_execution_report(
+        engine: &Rc<RefCell<Self>>,
+        sourced: &SourcedExecutionReport,
+    ) -> anyhow::Result<()> {
+        engine
+            .borrow()
+            .preflight_sourced_execution_report(sourced)?;
+
+        match &sourced.report {
+            ExecutionReport::Order(report) => msgbus::publish_any(
+                MessagingSwitchboard::reconciliation_raw_order_status_report_topic(),
+                report.as_ref(),
+            ),
+            ExecutionReport::Fill(report) => msgbus::publish_any(
+                MessagingSwitchboard::reconciliation_raw_fill_report_topic(),
+                report.as_ref(),
+            ),
+            _ => unreachable!("sourced report variant was validated before publication"),
+        }
+
+        engine
+            .borrow()
+            .preflight_sourced_execution_report(sourced)?;
+
+        let mut engine = engine.borrow_mut();
+
+        match &sourced.report {
+            ExecutionReport::Order(report) => {
+                engine.report_count += 1;
+                engine.apply_order_status_report(report, Some(sourced.client_id));
+            }
+            ExecutionReport::Fill(report) => {
+                engine.report_count += 1;
+                engine.apply_fill_report(report, Some(sourced.client_id));
+            }
+            _ => unreachable!("sourced report variant was validated before application"),
+        }
+
+        Ok(())
+    }
+
+    fn preflight_sourced_report_scope(
+        client: &ExecutionClientAdapter,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            account_id == client.account_id,
+            "Execution report account {account_id} did not match source account {}",
+            client.account_id,
+        );
+        anyhow::ensure!(
+            client.handles_order_venue(instrument_id.venue),
+            "Execution client {} does not handle report venue {}",
+            client.client_id,
+            instrument_id.venue,
+        );
+        Ok(())
+    }
+
+    fn preflight_sourced_order_reference(
+        &self,
+        client: &ExecutionClientAdapter,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        direct_client_order_id: Option<ClientOrderId>,
+        venue_order_id: VenueOrderId,
+    ) -> anyhow::Result<()> {
+        Self::preflight_sourced_report_scope(client, account_id, instrument_id)?;
+
+        let cache = self.cache.borrow();
+        let indexed_client_order_id = cache.client_order_id(&venue_order_id).copied();
+
+        if let (Some(direct), Some(indexed)) = (direct_client_order_id, indexed_client_order_id) {
+            anyhow::ensure!(
+                direct == indexed,
+                "Execution report client order ID {direct} conflicts with venue order ID \
+                 {venue_order_id} mapped to {indexed}",
+            );
+        }
+
+        let direct_order = direct_client_order_id
+            .and_then(|client_order_id| cache.order(&client_order_id).map(|order| order.clone()));
+        let indexed_order = indexed_client_order_id
+            .and_then(|client_order_id| cache.order(&client_order_id).map(|order| order.clone()));
+
+        if let Some(indexed_client_order_id) = indexed_client_order_id {
+            anyhow::ensure!(
+                indexed_order.is_some(),
+                "Venue order ID {venue_order_id} mapped to missing order \
+                 {indexed_client_order_id}",
+            );
+        }
+
+        if let (Some(direct), Some(indexed)) = (&direct_order, &indexed_order) {
+            anyhow::ensure!(
+                direct.client_order_id() == indexed.client_order_id(),
+                "Execution report IDs resolved to different cached orders",
+            );
+        }
+
+        let order = direct_order.or(indexed_order);
+        if let Some(order) = order {
+            let client_order_id = order.client_order_id();
+            let cached_source = cache.client_id(&client_order_id).copied();
+            anyhow::ensure!(
+                cached_source == Some(client.client_id),
+                "Cached order {client_order_id} origin {cached_source:?} did not match report \
+                 source {}",
+                client.client_id,
+            );
+            anyhow::ensure!(
+                order.instrument_id() == instrument_id,
+                "Cached order {client_order_id} instrument {} did not match report instrument \
+                 {instrument_id}",
+                order.instrument_id(),
+            );
+
+            if let Some(cached_account_id) = order.account_id() {
+                anyhow::ensure!(
+                    cached_account_id == account_id,
+                    "Cached order {client_order_id} account {cached_account_id} did not match \
+                     report account {account_id}",
+                );
+            }
+
+            if let Some(cached_venue_order_id) = order.venue_order_id() {
+                anyhow::ensure!(
+                    cached_venue_order_id == venue_order_id
+                        || indexed_client_order_id == Some(client_order_id),
+                    "Cached order {client_order_id} venue order ID {cached_venue_order_id} did \
+                     not match report venue order ID {venue_order_id}, which is not a known alias",
+                );
+            }
+        } else if direct_client_order_id.is_none() && indexed_client_order_id.is_none() {
+            let derived_client_order_id = ClientOrderId::from(venue_order_id.as_str());
+            anyhow::ensure!(
+                !cache.order_exists(&derived_client_order_id),
+                "Derived client order ID {derived_client_order_id} already exists without venue \
+                 order ID {venue_order_id} mapping",
+            );
+        }
+
+        Ok(())
+    }
+
     /// Reconciles an execution report.
     pub fn reconcile_execution_report(&mut self, report: &ExecutionReport) {
         if !matches!(report, ExecutionReport::MassStatus(_)) {
@@ -1085,6 +1296,14 @@ impl ExecutionEngine {
             report,
         );
 
+        self.apply_order_status_report(report, None);
+    }
+
+    fn apply_order_status_report(
+        &mut self,
+        report: &OrderStatusReport,
+        source_client_id: Option<ClientId>,
+    ) {
         let cache = self.cache.borrow();
 
         let order = report
@@ -1109,7 +1328,7 @@ impl ExecutionEngine {
                 self.handle_event(event);
             }
         } else {
-            self.create_external_order(report, instrument.as_ref());
+            self.create_external_order(report, instrument.as_ref(), source_client_id);
         }
     }
 
@@ -1117,6 +1336,7 @@ impl ExecutionEngine {
         &mut self,
         report: &OrderStatusReport,
         instrument: Option<&InstrumentAny>,
+        source_client_id: Option<ClientId>,
     ) {
         let Some(instrument) = instrument else {
             log::warn!(
@@ -1127,7 +1347,9 @@ impl ExecutionEngine {
             return;
         };
 
-        let Some(order) = self.materialize_external_order_from_status(report) else {
+        let Some(order) =
+            self.materialize_external_order_from_status_with_source(report, source_client_id)
+        else {
             return;
         };
 
@@ -1150,6 +1372,14 @@ impl ExecutionEngine {
     fn materialize_external_order_from_status(
         &mut self,
         report: &OrderStatusReport,
+    ) -> Option<OrderAny> {
+        self.materialize_external_order_from_status_with_source(report, None)
+    }
+
+    fn materialize_external_order_from_status_with_source(
+        &mut self,
+        report: &OrderStatusReport,
+        source_client_id: Option<ClientId>,
     ) -> Option<OrderAny> {
         let strategy_id = self.resolve_external_strategy(&report.instrument_id);
         if self.should_filter_unclaimed_external_order(strategy_id) {
@@ -1180,13 +1410,18 @@ impl ExecutionEngine {
             return None;
         }
 
-        self.materialize_external_order_from_status_with_strategy(report, strategy_id)
+        self.materialize_external_order_from_status_with_strategy(
+            report,
+            strategy_id,
+            source_client_id,
+        )
     }
 
     fn materialize_external_order_from_status_with_strategy(
         &self,
         report: &OrderStatusReport,
         strategy_id: StrategyId,
+        source_client_id: Option<ClientId>,
     ) -> Option<OrderAny> {
         let client_order_id = report
             .client_order_id
@@ -1247,6 +1482,10 @@ impl ExecutionEngine {
             }
         };
 
+        let cache_source_client_id = source_client_id.or_else(|| {
+            self.source_client_id_for_account(report.account_id, &report.instrument_id)
+        });
+
         self.materialize_external_order(
             initialized,
             client_order_id,
@@ -1255,7 +1494,8 @@ impl ExecutionEngine {
             strategy_id,
             ts_now,
             Some(report.order_status),
-            self.source_client_id_for_account(report.account_id, &report.instrument_id),
+            cache_source_client_id,
+            source_client_id,
         )
     }
 
@@ -1266,7 +1506,11 @@ impl ExecutionEngine {
     ///
     /// This handles venue-initiated fills (most commonly Hyperliquid liquidations)
     /// where the venue does not surface a user-level order on its order channel.
-    fn materialize_external_order_from_fill(&mut self, report: &FillReport) -> Option<OrderAny> {
+    fn materialize_external_order_from_fill(
+        &mut self,
+        report: &FillReport,
+        source_client_id: Option<ClientId>,
+    ) -> Option<OrderAny> {
         let strategy_id = self.resolve_external_strategy(&report.instrument_id);
         if self.should_filter_unclaimed_external_order(strategy_id) {
             self.filtered_unclaimed_external_order_count += 1;
@@ -1338,6 +1582,10 @@ impl ExecutionEngine {
             None, // tags
         );
 
+        let cache_source_client_id = source_client_id.or_else(|| {
+            self.source_client_id_for_account(report.account_id, &report.instrument_id)
+        });
+
         self.materialize_external_order(
             initialized,
             client_order_id,
@@ -1346,7 +1594,8 @@ impl ExecutionEngine {
             strategy_id,
             ts_now,
             None,
-            self.source_client_id_for_account(report.account_id, &report.instrument_id),
+            cache_source_client_id,
+            source_client_id,
         )
     }
 
@@ -1377,7 +1626,9 @@ impl ExecutionEngine {
         ts_now: UnixNanos,
         order_status: Option<OrderStatus>,
         source_client_id: Option<ClientId>,
+        exact_source_client_id: Option<ClientId>,
     ) -> Option<OrderAny> {
+        let initialized_event_id = initialized.event_id;
         let initialized = OrderEventAny::Initialized(initialized);
         let order = match OrderAny::from_events(vec![initialized.clone()]) {
             Ok(order) => order,
@@ -1387,17 +1638,56 @@ impl ExecutionEngine {
             }
         };
 
+        let exact_source_client = if let Some(source_client_id) = exact_source_client_id {
+            let Some(client) = self.clients.get(&source_client_id) else {
+                log::error!(
+                    "Cannot register external order {client_order_id}: source client \
+                     {source_client_id} is no longer registered"
+                );
+                return None;
+            };
+            Some(client)
+        } else {
+            None
+        };
+
         {
             let mut cache = self.cache.borrow_mut();
+            let order_existed_before = cache.order_exists(&client_order_id);
             if let Err(e) = cache.add_venue_order_id(&client_order_id, &venue_order_id, false) {
                 log::warn!("Failed to claim venue order ID for external order: {e}");
                 return None;
             }
 
             if let Err(e) = cache.add_order(order.clone(), None, source_client_id, false) {
-                log::error!("Failed to add external order to cache: {e}");
-                return None;
+                let committed_to_memory = exact_source_client.is_some()
+                    && source_client_id == exact_source_client_id
+                    && !order_existed_before
+                    && cache
+                        .order(&client_order_id)
+                        .is_some_and(|cached| cached.init_event().event_id == initialized_event_id)
+                    && cache.client_id(&client_order_id).copied() == exact_source_client_id
+                    && cache.client_order_id(&venue_order_id) == Some(&client_order_id);
+
+                if committed_to_memory {
+                    log::error!(
+                        "Failed to persist external order after committing it to memory: {e}"
+                    );
+                } else {
+                    log::error!("Failed to add external order to cache: {e}");
+                    return None;
+                }
             }
+        }
+
+        if let Some(client) = exact_source_client {
+            client.register_external_order(
+                client_order_id,
+                venue_order_id,
+                instrument_id,
+                strategy_id,
+                ts_now,
+            );
         }
 
         self.publish_order_event(&initialized);
@@ -1411,13 +1701,15 @@ impl ExecutionEngine {
             ),
         }
 
-        self.register_external_order(
-            client_order_id,
-            venue_order_id,
-            instrument_id,
-            strategy_id,
-            ts_now,
-        );
+        if exact_source_client.is_none() {
+            self.register_external_order(
+                client_order_id,
+                venue_order_id,
+                instrument_id,
+                strategy_id,
+                ts_now,
+            );
+        }
 
         Some(order)
     }
@@ -1457,6 +1749,10 @@ impl ExecutionEngine {
             report,
         );
 
+        self.apply_fill_report(report, None);
+    }
+
+    fn apply_fill_report(&mut self, report: &FillReport, source_client_id: Option<ClientId>) {
         let cache = self.cache.borrow();
 
         let order = report
@@ -1484,7 +1780,9 @@ impl ExecutionEngine {
         let order = match order {
             Some(order) => order,
             None => {
-                let Some(order) = self.materialize_external_order_from_fill(report) else {
+                let Some(order) =
+                    self.materialize_external_order_from_fill(report, source_client_id)
+                else {
                     return;
                 };
                 let ts_now = self.clock.borrow().timestamp_ns();
@@ -4573,6 +4871,7 @@ mod tests {
             instrument.id(),
             order.strategy_id(),
             UnixNanos::default(),
+            None,
             None,
             None,
         );

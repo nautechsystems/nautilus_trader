@@ -68,7 +68,7 @@ use super::{
 };
 use crate::messages::{
     data::{DataCommand, DataResponse},
-    execution::{ExecutionReport, TradingCommand},
+    execution::{ExecutionReport, SourcedExecutionReport, TradingCommand},
 };
 
 /// Registers a handler for an endpoint using runtime type dispatch (Any).
@@ -189,6 +189,17 @@ pub fn register_execution_report_endpoint(
     get_message_bus()
         .borrow_mut()
         .endpoints_exec_reports
+        .register(endpoint, handler);
+}
+
+/// Registers a sourced execution report handler at an endpoint (ownership-based).
+pub fn register_sourced_execution_report_endpoint(
+    endpoint: MStr<Endpoint>,
+    handler: TypedIntoHandler<SourcedExecutionReport>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .endpoints_sourced_exec_reports
         .register(endpoint, handler);
 }
 
@@ -1478,6 +1489,16 @@ pub fn send_execution_report(endpoint: MStr<Endpoint>, report: ExecutionReport) 
         report,
         |bus| bus.endpoints_exec_reports.get(endpoint),
         "send_execution_report",
+    );
+}
+
+/// Sends a sourced execution report to an endpoint handler, transferring ownership.
+pub fn send_sourced_execution_report(endpoint: MStr<Endpoint>, report: SourcedExecutionReport) {
+    send_endpoint_owned(
+        endpoint,
+        report,
+        |bus| bus.endpoints_sourced_exec_reports.get(endpoint),
+        "send_sourced_execution_report",
     );
 }
 

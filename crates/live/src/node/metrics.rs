@@ -23,6 +23,10 @@ use nautilus_common::{
     runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
 };
 
+#[cfg(test)]
+use crate::runner::SourcedExecutionEvent;
+use crate::runner::SourcedExecutionIngress;
+
 /// Primitive metrics for one `LiveNode::run` dispatch channel after startup.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -358,13 +362,14 @@ impl RunnerChannelQueueDepths {
     pub(crate) fn from_receivers(
         time_events: &tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         exec_events: &tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        sourced_exec_events: &SourcedExecutionIngress,
         exec_commands: &tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
         data_events: &tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         data_commands: &tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     ) -> Self {
         Self {
             time_events: time_events.len(),
-            exec_events: exec_events.len(),
+            exec_events: exec_events.len().saturating_add(sourced_exec_events.len()),
             exec_commands: exec_commands.len(),
             data_events: data_events.len(),
             data_commands: data_commands.len(),
@@ -438,7 +443,7 @@ mod tests {
     use nautilus_model::{
         enums::AccountType,
         events::account::state::AccountState,
-        identifiers::{AccountId, TraderId, Venue},
+        identifiers::{AccountId, ClientId, TraderId, Venue},
         instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt},
     };
     use rstest::rstest;
@@ -838,6 +843,9 @@ mod tests {
     fn test_runner_metrics_queue_depths_use_receiver_lengths() {
         let (time_tx, time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
         let (exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (sourced_exec_evt_tx, sourced_exec_evt_rx) =
+            tokio::sync::mpsc::unbounded_channel::<SourcedExecutionEvent>();
+        let sourced_exec_ingress = SourcedExecutionIngress::new(sourced_exec_evt_rx);
         let (exec_cmd_tx, exec_cmd_rx) =
             tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
         let (data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -848,6 +856,12 @@ mod tests {
         for _ in 0..2 {
             exec_evt_tx.send(stub_exec_event()).unwrap();
         }
+        sourced_exec_evt_tx
+            .send(SourcedExecutionEvent {
+                client_id: ClientId::from("SIM"),
+                event: stub_exec_event(),
+            })
+            .unwrap();
 
         for _ in 0..3 {
             exec_cmd_tx
@@ -870,6 +884,7 @@ mod tests {
             RunnerChannelQueueDepths::from_receivers(
                 &time_rx,
                 &exec_evt_rx,
+                &sourced_exec_ingress,
                 &exec_cmd_rx,
                 &data_evt_rx,
                 &data_cmd_rx,
@@ -879,7 +894,7 @@ mod tests {
         let snapshot = metrics.snapshot();
 
         assert_eq!(snapshot.time_events.queue_depth, 1);
-        assert_eq!(snapshot.exec_events.queue_depth, 2);
+        assert_eq!(snapshot.exec_events.queue_depth, 3);
         assert_eq!(snapshot.exec_commands.queue_depth, 3);
         assert_eq!(snapshot.data_events.queue_depth, 4);
         assert_eq!(snapshot.data_commands.queue_depth, 5);

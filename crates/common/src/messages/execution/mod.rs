@@ -54,6 +54,23 @@ pub enum ExecutionReport {
     MassStatus(Box<ExecutionMassStatus>),
 }
 
+/// An execution report stamped with the client that emitted it.
+#[derive(Clone, Debug)]
+pub struct SourcedExecutionReport {
+    /// The execution client that emitted the report.
+    pub client_id: ClientId,
+    /// The report emitted by the execution client.
+    pub report: ExecutionReport,
+}
+
+impl SourcedExecutionReport {
+    /// Creates a new [`SourcedExecutionReport`] instance.
+    #[must_use]
+    pub const fn new(client_id: ClientId, report: ExecutionReport) -> Self {
+        Self { client_id, report }
+    }
+}
+
 #[expect(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Eq, PartialEq, Display)]
 pub enum TradingCommand {

@@ -127,7 +127,7 @@ use crate::{
     enums::SerializationEncoding,
     messages::{
         data::{DataCommand, DataResponse},
-        execution::{ExecutionReport, TradingCommand},
+        execution::{ExecutionReport, SourcedExecutionReport, TradingCommand},
     },
 };
 
@@ -278,6 +278,7 @@ pub struct MessageBus {
     pub(crate) endpoints_data_commands: IntoEndpointMap<DataCommand>,
     pub(crate) endpoints_data_responses: IntoEndpointMap<DataResponse>,
     pub(crate) endpoints_exec_reports: IntoEndpointMap<ExecutionReport>,
+    pub(crate) endpoints_sourced_exec_reports: IntoEndpointMap<SourcedExecutionReport>,
     pub(crate) endpoints_order_events: IntoEndpointMap<OrderEventAny>,
     pub(crate) endpoints_data: IntoEndpointMap<Data>,
     routers_typed: AHashMap<TypeId, Box<dyn Any>>,
@@ -373,6 +374,7 @@ impl MessageBus {
             endpoints_data_commands: IntoEndpointMap::new(),
             endpoints_data_responses: IntoEndpointMap::new(),
             endpoints_exec_reports: IntoEndpointMap::new(),
+            endpoints_sourced_exec_reports: IntoEndpointMap::new(),
             endpoints_order_events: IntoEndpointMap::new(),
             endpoints_data: IntoEndpointMap::new(),
             routers_typed: AHashMap::new(),
@@ -554,6 +556,7 @@ impl MessageBus {
         self.endpoints_data_commands.clear();
         self.endpoints_data_responses.clear();
         self.endpoints_exec_reports.clear();
+        self.endpoints_sourced_exec_reports.clear();
         self.endpoints_order_events.clear();
         self.endpoints_data.clear();
 
