@@ -23,7 +23,7 @@ use std::sync::{
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::{DataClient, SocketReconnectRegistration, SocketReconnectRegistry},
+    clients::DataClient,
     live::{get_runtime, runner::get_data_event_sender},
     messages::{
         DataEvent,
@@ -40,6 +40,7 @@ use nautilus_core::{
     AtomicMap, Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::{CustomData, CustomDataTrait, Data, DataType, OrderBookDeltas, TradeTick},
     identifiers::{ClientId, InstrumentId, TradeId, Venue},
@@ -58,13 +59,13 @@ use crate::{
             extract_market_id, make_instrument_id, parse_betfair_price, parse_betfair_quantity,
             parse_market_definition, parse_millis_timestamp,
         },
-        socket::{DATA_STREAMS_ENDPOINT, SocketControl, SocketStatePublisher},
     },
     config::BetfairDataConfig,
     data_types::{BetfairSequenceCompleted, register_betfair_custom_data},
     http::client::BetfairHttpClient,
     provider::{BetfairInstrumentProvider, NavigationFilter},
     stream::{
+        CRICKET_STREAMS_ENDPOINT, DATA_STREAMS_ENDPOINT, RACE_STREAMS_ENDPOINT,
         client::{
             BetfairRaceStreamClient, BetfairStreamClient, HeartbeatTimeoutSource,
             StreamMessageHandler,
@@ -91,10 +92,10 @@ pub struct BetfairDataClient {
     http_client: Arc<BetfairHttpClient>,
     provider: BetfairInstrumentProvider,
     stream_client: Option<Arc<BetfairStreamClient>>,
-    socket_registry: SocketReconnectRegistry,
     socket_control: Option<SocketControl>,
-    socket_registration: Option<SocketReconnectRegistration>,
+    race_socket_control: Option<Arc<SocketControl>>,
     race_stream_client: Option<Arc<BetfairRaceStreamClient>>,
+    cricket_socket_control: Option<Arc<SocketControl>>,
     cricket_stream_client: Option<Arc<BetfairRaceStreamClient>>,
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
@@ -145,9 +146,25 @@ impl BetfairDataClient {
     ) -> Self {
         let data_sender = get_data_event_sender();
         let http_client = Arc::new(http_client);
-        let socket_registry = SocketReconnectRegistry::default();
-        let socket_control = SocketStatePublisher::new(client_id, socket_registry.clone())
-            .map(|publisher| publisher.control(DATA_STREAMS_ENDPOINT));
+        let socket_control = Some(SocketControl::new(
+            client_id,
+            Some(*BETFAIR_VENUE),
+            DATA_STREAMS_ENDPOINT,
+        ));
+        let race_socket_control = config.subscribe_race_data.then(|| {
+            Arc::new(SocketControl::new(
+                client_id,
+                Some(*BETFAIR_VENUE),
+                RACE_STREAMS_ENDPOINT,
+            ))
+        });
+        let cricket_socket_control = config.subscribe_cricket_data.then(|| {
+            Arc::new(SocketControl::new(
+                client_id,
+                Some(*BETFAIR_VENUE),
+                CRICKET_STREAMS_ENDPOINT,
+            ))
+        });
         let provider = BetfairInstrumentProvider::new(
             Arc::clone(&http_client),
             nav_filter,
@@ -161,10 +178,10 @@ impl BetfairDataClient {
             http_client,
             provider,
             stream_client: None,
-            socket_registry,
             socket_control,
-            socket_registration: None,
+            race_socket_control,
             race_stream_client: None,
+            cricket_socket_control,
             cricket_stream_client: None,
             credential,
             stream_config,
@@ -561,10 +578,6 @@ impl DataClient for BetfairDataClient {
         Some(*BETFAIR_VENUE)
     }
 
-    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
-        Some(&self.socket_registry)
-    }
-
     fn start(&mut self) -> anyhow::Result<()> {
         log::info!("Starting Betfair data client: {}", self.client_id);
         Ok(())
@@ -589,7 +602,7 @@ impl DataClient for BetfairDataClient {
             handle.abort();
         }
 
-        self.socket_registration = None;
+        self.deregister_socket_controls();
         self.is_connected.store(false, Ordering::Relaxed);
 
         Ok(())
@@ -614,7 +627,7 @@ impl DataClient for BetfairDataClient {
             handle.abort();
         }
 
-        self.socket_registration = None;
+        self.deregister_socket_controls();
         self.is_connected.store(false, Ordering::Relaxed);
         self.stream_client = None;
         self.race_stream_client = None;
@@ -705,10 +718,10 @@ impl DataClient for BetfairDataClient {
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let stream_client = Arc::new(stream_client);
-        self.socket_registration = self.socket_control.as_ref().map(|control| {
+        if let Some(control) = &self.socket_control {
             let reconnect_stream = Arc::clone(&stream_client);
-            control.register(move || reconnect_stream.request_reconnect_outcome())
-        });
+            control.register(move || reconnect_stream.request_reconnect_outcome());
+        }
         self.stream_client = Some(stream_client);
 
         if self.config.subscribe_race_data {
@@ -734,22 +747,34 @@ impl DataClient for BetfairDataClient {
 
             let (race_fatal_tx, mut race_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
 
+            let state_sink = self
+                .race_socket_control
+                .as_ref()
+                .map(|control| control.sink());
+
             match BetfairRaceStreamClient::connect_decoded(
                 &self.credential,
                 race_session,
                 race_handler,
                 race_config,
                 race_fatal_tx,
+                state_sink,
             )
             .await
             {
                 Ok(client) => {
                     let race_client = Arc::new(client);
+                    if let Some(control) = &self.race_socket_control {
+                        let reconnect_client = Arc::clone(&race_client);
+                        control.register(move || reconnect_client.request_reconnect_outcome());
+                    }
                     self.race_stream_client = Some(Arc::clone(&race_client));
 
                     if let Some(handle) = self.race_fatal_handle.take() {
                         handle.abort();
                     }
+
+                    let race_socket_control = self.race_socket_control.as_ref().map(Arc::clone);
 
                     self.race_fatal_handle = Some(get_runtime().spawn(async move {
                         if race_fatal_rx.recv().await.is_some() {
@@ -757,6 +782,10 @@ impl DataClient for BetfairDataClient {
                                 "Betfair race stream permanently disabled due to fatal error"
                             );
                             race_client.close().await;
+
+                            if let Some(control) = race_socket_control {
+                                control.deregister();
+                            }
                         }
                     }));
 
@@ -764,6 +793,10 @@ impl DataClient for BetfairDataClient {
                 }
                 Err(e) => {
                     log::warn!("Betfair race stream connect failed: {e}");
+
+                    if let Some(control) = &self.race_socket_control {
+                        control.deregister();
+                    }
                     self.race_stream_client = None;
                 }
             }
@@ -792,22 +825,35 @@ impl DataClient for BetfairDataClient {
 
             let (cricket_fatal_tx, mut cricket_fatal_rx) = tokio::sync::mpsc::unbounded_channel();
 
+            let state_sink = self
+                .cricket_socket_control
+                .as_ref()
+                .map(|control| control.sink());
+
             match BetfairRaceStreamClient::connect_cricket_decoded(
                 &self.credential,
                 cricket_session,
                 cricket_handler,
                 cricket_config,
                 cricket_fatal_tx,
+                state_sink,
             )
             .await
             {
                 Ok(client) => {
                     let cricket_client = Arc::new(client);
+                    if let Some(control) = &self.cricket_socket_control {
+                        let reconnect_client = Arc::clone(&cricket_client);
+                        control.register(move || reconnect_client.request_reconnect_outcome());
+                    }
                     self.cricket_stream_client = Some(Arc::clone(&cricket_client));
 
                     if let Some(handle) = self.cricket_fatal_handle.take() {
                         handle.abort();
                     }
+
+                    let cricket_socket_control =
+                        self.cricket_socket_control.as_ref().map(Arc::clone);
 
                     self.cricket_fatal_handle = Some(get_runtime().spawn(async move {
                         if cricket_fatal_rx.recv().await.is_some() {
@@ -815,6 +861,10 @@ impl DataClient for BetfairDataClient {
                                 "Betfair cricket stream permanently disabled due to fatal error"
                             );
                             cricket_client.close().await;
+
+                            if let Some(control) = cricket_socket_control {
+                                control.deregister();
+                            }
                         }
                     }));
 
@@ -822,6 +872,10 @@ impl DataClient for BetfairDataClient {
                 }
                 Err(e) => {
                     log::warn!("Betfair cricket stream connect failed: {e}");
+
+                    if let Some(control) = &self.cricket_socket_control {
+                        control.deregister();
+                    }
                     self.cricket_stream_client = None;
                 }
             }
@@ -968,7 +1022,7 @@ impl DataClient for BetfairDataClient {
         self.http_client.disconnect().await;
         self.is_connected.store(false, Ordering::Relaxed);
         self.subscribed_market_ids.clear();
-        self.socket_registration = None;
+        self.deregister_socket_controls();
 
         log::info!("Betfair data client disconnected: {}", self.client_id);
         Ok(())
@@ -1121,6 +1175,20 @@ impl DataClient for BetfairDataClient {
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
         log::debug!("Skipping unsubscribe bars for Betfair: {}", cmd.bar_type);
         Ok(())
+    }
+}
+
+impl BetfairDataClient {
+    fn deregister_socket_controls(&self) {
+        let controls = [
+            self.socket_control.as_ref(),
+            self.race_socket_control.as_deref(),
+            self.cricket_socket_control.as_deref(),
+        ];
+
+        for control in controls.into_iter().flatten() {
+            control.deregister();
+        }
     }
 }
 

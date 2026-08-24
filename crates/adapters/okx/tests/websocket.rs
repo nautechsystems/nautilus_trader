@@ -36,11 +36,18 @@ use axum::{
     routing::get,
 };
 use futures_util::{StreamExt, pin_mut};
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{
+    live::runner::replace_system_event_sender,
+    messages::{SystemEvent, system::SocketState},
+    testing::wait_until_async,
+};
 use nautilus_core::UnixNanos;
+use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     enums::{OrderSide, OrderType, PositionSide, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
+    },
     instruments::InstrumentAny,
     types::{Price, Quantity},
 };
@@ -54,6 +61,7 @@ use nautilus_okx::{
     http::client::OKXResponse,
     websocket::{client::OKXWebSocketClient, enums::OKXWsChannel, messages::OKXWsMessage},
 };
+use rstest::rstest;
 use serde_json::{Value, json};
 use ustr::Ustr;
 
@@ -1585,15 +1593,32 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
     client.close().await.expect("close failed");
 }
 
+#[rstest]
+#[case("okx-public-data-streams")]
+#[case("okx-business-data-streams")]
+#[case("okx-private-user-streams")]
+#[case("okx-business-user-streams")]
 #[tokio::test]
-async fn test_websocket_connection() {
+async fn test_websocket_connection(#[case] endpoint: &str) {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
     let ws_url = format!("ws://{addr}/ws");
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let endpoint = Ustr::from(endpoint);
 
     let instruments = load_instruments();
 
-    let mut client = connect_client(&ws_url).await;
+    let mut client =
+        connect_client(&ws_url)
+            .await
+            .with_socket_control(SocketControl::with_registry(
+                ClientId::from("OKX"),
+                Some(Venue::from("OKX")),
+                endpoint,
+                &registry,
+            ));
     client.cache_instruments(&instruments);
     client.connect().await.expect("connect failed");
 
@@ -1606,7 +1631,31 @@ async fn test_websocket_connection() {
     )
     .await;
 
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let handle = registry.handle(ClientId::from("OKX"), endpoint).unwrap();
+
+    assert_eq!(change.client_id, ClientId::from("OKX"));
+    assert_eq!(change.venue, Some(Venue::from("OKX")));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
+
     client.close().await.expect("close failed");
+    assert!(registry.handle(ClientId::from("OKX"), endpoint).is_none());
 
     wait_until_async(
         || {

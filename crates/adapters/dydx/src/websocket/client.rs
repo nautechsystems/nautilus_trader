@@ -74,6 +74,7 @@ use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
+use nautilus_live::{SocketControl, SocketControlFactory};
 use nautilus_model::{
     data::BarType,
     identifiers::{AccountId, InstrumentId},
@@ -122,6 +123,7 @@ struct ConnectionSlot {
     subscriptions_state: SubscriptionState,
     handler_task: Option<tokio::task::JoinHandle<()>>,
     connection_mode: Arc<AtomicU8>,
+    socket_control: Option<SocketControl>,
 }
 
 /// WebSocket client for dYdX v4 market data and account streams.
@@ -175,6 +177,7 @@ pub struct DydxWebSocketClient {
     proxy_url: Option<String>,
     max_ws_connections: usize,
     per_channel_limit: usize,
+    socket_factory: Option<SocketControlFactory>,
 }
 
 impl Clone for DydxWebSocketClient {
@@ -201,6 +204,7 @@ impl Clone for DydxWebSocketClient {
             proxy_url: self.proxy_url.clone(),
             max_ws_connections: self.max_ws_connections,
             per_channel_limit: self.per_channel_limit,
+            socket_factory: self.socket_factory.clone(),
         }
     }
 }
@@ -355,7 +359,15 @@ impl DydxWebSocketClient {
             proxy_url,
             max_ws_connections: max_ws_connections.max(1),
             per_channel_limit: per_channel_limit.max(1),
+            socket_factory: None,
         }
+    }
+
+    /// Configures socket state reporting and reconnect control for each pool slot.
+    #[must_use]
+    pub fn with_socket_factory(mut self, factory: SocketControlFactory) -> Self {
+        self.socket_factory = Some(factory);
+        self
     }
 
     /// Returns the credential associated with this client, if any.
@@ -570,7 +582,7 @@ impl DydxWebSocketClient {
             *guard = Some(out_rx);
         }
 
-        let slot = self.create_connection().await?;
+        let slot = self.create_connection(0).await?;
         self.connection_mode.store(slot.connection_mode.clone());
         self.slots.lock().expect("slots lock poisoned").push(slot);
 
@@ -593,6 +605,9 @@ impl DydxWebSocketClient {
         };
 
         for mut slot in slots {
+            if let Some(control) = &slot.socket_control {
+                control.deregister();
+            }
             let _ = slot.cmd_tx.send(HandlerCommand::Disconnect);
             if let Some(task) = slot.handler_task.take() {
                 let abort_handle = task.abort_handle();
@@ -634,7 +649,7 @@ impl DydxWebSocketClient {
         Ok(())
     }
 
-    async fn create_connection(&self) -> DydxWsResult<ConnectionSlot> {
+    async fn create_connection(&self, slot_index: usize) -> DydxWsResult<ConnectionSlot> {
         let (message_handler, raw_rx) = channel_message_handler();
 
         let cfg = WebSocketConfig {
@@ -654,17 +669,33 @@ impl DydxWebSocketClient {
             proxy_url: self.proxy_url.clone(),
         };
 
-        let client = WebSocketClient::connect(
+        let socket_control = self.socket_factory.as_ref().map(|factory| {
+            let kind = if self.requires_auth { "user" } else { "data" };
+            let endpoint = format!("dydx-{kind}-streams");
+            if slot_index == 0 {
+                factory.control(endpoint)
+            } else {
+                factory.control(format!("{endpoint}-{slot_index}"))
+            }
+        });
+        let client = WebSocketClient::connect_with_state_sink(
             cfg,
             Some(message_handler),
             None,
             vec![],
             Some(*DYDX_WS_SUBSCRIPTION_QUOTA),
+            socket_control
+                .as_ref()
+                .map(nautilus_live::SocketControl::sink),
         )
         .await
         .map_err(|e| DydxWsError::Transport(e.to_string()))?;
 
         let connection_mode = client.connection_mode_atomic();
+        let reconnect_handle = client.reconnect_handle();
+        if let Some(control) = &socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
         let subscriptions_state = SubscriptionState::new(DYDX_WS_TOPIC_DELIMITER);
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -692,6 +723,7 @@ impl DydxWebSocketClient {
             subscriptions_state,
             handler_task: Some(handler_task),
             connection_mode,
+            socket_control,
         })
     }
 
@@ -743,7 +775,8 @@ impl DydxWebSocketClient {
                 }
             }
 
-            let new_slot = self.create_connection().await?;
+            let slot_index = self.slots.lock().expect("slots lock poisoned").len();
+            let new_slot = self.create_connection(slot_index).await?;
             let new_idx = {
                 let mut slots = self.slots.lock().expect("slots lock poisoned");
                 slots.push(new_slot);
@@ -1084,7 +1117,7 @@ impl DydxWebSocketClient {
         }
 
         if self.slots.lock().expect("slots lock poisoned").is_empty() {
-            let new_slot = self.create_connection().await?;
+            let new_slot = self.create_connection(0).await?;
             self.connection_mode.store(new_slot.connection_mode.clone());
             self.slots
                 .lock()

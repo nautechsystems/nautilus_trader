@@ -74,6 +74,7 @@ use nautilus_lighter::{
     data::LighterDataClient,
     http::{client::LIGHTER_FUNDINGS_MAX_LIMIT, query::LighterFundingsQuery},
 };
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarSpecification, BarType, Data, OrderBookDeltas},
     enums::{AggregationSource, BarAggregation, BookAction, BookType, PriceType, RecordFlag},
@@ -84,6 +85,7 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use serde_json::{Value, json};
+use ustr::Ustr;
 const ETH_PERP_SYMBOL: &str = "ETH-PERP";
 const HISTORY_REQUEST_PAGE_CAP: usize = 500;
 const PRIVATE_KEY_HEX: &str =
@@ -2074,7 +2076,9 @@ async fn test_unsubscribe_bars_is_noop_for_unsupported_resolution() {
 #[tokio::test]
 async fn test_socket_state_events_survive_websocket_client_replacement() {
     let (addr, state) = start_server().await;
-    let (mut client, _rx, mut system_rx) = build_client_with_system_events(build_config(addr));
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, mut system_rx) =
+        registry.scope(|| build_client_with_system_events(build_config(addr)));
 
     client.connect().await.expect("connect");
     await_connection_count(&state, 1).await;
@@ -2090,15 +2094,30 @@ async fn test_socket_state_events_survive_websocket_client_replacement() {
     await_connection_count(&state, 1).await;
 
     let replacement = next_socket_state(&mut system_rx).await;
+    let endpoint = Ustr::from("lighter-data-streams");
+    let handle = registry.handle(client_id(), endpoint).unwrap();
 
     assert_eq!(change.client_id, client_id());
     assert_eq!(change.venue, Some(*LIGHTER_VENUE));
-    assert_eq!(change.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(change.endpoint, endpoint);
     assert_eq!(change.state, SocketState::Connected);
     assert_eq!(replacement.client_id, client_id());
     assert_eq!(replacement.venue, Some(*LIGHTER_VENUE));
-    assert_eq!(replacement.endpoint.as_str(), "lighter-data-streams");
+    assert_eq!(replacement.endpoint, endpoint);
     assert_eq!(replacement.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+
+    let reconnect = next_socket_state(&mut system_rx).await;
+    assert_eq!(reconnect.client_id, client_id());
+    assert_eq!(reconnect.venue, Some(*LIGHTER_VENUE));
+    assert_eq!(reconnect.endpoint, endpoint);
+    assert_eq!(reconnect.state, SocketState::Disconnected);
+
+    client.disconnect().await.expect("disconnect");
+    assert!(registry.handle(client_id(), endpoint).is_none());
 }
 
 #[rstest]

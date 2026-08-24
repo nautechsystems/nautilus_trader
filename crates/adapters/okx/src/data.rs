@@ -51,6 +51,7 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, InstrumentStatus},
     enums::{BookType, GreeksConvention, MarketStatusAction},
@@ -214,7 +215,12 @@ impl OKXDataClient {
             config.transport_backend,
             config.proxy_url.clone(),
         )
-        .context("failed to construct OKX public websocket client")?;
+        .context("failed to construct OKX public websocket client")?
+        .with_socket_control(SocketControl::new(
+            client_id,
+            Some(*OKX_VENUE),
+            "okx-public-data-streams",
+        ));
 
         let ws_business = if config.requires_business_ws() {
             let ws = OKXWebSocketClient::new(
@@ -228,7 +234,12 @@ impl OKXDataClient {
                 config.transport_backend,
                 config.proxy_url.clone(),
             )
-            .context("failed to construct OKX business websocket client")?;
+            .context("failed to construct OKX business websocket client")?
+            .with_socket_control(SocketControl::new(
+                client_id,
+                Some(*OKX_VENUE),
+                "okx-business-data-streams",
+            ));
             Some(ws)
         } else {
             None

@@ -54,9 +54,9 @@ use nautilus_binance::{
 };
 use nautilus_common::{
     clients::DataClient,
-    live::runner::set_data_event_sender,
+    live::runner::{replace_system_event_sender, set_data_event_sender},
     messages::{
-        DataEvent,
+        DataEvent, SystemEvent,
         data::{
             DataResponse, RequestBars, RequestBookSnapshot, RequestCustomData, RequestTrades,
             subscribe::{
@@ -65,10 +65,12 @@ use nautilus_common::{
             },
             unsubscribe::{UnsubscribeQuotes, UnsubscribeTrades},
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarType, BookOrder, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick},
     enums::{BookAction, BookType, OrderSide, RecordFlag},
@@ -2278,6 +2280,56 @@ async fn test_unsubscribe_quotes() {
     );
     let result = client.unsubscribe_quotes(&unsub_cmd);
     result.unwrap();
+}
+
+#[rstest]
+#[case::sbe(BinanceSpotMarketDataMode::Sbe, "binance-spot-sbe-data-streams")]
+#[case::json(BinanceSpotMarketDataMode::Json, "binance-spot-json-data-streams")]
+#[tokio::test]
+async fn test_connect_emits_socket_state_and_registers_reconnect(
+    #[case] mode: BinanceSpotMarketDataMode,
+    #[case] endpoint: &str,
+) {
+    let addr = start_data_test_server().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx) =
+        registry.scope(|| create_test_data_client_with_mode(base_url_http, base_url_ws, mode));
+    client.connect().await.unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .expect("timed out waiting for socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = ustr::Ustr::from(endpoint);
+    let handle = registry.handle(*BINANCE_CLIENT_ID, endpoint).unwrap();
+
+    assert_eq!(change.client_id, *BINANCE_CLIENT_ID);
+    assert_eq!(change.venue, Some(*BINANCE_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+
+    let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .expect("timed out waiting for socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.client_id, *BINANCE_CLIENT_ID);
+    assert_eq!(change.venue, Some(*BINANCE_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
+
+    client.disconnect().await.unwrap();
+    assert!(registry.handle(*BINANCE_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]

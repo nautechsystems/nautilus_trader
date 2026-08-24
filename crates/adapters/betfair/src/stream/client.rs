@@ -503,6 +503,7 @@ impl BetfairRaceStreamClient {
             StreamHandler::Raw(handler),
             config,
             subscription,
+            None,
         )
         .await
     }
@@ -513,6 +514,7 @@ impl BetfairRaceStreamClient {
         handler: StreamMessageHandler,
         config: BetfairStreamConfig,
         race_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+        state_sink: Option<SocketStateSink>,
     ) -> Result<Self, BetfairStreamError> {
         let subscription = AuxiliaryStreamSubscription::race(race_fatal_tx)?;
         Self::connect_with_subscription(
@@ -521,6 +523,7 @@ impl BetfairRaceStreamClient {
             StreamHandler::Decoded(handler),
             config,
             subscription,
+            state_sink,
         )
         .await
     }
@@ -547,6 +550,7 @@ impl BetfairRaceStreamClient {
             StreamHandler::Raw(handler),
             config,
             subscription,
+            None,
         )
         .await
     }
@@ -557,6 +561,7 @@ impl BetfairRaceStreamClient {
         handler: StreamMessageHandler,
         config: BetfairStreamConfig,
         cricket_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+        state_sink: Option<SocketStateSink>,
     ) -> Result<Self, BetfairStreamError> {
         let subscription = AuxiliaryStreamSubscription::cricket(cricket_fatal_tx)?;
         Self::connect_with_subscription(
@@ -565,6 +570,7 @@ impl BetfairRaceStreamClient {
             StreamHandler::Decoded(handler),
             config,
             subscription,
+            state_sink,
         )
         .await
     }
@@ -575,6 +581,7 @@ impl BetfairRaceStreamClient {
         handler: StreamHandler,
         config: BetfairStreamConfig,
         subscription: AuxiliaryStreamSubscription,
+        state_sink: Option<SocketStateSink>,
     ) -> Result<Self, BetfairStreamError> {
         let AuxiliaryStreamSubscription {
             bytes: sub_bytes,
@@ -674,9 +681,13 @@ impl BetfairRaceStreamClient {
             certs_dir: None,
         };
 
-        let socket = SocketClient::connect_with_reconnect_replay(socket_config, reconnect_replay)
-            .await
-            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+        let socket = SocketClient::connect_with_state_sink_and_reconnect_replay(
+            socket_config,
+            state_sink,
+            reconnect_replay,
+        )
+        .await
+        .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
         reconnect_auth.set_handle(socket.reconnect_handle());
 
         let mut combined = Vec::with_capacity(auth_bytes_vec.len() + 2 + sub_bytes.len());
@@ -727,12 +738,16 @@ impl BetfairRaceStreamClient {
     /// close return `false`.
     #[must_use]
     pub fn request_reconnect(&self) -> bool {
+        self.request_reconnect_outcome() == ReconnectRequestOutcome::Accepted
+    }
+
+    /// Requests transport replacement and returns the exact controller outcome.
+    pub(crate) fn request_reconnect_outcome(&self) -> ReconnectRequestOutcome {
         if self.closed.load(Ordering::SeqCst) {
-            return false;
+            return ReconnectRequestOutcome::Closed;
         }
         self.reconnect_auth
             .request(self.auth_tx.borrow().generation)
-            == ReconnectRequestOutcome::Accepted
     }
 
     /// Closes the race stream connection.
@@ -897,6 +912,7 @@ impl ReconnectAuthState {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_network::SocketState;
     use rstest::rstest;
 
     use super::*;
@@ -1225,6 +1241,142 @@ mod tests {
         let json = serde_json::to_string(&sub).unwrap();
         assert!(json.contains("\"op\":\"cricketSubscription\""));
         assert!(json.contains("\"id\":42"));
+    }
+
+    #[rstest]
+    #[case::race(false, "raceSubscription")]
+    #[case::cricket(true, "cricketSubscription")]
+    #[tokio::test]
+    async fn test_auxiliary_stream_state_and_controller_reconnect(
+        #[case] cricket: bool,
+        #[case] subscription_op: &'static str,
+    ) {
+        use std::{sync::Mutex, time::Duration};
+
+        use tokio::io::{AsyncBufReadExt, BufReader};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (initial_tx, initial_rx) = tokio::sync::oneshot::channel();
+        let (replacement_tx, replacement_rx) = tokio::sync::oneshot::channel();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let (read_half, initial_write_half) = socket.into_split();
+            let mut initial_reader = BufReader::new(read_half);
+            let mut auth = String::new();
+            let mut subscription = String::new();
+            initial_reader.read_line(&mut auth).await.unwrap();
+            initial_reader.read_line(&mut subscription).await.unwrap();
+            let auth: serde_json::Value = serde_json::from_str(&auth).unwrap();
+            let subscription: serde_json::Value = serde_json::from_str(&subscription).unwrap();
+            assert_eq!(auth["session"], "test-session");
+            assert_eq!(subscription["op"], subscription_op);
+            initial_tx.send(()).unwrap();
+
+            let (socket, _) = listener.accept().await.unwrap();
+            let (read_half, replacement_write_half) = socket.into_split();
+            let mut replacement_reader = BufReader::new(read_half);
+            let mut replay_auth = String::new();
+            let mut replay_subscription = String::new();
+            replacement_reader
+                .read_line(&mut replay_auth)
+                .await
+                .unwrap();
+            replacement_reader
+                .read_line(&mut replay_subscription)
+                .await
+                .unwrap();
+            let replay_auth: serde_json::Value = serde_json::from_str(&replay_auth).unwrap();
+            let replay_subscription: serde_json::Value =
+                serde_json::from_str(&replay_subscription).unwrap();
+            assert_eq!(replay_auth, auth);
+            assert_eq!(replay_subscription, subscription);
+            replacement_tx.send(()).unwrap();
+
+            let _initial_connection = (initial_reader, initial_write_half);
+            let _replacement_connection = (replacement_reader, replacement_write_half);
+            let _ = done_rx.await;
+        });
+
+        let states = Arc::new(Mutex::new(Vec::new()));
+        let states_sink = Arc::clone(&states);
+        let state_sink = SocketStateSink::new(move |state| {
+            states_sink.lock().unwrap().push(state);
+        });
+        let credential = BetfairCredential::new(
+            "testuser".to_string(),
+            "testpass".to_string(),
+            "test-app-key".to_string(),
+        );
+        let config = BetfairStreamConfig {
+            host: "127.0.0.1".to_string(),
+            port,
+            heartbeat_secs: Some(5),
+            heartbeat_timeout_secs: 60,
+            reconnect_delay_initial_ms: 100,
+            reconnect_delay_max_ms: 500,
+            use_tls: false,
+        };
+        let (fatal_tx, _fatal_rx) = tokio::sync::mpsc::unbounded_channel();
+        let client = if cricket {
+            BetfairRaceStreamClient::connect_cricket_decoded(
+                &credential,
+                "test-session".to_string(),
+                Arc::new(|_| {}),
+                config,
+                fatal_tx,
+                Some(state_sink),
+            )
+            .await
+            .unwrap()
+        } else {
+            BetfairRaceStreamClient::connect_decoded(
+                &credential,
+                "test-session".to_string(),
+                Arc::new(|_| {}),
+                config,
+                fatal_tx,
+                Some(state_sink),
+            )
+            .await
+            .unwrap()
+        };
+
+        initial_rx.await.unwrap();
+        assert_eq!(
+            client.request_reconnect_outcome(),
+            ReconnectRequestOutcome::Accepted,
+        );
+        tokio::time::timeout(Duration::from_secs(5), replacement_rx)
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while states.lock().unwrap().len() < 3 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        client.close().await;
+
+        assert_eq!(
+            *states.lock().unwrap(),
+            vec![
+                SocketState::Connected,
+                SocketState::Disconnected,
+                SocketState::Connected,
+            ],
+        );
+        assert_eq!(
+            client.request_reconnect_outcome(),
+            ReconnectRequestOutcome::Closed,
+        );
+
+        let _ = done_tx.send(());
+        server.await.unwrap();
     }
 
     #[rstest]

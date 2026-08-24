@@ -28,6 +28,7 @@ use std::{
 use anyhow::Context;
 use dashmap::DashMap;
 use nautilus_core::MUTEX_POISONED;
+use nautilus_live::SocketControlFactory;
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::websocket::TransportBackend;
 use tokio::{sync::Mutex as TokioMutex, task::JoinHandle};
@@ -64,6 +65,7 @@ pub(crate) struct WsBuildParams {
     pub private_base_url: String,
     pub transport_backend: TransportBackend,
     pub proxy_url: Option<String>,
+    pub socket_factory: SocketControlFactory,
 }
 
 /// Context captured by the recovery driver task. All fields are cheaply
@@ -99,7 +101,11 @@ pub(crate) async fn build_and_connect_user_stream(
         params.transport_backend,
     )
     .context("failed to construct Binance Futures private WebSocket client")?
-    .with_proxy(params.proxy_url.clone());
+    .with_proxy(params.proxy_url.clone())
+    .with_socket_control(
+        params.socket_factory.clone(),
+        "binance-futures-user-streams",
+    );
 
     log::debug!("Connecting to Binance Futures user data stream...");
     ws_client.connect().await.map_err(|_| {
@@ -414,6 +420,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{
+            consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
             dispatch::WsDispatchState,
             enums::{BinanceContractStatus, BinanceTradingStatus},
         },
@@ -549,6 +556,7 @@ mod tests {
                 private_base_url: "ws://127.0.0.1:1".to_string(),
                 transport_backend: TransportBackend::default(),
                 proxy_url: None,
+                socket_factory: SocketControlFactory::new(*BINANCE_CLIENT_ID, Some(*BINANCE_VENUE)),
             },
             dispatch_ctx,
             recovery_tx,

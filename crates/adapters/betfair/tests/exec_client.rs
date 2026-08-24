@@ -40,7 +40,7 @@ use nautilus_betfair::{
 };
 use nautilus_common::{
     cache::Cache,
-    clients::{ExecutionClient, SocketReconnectRequestOutcome},
+    clients::ExecutionClient,
     live::runner::{replace_system_event_sender, set_data_event_sender, set_exec_event_sender},
     messages::{
         DataEvent, ExecutionEvent,
@@ -57,7 +57,7 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::Data,
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
@@ -226,13 +226,11 @@ async fn test_exec_client_publishes_socket_state_and_registers_reconnect() {
         response["result"].clone(),
     );
     let (stream_port, listener) = start_mock_stream().await;
-    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
-    let registry = client
-        .socket_reconnect_registry()
-        .expect("execution client must expose a socket reconnect registry")
-        .clone();
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, _data_rx, _cache) =
+        registry.scope(|| create_test_execution_client(addr, stream_port));
     let endpoint = Ustr::from(ENDPOINT);
-    assert!(registry.get(endpoint).is_none());
+    assert!(registry.handle(*BETFAIR_CLIENT_ID, endpoint).is_none());
     let (initial_tx, initial_rx) = tokio::sync::oneshot::channel();
     let (replacement_tx, replacement_rx) = tokio::sync::oneshot::channel();
     let (activate_tx, activate_rx) = tokio::sync::oneshot::channel();
@@ -292,7 +290,7 @@ async fn test_exec_client_publishes_socket_state_and_registers_reconnect() {
     assert_eq!(initial_subscription["op"], "orderSubscription");
 
     let reconnect = registry
-        .get(endpoint)
+        .handle(*BETFAIR_CLIENT_ID, endpoint)
         .expect("active execution socket must register reconnect control");
     assert_eq!(
         reconnect.request_reconnect(),
@@ -327,7 +325,7 @@ async fn test_exec_client_publishes_socket_state_and_registers_reconnect() {
     activated_rx.await.unwrap();
 
     client.disconnect().await.unwrap();
-    assert!(registry.get(endpoint).is_none());
+    assert!(registry.handle(*BETFAIR_CLIENT_ID, endpoint).is_none());
     assert_eq!(
         reconnect.request_reconnect(),
         SocketReconnectRequestOutcome::Closed,

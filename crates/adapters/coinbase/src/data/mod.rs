@@ -48,6 +48,7 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::Data,
     enums::{BarAggregation, BookType, OrderSide},
@@ -142,7 +143,12 @@ impl CoinbaseDataClient {
             &ws_url,
             config.transport_backend,
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_control(SocketControl::new(
+            client_id,
+            Some(*COINBASE_VENUE),
+            "coinbase-data-streams",
+        ));
         let provider = CoinbaseInstrumentProvider::new(http_client.clone());
 
         let deriv_polls = DerivPollManager::new(

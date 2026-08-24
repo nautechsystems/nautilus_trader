@@ -6369,6 +6369,7 @@ dependencies = [
  "nautilus-data",
  "nautilus-execution",
  "nautilus-model",
+ "nautilus-network",
  "nautilus-persistence",
  "nautilus-portfolio",
  "nautilus-risk",

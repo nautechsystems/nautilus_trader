@@ -39,7 +39,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
-    ExecutionClientCore, ExecutionEventEmitter, execution::failure::CommandFailure,
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl, execution::failure::CommandFailure,
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -145,7 +145,12 @@ impl KrakenFuturesExecutionClient {
             config.auth_timeout_secs,
             config.transport_backend,
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*KRAKEN_VENUE),
+            "kraken-futures-user-streams",
+        ));
 
         Ok(Self {
             core,

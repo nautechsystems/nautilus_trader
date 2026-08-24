@@ -83,7 +83,7 @@ use nautilus_lighter::{
     config::LighterExecClientConfig,
     execution::LighterExecutionClient,
 };
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
@@ -102,6 +102,7 @@ use nautilus_model::{
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 const PRIVATE_KEY_HEX: &str =
     "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
@@ -1388,9 +1389,27 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
     let (addr, _state) = start_server().await;
     let (system_sender, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_system_event_sender(system_sender);
-    let (mut client, _rx, _cache) = build_client(addr);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, _cache) = registry.scope(|| build_client(addr));
 
     client.connect().await.expect("connect");
+
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .expect("timed out waiting for a socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("lighter-user-streams");
+    let handle = registry.handle(client_id(), endpoint).unwrap();
+
+    assert_eq!(change.client_id, client_id());
+    assert_eq!(change.venue, Some(*LIGHTER_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
 
     let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
         .await
@@ -1400,8 +1419,11 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
 
     assert_eq!(change.client_id, client_id());
     assert_eq!(change.venue, Some(*LIGHTER_VENUE));
-    assert_eq!(change.endpoint.as_str(), "lighter-user-streams");
-    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
+
+    client.disconnect().await.expect("disconnect");
+    assert!(registry.handle(client_id(), endpoint).is_none());
 }
 
 #[rstest]

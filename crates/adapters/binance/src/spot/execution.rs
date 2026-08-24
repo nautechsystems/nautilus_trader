@@ -42,7 +42,7 @@ use nautilus_core::{
     datetime::{NANOSECONDS_IN_MILLISECOND, checked_mins_to_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{ContingencyType, LiquiditySide, OmsType, OrderStatus, OrderType, TimeInForce},
@@ -131,6 +131,7 @@ pub struct BinanceSpotExecutionClient {
     emitter: ExecutionEventEmitter,
     dispatch_state: Arc<WsDispatchState>,
     http_client: BinanceSpotHttpClient,
+    socket_factory: SocketControlFactory,
     ws_trading_client: Option<BinanceSpotWsTradingClient>,
     ws_trading_handle: Option<JoinHandle<()>>,
     ws_user_data_client: Option<BinanceSpotWsTradingClient>,
@@ -159,6 +160,7 @@ impl BinanceSpotExecutionClient {
         )?;
 
         let clock = get_atomic_clock_realtime();
+        let socket_factory = SocketControlFactory::new(core.client_id, Some(*BINANCE_VENUE));
         let base_url_http = config.base_url_http.clone().or_else(|| {
             config.us.then(|| {
                 get_http_base_url_with_us(config.product_type, config.environment, true).to_string()
@@ -201,7 +203,8 @@ impl BinanceSpotExecutionClient {
                     config.transport_backend,
                 )
                 .with_proxy(config.proxy_url.clone())
-                .with_recv_window(Some(config.recv_window_ms)),
+                .with_recv_window(Some(config.recv_window_ms))
+                .with_socket_control(socket_factory.control("binance-spot-trading")),
             )
         };
         let us_credentials = config.us.then_some((api_key, api_secret));
@@ -213,6 +216,7 @@ impl BinanceSpotExecutionClient {
             emitter,
             dispatch_state: Arc::new(WsDispatchState::default()),
             http_client,
+            socket_factory,
             ws_trading_client,
             ws_trading_handle: None,
             ws_user_data_client: None,
@@ -591,7 +595,8 @@ impl BinanceSpotExecutionClient {
             Some(BINANCE_WS_HEARTBEAT_SECS),
             self.config.transport_backend,
         )
-        .with_proxy(self.config.proxy_url.clone());
+        .with_proxy(self.config.proxy_url.clone())
+        .with_socket_control(self.socket_factory.control("binance-spot-user-streams"));
         ws_user_data
             .connect()
             .await

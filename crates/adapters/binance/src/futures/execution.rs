@@ -45,7 +45,7 @@ use nautilus_core::{
     datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, checked_mins_to_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
@@ -213,6 +213,7 @@ pub struct BinanceFuturesExecutionClient {
     product_type: BinanceProductType,
     http_client: BinanceFuturesHttpClient,
     ws_client: Arc<TokioMutex<Option<BinanceFuturesWebSocketClient>>>,
+    socket_factory: SocketControlFactory,
     ws_trading_client: Option<BinanceFuturesWsTradingClient>,
     ws_trading_handle: Option<JoinHandle<()>>,
     listen_key: Arc<RwLock<Option<String>>>,
@@ -255,6 +256,7 @@ impl BinanceFuturesExecutionClient {
         )?;
 
         let clock = get_atomic_clock_realtime();
+        let socket_factory = SocketControlFactory::new(core.client_id, Some(*BINANCE_VENUE));
 
         let http_client = BinanceFuturesHttpClient::new(
             product_type,
@@ -292,7 +294,8 @@ impl BinanceFuturesExecutionClient {
                     config.transport_backend,
                 )
                 .with_proxy(config.proxy_url.clone())
-                .with_recv_window(Some(config.recv_window_ms)),
+                .with_recv_window(Some(config.recv_window_ms))
+                .with_socket_control(socket_factory.control("binance-futures-trading")),
             )
         } else {
             None
@@ -315,6 +318,7 @@ impl BinanceFuturesExecutionClient {
             product_type,
             http_client,
             ws_client: Arc::new(TokioMutex::new(None)),
+            socket_factory,
             ws_trading_client,
             ws_trading_handle: None,
             listen_key: Arc::new(RwLock::new(None)),
@@ -1478,6 +1482,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             private_base_url: private_base_url.clone(),
             transport_backend: self.config.transport_backend,
             proxy_url: self.config.proxy_url.clone(),
+            socket_factory: self.socket_factory.clone(),
         };
 
         let ws_client = build_and_connect_user_stream(&ws_build_params, &listen_key).await?;

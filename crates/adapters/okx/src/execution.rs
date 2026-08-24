@@ -42,7 +42,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
-    ExecutionClientCore, ExecutionEventEmitter,
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
     execution::{
         context::{OrderContext, OrderIdentity},
         failure::CommandFailure,
@@ -144,7 +144,12 @@ impl OKXExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
         )
-        .context("failed to construct OKX private websocket client")?;
+        .context("failed to construct OKX private websocket client")?
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*OKX_VENUE),
+            "okx-private-user-streams",
+        ));
 
         let ws_business = OKXWebSocketClient::with_credentials(
             Some(config.ws_business_url()),
@@ -157,7 +162,12 @@ impl OKXExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
         )
-        .context("failed to construct OKX business websocket client")?;
+        .context("failed to construct OKX business websocket client")?
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*OKX_VENUE),
+            "okx-business-user-streams",
+        ));
 
         let trade_mode = Self::derive_default_trade_mode(core.account_type, &config);
         let clock = get_atomic_clock_realtime();

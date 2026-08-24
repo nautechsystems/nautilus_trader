@@ -41,15 +41,16 @@ use futures_util::{SinkExt, StreamExt};
 use jiff::Timestamp;
 use nautilus_common::{
     clients::DataClient,
-    live::runner::replace_data_event_sender,
+    live::runner::{replace_data_event_sender, replace_system_event_sender},
     messages::{
-        DataEvent,
+        DataEvent, SystemEvent,
         data::{
             DataResponse, RequestBars, RequestForwardPrices, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
             SubscribeBookDeltas, SubscribeBookDepth10, SubscribeQuotes, SubscribeTrades,
             UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeQuotes, UnsubscribeTrades,
         },
+        system::SocketState,
     },
     testing::wait_until_async,
 };
@@ -62,6 +63,7 @@ use nautilus_derive::{
     config::DeriveDataClientConfig,
     data::DeriveDataClient,
 };
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarType, Data},
     enums::{AggressorSide, BookType},
@@ -2559,15 +2561,44 @@ async fn test_data_client_connect_disconnect() {
     let ws_addr = start_ws_server(ws_state).await;
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     replace_data_event_sender(tx);
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
 
-    let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config(rest_addr, ws_addr)).unwrap();
+    let registry = SocketReconnectRegistry::default();
+    let mut client = registry
+        .scope(|| DeriveDataClient::new(*DERIVE_CLIENT_ID, config(rest_addr, ws_addr)))
+        .unwrap();
     assert!(!client.is_connected());
 
     client.connect().await.unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("derive-data-streams");
+    let handle = registry.handle(*DERIVE_CLIENT_ID, endpoint).unwrap();
+
     assert!(client.is_connected());
+    assert_eq!(change.client_id, *DERIVE_CLIENT_ID);
+    assert_eq!(change.venue, Some(*DERIVE_VENUE));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
+    assert!(registry.handle(*DERIVE_CLIENT_ID, endpoint).is_none());
 }
 
 #[rstest]

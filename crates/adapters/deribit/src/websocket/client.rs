@@ -35,6 +35,7 @@ use nautilus_core::{
     AtomicMap, AtomicSet, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt,
     time::get_atomic_clock_realtime,
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::BarType,
     enums::OrderSide,
@@ -111,6 +112,7 @@ pub struct DeribitWebSocketClient {
     subscribe_errors: Arc<Mutex<Vec<String>>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Debug for DeribitWebSocketClient {
@@ -221,7 +223,15 @@ impl DeribitWebSocketClient {
             subscribe_errors: Arc::new(Mutex::new(Vec::new())),
             transport_backend,
             proxy_url,
+            socket_control: None,
         })
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
     }
 
     /// Creates a new public (unauthenticated) client.
@@ -559,18 +569,20 @@ impl DeribitWebSocketClient {
         ];
 
         // Connect the WebSocket
-        let ws_client = WebSocketClient::connect(
+        let ws_client = WebSocketClient::connect_with_state_sink(
             config,
             Some(message_handler),
             None,
             keyed_quotas,
             Some(*DERIBIT_WS_SUBSCRIPTION_QUOTA), // Default quota for non-order operations
+            self.socket_control.as_ref().map(SocketControl::sink),
         )
         .await?;
 
         // Store connection mode
         self.connection_mode
             .store(ws_client.connection_mode_atomic());
+        let reconnect_handle = ws_client.reconnect_handle();
 
         // Create message channels
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -602,6 +614,10 @@ impl DeribitWebSocketClient {
 
         // Send client to handler
         let _ = cmd_tx.send(HandlerCommand::SetClient(ws_client));
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
         // Replay cached instruments
         let instruments: Vec<InstrumentAny> =
@@ -827,6 +843,9 @@ impl DeribitWebSocketClient {
 
         self.auth_tracker.invalidate();
 
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
         Ok(())
     }
 

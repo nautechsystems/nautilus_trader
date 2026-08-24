@@ -25,7 +25,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     cache::fifo::FifoCache,
-    clients::{ExecutionClient, SocketReconnectRegistry},
+    clients::ExecutionClient,
     live::{runner::get_exec_event_sender, runtime::get_runtime, task::TaskHandles},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -37,7 +37,9 @@ use nautilus_core::{
     MUTEX_POISONED, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, execution::context::OrderContext};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl, execution::context::OrderContext,
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType},
@@ -166,7 +168,6 @@ use crate::{
             order_to_hyperliquid_request_with_asset_and_cloid,
             parse_combined_account_balances_and_margins, round_to_sig_figs,
         },
-        socket::{SocketStatePublisher, USER_STREAMS_ENDPOINT},
     },
     config::HyperliquidExecClientConfig,
     http::{
@@ -182,7 +183,7 @@ use crate::{
     },
     outcome_settlement::{OutcomeSettlementTracker, build_settlement_fills},
     websocket::{
-        ExecutionReport, NautilusWsMessage,
+        ExecutionReport, NautilusWsMessage, USER_STREAMS_ENDPOINT,
         client::HyperliquidWebSocketClient,
         dispatch::{
             DispatchOutcome, WsDispatchState, dispatch_order_event, dispatch_order_fill,
@@ -205,7 +206,6 @@ pub struct HyperliquidExecutionClient {
     ws_dispatch_state: Arc<WsDispatchState>,
     staged_brackets: Arc<Mutex<StagedBracketState>>,
     outcome_settlement_tracker: Arc<Mutex<OutcomeSettlementTracker>>,
-    socket_registry: SocketReconnectRegistry,
 }
 
 impl HyperliquidExecutionClient {
@@ -445,11 +445,11 @@ impl HyperliquidExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
         );
-        let socket_registry = SocketReconnectRegistry::default();
-        if let Some(publisher) = SocketStatePublisher::new(core.client_id, socket_registry.clone())
-        {
-            ws_client = ws_client.with_socket_control(publisher.control(USER_STREAMS_ENDPOINT));
-        }
+        ws_client = ws_client.with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*HYPERLIQUID_VENUE),
+            USER_STREAMS_ENDPOINT,
+        ));
         ws_client.set_post_timeout(Duration::from_secs(config.ws_post_timeout_secs));
 
         let clock = get_atomic_clock_realtime();
@@ -474,7 +474,6 @@ impl HyperliquidExecutionClient {
             ws_dispatch_state: Arc::new(WsDispatchState::new()),
             staged_brackets: Arc::new(Mutex::new(StagedBracketState::default())),
             outcome_settlement_tracker: Arc::new(Mutex::new(OutcomeSettlementTracker::new())),
-            socket_registry,
         })
     }
 
@@ -708,10 +707,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
 
     fn venue(&self) -> Venue {
         *HYPERLIQUID_VENUE
-    }
-
-    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
-        Some(&self.socket_registry)
     }
 
     fn oms_type(&self) -> OmsType {

@@ -43,6 +43,7 @@ use nautilus_core::{
     env::{get_env_var, get_or_env_var},
     string::secret::REDACTED,
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
@@ -254,6 +255,7 @@ pub struct OKXWebSocketClient {
     /// Optional proxy URL for the WebSocket transport.
     proxy_url: Option<String>,
     cancellation_token: CancellationToken,
+    socket_control: Option<SocketControl>,
 }
 
 impl Default for OKXWebSocketClient {
@@ -357,7 +359,15 @@ impl OKXWebSocketClient {
             transport_backend,
             proxy_url,
             cancellation_token: CancellationToken::new(),
+            socket_control: None,
         })
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
     }
 
     /// Creates a new [`OKXWebSocketClient`] instance.
@@ -626,17 +636,19 @@ impl OKXWebSocketClient {
             ),
         ];
 
-        let client = WebSocketClient::connect(
+        let client = WebSocketClient::connect_with_state_sink(
             config,
             Some(message_handler),
             None,
             keyed_quotas,
             Some(*OKX_WS_CONNECTION_QUOTA), // Default quota for connection operations
+            self.socket_control.as_ref().map(SocketControl::sink),
         )
         .await?;
 
         // Replace connection state so all clones see the underlying WebSocketClient's state
         self.connection_mode.store(client.connection_mode_atomic());
+        let reconnect_handle = client.reconnect_handle();
 
         let (msg_tx, rx) = tokio::sync::mpsc::unbounded_channel::<OKXWsMessage>();
 
@@ -847,6 +859,10 @@ impl OKXWebSocketClient {
             .map_err(|e| {
                 OKXWsError::ClientError(format!("Failed to send WebSocket client to handler: {e}"))
             })?;
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
         log::debug!("Sent WebSocket client to handler");
 
         if self.credential.is_some()
@@ -1006,6 +1022,10 @@ impl OKXWebSocketClient {
         // the index-tickers channel. Otherwise the stale count short-circuits
         // every future `subscribe_index_prices` call and the feed stays dark.
         self.index_pair_subscribers.clear();
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
 
         log::debug!("Close process completed");
 

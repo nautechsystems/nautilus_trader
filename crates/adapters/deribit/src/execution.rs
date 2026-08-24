@@ -36,7 +36,7 @@ use nautilus_core::{
     datetime::NANOSECONDS_IN_SECOND,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
@@ -117,7 +117,12 @@ impl DeribitExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
         )
-        .context("failed to create WebSocket client for execution")?;
+        .context("failed to create WebSocket client for execution")?
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*DERIBIT_VENUE),
+            "deribit-user-streams",
+        ));
         // Set account ID for order/fill reports
         ws_client.set_account_id(core.account_id);
 

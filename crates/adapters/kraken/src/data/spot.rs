@@ -48,6 +48,7 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControlFactory;
 use nautilus_model::{
     data::{Bar, Data, OrderBookDeltas},
     enums::{AggregationSource, BookType},
@@ -115,6 +116,7 @@ pub struct KrakenSpotDataClient {
     http: KrakenSpotHttpClient,
     ws: KrakenSpotWebSocketClient,
     ws_l3: Option<KrakenSpotWebSocketClient>,
+    socket_factory: SocketControlFactory,
     l3_handler_alive: Arc<AtomicBool>,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
@@ -127,6 +129,7 @@ impl KrakenSpotDataClient {
     /// Creates a new [`KrakenSpotDataClient`] instance.
     pub fn new(client_id: ClientId, config: KrakenDataClientConfig) -> anyhow::Result<Self> {
         let cancellation_token = CancellationToken::new();
+        let socket_factory = SocketControlFactory::new(client_id, Some(*KRAKEN_VENUE));
 
         let http = KrakenSpotHttpClient::new(
             config.environment,
@@ -145,7 +148,8 @@ impl KrakenSpotDataClient {
             config.clone(),
             cancellation_token.clone(),
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_control(socket_factory.control("kraken-spot-data-streams"));
 
         Ok(Self {
             clock: get_atomic_clock_realtime(),
@@ -154,6 +158,7 @@ impl KrakenSpotDataClient {
             http,
             ws,
             ws_l3: None,
+            socket_factory,
             l3_handler_alive: Arc::new(AtomicBool::new(false)),
             is_connected: AtomicBool::new(false),
             cancellation_token,
@@ -238,7 +243,8 @@ impl KrakenSpotDataClient {
                 self.config.clone(),
                 self.cancellation_token.clone(),
                 self.config.proxy_url.clone(),
-            );
+            )
+            .with_socket_control(self.socket_factory.control("kraken-spot-l3-data-streams"));
 
             self.spawn_l3_handler_task(ws_l3.clone());
             self.ws_l3 = Some(ws_l3);
@@ -622,6 +628,7 @@ impl DataClient for KrakenSpotDataClient {
             task.abort();
         }
 
+        self.ws.deregister_socket_control();
         let mut ws = self.ws.clone();
         get_runtime().spawn(async move {
             let _ = ws.close().await;

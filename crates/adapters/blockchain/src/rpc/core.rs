@@ -17,6 +17,7 @@ use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use alloy::primitives::Address;
 use nautilus_core::{consts::NAUTILUS_USER_AGENT, string::secret::REDACTED};
+use nautilus_live::SocketControl;
 #[cfg(feature = "hypersync")]
 use nautilus_model::defi::DexType;
 use nautilus_model::defi::{
@@ -71,6 +72,7 @@ pub struct CoreBlockchainRpcClient {
     transport_backend: TransportBackend,
     /// Optional proxy URL for the WebSocket connection.
     proxy_url: Option<String>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Debug for CoreBlockchainRpcClient {
@@ -150,6 +152,7 @@ impl CoreBlockchainRpcClient {
             subscriptions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             transport_backend: TransportBackend::default(),
             proxy_url,
+            socket_control: None,
         }
     }
 
@@ -163,6 +166,11 @@ impl CoreBlockchainRpcClient {
     /// Updates the transport backend in place.
     pub fn set_transport_backend(&mut self, backend: TransportBackend) {
         self.transport_backend = backend;
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    pub fn set_socket_control(&mut self, control: SocketControl) {
+        self.socket_control = Some(control);
     }
 
     /// Establishes a WebSocket connection to the blockchain node and sets up the message channel.
@@ -196,7 +204,19 @@ impl CoreBlockchainRpcClient {
             proxy_url: self.proxy_url.clone(),
         };
 
-        let client = WebSocketClient::connect(config, Some(handler), None, vec![], None).await?;
+        let client = WebSocketClient::connect_with_state_sink(
+            config,
+            Some(handler),
+            None,
+            vec![],
+            None,
+            self.socket_control.as_ref().map(SocketControl::sink),
+        )
+        .await?;
+        let reconnect_handle = client.reconnect_handle();
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
         self.wss_client = Some(Arc::new(client));
         self.wss_consumer_rx = Some(rx);

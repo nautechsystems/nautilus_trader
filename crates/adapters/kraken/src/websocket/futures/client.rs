@@ -26,6 +26,7 @@ use std::{
 use arc_swap::ArcSwap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::AtomicMap;
+use nautilus_live::SocketControl;
 use nautilus_model::{
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
@@ -94,6 +95,7 @@ pub struct KrakenFuturesWebSocketClient {
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Clone for KrakenFuturesWebSocketClient {
@@ -120,6 +122,7 @@ impl Clone for KrakenFuturesWebSocketClient {
             instruments: Arc::clone(&self.instruments),
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
+            socket_control: self.socket_control.clone(),
         }
     }
 }
@@ -174,6 +177,20 @@ impl KrakenFuturesWebSocketClient {
             instruments: Arc::new(AtomicMap::new()),
             transport_backend,
             proxy_url,
+            socket_control: None,
+        }
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
+    }
+
+    pub(crate) fn deregister_socket_control(&self) {
+        if let Some(control) = &self.socket_control {
+            control.deregister();
         }
     }
 
@@ -304,13 +321,20 @@ impl KrakenFuturesWebSocketClient {
             *KRAKEN_FUTURES_WS_SUBSCRIPTION_QUOTA,
         )];
 
-        let ws_client =
-            WebSocketClient::connect(ws_config, Some(raw_handler), None, keyed_quotas, None)
-                .await
-                .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
+        let ws_client = WebSocketClient::connect_with_state_sink(
+            ws_config,
+            Some(raw_handler),
+            None,
+            keyed_quotas,
+            None,
+            self.socket_control.as_ref().map(SocketControl::sink),
+        )
+        .await
+        .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
 
         self.connection_mode
             .store(ws_client.connection_mode_atomic());
+        let reconnect_handle = ws_client.reconnect_handle();
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<KrakenFuturesWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -322,6 +346,10 @@ impl KrakenFuturesWebSocketClient {
             return Err(KrakenWsError::ConnectionError(format!(
                 "Failed to send WebSocketClient to handler: {e}"
             )));
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
         }
 
         let signal = self.signal.clone();
@@ -492,6 +520,10 @@ impl KrakenFuturesWebSocketClient {
         self.subscriptions.clear();
         self.subscription_payloads.write().await.clear();
         self.auth_tracker.fail("Disconnected");
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
         Ok(())
     }
 

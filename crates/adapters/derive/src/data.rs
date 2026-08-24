@@ -54,6 +54,7 @@ use nautilus_core::{
     datetime::{NANOSECONDS_IN_SECOND, datetime_to_unix_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::{Bar, Data, ForwardPrice, QuoteTick},
     enums::{AggregationSource, BookType, PriceType},
@@ -146,7 +147,12 @@ impl DeriveDataClient {
             config.environment,
             config.transport_backend,
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_control(SocketControl::new(
+            client_id,
+            Some(*DERIVE_VENUE),
+            "derive-data-streams",
+        ));
 
         if let Some(secs) = config.ws_timeout_secs {
             ws_client.set_request_timeout(Duration::from_secs(secs));

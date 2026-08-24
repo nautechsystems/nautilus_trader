@@ -20,7 +20,8 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
-use nautilus_common::{clients::SocketReconnectRegistration, live::get_runtime};
+use nautilus_common::live::get_runtime;
+use nautilus_live::SocketControl;
 use nautilus_network::{
     SocketStateSink,
     mode::ConnectionMode,
@@ -37,7 +38,6 @@ use super::{
 };
 use crate::common::{
     credential::Credential,
-    socket::SocketControl,
     urls::{clob_ws_market_url, clob_ws_user_url},
 };
 
@@ -122,7 +122,6 @@ pub struct PolymarketWebSocketClient {
     proxy_url: Option<ProxyUrl>,
     socket_sink: Option<SocketStateSink>,
     socket_control: Option<SocketControl>,
-    socket_registration: Option<SocketReconnectRegistration>,
 }
 
 impl PolymarketWebSocketClient {
@@ -215,7 +214,6 @@ impl PolymarketWebSocketClient {
             proxy_url,
             socket_sink: None,
             socket_control: None,
-            socket_registration: None,
         }
     }
 
@@ -229,7 +227,6 @@ impl PolymarketWebSocketClient {
     /// Configures state reporting and reconnect control for the underlying transport.
     #[must_use]
     pub(crate) fn with_socket_control(mut self, control: SocketControl) -> Self {
-        self.socket_sink = Some(control.sink());
         self.socket_control = Some(control);
         self
     }
@@ -258,13 +255,17 @@ impl PolymarketWebSocketClient {
             message_handler,
             None,
             Arc::new(RateLimiter::new_with_quota(None, vec![])),
-            self.socket_sink.clone(),
+            self.socket_control
+                .as_ref()
+                .map(SocketControl::sink)
+                .or_else(|| self.socket_sink.clone()),
         )
         .await?;
-        self.socket_registration = self
-            .socket_control
-            .as_ref()
-            .map(|control| control.register(client.reconnect_handle()));
+
+        if let Some(control) = &self.socket_control {
+            let handle = client.reconnect_handle();
+            control.register(move || handle.request_reconnect());
+        }
         let connection_epoch = client.connection_epoch();
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
@@ -401,6 +402,10 @@ impl PolymarketWebSocketClient {
             handle.abort();
         }
         self.auth_tracker.invalidate();
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
     }
 
     /// Disconnects the WebSocket connection.
@@ -431,6 +436,10 @@ impl PolymarketWebSocketClient {
         // Invalidate after the task has stopped so any in-flight auth_tracker.succeed()
         // calls from the handler cannot race with and survive the invalidation.
         self.auth_tracker.invalidate();
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
         log::debug!("Polymarket WebSocket disconnected");
         Ok(())
     }

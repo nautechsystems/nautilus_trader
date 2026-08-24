@@ -23,6 +23,7 @@ use nautilus_core::{
     UnixNanos, hex,
     string::{formatting::Separable, secret::REDACTED},
 };
+use nautilus_live::SocketControl;
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,
@@ -222,6 +223,13 @@ impl BlockchainDataClientCore {
             subscription_manager: DefiDataSubscriptionManager::new(),
             data_tx,
             cancellation_token,
+        }
+    }
+
+    /// Configures socket state reporting and reconnect control for direct RPC data.
+    pub fn set_socket_control(&mut self, control: SocketControl) {
+        if let Some(rpc_client) = &mut self.rpc_client {
+            rpc_client.set_socket_control(control);
         }
     }
 

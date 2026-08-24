@@ -41,11 +41,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
     enums::LogColor,
-    live::{
-        runner::{get_exec_event_sender, try_get_system_event_sender},
-        runtime::get_runtime,
-        task::TaskHandles,
-    },
+    live::{runner::get_exec_event_sender, runtime::get_runtime, task::TaskHandles},
     log_debug,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
@@ -59,7 +55,7 @@ use nautilus_core::{
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, ContingencyType, OmsType, OrderSide, OrderType, PositionSideSpecified},
@@ -89,7 +85,6 @@ use crate::{
             LighterTxType,
         },
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
-        socket::{USER_STREAMS_ENDPOINT, socket_state_sink},
         symbol::{MarketRegistry, product_type_from_instrument_id},
         urls::lighter_chain_id,
     },
@@ -112,7 +107,7 @@ use crate::{
         },
     },
     websocket::{
-        LighterWsError,
+        LighterWsError, USER_STREAMS_ENDPOINT,
         client::LighterWebSocketClient,
         dispatch::{
             LIGHTER_INSTRUMENT_CACHE, MAX_RECONCILIATION_PAGES, OrderIdentity, PendingOrderAction,
@@ -259,14 +254,11 @@ impl LighterExecutionClient {
             config.ws_timeout_secs,
             config.proxy_url.clone(),
         );
-        let ws_client = match try_get_system_event_sender() {
-            Some(sender) => ws_client.with_state_sink(socket_state_sink(
-                core.client_id,
-                USER_STREAMS_ENDPOINT,
-                sender,
-            )),
-            None => ws_client,
-        };
+        let ws_client = ws_client.with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*LIGHTER_VENUE),
+            USER_STREAMS_ENDPOINT,
+        ));
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(

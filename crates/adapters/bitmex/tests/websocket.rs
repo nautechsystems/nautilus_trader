@@ -35,11 +35,17 @@ use axum::{
 };
 use futures_util::StreamExt;
 use nautilus_bitmex::websocket::{client::BitmexWebSocketClient, messages::BitmexWsMessage};
-use nautilus_common::testing::wait_until_async;
-use nautilus_model::identifiers::{AccountId, InstrumentId};
+use nautilus_common::{
+    live::runner::replace_system_event_sender,
+    messages::{SystemEvent, system::SocketState},
+    testing::wait_until_async,
+};
+use nautilus_live::{SocketControl, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_model::identifiers::{AccountId, ClientId, InstrumentId, Venue};
 use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
 use serde_json::json;
+use ustr::Ustr;
 
 const TEST_PING_PAYLOAD: &[u8] = b"test-server-ping";
 
@@ -699,10 +705,16 @@ async fn test_bitmex_websocket_client_creation() {
 }
 
 #[rstest]
+#[case("bitmex-data-streams")]
+#[case("bitmex-user-streams")]
 #[tokio::test]
-async fn test_websocket_connection() {
+async fn test_websocket_connection(#[case] endpoint: &str) {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/realtime");
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let endpoint = Ustr::from(endpoint);
 
     let mut client = BitmexWebSocketClient::new(
         Some(ws_url),
@@ -714,7 +726,13 @@ async fn test_websocket_connection() {
         TransportBackend::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .with_socket_control(SocketControl::with_registry(
+        ClientId::from("BITMEX"),
+        Some(Venue::from("BITMEX")),
+        endpoint,
+        &registry,
+    ));
 
     // Connect to the mock server
     client.connect().await.unwrap();
@@ -728,7 +746,29 @@ async fn test_websocket_connection() {
         Duration::from_secs(2),
     )
     .await;
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    let handle = registry.handle(ClientId::from("BITMEX"), endpoint).unwrap();
+
     assert_eq!(*state.connection_count.lock().await, 1);
+    assert_eq!(change.client_id, ClientId::from("BITMEX"));
+    assert_eq!(change.venue, Some(Venue::from("BITMEX")));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(change) = event;
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Disconnected);
 
     // Close the connection
     client.close().await.unwrap();
@@ -743,6 +783,11 @@ async fn test_websocket_connection() {
     )
     .await;
     assert_eq!(*state.connection_count.lock().await, 0);
+    assert!(
+        registry
+            .handle(ClientId::from("BITMEX"), endpoint)
+            .is_none()
+    );
 }
 
 #[rstest]

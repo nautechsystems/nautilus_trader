@@ -59,6 +59,7 @@ use crate::{
         manager::{ExecutionManager, ExecutionManagerConfig},
     },
     runner::AsyncRunner,
+    socket::SocketReconnectRegistry,
 };
 
 #[derive(Debug)]
@@ -580,6 +581,8 @@ impl LiveNodeBuilder {
         let runner = AsyncRunner::new();
         runner.bind_senders();
 
+        let socket_registry = SocketReconnectRegistry::default();
+
         let kernel = NautilusKernel::new_with_dependencies(
             self.name.clone(),
             self.config.clone(),
@@ -612,14 +615,17 @@ impl LiveNodeBuilder {
             if let Some(config) = self.data_client_configs.remove(&name) {
                 log::debug!("Creating data client {name}");
 
-                let client = factory.create(
-                    &name,
-                    config.as_ref(),
-                    kernel.cache().into(),
-                    kernel.clock(),
-                )?;
+                let client = socket_registry.scope(|| {
+                    factory.create(
+                        &name,
+                        config.as_ref(),
+                        kernel.cache().into(),
+                        kernel.clock(),
+                    )
+                })?;
                 let client_id = client.client_id();
                 let venue = client.venue();
+                socket_registry.register_client(client_id);
 
                 let adapter = DataClientAdapter::new(
                     client_id, venue, true, // handles_order_book_deltas
@@ -659,17 +665,18 @@ impl LiveNodeBuilder {
             if let Some(config) = self.exec_client_configs.remove(&name) {
                 log::debug!("Creating execution client {name}");
 
-                let client = match factory {
+                let client = socket_registry.scope(|| match factory {
                     ExecutionClientFactoryEntry::Adapter(factory) => {
-                        factory.create(&name, config.as_ref(), kernel.cache().into())?
+                        factory.create(&name, config.as_ref(), kernel.cache().into())
                     }
                     ExecutionClientFactoryEntry::Simulated(factory) => {
-                        factory.create(&name, config.as_ref(), kernel.cache())?
+                        factory.create(&name, config.as_ref(), kernel.cache())
                     }
-                };
+                })?;
                 let client = LiveExecutionClient::new(client);
                 let client_id = client.client_id();
                 let venue = client.venue();
+                socket_registry.register_client(client_id);
 
                 let routing = self.exec_client_routing.remove(&name).unwrap_or_default();
 
@@ -720,6 +727,7 @@ impl LiveNodeBuilder {
             self.config,
             exec_manager,
             exec_clients,
+            socket_registry,
             self.cache_database_factory,
             self.external_msgbus_ingress,
         );

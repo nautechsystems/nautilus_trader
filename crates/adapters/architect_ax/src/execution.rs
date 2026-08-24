@@ -37,7 +37,7 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
-    ExecutionClientCore, ExecutionEventEmitter, execution::failure::CommandFailure,
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl, execution::failure::CommandFailure,
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -131,7 +131,12 @@ impl AxExecutionClient {
             config.heartbeat_interval_secs,
             config.transport_backend,
             config.proxy_url.clone(),
-        );
+        )
+        .with_socket_control(SocketControl::new(
+            core.client_id,
+            Some(*AX_VENUE),
+            "architect-ax-user-streams",
+        ));
 
         Ok(Self {
             core,

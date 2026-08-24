@@ -26,12 +26,13 @@ use nautilus_betfair::{
     provider::NavigationFilter,
 };
 use nautilus_common::{
-    clients::{DataClient, SocketReconnectRequestOutcome},
+    clients::DataClient,
     live::runner::{replace_system_event_sender, set_data_event_sender},
     messages::{DataEvent, data::SubscribeBookDeltas, system::SocketState},
     testing::wait_until_async,
 };
 use nautilus_core::UUID4;
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::Data,
     enums::{BookType, MarketStatusAction},
@@ -112,13 +113,10 @@ async fn test_data_client_publishes_socket_state_and_registers_reconnect() {
 
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
-    let (mut client, _rx) = create_test_data_client(addr, stream_port);
-    let registry = client
-        .socket_reconnect_registry()
-        .expect("data client must expose a socket reconnect registry")
-        .clone();
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx) = registry.scope(|| create_test_data_client(addr, stream_port));
     let endpoint = Ustr::from(ENDPOINT);
-    assert!(registry.get(endpoint).is_none());
+    assert!(registry.handle(*BETFAIR_CLIENT_ID, endpoint).is_none());
     let (initial_tx, initial_rx) = tokio::sync::oneshot::channel();
     let (replacement_tx, replacement_rx) = tokio::sync::oneshot::channel();
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
@@ -181,7 +179,7 @@ async fn test_data_client_publishes_socket_state_and_registers_reconnect() {
     assert_eq!(initial_subscription["op"], "marketSubscription");
 
     let reconnect = registry
-        .get(endpoint)
+        .handle(*BETFAIR_CLIENT_ID, endpoint)
         .expect("active data socket must register reconnect control");
     assert_eq!(
         reconnect.request_reconnect(),
@@ -212,7 +210,7 @@ async fn test_data_client_publishes_socket_state_and_registers_reconnect() {
     assert_eq!(replacement_subscription, initial_subscription);
 
     client.disconnect().await.unwrap();
-    assert!(registry.get(endpoint).is_none());
+    assert!(registry.handle(*BETFAIR_CLIENT_ID, endpoint).is_none());
     assert_eq!(
         reconnect.request_reconnect(),
         SocketReconnectRequestOutcome::Closed,

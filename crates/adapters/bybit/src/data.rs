@@ -50,6 +50,7 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
+use nautilus_live::SocketControlFactory;
 use nautilus_model::{
     data::{BarType, Data, ForwardPrice, QuoteTick},
     enums::{BookType, MarketStatusAction},
@@ -120,6 +121,7 @@ impl BybitDataClient {
     pub fn new(client_id: ClientId, config: BybitDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
+        let socket_factory = SocketControlFactory::new(client_id, Some(*BYBIT_VENUE));
 
         let http_client = if let (Some(api_key), Some(api_secret)) =
             (config.api_key.clone(), config.api_secret.clone())
@@ -164,6 +166,9 @@ impl BybitDataClient {
                     config.heartbeat_interval_secs,
                     config.transport_backend,
                     config.proxy_url.clone(),
+                )
+                .with_socket_control(
+                    socket_factory.control(format!("bybit-{}-data-streams", product_type.as_str())),
                 )
             })
             .collect();

@@ -30,6 +30,7 @@ use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use nautilus_common::live::get_runtime;
 use nautilus_core::{AtomicMap, AtomicSet, UUID4, consts::NAUTILUS_USER_AGENT};
+use nautilus_live::SocketControl;
 use nautilus_model::{
     data::BarType,
     enums::{AggregationSource, OrderSide, OrderType, PriceType, TimeInForce, TriggerType},
@@ -127,6 +128,7 @@ pub struct BybitWebSocketClient {
     transport_backend: TransportBackend,
     cancellation_token: CancellationToken,
     proxy_url: Option<String>,
+    socket_control: Option<SocketControl>,
 }
 
 impl Debug for BybitWebSocketClient {
@@ -170,6 +172,7 @@ impl Clone for BybitWebSocketClient {
             transport_backend: self.transport_backend,
             cancellation_token: self.cancellation_token.clone(),
             proxy_url: self.proxy_url.clone(),
+            socket_control: self.socket_control.clone(),
         }
     }
 }
@@ -235,7 +238,15 @@ impl BybitWebSocketClient {
             transport_backend,
             cancellation_token: CancellationToken::new(),
             proxy_url,
+            socket_control: None,
         }
+    }
+
+    /// Configures socket state reporting and reconnect control.
+    #[must_use]
+    pub fn with_socket_control(mut self, control: SocketControl) -> Self {
+        self.socket_control = Some(control);
+        self
     }
 
     /// Creates a new Bybit private WebSocket client.
@@ -288,6 +299,7 @@ impl BybitWebSocketClient {
             transport_backend,
             cancellation_token: CancellationToken::new(),
             proxy_url,
+            socket_control: None,
         }
     }
 
@@ -341,6 +353,7 @@ impl BybitWebSocketClient {
             transport_backend,
             cancellation_token: CancellationToken::new(),
             proxy_url,
+            socket_control: None,
         }
     }
 
@@ -402,12 +415,13 @@ impl BybitWebSocketClient {
 
             match tokio::time::timeout(
                 Duration::from_secs(CONNECTION_TIMEOUT_SECS),
-                WebSocketClient::connect(
+                WebSocketClient::connect_with_state_sink(
                     config.clone(),
                     Some(raw_handler.clone()),
                     None,
                     vec![],
                     None,
+                    self.socket_control.as_ref().map(SocketControl::sink),
                 ),
             )
             .await
@@ -458,6 +472,7 @@ impl BybitWebSocketClient {
         };
 
         self.connection_mode.store(client.connection_mode_atomic());
+        let reconnect_handle = client.reconnect_handle();
         client.set_auth_tracker(self.auth_tracker.clone(), self.requires_auth);
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<BybitWsMessage>();
@@ -469,6 +484,10 @@ impl BybitWebSocketClient {
         let cmd = HandlerCommand::SetClient(client);
 
         self.send_cmd(cmd).await?;
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
@@ -703,6 +722,10 @@ impl BybitWebSocketClient {
         }
 
         self.auth_tracker.invalidate();
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
 
         log::debug!("Closed");
 

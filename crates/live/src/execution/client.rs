@@ -26,7 +26,7 @@ use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::{ExecutionClient, SocketReconnectRegistry},
+    clients::ExecutionClient,
     messages::execution::{
         BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -54,7 +54,6 @@ pub(crate) struct LiveExecutionClient {
     account_id: AccountId,
     venue: Venue,
     oms_type: OmsType,
-    socket_registry: Option<SocketReconnectRegistry>,
 }
 
 impl Debug for LiveExecutionClient {
@@ -74,7 +73,6 @@ impl LiveExecutionClient {
         let account_id = client.account_id();
         let venue = client.venue();
         let oms_type = client.oms_type();
-        let socket_registry = client.socket_reconnect_registry().cloned();
 
         Self {
             client: Rc::new(RefCell::new(client)),
@@ -83,7 +81,6 @@ impl LiveExecutionClient {
             account_id,
             venue,
             oms_type,
-            socket_registry,
         }
     }
 
@@ -187,10 +184,6 @@ impl ExecutionClient for LiveExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.client.borrow().get_account()
-    }
-
-    fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
-        self.socket_registry.as_ref()
     }
 
     fn position_reconciliation_tolerance(&self) -> Decimal {
@@ -372,110 +365,5 @@ impl ExecutionClient for LiveExecutionClient {
         self.client
             .borrow()
             .calculate_commission(instrument, last_qty, last_px, liquidity_side)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
-    use nautilus_common::clients::{
-        SocketReconnectHandle, SocketReconnectRegistration, SocketReconnectRequestOutcome,
-    };
-    use rstest::rstest;
-    use ustr::Ustr;
-
-    use super::*;
-
-    struct ReconnectExecutionClient {
-        registry: SocketReconnectRegistry,
-        _registration: SocketReconnectRegistration,
-    }
-
-    impl ReconnectExecutionClient {
-        fn new(requests: Arc<AtomicUsize>) -> Self {
-            let registry = SocketReconnectRegistry::default();
-            let registration = registry.register(
-                Ustr::from("test-execution-stream"),
-                SocketReconnectHandle::new(move || {
-                    requests.fetch_add(1, Ordering::SeqCst);
-                    SocketReconnectRequestOutcome::Accepted
-                }),
-            );
-            Self {
-                registry,
-                _registration: registration,
-            }
-        }
-    }
-
-    #[async_trait(?Send)]
-    impl ExecutionClient for ReconnectExecutionClient {
-        fn is_connected(&self) -> bool {
-            true
-        }
-
-        fn client_id(&self) -> ClientId {
-            ClientId::from("TEST")
-        }
-
-        fn account_id(&self) -> AccountId {
-            AccountId::from("TEST-001")
-        }
-
-        fn venue(&self) -> Venue {
-            Venue::from("TEST")
-        }
-
-        fn oms_type(&self) -> OmsType {
-            OmsType::Netting
-        }
-
-        fn get_account(&self) -> Option<AccountAny> {
-            None
-        }
-
-        fn socket_reconnect_registry(&self) -> Option<&SocketReconnectRegistry> {
-            Some(&self.registry)
-        }
-
-        fn generate_account_state(
-            &self,
-            _balances: Vec<AccountBalance>,
-            _margins: Vec<MarginBalance>,
-            _reported: bool,
-            _ts_event: UnixNanos,
-            _info: Option<Params>,
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        fn start(&mut self) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        fn stop(&mut self) -> anyhow::Result<()> {
-            Ok(())
-        }
-    }
-
-    #[rstest]
-    fn forwards_socket_reconnect_registry() {
-        let requests = Arc::new(AtomicUsize::new(0));
-        let client = ReconnectExecutionClient::new(Arc::clone(&requests));
-        let client = LiveExecutionClient::new(Box::new(client));
-
-        let outcome = client
-            .socket_reconnect_registry()
-            .expect("live execution client must expose the wrapped registry")
-            .get(Ustr::from("test-execution-stream"))
-            .expect("wrapped endpoint must remain registered")
-            .request_reconnect();
-
-        assert_eq!(outcome, SocketReconnectRequestOutcome::Accepted);
-        assert_eq!(requests.load(Ordering::SeqCst), 1);
     }
 }
