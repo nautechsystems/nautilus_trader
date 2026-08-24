@@ -271,7 +271,7 @@ impl LiveNode {
             kernel.clock.clone(),
             kernel.cache.clone(),
             exec_manager_config,
-        );
+        )?;
 
         let node = Self {
             kernel,

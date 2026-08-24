@@ -27,6 +27,7 @@ use nautilus_common::{
     cache::Cache,
     clients::{DEFAULT_POSITION_RECONCILIATION_TOLERANCE, ExecutionClient},
     clock::Clock,
+    config::{ConfigError, ConfigErrorCollector, ConfigResult},
     enums::{LogColor, LogLevel},
     live::dst,
     log_info,
@@ -44,7 +45,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4, UnixNanos,
-    datetime::{mins_to_nanos, mins_to_secs},
+    datetime::{checked_mins_to_nanos, checked_mins_to_secs, mins_to_nanos, mins_to_secs},
 };
 use nautilus_execution::{
     engine::ExecutionEngine,
@@ -358,6 +359,38 @@ impl Default for ExecutionManagerConfig {
 }
 
 impl ExecutionManagerConfig {
+    /// Validates the execution manager configuration, collecting every field violation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
+    /// invalid) if any field fails validation.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::with_capacity(2);
+
+        if let Some(mins) = self.lookback_mins {
+            errors.check(
+                checked_mins_to_secs(mins).is_some(),
+                ConfigError::range(
+                    "ExecutionManagerConfig.lookback_mins",
+                    format!("{mins} minutes (must fit in `u64` seconds)"),
+                ),
+            );
+        }
+
+        if let Some(mins) = self.open_check_lookback_mins {
+            errors.check(
+                checked_mins_to_nanos(mins).is_some(),
+                ConfigError::range(
+                    "ExecutionManagerConfig.open_check_lookback_mins",
+                    format!("{mins} minutes (must fit in `u64` nanoseconds)"),
+                ),
+            );
+        }
+
+        errors.into_result()
+    }
+
     /// Sets the trader ID on the configuration.
     #[must_use]
     pub fn with_trader_id(mut self, trader_id: TraderId) -> Self {
@@ -448,12 +481,18 @@ impl Debug for ExecutionManager {
 
 impl ExecutionManager {
     /// Creates a new [`ExecutionManager`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] if `config` fails validation.
     pub fn new(
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         config: ExecutionManagerConfig,
-    ) -> Self {
-        Self {
+    ) -> ConfigResult<Self> {
+        config.validate()?;
+
+        Ok(Self {
             clock,
             cache,
             config,
@@ -471,7 +510,7 @@ impl ExecutionManager {
             missing_order_coverage_warnings: IndexSet::new(),
             unresolved_order_coverage: IndexSet::new(),
             targeted_order_queries: IndexSet::new(),
-        }
+        })
     }
 
     pub(crate) fn set_position_reconciliation_tolerance(
@@ -4782,6 +4821,82 @@ mod tests {
 
     use super::*;
 
+    #[rstest]
+    fn test_new_validates_open_check_lookback_mins_boundaries() {
+        let create_manager = |mins| {
+            ExecutionManager::new(
+                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(Cache::default())),
+                ExecutionManagerConfig {
+                    open_check_lookback_mins: Some(mins),
+                    ..Default::default()
+                },
+            )
+        };
+
+        assert!(create_manager(307_445_734).is_ok());
+        assert!(matches!(
+            create_manager(307_445_735),
+            Err(ConfigError::Range { field, .. })
+                if field == "ExecutionManagerConfig.open_check_lookback_mins"
+        ));
+    }
+
+    #[rstest]
+    fn test_new_validates_reconciliation_lookback_mins_boundaries() {
+        let create_manager = |mins| {
+            ExecutionManager::new(
+                Rc::new(RefCell::new(TestClock::new())),
+                Rc::new(RefCell::new(Cache::default())),
+                ExecutionManagerConfig {
+                    lookback_mins: Some(mins),
+                    ..Default::default()
+                },
+            )
+        };
+
+        assert!(create_manager(307_445_734_561_825_860).is_ok());
+        assert!(matches!(
+            create_manager(307_445_734_561_825_861),
+            Err(ConfigError::Range { field, .. })
+                if field == "ExecutionManagerConfig.lookback_mins"
+        ));
+    }
+
+    #[rstest]
+    fn test_new_reports_every_invalid_lookback_field() {
+        let error = ExecutionManager::new(
+            Rc::new(RefCell::new(TestClock::new())),
+            Rc::new(RefCell::new(Cache::default())),
+            ExecutionManagerConfig {
+                lookback_mins: Some(307_445_734_561_825_861),
+                open_check_lookback_mins: Some(307_445_735),
+                ..Default::default()
+            },
+        )
+        .expect_err("both lookback fields are out of range");
+
+        let ConfigError::Multiple { errors } = error else {
+            panic!("expected a `Multiple` error, was {error:?}");
+        };
+
+        let fields = errors
+            .iter()
+            .map(|e| match e {
+                ConfigError::Range { field, .. } => field.as_str(),
+                other => panic!("expected a `Range` error, was {other:?}"),
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            fields,
+            [
+                "ExecutionManagerConfig.lookback_mins",
+                "ExecutionManagerConfig.open_check_lookback_mins",
+            ]
+        );
+    }
+
     #[derive(Clone)]
     enum CommissionOutcome {
         Value(Money),
@@ -4941,7 +5056,8 @@ mod tests {
         )
         .with_avg_px(dec!(100.0));
         let manager =
-            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default());
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
 
         (manager, cache, order, report, instrument)
     }
@@ -5125,7 +5241,8 @@ mod tests {
             .borrow_mut()
             .add_instrument(instrument.clone())
             .expect("instrument is cacheable");
-        let manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default());
+        let manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default())
+            .expect("valid config");
         let (report, fill) = external_report_with_partial_fill(&instrument);
         let expected = Money::new(2.5, Currency::USDT());
         let client = CommissionStubClient::new(CommissionOutcome::Value(expected));
@@ -5156,7 +5273,8 @@ mod tests {
             .add_instrument(instrument.clone())
             .expect("instrument is cacheable");
         let manager =
-            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default());
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
         let (report, fill) = external_report_with_partial_fill(&instrument);
         let client = CommissionStubClient::new(CommissionOutcome::Failure);
         let mut fill_queue = ReconciliationFillQueue::default();
@@ -5217,7 +5335,8 @@ mod tests {
             .add_instrument(instrument.clone())
             .expect("instrument is cacheable");
         let manager =
-            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default());
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
         let (report, _) = external_report_with_partial_fill(&instrument);
         let failing_client = CommissionStubClient::new(CommissionOutcome::Failure);
 
@@ -5274,7 +5393,8 @@ mod tests {
             .borrow_mut()
             .add_instrument(instrument.clone())
             .expect("instrument is cacheable");
-        let manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default());
+        let manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default())
+            .expect("valid config");
         let (report, fill) = external_report_with_partial_fill(&instrument);
         let client = CommissionStubClient::new(CommissionOutcome::NoOverride);
         let mut fill_queue = ReconciliationFillQueue::default();
@@ -5507,7 +5627,8 @@ mod tests {
     fn test_clear_recon_tracking_removes_targeted_query() {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let mut manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default());
+        let mut manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default())
+            .expect("valid config");
         let client_order_id = ClientOrderId::from("O-TARGETED-CLEAR");
         manager.targeted_order_queries.insert(client_order_id);
 
@@ -5528,7 +5649,8 @@ mod tests {
                 filtered_client_order_ids: IndexSet::from([client_order_id]),
                 ..Default::default()
             },
-        );
+        )
+        .expect("valid config");
 
         manager.register_inflight(client_order_id);
 
@@ -5553,7 +5675,8 @@ mod tests {
                 inflight_threshold_ms: 100,
                 ..Default::default()
             },
-        );
+        )
+        .expect("valid config");
         manager.register_inflight(client_order_id);
         manager
             .config
@@ -5592,7 +5715,8 @@ mod tests {
         let client_order_id = ClientOrderId::from("O-STATUS-MATRIX");
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let mut manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default());
+        let mut manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default())
+            .expect("valid config");
         manager.register_inflight(client_order_id);
         manager.order_query_recency.mark(client_order_id);
         manager
@@ -5803,7 +5927,8 @@ mod tests {
                 open_check_missing_retries: 1,
                 ..Default::default()
             },
-        );
+        )
+        .expect("valid config");
         manager.record_local_activity(client_order_id);
         assert!(
             manager
@@ -5863,7 +5988,8 @@ mod tests {
                 open_check_threshold_ns: 100_000_000,
                 ..Default::default()
             },
-        );
+        )
+        .expect("valid config");
         manager.record_local_activity(old_id);
         dst::time::sleep(Duration::from_millis(101)).await;
         manager.record_local_activity(fresh_id);
@@ -5889,7 +6015,8 @@ mod tests {
                 reconciliation_instrument_ids: IndexSet::from([crypto_perpetual_ethusdt().id()]),
                 ..Default::default()
             },
-        );
+        )
+        .expect("valid config");
         let included_id = ClientOrderId::from("O-REPORT-001");
         let excluded_id = ClientOrderId::from("O-REPORT-002");
         let included_instrument_id = crypto_perpetual_ethusdt().id();
@@ -5951,7 +6078,8 @@ mod tests {
                 reconciliation_instrument_ids: IndexSet::from([crypto_perpetual_ethusdt().id()]),
                 ..Default::default()
             },
-        );
+        )
+        .expect("valid config");
         let included_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let excluded_instrument = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
 
@@ -6015,7 +6143,8 @@ mod tests {
                 position_check_threshold_ns: 5_000_000_000,
                 ..Default::default()
             },
-        );
+        )
+        .expect("valid config");
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let instrument_id = instrument.id();
         let position = insert_open_position(
@@ -6089,7 +6218,8 @@ mod tests {
                 position_check_threshold_ns: 0,
                 ..Default::default()
             },
-        );
+        )
+        .expect("valid config");
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let instrument_id = instrument.id();
         let position = insert_open_position(
@@ -6142,7 +6272,8 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut manager =
-            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default());
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let client_order_id = ClientOrderId::from("O-MASS-VOID-001");
         let venue_order_id = VenueOrderId::from("V-MASS-VOID-001");
