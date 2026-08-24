@@ -27,7 +27,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Currency, Price, Quantity},
+    types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -271,6 +271,10 @@ fn validate_historical_price_evidence(value: Decimal, field: &str) -> anyhow::Re
         "{field} {value} must be greater than zero and less than one",
     );
     let evidence = value.normalize();
+    anyhow::ensure!(
+        evidence.scale() <= u32::from(FIXED_PRECISION),
+        "historical {field} {value} exceeds the maximum representable price precision of {FIXED_PRECISION} decimals",
+    );
     let price = Price::from_decimal(evidence)
         .with_context(|| format!("failed to represent historical {field} {value}"))?;
     anyhow::ensure!(
