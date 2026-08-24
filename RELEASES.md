@@ -10,6 +10,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed Binance Spot and Futures execution reconciliation when no data client is configured
+
 ### Internal Improvements
 
 - Upgraded Rust (MSRV) to 1.98.0

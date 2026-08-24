@@ -1684,7 +1684,7 @@ async fn test_connect_loads_instruments_and_account() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_mass_status_includes_stable_fill_identity() {
+async fn test_generate_mass_status_uses_execution_instrument_for_retained_order() {
     let (addr, captured_queries) =
         start_exec_test_server_with_fill_fixture(FillFixtureMode::Stable).await;
     let base_url = format!("http://{addr}");
@@ -1692,10 +1692,6 @@ async fn test_generate_mass_status_includes_stable_fill_identity() {
     let (mut client, _rx, cache) = create_test_execution_client(base_url);
     let account_id = AccountId::from("BINANCE-001");
     add_test_account_to_cache(&cache, account_id);
-    cache
-        .borrow_mut()
-        .add_instrument(InstrumentAny::CurrencyPair(currency_pair_btcusdt()))
-        .unwrap();
     add_open_order_to_cache(
         &cache,
         test_instrument_id(),
@@ -1721,6 +1717,8 @@ async fn test_generate_mass_status_includes_stable_fill_identity() {
     client.start().unwrap();
     client.connect().await.unwrap();
 
+    assert!(cache.borrow().instrument(&test_instrument_id()).is_none());
+
     let mass_status = client
         .generate_mass_status(Some(60))
         .await
@@ -1728,6 +1726,7 @@ async fn test_generate_mass_status_includes_stable_fill_identity() {
         .unwrap();
     let fill_reports: Vec<_> = mass_status.fill_reports().into_values().flatten().collect();
 
+    assert!(mass_status.order_reports().is_empty());
     assert_eq!(fill_reports.len(), 1);
     assert_eq!(fill_reports[0].instrument_id, test_instrument_id());
     assert_eq!(fill_reports[0].trade_id, TradeId::new("98765432"));

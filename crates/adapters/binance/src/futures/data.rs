@@ -460,18 +460,14 @@ impl BinanceFuturesDataClient {
             return Ok((pair.to_string(), "PERPETUAL".to_string()));
         }
 
-        let cache = http.instruments_cache();
-        let definition = cache
-            .get(&Ustr::from(symbol.as_str()))
+        let definition = http
+            .instrument_metadata(*instrument_id)
             .with_context(|| format!("missing COIN-M definition for {instrument_id}"))?;
-        let BinanceFuturesInstrument::CoinM(definition) = definition.value() else {
+        let BinanceFuturesInstrument::CoinM(definition) = definition else {
             anyhow::bail!("expected a COIN-M definition for {instrument_id}");
         };
 
-        Ok((
-            definition.pair.to_string(),
-            definition.contract_type.clone(),
-        ))
+        Ok((definition.pair.to_string(), definition.contract_type))
     }
 
     fn parse_open_interest_decimal(field: &str, value: &str) -> anyhow::Result<Decimal> {

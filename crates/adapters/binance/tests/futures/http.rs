@@ -68,6 +68,7 @@ struct TestServerState {
     request_count: Arc<AtomicUsize>,
     rate_limit_threshold: usize,
     last_query: Arc<Mutex<Option<String>>>,
+    exchange_info: Option<Arc<serde_json::Value>>,
 }
 
 impl Default for TestServerState {
@@ -76,6 +77,7 @@ impl Default for TestServerState {
             request_count: Arc::new(AtomicUsize::new(0)),
             rate_limit_threshold: usize::MAX,
             last_query: Arc::new(Mutex::new(None)),
+            exchange_info: None,
         }
     }
 }
@@ -83,6 +85,11 @@ impl Default for TestServerState {
 impl TestServerState {
     fn with_rate_limit(mut self, limit: usize) -> Self {
         self.rate_limit_threshold = limit;
+        self
+    }
+
+    fn with_exchange_info(mut self, exchange_info: serde_json::Value) -> Self {
+        self.exchange_info = Some(Arc::new(exchange_info));
         self
     }
 
@@ -139,12 +146,20 @@ async fn handle_time() -> Response {
     json_response(&json!({"serverTime": 1700000000000_i64}))
 }
 
-async fn handle_exchange_info() -> Response {
-    json_response(&load_fixture("exchange_info_usdm.json"))
+async fn handle_exchange_info(State(state): State<TestServerState>) -> Response {
+    if let Some(exchange_info) = state.exchange_info.as_deref() {
+        json_response(exchange_info)
+    } else {
+        json_response(&load_fixture("exchange_info_usdm.json"))
+    }
 }
 
-async fn handle_coinm_exchange_info() -> Response {
-    json_response(&load_fixture("exchange_info_delivery_coinm.json"))
+async fn handle_coinm_exchange_info(State(state): State<TestServerState>) -> Response {
+    if let Some(exchange_info) = state.exchange_info.as_deref() {
+        json_response(exchange_info)
+    } else {
+        json_response(&load_fixture("exchange_info_delivery_coinm.json"))
+    }
 }
 
 async fn handle_depth() -> Response {
@@ -608,7 +623,7 @@ async fn test_request_delivery_instrument_populates_cache_and_status(
 
 #[rstest]
 #[tokio::test]
-async fn test_request_instruments_applies_filters_exact_fees_and_cache_replacement() {
+async fn test_request_instruments_applies_filters_and_retains_raw_metadata() {
     let addr = start_test_server(TestServerState::default()).await.unwrap();
     let client = BinanceFuturesHttpClient::new(
         BinanceProductType::UsdM,
@@ -647,7 +662,7 @@ async fn test_request_instruments_applies_filters_exact_fees_and_cache_replaceme
             .contains_key(&Ustr::from("BTCUSDT"))
     );
     assert!(
-        !client
+        client
             .instruments_cache()
             .contains_key(&Ustr::from("BTCUSDT_260925"))
     );
@@ -668,7 +683,7 @@ async fn test_request_instruments_applies_filters_exact_fees_and_cache_replaceme
         InstrumentId::from("BTCUSDT_260925.BINANCE")
     );
     assert!(
-        !client
+        client
             .instruments_cache()
             .contains_key(&Ustr::from("BTCUSDT"))
     );
@@ -676,6 +691,57 @@ async fn test_request_instruments_applies_filters_exact_fees_and_cache_replaceme
         client
             .instruments_cache()
             .contains_key(&Ustr::from("BTCUSDT_260925"))
+    );
+}
+
+#[rstest]
+#[case::usdm(
+    BinanceProductType::UsdM,
+    "exchange_info_usdm.json",
+    "status",
+    "BTCUSDT",
+    "BTCUSDT-PERP.BINANCE",
+    2,
+    3
+)]
+#[case::coinm(
+    BinanceProductType::CoinM,
+    "exchange_info_delivery_coinm.json",
+    "contractStatus",
+    "BTCUSD_260925",
+    "BTCUSD_260925.BINANCE",
+    1,
+    0
+)]
+#[tokio::test]
+async fn test_non_trading_instrument_retains_raw_precision_metadata(
+    #[case] product_type: BinanceProductType,
+    #[case] fixture: &str,
+    #[case] status_field: &str,
+    #[case] raw_symbol: &str,
+    #[case] instrument_id: &str,
+    #[case] price_precision: u8,
+    #[case] size_precision: u8,
+) {
+    let mut exchange_info = load_fixture(fixture);
+    exchange_info["symbols"][0][status_field] = json!("PENDING_TRADING");
+    let state = TestServerState::default().with_exchange_info(exchange_info);
+    let addr = start_test_server(state).await.unwrap();
+    let client = create_domain_client(&addr, product_type);
+
+    let instruments = client.request_instruments().await.unwrap();
+    let cache = client.instruments_cache();
+    let cached = cache.get(&Ustr::from(raw_symbol)).unwrap();
+
+    assert!(
+        instruments
+            .iter()
+            .all(|instrument| instrument.id() != InstrumentId::from(instrument_id))
+    );
+    assert_eq!(cached.id(), InstrumentId::from(instrument_id));
+    assert_eq!(
+        cached.precisions().unwrap(),
+        (price_precision, size_precision)
     );
 }
 
@@ -880,6 +946,7 @@ async fn test_request_delivery_order_status_reports_without_instrument_id(
         false,
     )
     .unwrap();
+    client.request_instruments().await.unwrap();
 
     let reports = client
         .request_order_status_reports(AccountId::from("BINANCE-001"), None, true)

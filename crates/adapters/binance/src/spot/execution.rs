@@ -54,7 +54,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
         VenueOrderId,
     },
-    instruments::{Instrument, InstrumentAny},
+    instruments::Instrument,
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -1452,10 +1452,9 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     ))
                     .map(|order| order.instrument_id())
                     .filter(|instrument_id| {
-                        matches!(
-                            cache.instrument(instrument_id),
-                            Some(InstrumentAny::CurrencyPair(_))
-                        )
+                        self.http_client
+                            .get_instrument(&instrument_id.symbol.inner())
+                            .is_some_and(|instrument| instrument.id() == *instrument_id)
                     }),
             );
         }
