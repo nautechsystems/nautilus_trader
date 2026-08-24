@@ -32,7 +32,7 @@ use nautilus_bitmex::{
 use nautilus_common::enums::Environment;
 use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
-    enums::TimeInForce,
+    enums::{TimeInForce, TriggerType},
     identifiers::{InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
@@ -97,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .open_position_on_start_qty(order_qty.as_decimal())
         .open_position_time_in_force(TimeInForce::Ioc)
         .close_positions_time_in_force(TimeInForce::Ioc)
+        .stop_trigger_type(TriggerType::MarkPrice)
         .log_data(false)
         .build()?;
 

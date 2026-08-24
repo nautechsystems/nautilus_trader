@@ -27,6 +27,7 @@ from nautilus_trader.adapters.binance import BinanceDataClientConfig
 from nautilus_trader.adapters.binance import BinanceDataClientFactory
 from nautilus_trader.adapters.binance import BinanceEnvironment
 from nautilus_trader.adapters.binance import BinanceProductType
+from nautilus_trader.adapters.binance import BinanceSpotMarketDataMode
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import ClientId
@@ -52,6 +53,7 @@ def main() -> None:
         BinanceDataClientConfig(
             product_type=BinanceProductType.SPOT,
             environment=BinanceEnvironment.LIVE,
+            spot_market_data_mode=BinanceSpotMarketDataMode.Json,
         ),
     )
 

@@ -177,7 +177,6 @@ bench_data/
 /examples/backtest/notebooks/catalog/
 /examples/notebooks/catalog/
 nautilus_trader/**/.gitignore
-nautilus_trader/test_kit/mocks/.nautilus/
 nautilus_trader.egg-info
 /test_data/catalog/
 /test_data/large/*

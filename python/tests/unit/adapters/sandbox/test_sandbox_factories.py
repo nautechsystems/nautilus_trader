@@ -17,6 +17,8 @@ import pytest
 from unit.adapters.example_modules import capture_exec_tester_main
 from unit.adapters.example_modules import load_example_module
 
+from nautilus_trader.adapters.binance import BinanceDataClientConfig
+from nautilus_trader.adapters.binance import BinanceSpotMarketDataMode
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
 from nautilus_trader.common import Environment
@@ -162,11 +164,19 @@ def test_sandbox_exec_tester_uses_simulated_exec_and_runs(
 ) -> None:
     captured = capture_exec_tester_main(monkeypatch, sandbox_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
+    _, _, data_config = captured["data_client_args"]
+    simulated_venue, _, simulated_config = captured["simulated_exec_client_args"]
 
     assert isinstance(kwargs, dict)
+    assert isinstance(data_config, BinanceDataClientConfig)
+    assert data_config.spot_market_data_mode == BinanceSpotMarketDataMode.Json
+    assert simulated_venue == "BINANCE"
+    assert isinstance(simulated_config, SandboxExecutionClientConfig)
+    assert simulated_config.venue == Venue.from_str("BINANCE")
     assert kwargs["dry_run"] is False
     assert kwargs["enable_limit_buys"] is True
     assert kwargs["enable_limit_sells"] is True
     assert "simulated_exec_client_args" in captured
+    assert "data_client_args" in captured
     assert "exec_client_args" not in captured
     assert captured["run_called"] is True

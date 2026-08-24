@@ -28,10 +28,7 @@
 //!
 //! Run with: `cargo run --example polymarket-new-market-monitor --package nautilus-polymarket --features examples`
 //!
-//! Required credential environment variables:
-//! - `POLYMARKET_PK` (EOA signer private key).
-//! - `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, `POLYMARKET_PASSPHRASE`.
-//! - `POLYMARKET_FUNDER` (Gnosis Safe proxy address).
+//! This data-only example uses public Polymarket endpoints and does not require credentials.
 
 use std::sync::Arc;
 
@@ -44,22 +41,20 @@ use nautilus_common::{
 };
 use nautilus_live::node::LiveNode;
 use nautilus_model::{
-    identifiers::{AccountId, ClientId, TraderId},
+    identifiers::{ClientId, TraderId},
     instruments::{Instrument, InstrumentAny},
 };
 use nautilus_polymarket::{
     common::{
         consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
-        enums::SignatureType,
         models::PolymarketLabel,
     },
-    config::{PolymarketDataClientConfig, PolymarketExecutionClientConfig},
-    factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
+    config::PolymarketDataClientConfig,
+    factories::PolymarketDataClientFactory,
     filters::SearchFilter,
 };
 
 const TRADER_ID: &str = "TESTER-001";
-const ACCOUNT_ID: &str = "POLYMARKET-001";
 const NODE_NAME: &str = "POLYMARKET-NEW-MARKET-MONITOR-001";
 const SEARCH_QUERY: &str = "BTC";
 
@@ -139,7 +134,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let environment = Environment::Live;
     let trader_id = TraderId::from(TRADER_ID);
-    let account_id = AccountId::from(ACCOUNT_ID);
     let client_id = *POLYMARKET_CLIENT_ID;
 
     // SearchFilter pre-populates the query's markets as the initial instrument set
@@ -151,12 +145,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = PolymarketExecutionClientConfig {
-        account_id,
-        signature_type: SignatureType::PolyGnosisSafe,
-        ..Default::default()
-    };
-
     let log_config = LoggerConfig {
         stdout_level: LevelFilter::Info,
         ..Default::default()
@@ -165,19 +153,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut node = LiveNode::builder(trader_id, environment)?
         .with_name(NODE_NAME.to_string())
         .with_logging(log_config)
-        .with_reconciliation(true)
-        .with_reconciliation_lookback_mins(120)
-        .with_timeout_reconciliation(60)
         .with_delay_post_stop_secs(2)
         .add_data_client(
             None,
             Box::new(PolymarketDataClientFactory),
             Box::new(data_config),
-        )?
-        .add_exec_client(
-            None,
-            Box::new(PolymarketExecutionClientFactory),
-            Box::new(exec_config),
         )?
         .build()?;
 

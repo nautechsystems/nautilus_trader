@@ -60,12 +60,12 @@ let deltas = OrderBookDeltas::new(instrument_id, vec![bid, ask]);
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import RecordFlag
+from nautilus_trader.model import BookAction
+from nautilus_trader.model import BookOrder
+from nautilus_trader.model import OrderBookDelta
+from nautilus_trader.model import OrderBookDeltas
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import RecordFlag
 
 instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 bid = OrderBookDelta(

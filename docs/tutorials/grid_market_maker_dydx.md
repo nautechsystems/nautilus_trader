@@ -654,6 +654,3 @@ against testnet.
   docs.
 - [Order types](https://docs.dydx.xyz/concepts/trading/orders):
   protocol-level order mechanics.
-- [Grid Market Making with a Deadman's Switch (BitMEX)](./grid_market_maker_bitmex.md):
-  comparison with deadman's switch as an alternative to short-term order
-  expiry.

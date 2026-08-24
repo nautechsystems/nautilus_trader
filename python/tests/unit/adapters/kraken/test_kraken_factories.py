@@ -98,6 +98,8 @@ def test_kraken_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_kraken_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KRAKEN_API_KEY", SMOKE_API_KEY)
+    monkeypatch.setenv("KRAKEN_API_SECRET", SMOKE_API_SECRET)
     captured = capture_exec_tester_main(monkeypatch, kraken_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 
@@ -106,3 +108,11 @@ def test_kraken_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) ->
     assert kwargs["enable_limit_buys"] is True
     assert kwargs["enable_limit_sells"] is True
     assert captured["run_called"] is True
+
+
+def test_kraken_exec_tester_requires_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("KRAKEN_API_KEY", raising=False)
+    monkeypatch.delenv("KRAKEN_API_SECRET", raising=False)
+
+    with pytest.raises(SystemExit, match="KRAKEN_API_KEY and KRAKEN_API_SECRET must be set"):
+        kraken_exec_tester.main()

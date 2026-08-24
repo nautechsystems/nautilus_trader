@@ -134,7 +134,7 @@ represents a simple spread between Bitcoin and Ethereum spot prices on Binance. 
 `BTCUSDT.BINANCE` and `ETHUSDT.BINANCE` already exist in the cache.
 
 ```python
-from nautilus_trader.model.instruments import SyntheticInstrument
+from nautilus_trader.model import SyntheticInstrument
 
 btcusdt_binance_id = InstrumentId.from_str("BTCUSDT.BINANCE")
 ethusdt_binance_id = InstrumentId.from_str("ETHUSDT.BINANCE")

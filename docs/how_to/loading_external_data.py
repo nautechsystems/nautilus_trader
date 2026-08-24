@@ -12,19 +12,14 @@ import os
 import shutil
 from pathlib import Path
 
-import pandas as pd
-
 from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model import Quantity
-from nautilus_trader.model import QuoteTick
 from nautilus_trader.persistence import ParquetDataCatalog
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-from nautilus_trader.testkit.providers import CSVTickDataLoader
+from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 from nautilus_trader.trading import EmaCrossConfig
 
@@ -35,8 +30,8 @@ from nautilus_trader.trading import EmaCrossConfig
 # Place CSV tick files (e.g. from [histdata.com](https://www.histdata.com/))
 # into `~/Downloads/Data/HISTDATA/`. Set the `NAUTILUS_DATA_DIR` environment
 # variable to the parent directory if your data lives elsewhere.
-# `CSVTickDataLoader` reads the raw CSV into a DataFrame, and
-# `QuoteTickDataWrangler` converts it into Nautilus `QuoteTick` objects.
+# `TestDataProvider.quotes_from_histdata_csv` converts the rows into Nautilus
+# `QuoteTick` objects.
 
 # %%
 DATA_DIR = Path(os.environ.get("NAUTILUS_DATA_DIR", "~/Downloads/Data")).expanduser() / "HISTDATA"
@@ -50,16 +45,8 @@ assert raw_files, f"Unable to find any data files in directory {path}"
 raw_files
 
 # %%
-# Load the first data file into a pandas DataFrame
-df = CSVTickDataLoader.load(raw_files[0], index_col=0, datetime_format="%Y%m%d %H%M%S%f")
-df = df.iloc[:, :2]
-df.columns = ["bid_price", "ask_price"]
-
-# Process quotes using a wrangler
 EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD")
-wrangler = QuoteTickDataWrangler(EURUSD)
-
-ticks = wrangler.process(df)
+ticks = TestDataProvider.quotes_from_histdata_csv(EURUSD, raw_files[0])
 
 # %% [markdown]
 # ## Write to the data catalog
@@ -74,23 +61,23 @@ CATALOG_PATH = Path.cwd() / "catalog"
 # Clear if it already exists, then create fresh
 if CATALOG_PATH.exists():
     shutil.rmtree(CATALOG_PATH)
-CATALOG_PATH.mkdir()
+CATALOG_PATH.mkdir(parents=True)
 
-catalog = ParquetDataCatalog(CATALOG_PATH)
+catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 # %%
-catalog.write_data([EURUSD])
-catalog.write_data(ticks)
+catalog.write_instruments([EURUSD])
+catalog.write_quote_ticks(ticks)
 
 # %%
 # Verify instruments written to catalog
 catalog.instruments()
 
 # %%
-start = dt_to_unix_nanos(pd.Timestamp("2020-01-03", tz="UTC"))
-end = dt_to_unix_nanos(pd.Timestamp("2020-01-04", tz="UTC"))
+start = ticks[0].ts_event
+end = ticks[-1].ts_event + 1
 
-ticks = catalog.quotes(instrument_ids=[EURUSD.id.value], start=start, end=end)
+ticks = catalog.query_quote_ticks(identifiers=[EURUSD.id.value], start=start, end=end)
 ticks[:10]
 
 # %% [markdown]
@@ -115,8 +102,8 @@ venue_configs = [
 
 data_configs = [
     BacktestDataConfig(
-        catalog_path=str(catalog.path),
-        data_cls=QuoteTick,
+        catalog_path=str(CATALOG_PATH),
+        data_type="QuoteTick",
         instrument_id=instrument.id,
         start_time=start,
         end_time=end,

@@ -21,6 +21,7 @@ On start it opens a position with an IOC order, then maintains post-only limit
 quotes on both sides of the book. On stop it cancels all orders and closes all
 positions. Run only against a funded account you intend to test. The strategy has
 no alpha advantage whatsoever and is not intended for production trading.
+Set `KRAKEN_API_KEY` and `KRAKEN_API_SECRET` before running the example.
 
 """
 
@@ -58,6 +59,11 @@ TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    api_key = os.getenv("KRAKEN_API_KEY")
+    api_secret = os.getenv("KRAKEN_API_SECRET")
+    if not api_key or not api_secret:
+        raise SystemExit("KRAKEN_API_KEY and KRAKEN_API_SECRET must be set")
+
     node = (
         LiveNode.builder("KRAKEN-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
         .with_reconciliation(True)
@@ -72,8 +78,8 @@ def main() -> None:
             KrakenExecutionClientFactory(),
             KrakenExecutionClientConfig(
                 account_id=ACCOUNT_ID,
-                api_key=os.getenv("KRAKEN_API_KEY", ""),
-                api_secret=os.getenv("KRAKEN_API_SECRET", ""),
+                api_key=api_key,
+                api_secret=api_secret,
                 product_type=PRODUCT_TYPE,
             ),
         )

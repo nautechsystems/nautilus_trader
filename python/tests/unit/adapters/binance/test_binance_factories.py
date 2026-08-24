@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance import BinanceEnvironment
 from nautilus_trader.adapters.binance import BinanceExecutionClientConfig
 from nautilus_trader.adapters.binance import BinanceExecutionClientFactory
 from nautilus_trader.adapters.binance import BinanceProductType
+from nautilus_trader.adapters.binance import BinanceSpotMarketDataMode
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
@@ -117,8 +118,11 @@ def test_live_node_builder_accepts_binance_exec_factory() -> None:
 def test_binance_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = capture_data_tester_main(monkeypatch, binance_data_tester)
     kwargs = captured["data_tester_kwargs"]
+    _, _, config = captured["data_client_args"]
 
     assert isinstance(kwargs, dict)
+    assert isinstance(config, BinanceDataClientConfig)
+    assert config.spot_market_data_mode == BinanceSpotMarketDataMode.Json
     assert kwargs["subscribe_book_at_interval"] is True
     assert captured["run_called"] is True
 

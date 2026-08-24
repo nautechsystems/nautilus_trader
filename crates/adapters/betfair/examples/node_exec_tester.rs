@@ -15,14 +15,15 @@
 
 //! Example demonstrating live execution testing with the Betfair adapter.
 //!
-//! Edit the constants below to change the target market, execution instrument, and order size.
-//!
 //! Run with: `cargo run -p nautilus-betfair --example betfair-exec-tester --features examples`
 //!
-//! Required credential environment variables:
+//! Required environment variables:
 //! - `BETFAIR_USERNAME`: Your Betfair username.
 //! - `BETFAIR_PASSWORD`: Your Betfair password.
 //! - `BETFAIR_APP_KEY`: Your Betfair application key.
+//! - `BETFAIR_MARKET_ID`: An active Betfair market ID.
+//! - `BETFAIR_INSTRUMENT_ID` (optional): A runner in that market. When omitted, the example
+//!   selects the active runner with the most matched volume.
 //!
 //! Market IDs can be found from `https://www.betfair.com.au/exchange/plus/`
 
@@ -52,17 +53,24 @@ const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "BETFAIR-001";
 const NODE_NAME: &str = "BETFAIR-EXEC-TESTER-001";
 const STRATEGY_ID: &str = "EXEC_TESTER-001";
-const MARKET_ID: &str = "1.123456789";
-const INSTRUMENT_ID: Option<&str> = None;
 const ORDER_QTY: &str = "2.00";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    let market_id = MARKET_ID.to_string();
+    let market_id = std::env::var("BETFAIR_MARKET_ID").map_err(|_| {
+        anyhow::anyhow!("BETFAIR_MARKET_ID must be set to an active Betfair market")
+    })?;
+    let requested_instrument_id = std::env::var("BETFAIR_INSTRUMENT_ID").ok();
     let (account_currency, instruments, http_client) = load_market_context(&market_id).await?;
-    let instrument_id = select_exec_instrument(&http_client, &market_id, &instruments).await?;
+    let instrument_id = select_exec_instrument(
+        &http_client,
+        &market_id,
+        &instruments,
+        requested_instrument_id.as_deref(),
+    )
+    .await?;
     http_client.disconnect().await;
     let instrument_choices = instrument_choices(&instruments);
 
@@ -201,8 +209,9 @@ async fn select_exec_instrument(
     http_client: &BetfairHttpClient,
     market_id: &str,
     instruments: &[InstrumentAny],
+    requested_instrument_id: Option<&str>,
 ) -> anyhow::Result<InstrumentId> {
-    if let Some(instrument_id) = INSTRUMENT_ID {
+    if let Some(instrument_id) = requested_instrument_id {
         let instrument_id = InstrumentId::from(instrument_id);
 
         if instruments
@@ -212,7 +221,9 @@ async fn select_exec_instrument(
             return Ok(instrument_id);
         }
 
-        anyhow::bail!("INSTRUMENT_ID={instrument_id} was not found in the loaded market");
+        anyhow::bail!(
+            "BETFAIR_INSTRUMENT_ID={instrument_id} was not found in BETFAIR_MARKET_ID={market_id}"
+        );
     }
 
     match instruments {
@@ -224,7 +235,7 @@ async fn select_exec_instrument(
                 let available = instrument_choices(instruments).join("\n  ");
                 anyhow::bail!(
                     "Could not auto-select an active Betfair runner for market {market_id}.\n\n  \
-                     Set INSTRUMENT_ID to one of:\n  {available}"
+                     Set BETFAIR_INSTRUMENT_ID to one of:\n  {available}"
                 );
             }
         },

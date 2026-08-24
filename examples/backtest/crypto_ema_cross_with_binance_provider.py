@@ -15,75 +15,62 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import time
+import sys
 from decimal import Decimal
+from pathlib import Path
 
 import pandas as pd
 
 from nautilus_trader.adapters.binance import BINANCE_VENUE
-from nautilus_trader.adapters.binance import get_cached_binance_http_client
-from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.enums import BinanceEnvironment
-from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.common.component import LiveClock
+from nautilus_trader.adapters.binance import BinanceDataClientConfig
+from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
+from nautilus_trader.adapters.binance import BinanceProductType
+from nautilus_trader.adapters.binance import load_binance_instruments
+from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStop
-from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStopConfig
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BarType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import TraderId
 from nautilus_trader.testkit.providers import TestDataProvider
 
 
-async def create_provider():
-    """
-    Create a provider to load all instrument data from live exchange.
-    """
-    clock = LiveClock()
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "docs" / "tutorials"))
 
-    client = get_cached_binance_http_client(
-        clock=clock,
-        account_type=BinanceAccountType.USDT_FUTURES,
-        environment=BinanceEnvironment.TESTNET,
+from ema_cross import EMACross
+from ema_cross import EMACrossConfig
+
+
+async def load_instrument(instrument_id: InstrumentId):
+    instruments = await load_binance_instruments(
+        BinanceDataClientConfig(
+            product_type=BinanceProductType.USD_M,
+            instrument_provider=BinanceInstrumentProviderConfig(
+                load_all=False,
+                load_ids=[str(instrument_id)],
+                log_warnings=False,
+            ),
+        ),
     )
 
-    binance_provider = BinanceFuturesInstrumentProvider(
-        client=client,
-        clock=clock,
-        config=InstrumentProviderConfig(load_all=True, log_warnings=False),
-    )
-
-    await binance_provider.load_all_async()
-    return binance_provider
+    if len(instruments) != 1:
+        raise RuntimeError(f"Expected one Binance instrument for {instrument_id}")
+    return instruments[0]
 
 
 if __name__ == "__main__":
-    # Configure backtest engine
-    config = BacktestEngineConfig(
-        trader_id=TraderId("BACKTESTER-001"),
-        logging=LoggingConfig(log_level="INFO"),
+    instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
+    instrument = asyncio.run(load_instrument(instrument_id))
+
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            trader_id=TraderId.from_str("BACKTESTER-001"),
+            risk_engine=RiskEngineConfig(bypass=True),
+        ),
     )
-
-    # Build the backtest engine
-    engine = BacktestEngine(config=config)
-
-    # Add a trading venue (multiple venues possible)
-    # Use actual Binance instrument for backtesting
-    provider: BinanceFuturesInstrumentProvider = asyncio.run(create_provider())
-
-    instrument_id = InstrumentId(symbol=Symbol("ETHUSDT-PERP"), venue=BINANCE_VENUE)
-    instrument = provider.find(instrument_id)
-    if instrument is None:
-        raise RuntimeError(f"Unable to find instrument {instrument_id}")
-
     engine.add_venue(
         venue=BINANCE_VENUE,
         oms_type=OmsType.NETTING,
@@ -91,41 +78,28 @@ if __name__ == "__main__":
         base_currency=None,
         starting_balances=[Money(1_000_000, instrument.quote_currency)],
     )
-
     engine.add_instrument(instrument)
 
-    bar_type = BarType.from_str(f"{instrument_id.value}-1-MINUTE-BID-INTERNAL")
-    wrangler = QuoteTickDataWrangler(instrument=instrument)
-    ticks = wrangler.process_bar_data(
-        bid_data=TestDataProvider().read_csv_bars("btc-perp-20211231-20220201_1m.csv"),
-        ask_data=TestDataProvider().read_csv_bars("btc-perp-20211231-20220201_1m.csv"),
-    )
-
-    engine.add_data(ticks)
-
-    # Configure your strategy
-    strategy_config = EMACrossTrailingStopConfig(
-        instrument_id=instrument.id,
+    bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL")
+    bars = TestDataProvider.bars_from_binance_csv(
+        instrument=instrument,
         bar_type=bar_type,
-        trade_size=Decimal(1),
-        fast_ema_period=10,
-        slow_ema_period=20,
-        atr_period=20,
-        trailing_atr_multiple=3.0,
-        trailing_offset_type="PRICE",
-        trigger_type="LAST_PRICE",
+        csv_name="btc-perp-20211231-20220201_1m.csv",
     )
-    # Instantiate and add your strategy
-    strategy = EMACrossTrailingStop(config=strategy_config)
-    engine.add_strategy(strategy=strategy)
+    engine.add_data(bars)
 
-    time.sleep(0.1)
-    input("Press Enter to continue...")
-
-    # Run the engine (from start to end of data)
+    strategy = EMACross(
+        EMACrossConfig(
+            instrument_id=instrument.id,
+            bar_type=bar_type,
+            trade_size=Decimal("0.010"),
+            fast_ema_period=10,
+            slow_ema_period=20,
+        ),
+    )
+    engine.add_strategy(strategy)
     engine.run()
 
-    # Optionally view reports
     with pd.option_context(
         "display.max_rows",
         100,
@@ -134,12 +108,9 @@ if __name__ == "__main__":
         "display.width",
         300,
     ):
-        print(engine.trader.generate_account_report(BINANCE_VENUE))
-        print(engine.trader.generate_order_fills_report())
-        print(engine.trader.generate_positions_report())
+        print(engine.generate_account_report(BINANCE_VENUE))
+        print(engine.generate_order_fills_report())
+        print(engine.generate_positions_report())
 
-    # For repeated backtest runs make sure to reset the engine
     engine.reset()
-
-    # Good practice to dispose of the object
     engine.dispose()

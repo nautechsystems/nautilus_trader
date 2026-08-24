@@ -40,6 +40,10 @@ def default_publishers_filepath() -> str:
 
 
 def main() -> None:
+    api_key = os.getenv("DATABENTO_API_KEY")
+    if not api_key:
+        raise SystemExit("DATABENTO_API_KEY must be set")
+
     host, port = resolve_ib_endpoint()
     trader_id = TraderId.from_str("IB-V2-DATABENTO-001")
     account_id = os.getenv("TWS_ACCOUNT") if env_bool("IB_V2_ENABLE_EXECUTION") else None
@@ -64,7 +68,7 @@ def main() -> None:
         "DATABENTO",
         DatabentoDataClientFactory(),
         DatabentoDataClientConfig(
-            api_key=os.getenv("DATABENTO_API_KEY", "0" * 32),
+            api_key=api_key,
             publishers_filepath=os.getenv(
                 "DATABENTO_PUBLISHERS_FILE",
                 default_publishers_filepath(),

@@ -112,7 +112,7 @@ if CATALOG_PATH.exists():
 CATALOG_PATH.mkdir()
 
 # Create a catalog instance
-catalog = ParquetDataCatalog(CATALOG_PATH)
+catalog = ParquetDataCatalog(str(CATALOG_PATH))
 
 # %% [markdown]
 # Use a `DatabentoDataLoader` to decode and load the data into Nautilus objects.
@@ -138,11 +138,11 @@ depth10 = loader.load_order_book_depth10(filepath=path)
 
 # %%
 # Write data to catalog (this takes ~20 seconds or ~250,000/second for writing MBP-10 at the moment)
-catalog.write_data(depth10)
+catalog.write_order_book_depths(depth10)
 
 # %%
 # Test reading from catalog
-depths = catalog.order_book_depth10()
+depths = catalog.query_order_book_depths()
 len(depths)
 
 # %% [markdown]
@@ -203,10 +203,10 @@ trades = loader.load_trades(
 
 # %%
 # Write data to catalog
-catalog.write_data(trades)
+catalog.write_trade_ticks(trades)
 
 # %%
-trades = catalog.trades([instrument_id])
+trades = catalog.query_trade_ticks([str(instrument_id)])
 
 # %%
 len(trades)

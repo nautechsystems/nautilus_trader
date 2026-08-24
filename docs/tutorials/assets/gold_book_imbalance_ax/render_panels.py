@@ -36,19 +36,19 @@ from nautilus_trader.common import DataActor
 from nautilus_trader.common import LogLevel
 from nautilus_trader.config import DataActorConfig
 from nautilus_trader.config import LoggerConfig
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import PerpetualContract
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import PerpetualContract
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "examples" / "live" / "architect_ax"))
 from strategies import OrderBookImbalance
@@ -56,6 +56,7 @@ from strategies import OrderBookImbalanceConfig
 
 
 OUT = Path(__file__).resolve().parent
+USD = Currency.from_str("USD")
 GC_DBN = Path(
     os.environ.get(
         "GC_DBN",
@@ -77,12 +78,20 @@ MIN_TRIGGER_SIZE = 1.0
 
 
 class QuoteSamplerConfig(DataActorConfig):
+    _CUSTOM_FIELDS = ("instrument_id", "sample_every_secs")
+
+    def __new__(cls, *args, **kwargs):
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
     def __init__(
         self,
         instrument_id: InstrumentId,
         sample_every_secs: int = 1,
         **_kwargs,
     ) -> None:
+        super().__init__()
         self.instrument_id = instrument_id
         self.sample_every_secs = sample_every_secs
 
@@ -153,8 +162,15 @@ def run_backtest():
         ts_init=0,
     )
 
-    loader = DatabentoDataLoader()
-    quotes = loader.from_dbn_file(path=str(GC_DBN), instrument_id=instrument_id)
+    publishers_path = (
+        Path(__file__).resolve().parents[4]
+        / "crates"
+        / "adapters"
+        / "databento"
+        / "publishers.json"
+    )
+    loader = DatabentoDataLoader(publishers_path)
+    quotes = loader.load_quotes(filepath=GC_DBN, instrument_id=instrument_id)
 
     engine = BacktestEngine(
         BacktestEngineConfig(

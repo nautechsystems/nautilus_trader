@@ -14,84 +14,78 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
+import sys
 from decimal import Decimal
+from pathlib import Path
 
 import pandas as pd
 
-from nautilus_trader.backtest.engine import BacktestEngine
-from nautilus_trader.backtest.modules import FXRolloverInterestConfig
-from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import FXRolloverInterestModule
+from nautilus_trader.backtest import InterestRateRecord
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import BarType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
 from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "docs" / "tutorials"))
+
+from ema_cross import EMACross
+from ema_cross import EMACrossConfig
+
+
 if __name__ == "__main__":
-    # Configure backtest engine
-    config = BacktestEngineConfig(
-        trader_id=TraderId("BACKTESTER-001"),
+    provider = TestDataProvider()
+    rates = provider.read_csv("short-term-interest.csv")
+    rollover = FXRolloverInterestModule(
+        records=[
+            InterestRateRecord(location=row.LOCATION, time=row.TIME, value=row.Value)
+            for row in rates.itertuples(index=False)
+        ],
     )
 
-    # Build the backtest engine
-    engine = BacktestEngine(config=config)
-
-    # Optional plug in module to simulate rollover interest,
-    # the data is coming from packaged test data.
-    provider = TestDataProvider()
-    interest_rate_data = provider.read_csv("short-term-interest.csv")
-    config = FXRolloverInterestConfig(interest_rate_data)
-    fx_rollover_interest = FXRolloverInterestModule(config=config)
-
-    # Add a trading venue (multiple venues possible)
+    engine = BacktestEngine(
+        BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
+    )
     SIM = Venue("SIM")
+    USD = Currency.from_str("USD")
     engine.add_venue(
         venue=SIM,
-        oms_type=OmsType.HEDGING,  # Venue will generate position IDs
+        oms_type=OmsType.HEDGING,
         account_type=AccountType.MARGIN,
-        base_currency=USD,  # Standard single-currency account
-        starting_balances=[Money(1_000_000, USD)],  # Single-currency or multi-currency accounts
-        modules=[fx_rollover_interest],
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+        modules=[rollover],
     )
 
-    # Add instruments
     AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD", SIM)
     engine.add_instrument(AUDUSD_SIM)
 
-    # Add data
-    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-    ticks = wrangler.process(provider.read_csv_ticks("truefx/audusd-ticks.csv"))
+    ticks = provider.quotes_from_truefx_csv(
+        instrument=AUDUSD_SIM,
+        csv_name="truefx/audusd-ticks.csv",
+    )
     engine.add_data(ticks)
 
-    # Configure your strategy
-    strategy_config = EMACrossConfig(
-        instrument_id=AUDUSD_SIM.id,
-        bar_type=BarType.from_str("AUD/USD.SIM-1-MINUTE-MID-INTERNAL"),
-        fast_ema_period=10,
-        slow_ema_period=20,
-        trade_size=Decimal(1_000_000),
+    strategy = EMACross(
+        EMACrossConfig(
+            instrument_id=AUDUSD_SIM.id,
+            bar_type=BarType.from_str("AUD/USD.SIM-1-MINUTE-MID-INTERNAL"),
+            trade_size=Decimal(1_000_000),
+            fast_ema_period=10,
+            slow_ema_period=20,
+        ),
     )
-    # Instantiate and add your strategy
-    strategy = EMACross(config=strategy_config)
-    engine.add_strategy(strategy=strategy)
-
-    time.sleep(0.1)
-    input("Press Enter to continue...")
-
-    # Run the engine (from start to end of data)
+    engine.add_strategy(strategy)
     engine.run()
 
-    # Optionally view reports
     with pd.option_context(
         "display.max_rows",
         100,
@@ -100,12 +94,9 @@ if __name__ == "__main__":
         "display.width",
         300,
     ):
-        print(engine.trader.generate_account_report(SIM))
-        print(engine.trader.generate_order_fills_report())
-        print(engine.trader.generate_positions_report())
+        print(engine.generate_account_report(SIM))
+        print(engine.generate_order_fills_report())
+        print(engine.generate_positions_report())
 
-    # For repeated backtest runs make sure to reset the engine
     engine.reset()
-
-    # Good practice to dispose of the object when done
     engine.dispose()

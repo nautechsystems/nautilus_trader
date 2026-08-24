@@ -26,6 +26,33 @@ if matches=$(
   exit 1
 fi
 
+legacy_test_namespace='test'_'kit'
+if matches=$(
+  rg -n "$legacy_test_namespace" . \
+    --hidden \
+    --glob '!.git/**' \
+    --glob '!RELEASES.md' \
+    2> /dev/null
+); then
+  echo "Error: found removed legacy test namespace references"
+  echo
+  echo "$matches"
+  echo
+  echo "Use nautilus_trader.testkit or another current public API."
+  exit 1
+fi
+
+if matches=$(rg -n "nautilus_trader\.examples" examples/live --glob '*.py' 2> /dev/null); then
+  echo "Error: found live examples importing the removed Python example package"
+  echo
+  echo "$matches"
+  echo
+  echo "Use a current built-in component, a local strategy, or remove the stale example."
+  exit 1
+fi
+
+python3 -B scripts/check-example-imports.py
+
 if matches=$(
   rg -n 'nautilus_trader\.core\.nautilus_pyo3|nautilus_pyo3\.' crates \
     --glob '*.rs' \

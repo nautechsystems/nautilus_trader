@@ -137,13 +137,26 @@ def test_interactive_brokers_data_tester_runs(
     assert captured["run_called"] is True
 
 
+def test_interactive_brokers_exec_tester_requires_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TWS_ACCOUNT", raising=False)
+
+    with pytest.raises(SystemExit, match="TWS_ACCOUNT must be set"):
+        ib_exec_tester.main()
+
+
 def test_interactive_brokers_exec_tester_runs_live_orders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("TWS_ACCOUNT", "U1234567")
     captured = capture_exec_tester_main(monkeypatch, ib_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
+    _, _, exec_config = captured["exec_client_args"]
 
     assert isinstance(kwargs, dict)
+    assert isinstance(exec_config, InteractiveBrokersExecutionClientConfig)
+    assert exec_config.account_id == "U1234567"
     assert kwargs["dry_run"] is False
     assert kwargs["enable_limit_buys"] is True
     assert kwargs["enable_limit_sells"] is True

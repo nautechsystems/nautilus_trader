@@ -32,14 +32,13 @@ from nautilus_trader.backtest import InterestRateRecord
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.execution import ProbabilisticFillModel
+from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
+from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
-from nautilus_trader.model.currencies import JPY
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 
@@ -49,6 +48,8 @@ from ema_cross import EMACrossConfig
 
 
 OUT = Path(__file__).resolve().parent
+JPY = Currency.from_str("JPY")
+USD = Currency.from_str("USD")
 
 THEME = get_theme("nautilus_dark")
 TEMPLATE = THEME["template"]
@@ -84,7 +85,7 @@ def apply_layout(fig: go.Figure, title: str, height: int = 500) -> None:
 
 def run_backtest():
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
+        trader_id=TraderId.from_str("BACKTESTER-001"),
         logging=LoggerConfig(stdout_level=LogLevel.ERROR),
         risk_engine=RiskEngineConfig(bypass=True),
     )
@@ -118,10 +119,10 @@ def run_backtest():
     USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY", SIM)
     engine.add_instrument(USDJPY_SIM)
 
-    wrangler = QuoteTickDataWrangler(instrument=USDJPY_SIM)
-    ticks = wrangler.process_bar_data(
-        bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
-        ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+    ticks = provider.quotes_from_fxcm_bars(
+        instrument=USDJPY_SIM,
+        bid_csv="fxcm/usdjpy-m1-bid-2013.csv",
+        ask_csv="fxcm/usdjpy-m1-ask-2013.csv",
     )
     engine.add_data(ticks)
 

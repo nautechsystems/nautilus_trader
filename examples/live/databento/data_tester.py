@@ -47,13 +47,17 @@ USE_EXCHANGE_AS_VENUE = False
 
 
 def main() -> None:
+    api_key = os.getenv("DATABENTO_API_KEY")
+    if not api_key:
+        raise SystemExit("DATABENTO_API_KEY must be set")
+
     node = (
         LiveNode.builder("DATABENTO-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
         .add_data_client(
             None,
             DatabentoDataClientFactory(),
             DatabentoDataClientConfig(
-                api_key=os.getenv("DATABENTO_API_KEY", ""),
+                api_key=api_key,
                 publishers_filepath=PUBLISHERS_FILEPATH,
                 use_exchange_as_venue=USE_EXCHANGE_AS_VENUE,
             ),

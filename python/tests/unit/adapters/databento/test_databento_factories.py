@@ -68,6 +68,7 @@ def test_databento_data_client_config_stores_venue_dataset_map() -> None:
 
 
 def test_databento_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABENTO_API_KEY", "test-api-key")
     captured = capture_data_tester_main(monkeypatch, databento_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
@@ -75,6 +76,13 @@ def test_databento_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kwargs["subscribe_trades"] is True
     assert "exec_client_args" not in captured
     assert captured["run_called"] is True
+
+
+def test_databento_data_tester_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATABENTO_API_KEY", raising=False)
+
+    with pytest.raises(SystemExit, match="DATABENTO_API_KEY must be set"):
+        databento_data_tester.main()
 
 
 def publishers_filepath() -> Path:

@@ -15,14 +15,13 @@
 
 //! Example demonstrating live data testing with the Betfair adapter.
 //!
-//! Edit the constants below to change the target market.
-//!
 //! Run with: `cargo run -p nautilus-betfair --example betfair-data-tester --features examples`
 //!
-//! Required credential environment variables:
+//! Required environment variables:
 //! - `BETFAIR_USERNAME`: Your Betfair username.
 //! - `BETFAIR_PASSWORD`: Your Betfair password.
 //! - `BETFAIR_APP_KEY`: Your Betfair application key.
+//! - `BETFAIR_MARKET_ID`: An active Betfair market ID.
 //!
 //! Market IDs can be found from `https://www.betfair.com.au/exchange/plus/`
 
@@ -46,13 +45,14 @@ use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 const TRADER_ID: &str = "TESTER-001";
 const NODE_NAME: &str = "BETFAIR-DATA-TESTER-001";
-const MARKET_ID: &str = "1.123456789";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenvy::dotenv().ok();
 
-    let market_id = MARKET_ID.to_string();
+    let market_id = std::env::var("BETFAIR_MARKET_ID").map_err(|_| {
+        anyhow::anyhow!("BETFAIR_MARKET_ID must be set to an active Betfair market")
+    })?;
     let (account_currency, instruments) = load_market_context(&market_id).await?;
     let instrument_ids = instrument_ids(&instruments);
 

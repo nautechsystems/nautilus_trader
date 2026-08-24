@@ -151,12 +151,19 @@ class IbV2SubscriptionStrategy(Strategy):
             return
 
         self._subscribed = True
+
         if env_bool("IB_V2_SUBSCRIBE_QUOTES"):
-            print(f"{self.strategy_id}: subscribing quotes for {self.instrument_id}", flush=True)
+            print(
+                f"{self.strategy_id}: subscribing quotes for {self.instrument_id}",
+                flush=True,
+            )
             self.subscribe_quotes(self.instrument_id, client_id=ib_client_id())
 
         if env_bool("IB_V2_SUBSCRIBE_TRADES"):
-            print(f"{self.strategy_id}: subscribing trades for {self.instrument_id}", flush=True)
+            print(
+                f"{self.strategy_id}: subscribing trades for {self.instrument_id}",
+                flush=True,
+            )
             self.subscribe_trades(self.instrument_id, client_id=ib_client_id())
 
         if env_bool("IB_V2_SUBSCRIBE_BARS"):
@@ -170,15 +177,15 @@ class IbV2SubscriptionStrategy(Strategy):
             )
             self.subscribe_index_prices(self.instrument_id, client_id=ib_client_id())
 
-    def on_quote(self, tick: Any) -> None:
+    def on_quote(self, quote: Any) -> None:
         self._quote_count += 1
         if self._quote_count <= self._max_prints:
-            print(f"{self.strategy_id}: quote #{self._quote_count}: {tick}", flush=True)
+            print(f"{self.strategy_id}: quote #{self._quote_count}: {quote}", flush=True)
 
-    def on_trade(self, tick: Any) -> None:
+    def on_trade(self, trade: Any) -> None:
         self._trade_count += 1
         if self._trade_count <= self._max_prints:
-            print(f"{self.strategy_id}: trade #{self._trade_count}: {tick}", flush=True)
+            print(f"{self.strategy_id}: trade #{self._trade_count}: {trade}", flush=True)
 
     def on_bar(self, bar: Any) -> None:
         self._bar_count += 1
@@ -216,18 +223,27 @@ class DatabentoSubscriptionStrategy(Strategy):
             self.subscribe_quotes(self.instrument_id, client_id=databento_client_id())
 
         if env_bool("IB_V2_DATABENTO_SUBSCRIBE_BARS", True):
-            print(f"{self.strategy_id}: subscribing Databento bars for {self.bar_type}", flush=True)
+            print(
+                f"{self.strategy_id}: subscribing Databento bars for {self.bar_type}",
+                flush=True,
+            )
             self.subscribe_bars(self.bar_type, client_id=databento_client_id())
 
-    def on_quote(self, tick: Any) -> None:
+    def on_quote(self, quote: Any) -> None:
         self._quote_count += 1
         if self._quote_count <= self._max_prints:
-            print(f"{self.strategy_id}: Databento quote #{self._quote_count}: {tick}", flush=True)
+            print(
+                f"{self.strategy_id}: Databento quote #{self._quote_count}: {quote}",
+                flush=True,
+            )
 
     def on_bar(self, bar: Any) -> None:
         self._bar_count += 1
         if self._bar_count <= self._max_prints:
-            print(f"{self.strategy_id}: Databento bar #{self._bar_count}: {bar}", flush=True)
+            print(
+                f"{self.strategy_id}: Databento bar #{self._bar_count}: {bar}",
+                flush=True,
+            )
 
 
 class OptionGreeksStrategy(Strategy):
@@ -254,13 +270,19 @@ class OptionGreeksStrategy(Strategy):
             return
 
         self._subscribed = True
-        print(f"{self.strategy_id}: subscribing option greeks for {self.instrument_id}", flush=True)
+        print(
+            f"{self.strategy_id}: subscribing option greeks for {self.instrument_id}",
+            flush=True,
+        )
         self.subscribe_option_greeks(self.instrument_id, client_id=ib_client_id())
 
     def on_option_greeks(self, greeks: Any) -> None:
         self._count += 1
         if self._count <= self._max_prints:
-            print(f"{self.strategy_id}: option greeks #{self._count}: {greeks}", flush=True)
+            print(
+                f"{self.strategy_id}: option greeks #{self._count}: {greeks}",
+                flush=True,
+            )
 
     def on_stop(self) -> None:
         if self._subscribed:
@@ -314,7 +336,10 @@ class IbV2OrderStrategy(Strategy):
             return
 
         self._orders_submitted = True
-        print(f"{self.strategy_id}: submitting orders for {self.instrument_id}", flush=True)
+        print(
+            f"{self.strategy_id}: submitting orders for {self.instrument_id}",
+            flush=True,
+        )
         self.submit_example_orders()
 
     def submit_example_orders(self) -> None:
@@ -447,7 +472,10 @@ class IbV2OrderStrategy(Strategy):
 
         order = self.cache.order(event.client_order_id)
         if order is None:
-            print(f"{self.strategy_id}: unable to auto-cancel {event.client_order_id}", flush=True)
+            print(
+                f"{self.strategy_id}: unable to auto-cancel {event.client_order_id}",
+                flush=True,
+            )
             return
 
         print(
@@ -710,16 +738,25 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
         self.instrument = instrument
         self._startup_requested = True
         start_ns = self.clock.timestamp_ns() - (30 * 60 * 1_000_000_000)
-        print(f"{self.strategy_id}: requesting historical bars for {self.bar_type}", flush=True)
+        print(
+            f"{self.strategy_id}: requesting historical bars for {self.bar_type}",
+            flush=True,
+        )
         self.request_bars(self.bar_type, start=unix_nanos_to_dt(start_ns), client_id=ib_client_id())
 
         if env_bool("IB_V2_ENABLE_LIVE_TRADES"):
             self._live_trades_subscribed = True
-            print(f"{self.strategy_id}: subscribing trades for {self.instrument_id}", flush=True)
+            print(
+                f"{self.strategy_id}: subscribing trades for {self.instrument_id}",
+                flush=True,
+            )
             self.subscribe_trades(self.instrument_id, client_id=ib_client_id())
 
         if env_bool("IB_V2_ENABLE_LIVE_BARS"):
-            print(f"{self.strategy_id}: subscribing live bars for {self.bar_type}", flush=True)
+            print(
+                f"{self.strategy_id}: subscribing live bars for {self.bar_type}",
+                flush=True,
+            )
             self.subscribe_bars(
                 self.bar_type,
                 client_id=ib_client_id(),

@@ -44,6 +44,9 @@ class _CaptureNode:
         self._captured["actor_type_name"] = type_name
         self._captured["actor_config"] = config
 
+    def add_actor_from_config(self, config: object) -> None:
+        self._captured["importable_actor_config"] = config
+
     def add_builtin_strategy(self, type_name: str, config: object) -> None:
         self._captured["strategy_type_name"] = type_name
         self._captured["strategy_config"] = config
@@ -144,4 +147,17 @@ def capture_data_tester_main(
 
     module.main()
     assert captured["actor_type_name"] == "DataTester"
+    return captured
+
+
+def capture_actor_example_main(
+    monkeypatch: Any,
+    module: ModuleType,
+) -> dict[str, object]:
+    captured: dict[str, object] = {}
+    _CaptureLiveNode.captured = captured
+
+    monkeypatch.setattr(module, "LiveNode", _CaptureLiveNode)
+
+    module.main()
     return captured

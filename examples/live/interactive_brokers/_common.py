@@ -71,12 +71,16 @@ def is_ib_endpoint_reachable(host: str, port: int, timeout: float = 2.0) -> bool
         return False
 
 
-def schedule_node_stop(node: object, delay_seconds: int) -> None:
+def schedule_node_stop(node: LiveNode, delay_seconds: int) -> None:
     if delay_seconds <= 0:
         return
 
     subprocess.Popen(
-        ["/bin/sh", "-c", f"sleep {delay_seconds}; kill -{signal.SIGINT} {os.getpid()}"],
+        [
+            "/bin/sh",
+            "-c",
+            f"sleep {delay_seconds}; kill -{signal.SIGINT} {os.getpid()}",
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -108,7 +112,11 @@ def active_quarterly_contract(
             expiry = third_friday(year, month)
             if expiry >= target_expiry:
                 local_symbol = f"{symbol}{contract_month_code(year, month)}"
-                return local_symbol, f"{local_symbol}.{venue}", expiry.strftime("%Y%m%d")
+                return (
+                    local_symbol,
+                    f"{local_symbol}.{venue}",
+                    expiry.strftime("%Y%m%d"),
+                )
         year += 1
 
 
@@ -194,7 +202,7 @@ def default_es_put_spread_instrument_id(
     return f"{'_'.join(symbol_parts)}.XCME"
 
 
-def default_stock_contracts() -> list[dict[str, str]]:
+def default_stock_contracts() -> list[dict[str, object]]:
     ib = interactive_brokers
     return [
         {
@@ -250,8 +258,9 @@ def option_contract(
     strike: float | None = None,
 ) -> dict[str, object]:
     ib = interactive_brokers
-    right = right or ib.IbOptionRight.PUT
-    right_value = right.as_str() if hasattr(right, "as_str") else str(right)
+    if right is None:
+        right = ib.IbOptionRight.PUT
+    right_value = right.as_str() if isinstance(right, ib.IbOptionRight) else str(right)
     default_local_symbol = default_es_put_option_local_symbol(strike or 6800.0)
     _, _, default_expiry = default_es_future()
     contract: dict[str, object] = {
@@ -274,8 +283,8 @@ def ib_order_tags(**values: object) -> str:
     return "IBOrderTags:" + json.dumps(values, separators=(",", ":"), sort_keys=True)
 
 
-def add_strategy_from_config(node: object, strategy_path: str) -> None:
-    node.add_strategy_from_config(  # type: ignore[attr-defined]
+def add_strategy_from_config(node: LiveNode, strategy_path: str) -> None:
+    node.add_strategy_from_config(
         ImportableStrategyConfig(
             strategy_path=strategy_path,
             config_path="",
@@ -314,7 +323,7 @@ def build_ib_live_node(
     exec_client_id: int | None = None,
     account_id: str | None = None,
     provider_config: interactive_brokers.InteractiveBrokersInstrumentProviderConfig | None = None,
-) -> object:
+) -> LiveNode:
     ib = interactive_brokers
     trader = TraderId.from_str(trader_id)
     provider_config = provider_config or instrument_provider_config()
