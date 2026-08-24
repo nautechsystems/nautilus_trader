@@ -103,11 +103,18 @@ struct PolymarketRtdsFeedInner {
     closing: AtomicBool,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct TwapReplayFingerprint {
+    timestamp_ms: u64,
+    value: Decimal,
+}
+
 #[derive(Clone, Debug)]
 struct TrackedSubscription {
     wire: RtdsWireSubscription,
     total_ref_count: usize,
     data_types: AHashMap<String, TrackedDataType>,
+    last_twap_fingerprint: Option<TwapReplayFingerprint>,
 }
 
 #[derive(Clone, Debug)]
@@ -389,6 +396,7 @@ impl PolymarketRtdsFeed {
                 wire: parsed.wire.clone(),
                 total_ref_count: 0,
                 data_types: AHashMap::new(),
+                last_twap_fingerprint: None,
             });
 
         let should_send_wire = entry.total_ref_count == 0;
@@ -409,30 +417,32 @@ impl PolymarketRtdsFeed {
 
     pub(crate) fn track_unsubscribe(&self, data_type: &DataType) -> anyhow::Result<bool> {
         let parsed = ParsedSubscription::from_data_type(data_type)?;
-        let mut entry = match self.inner.subscriptions.get_mut(&parsed.key) {
-            Some(entry) => entry,
-            None => return Ok(false),
+        let mut entry = match self.inner.subscriptions.entry(parsed.key.clone()) {
+            dashmap::mapref::entry::Entry::Occupied(entry) => entry,
+            dashmap::mapref::entry::Entry::Vacant(_) => return Ok(false),
         };
 
         let data_type_key = data_type.topic().to_string();
-        let Some(tracked) = entry.data_types.get_mut(&data_type_key) else {
-            return Ok(false);
-        };
+        {
+            let subscription = entry.get_mut();
+            let Some(tracked) = subscription.data_types.get_mut(&data_type_key) else {
+                return Ok(false);
+            };
 
-        if tracked.ref_count > 1 {
-            tracked.ref_count -= 1;
-        } else {
-            entry.data_types.remove(&data_type_key);
+            if tracked.ref_count > 1 {
+                tracked.ref_count -= 1;
+            } else {
+                subscription.data_types.remove(&data_type_key);
+            }
+
+            if subscription.total_ref_count > 1 {
+                subscription.total_ref_count -= 1;
+                return Ok(false);
+            }
         }
 
-        if entry.total_ref_count > 1 {
-            entry.total_ref_count -= 1;
-            return Ok(false);
-        }
-
-        drop(entry);
-        self.inner.subscriptions.remove(&parsed.key);
         self.inner.last_emitted_timestamps_ms.remove(&parsed.key);
+        entry.remove();
         Ok(true)
     }
 
@@ -580,16 +590,6 @@ impl PolymarketRtdsFeed {
             .subscriptions
             .get(key)
             .map_or(0, |entry| entry.data_types.len())
-    }
-
-    #[cfg(test)]
-    fn handle_text_for_test(&self, text: &str) {
-        let _ = self.handle_text_message(text);
-    }
-
-    #[cfg(test)]
-    fn try_handle_text_for_test(&self, text: &str) -> anyhow::Result<()> {
-        self.handle_text_message(text)
     }
 
     fn current_ws(&self) -> Option<Arc<WebSocketClient>> {
@@ -1085,21 +1085,11 @@ impl PolymarketRtdsFeed {
         let value =
             decimal_from_signed_e18("full_accuracy_value", payload.full_accuracy_value.as_str())?;
         let ts_event = unix_nanos_from_millis("payload.timestamp", payload.timestamp)?;
-        let data_types = self.matching_data_types(topic, &symbol_lower);
-        if data_types.is_empty() {
+        let Some(data_types) =
+            self.admit_twap_observation(topic, &symbol_lower, payload.timestamp, value)?
+        else {
             return Ok(());
-        }
-
-        if !self.should_emit_timestamp_ms(
-            topic,
-            &symbol_lower,
-            payload.timestamp,
-            // A TWAP observation timestamp identifies one provider observation. Keep the
-            // high-water mark across reconnects and suppress equal-timestamp redelivery.
-            TimestampGuard::Snapshot,
-        ) {
-            return Ok(());
-        }
+        };
 
         let ts_init = self.inner.clock.get_time_ns();
         let custom_payload = Arc::new(PolymarketRtdsCryptoTwap::new(
@@ -1318,6 +1308,57 @@ impl PolymarketRtdsFeed {
                 true
             }
         }
+    }
+
+    fn admit_twap_observation(
+        &self,
+        topic: RtdsTopic,
+        symbol_lower: &str,
+        timestamp_ms: u64,
+        value: Decimal,
+    ) -> anyhow::Result<Option<Vec<DataType>>> {
+        let key = tracked_key(topic.as_str(), symbol_lower);
+        let Some(mut subscription) = self.inner.subscriptions.get_mut(&key) else {
+            return Ok(None);
+        };
+        let data_types = subscription
+            .data_types
+            .values()
+            .map(|tracked| tracked.data_type.clone())
+            .collect::<Vec<_>>();
+        if data_types.is_empty() {
+            return Ok(None);
+        }
+
+        if let Some(previous) = subscription.last_twap_fingerprint {
+            if timestamp_ms < previous.timestamp_ms {
+                return Ok(None);
+            }
+
+            if timestamp_ms == previous.timestamp_ms {
+                if value == previous.value {
+                    return Ok(None);
+                }
+
+                anyhow::bail!(
+                    concat!(
+                        "conflicting RTDS TWAP observation topic={} symbol={} ",
+                        "timestamp_ms={} prior={} received={}",
+                    ),
+                    topic.as_str(),
+                    symbol_lower,
+                    previous.timestamp_ms,
+                    previous.value,
+                    value,
+                );
+            }
+        }
+
+        subscription.last_twap_fingerprint = Some(TwapReplayFingerprint {
+            timestamp_ms,
+            value,
+        });
+        Ok(Some(data_types))
     }
 }
 
@@ -1794,7 +1835,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_server_disconnect_restores_twap_without_replaying_last_observation() {
+    async fn test_server_disconnect_preserves_twap_replay_fingerprint() {
         let state = TestServerState::default();
         let addr = start_rtds_server(state.clone()).await;
         let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1889,9 +1930,17 @@ mod tests {
         )
         .await;
 
-        state
-            .send_text_to_all(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE.to_string())
-            .await;
+        let mut conflict: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        conflict["payload"]["full_accuracy_value"] = json!("65000123456789012345679");
+        let error = feed
+            .handle_text_message(&conflict.to_string())
+            .expect_err("equal-timestamp value conflict must be visible after reconnect");
+        assert!(error.to_string().contains("conflict"));
+
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("the retained exact observation must remain a replay after conflict");
         assert!(
             tokio::time::timeout(Duration::from_millis(250), data_rx.recv())
                 .await
@@ -2050,7 +2099,7 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track 60-second TWAP");
 
-        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
             .expect("valid TWAP update");
 
         let event = rx.try_recv().expect("custom data event");
@@ -2085,7 +2134,7 @@ mod tests {
         update["topic"] = json!("crypto_prices_twap_thirty");
         update["payload"]["window_s"] = json!(30);
 
-        feed.try_handle_text_for_test(&update.to_string())
+        feed.handle_text_message(&update.to_string())
             .expect("valid 30-second TWAP update");
 
         let DataEvent::Data(NautilusData::Custom(custom)) =
@@ -2114,7 +2163,7 @@ mod tests {
                 .expect("parse TWAP fixture");
         update["payload"]["value"] = json!(1);
 
-        feed.try_handle_text_for_test(&update.to_string())
+        feed.handle_text_message(&update.to_string())
             .expect("display value must not be authoritative");
 
         let event = rx.try_recv().expect("custom data event");
@@ -2143,7 +2192,7 @@ mod tests {
                 .expect("parse TWAP fixture");
         update["payload"]["value"] = json!(display_value);
 
-        feed.try_handle_text_for_test(&update.to_string())
+        feed.handle_text_message(&update.to_string())
             .expect("decimal-string display value should satisfy the wire contract");
 
         let DataEvent::Data(NautilusData::Custom(custom)) =
@@ -2184,7 +2233,7 @@ mod tests {
             }
         }
 
-        feed.try_handle_text_for_test(&update.to_string())
+        feed.handle_text_message(&update.to_string())
             .expect("display value must not veto the exact signed-E18 observation");
         let DataEvent::Data(NautilusData::Custom(custom)) =
             rx.try_recv().expect("custom data event")
@@ -2216,9 +2265,9 @@ mod tests {
                 + 1
         );
 
-        feed.try_handle_text_for_test(&first.to_string())
+        feed.handle_text_message(&first.to_string())
             .expect("first exact TWAP update");
-        feed.try_handle_text_for_test(&second.to_string())
+        feed.handle_text_message(&second.to_string())
             .expect("adjacent exact TWAP update");
 
         let mut values = Vec::new();
@@ -2248,9 +2297,9 @@ mod tests {
         feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
             .expect("track 60-second TWAP");
 
-        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
             .expect("first exact TWAP update");
-        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
             .expect("equal-timestamp redelivery should be ignored");
 
         let DataEvent::Data(NautilusData::Custom(_)) =
@@ -2265,6 +2314,125 @@ mod tests {
     }
 
     #[rstest]
+    fn test_twap_conflict_does_not_advance_replay_guard() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let original: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        let mut older = original.clone();
+        older["payload"]["timestamp"] = json!(
+            original["payload"]["timestamp"]
+                .as_u64()
+                .expect("fixture observation timestamp")
+                - 1
+        );
+        older["payload"]["full_accuracy_value"] = json!("65000123456789012345677");
+        let mut conflict = original.clone();
+        conflict["payload"]["full_accuracy_value"] = json!("65000123456789012345679");
+
+        feed.handle_text_message(&original.to_string())
+            .expect("first exact TWAP update");
+        let DataEvent::Data(NautilusData::Custom(_)) =
+            rx.try_recv().expect("first custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        feed.handle_text_message(&older.to_string())
+            .expect("older TWAP update should be ignored");
+
+        let error = feed
+            .handle_text_message(&conflict.to_string())
+            .expect_err("equal-timestamp value conflict must be visible");
+        assert!(error.to_string().contains("conflict"));
+        assert!(rx.try_recv().is_err());
+
+        feed.handle_text_message(&original.to_string())
+            .expect("the retained exact observation must remain a replay after conflict");
+        assert!(rx.try_recv().is_err());
+
+        let mut newer = conflict;
+        newer["payload"]["timestamp"] = json!(
+            original["payload"]["timestamp"]
+                .as_u64()
+                .expect("fixture observation timestamp")
+                + 1
+        );
+        feed.handle_text_message(&newer.to_string())
+            .expect("newer exact TWAP update");
+        let DataEvent::Data(NautilusData::Custom(custom)) =
+            rx.try_recv().expect("newer custom data event")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(payload.value, dec!(65000.123456789012345679));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_twap_inflight_tail_cannot_poison_resubscribe_replay() {
+        let (feed, mut rx) = make_feed();
+        let data_type = crypto_twap_data_type("BTC/USD", 60);
+        let envelope: RtdsEnvelope = serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("parse TWAP envelope");
+        let payload: CryptoTwapPayloadRaw =
+            serde_json::from_value(envelope.payload).expect("parse TWAP payload");
+        let observation_timestamp_ms = payload.timestamp;
+        let exact_value =
+            decimal_from_signed_e18("full_accuracy_value", &payload.full_accuracy_value)
+                .expect("parse exact TWAP value");
+        feed.track_subscribe(data_type.clone())
+            .expect("track 60-second TWAP");
+
+        let captured_data_types =
+            feed.matching_data_types(RtdsTopic::CryptoPricesTwapSixty, "btc/usd");
+        assert_eq!(captured_data_types.len(), 1);
+        assert_eq!(captured_data_types[0], data_type);
+
+        assert!(
+            feed.track_unsubscribe(&data_type)
+                .expect("unsubscribe final TWAP reference")
+        );
+        let _tail_admission = feed
+            .admit_twap_observation(
+                RtdsTopic::CryptoPricesTwapSixty,
+                "btc/usd",
+                observation_timestamp_ms,
+                exact_value,
+            )
+            .expect("complete captured handler admission tail");
+
+        assert!(
+            feed.track_subscribe(data_type.clone())
+                .expect("resubscribe 60-second TWAP")
+        );
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+            .expect("first replay after resubscribe");
+
+        let DataEvent::Data(NautilusData::Custom(custom)) = rx
+            .try_recv()
+            .expect("first replay must emit after resubscribe")
+        else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoTwap>()
+            .expect("PolymarketRtdsCryptoTwap");
+        assert_eq!(custom.data_type, data_type);
+        assert_eq!(payload.value, exact_value);
+        assert_eq!(payload.observation_timestamp_ms, observation_timestamp_ms);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_handle_crypto_twap_update_preserves_negative_signed_e18_value() {
         let (feed, mut rx) = make_feed();
         feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
@@ -2274,7 +2442,7 @@ mod tests {
                 .expect("parse TWAP fixture");
         update["payload"]["full_accuracy_value"] = json!("-1234567890000000000");
 
-        feed.try_handle_text_for_test(&update.to_string())
+        feed.handle_text_message(&update.to_string())
             .expect("valid negative signed E18 update");
 
         let DataEvent::Data(NautilusData::Custom(custom)) =
@@ -2301,12 +2469,12 @@ mod tests {
         mismatch["payload"]["window_s"] = json!(30);
 
         let error = feed
-            .try_handle_text_for_test(&mismatch.to_string())
+            .handle_text_message(&mismatch.to_string())
             .expect_err("topic/window mismatch must be visible");
         assert!(error.to_string().contains("requires window_s=60"));
         assert!(rx.try_recv().is_err());
 
-        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
             .expect("same-timestamp valid update must still emit");
         assert!(rx.try_recv().is_ok());
     }
@@ -2325,7 +2493,7 @@ mod tests {
             .remove("full_accuracy_value");
 
         let error = feed
-            .try_handle_text_for_test(&update.to_string())
+            .handle_text_message(&update.to_string())
             .expect_err("display value must not be a fallback");
         assert!(error.to_string().contains("full_accuracy_value"));
         assert!(rx.try_recv().is_err());
@@ -2345,7 +2513,7 @@ mod tests {
             .remove("window_s");
 
         let error = feed
-            .try_handle_text_for_test(&update.to_string())
+            .handle_text_message(&update.to_string())
             .expect_err("missing window must fail visibly");
         assert!(error.to_string().contains("window_s"));
         assert!(rx.try_recv().is_err());
@@ -2362,7 +2530,7 @@ mod tests {
         update["payload"]["full_accuracy_value"] = json!("79228162514264337593543950336");
 
         let error = feed
-            .try_handle_text_for_test(&update.to_string())
+            .handle_text_message(&update.to_string())
             .expect_err("out-of-range exact value must fail visibly");
         assert!(error.to_string().contains("Decimal range"));
         assert!(rx.try_recv().is_err());
@@ -2380,7 +2548,7 @@ mod tests {
         update["payload"]["full_accuracy_value"] = json!("not-an-integer");
 
         let error = feed
-            .try_handle_text_for_test(&update.to_string())
+            .handle_text_message(&update.to_string())
             .expect_err("malformed frame on active topic must fail visibly");
         assert!(error.to_string().contains("signed E18 integer"));
         assert!(rx.try_recv().is_err());
@@ -2401,7 +2569,7 @@ mod tests {
         update["payload"]["full_accuracy_value"] = json!(value);
 
         let error = feed
-            .try_handle_text_for_test(&update.to_string())
+            .handle_text_message(&update.to_string())
             .expect_err("non-integer exact value must fail");
         assert!(error.to_string().contains("signed E18 integer"));
         assert!(rx.try_recv().is_err());
@@ -2418,10 +2586,10 @@ mod tests {
         update["payload"]["timestamp"] = json!(u64::MAX);
 
         let error = feed
-            .try_handle_text_for_test(&update.to_string())
+            .handle_text_message(&update.to_string())
             .expect_err("overflowing observation timestamp must fail visibly");
         assert!(error.to_string().contains("payload.timestamp"));
-        feed.try_handle_text_for_test(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+        feed.handle_text_message(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
             .expect("a later valid update must not be suppressed");
 
         let DataEvent::Data(NautilusData::Custom(_)) =
@@ -2443,7 +2611,7 @@ mod tests {
         update["type"] = json!("subscribe");
 
         let error = feed
-            .try_handle_text_for_test(&update.to_string())
+            .handle_text_message(&update.to_string())
             .expect_err("unexpected type on subscribed topic must be visible");
         assert!(
             error
@@ -2518,7 +2686,7 @@ mod tests {
             "payload": {}
         });
 
-        feed.try_handle_text_for_test(&frame.to_string())
+        feed.handle_text_message(&frame.to_string())
             .expect("unrelated unsupported topic remains ignorable");
 
         assert!(rx.try_recv().is_err());
@@ -2531,7 +2699,8 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_CRYPTO_UPDATE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_UPDATE_FIXTURE)
+            .expect("valid crypto update");
 
         let event = rx.try_recv().expect("custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -2566,7 +2735,8 @@ mod tests {
         update["payload"]["timestamp"] = json!(1780730270000_u64);
         update["timestamp"] = json!(1780730270142_u64);
 
-        feed.handle_text_for_test(&update.to_string());
+        feed.handle_text_message(&update.to_string())
+            .expect("valid crypto update");
 
         let event = rx.try_recv().expect("ETH custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -2594,12 +2764,14 @@ mod tests {
 
         // Two distinct live updates sharing one millisecond timestamp must both emit;
         // only replayed snapshots collapse equal timestamps.
-        feed.handle_text_for_test(RTDS_CRYPTO_UPDATE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_UPDATE_FIXTURE)
+            .expect("valid first crypto update");
 
         let mut second: serde_json::Value =
             serde_json::from_str(RTDS_CRYPTO_UPDATE_FIXTURE).expect("parse fixture");
         second["payload"]["value"] = json!(65000.12);
-        feed.handle_text_for_test(&second.to_string());
+        feed.handle_text_message(&second.to_string())
+            .expect("valid second crypto update");
 
         let first_event = rx.try_recv().expect("first custom data event");
         let second_event = rx.try_recv().expect("second custom data event");
@@ -2627,7 +2799,8 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_CRYPTO_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_SUBSCRIBE_FIXTURE)
+            .expect("valid crypto snapshot");
 
         let first = rx.try_recv().expect("first custom data event");
         let second = rx.try_recv().expect("second custom data event");
@@ -2661,11 +2834,13 @@ mod tests {
         let data_type = crypto_data_type("BTCUSDT");
         feed.track_subscribe(data_type).expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_CRYPTO_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_SUBSCRIBE_FIXTURE)
+            .expect("valid initial crypto snapshot");
 
         while rx.try_recv().is_ok() {}
 
-        feed.handle_text_for_test(RTDS_CRYPTO_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_CRYPTO_SUBSCRIBE_FIXTURE)
+            .expect("valid replayed crypto snapshot");
 
         assert!(rx.try_recv().is_err());
     }
@@ -2677,7 +2852,8 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_EQUITY_UPDATE_FIXTURE);
+        feed.handle_text_message(RTDS_EQUITY_UPDATE_FIXTURE)
+            .expect("valid equity update");
 
         let event = rx.try_recv().expect("custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -2709,7 +2885,8 @@ mod tests {
             .expect("payload object")
             .remove("full_accuracy_value");
 
-        feed.handle_text_for_test(&update.to_string());
+        feed.handle_text_message(&update.to_string())
+            .expect("valid equity update");
 
         let event = rx.try_recv().expect("custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -2743,7 +2920,8 @@ mod tests {
         update["payload"]["received_at"] = json!(1711382401007_u64);
         update["timestamp"] = json!(1711382401020_u64);
 
-        feed.handle_text_for_test(&update.to_string());
+        feed.handle_text_message(&update.to_string())
+            .expect("valid equity update");
 
         let event = rx.try_recv().expect("MSFT custom data event");
         let DataEvent::Data(NautilusData::Custom(custom)) = event else {
@@ -2773,7 +2951,8 @@ mod tests {
         feed.track_subscribe(data_type.clone())
             .expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_EQUITY_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_EQUITY_SUBSCRIBE_FIXTURE)
+            .expect("valid equity snapshot");
 
         let first = rx.try_recv().expect("first custom data event");
         let second = rx.try_recv().expect("second custom data event");
@@ -2810,11 +2989,13 @@ mod tests {
         let data_type = equity_data_type("AAPL");
         feed.track_subscribe(data_type).expect("track subscribe");
 
-        feed.handle_text_for_test(RTDS_EQUITY_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_EQUITY_SUBSCRIBE_FIXTURE)
+            .expect("valid initial equity snapshot");
 
         while rx.try_recv().is_ok() {}
 
-        feed.handle_text_for_test(RTDS_EQUITY_SUBSCRIBE_FIXTURE);
+        feed.handle_text_message(RTDS_EQUITY_SUBSCRIBE_FIXTURE)
+            .expect("valid replayed equity snapshot");
 
         assert!(rx.try_recv().is_err());
     }
