@@ -1517,6 +1517,7 @@ is retained as follows:
 
 | Data                       | `instrument.info`      | `resolution_metadata`                |
 | -------------------------- | ---------------------- | ------------------------------------ |
+| Market description         | `description`          | -                                    |
 | Event start                | `event_start_time`     | -                                    |
 | Market end                 | `end_date`             | -                                    |
 | Resolution source          | `resolution_source`    | `resolutionSource`                   |

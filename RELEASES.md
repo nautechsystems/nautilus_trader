@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added instrument-scoped order fill-voided event topics
 - Added live socket state events and targeted reconnect controls across adapters
 - Added OKX instrument cache reconciliation and WebSocket instrument updates
+- Added Polymarket market descriptions to `instrument.info` (#4840), thanks for reporting @mystic-io
 - Added Polymarket quote ticks from `best_bid_ask` market events
 
 ### Breaking Changes

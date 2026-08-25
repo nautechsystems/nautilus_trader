@@ -355,6 +355,13 @@ fn build_info_json(def: &PolymarketInstrumentDef) -> serde_json::Value {
         );
     }
 
+    if let Some(description) = &def.description {
+        map.insert(
+            "description".to_string(),
+            serde_json::Value::String(description.clone()),
+        );
+    }
+
     if let Some(event_start_time) = &def.event_start_time {
         map.insert(
             "event_start_time".to_string(),
@@ -681,6 +688,33 @@ mod tests {
         assert_eq!(info.get_str("min_order_size"), Some("5"));
         assert_eq!(info.get_bool("neg_risk"), Some(false));
         assert_eq!(info.get("fee_schedule"), None);
+    }
+
+    #[rstest]
+    #[case(
+        Some("Detailed resolution rules with https://example.com/source"),
+        Some("Detailed resolution rules with https://example.com/source")
+    )]
+    #[case(None, None)]
+    fn test_create_instrument_info_description(
+        #[case] description: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let mut market = load_gamma_market("gamma_market.json");
+        market.description = description.map(str::to_string);
+        market.resolution_source = None;
+        let defs = parse_gamma_market(&market).unwrap();
+
+        let instrument =
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("Expected BinaryOption");
+        };
+        let info = binary.info.as_ref().expect("info should be Some");
+
+        assert_eq!(info.get_str("description"), expected);
+        assert_eq!(info.contains_key("description"), expected.is_some());
+        assert_eq!(info.get_str("resolution_source"), None);
     }
 
     #[rstest]

@@ -703,6 +703,7 @@ mod tests {
             info.get_str("resolution_source"),
             Some("https://example.com/result")
         );
+        assert_eq!(info.get_str("description"), Some("Test market"));
         assert!(!info.contains_key("closed"));
         assert!(!info.contains_key("closedTime"));
         assert!(!info.contains_key("umaResolutionStatus"));

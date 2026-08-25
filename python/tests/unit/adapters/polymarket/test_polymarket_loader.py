@@ -237,6 +237,8 @@ async def test_loader_factory_and_historical_window(polymarket_api: SimpleNamesp
     assert loader.token_id == YES_TOKEN
     assert loader.condition_id == CONDITION_ID
     assert str(loader.instrument.taker_fee) == "0.02"
+    assert loader.instrument.description == "Will the loader test pass?"
+    assert loader.instrument.info["description"] == "Test market"
     assert [trade.ts_event for trade in trades] == [
         1_710_000_002_000_000_000,
         1_710_000_003_000_000_000,
