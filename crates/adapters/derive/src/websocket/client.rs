@@ -75,13 +75,14 @@ use crate::{
     },
     http::{
         models::{
-            DeriveCancelByLabelResult, DeriveEmptyResult, DeriveOpenOrdersResult, DeriveOrder,
-            DeriveOrderResult, DeriveReplaceOutcome, DeriveReplaceResult,
+            DeriveCancelByInstrumentResult, DeriveCancelByLabelResult, DeriveEmptyResult,
+            DeriveOpenOrdersResult, DeriveOrder, DeriveOrderResult, DeriveReplaceOutcome,
+            DeriveReplaceResult,
         },
         query::{
-            DeriveCancelAllParams, DeriveCancelByLabelParams, DeriveCancelParams,
-            DeriveCancelTriggerOrderParams, DeriveGetTriggerOrdersParams, DeriveOrderParams,
-            DeriveReplaceParams, DeriveTriggerOrderParams,
+            DeriveCancelAllParams, DeriveCancelByInstrumentParams, DeriveCancelByLabelParams,
+            DeriveCancelParams, DeriveCancelTriggerOrderParams, DeriveGetTriggerOrdersParams,
+            DeriveOrderParams, DeriveReplaceParams, DeriveTriggerOrderParams,
         },
     },
     signing::auth::build_ws_login,
@@ -1141,6 +1142,31 @@ impl DeriveWsExecutionHandle {
         Ok(())
     }
 
+    /// Cancels every open order for one instrument via `private/cancel_by_instrument`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DeriveWsError::JsonRpc`] for venue rejections and
+    /// [`DeriveWsError::Transport`] / [`DeriveWsError::Timeout`] when the
+    /// outcome is ambiguous.
+    pub async fn cancel_by_instrument(
+        &self,
+        params: &DeriveCancelByInstrumentParams,
+    ) -> Result<DeriveCancelByInstrumentResult> {
+        self.require_authenticated(methods::PRIVATE_CANCEL_BY_INSTRUMENT)
+            .await?;
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        send_request_typed_for_instrument(
+            &self.rate_limiter,
+            &cmd_tx,
+            methods::PRIVATE_CANCEL_BY_INSTRUMENT,
+            params,
+            self.request_timeout,
+            params.instrument_name,
+        )
+        .await
+    }
+
     /// Cancels a single trigger order via `private/cancel_trigger_order`.
     ///
     /// # Errors
@@ -1464,6 +1490,31 @@ where
     )
     .await?;
     decode_default_result(value)
+}
+
+// Keep strict result decoding while reserving both matching buckets
+async fn send_request_typed_for_instrument<P, R>(
+    rate_limiter: &WsRateLimiter,
+    cmd_tx: &tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    method: &'static str,
+    params: &P,
+    timeout: Duration,
+    instrument_name: Ustr,
+) -> Result<R>
+where
+    P: Serialize + ?Sized,
+    R: DeserializeOwned,
+{
+    let value = send_raw_for_instrument(
+        rate_limiter,
+        cmd_tx,
+        method,
+        params,
+        timeout,
+        instrument_name,
+    )
+    .await?;
+    Ok(serde_json::from_value(value)?)
 }
 
 fn decode_default_result<R>(value: Value) -> Result<R>

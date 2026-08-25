@@ -892,6 +892,9 @@ pub mod methods {
     pub const PRIVATE_TRIGGER_ORDER: &str = "private/trigger_order";
     /// Cancel a single order. Params: [`crate::http::query::DeriveCancelParams`].
     pub const PRIVATE_CANCEL: &str = "private/cancel";
+    /// Cancel every open order for one instrument. Params:
+    /// [`crate::http::query::DeriveCancelByInstrumentParams`].
+    pub const PRIVATE_CANCEL_BY_INSTRUMENT: &str = "private/cancel_by_instrument";
     /// Cancel a single trigger order. Params:
     /// [`crate::http::query::DeriveCancelTriggerOrderParams`].
     pub const PRIVATE_CANCEL_TRIGGER_ORDER: &str = "private/cancel_trigger_order";

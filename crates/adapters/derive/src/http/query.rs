@@ -198,6 +198,25 @@ impl DeriveCancelParams {
     }
 }
 
+/// Params for `private/cancel_by_instrument`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+pub struct DeriveCancelByInstrumentParams {
+    /// Owning subaccount identifier.
+    pub subaccount_id: u64,
+    /// Canonical Derive instrument name.
+    pub instrument_name: Ustr,
+}
+
+impl DeriveCancelByInstrumentParams {
+    #[must_use]
+    pub fn new(subaccount_id: u64, instrument_name: impl Into<Ustr>) -> Self {
+        Self {
+            subaccount_id,
+            instrument_name: instrument_name.into(),
+        }
+    }
+}
+
 /// Params for `private/cancel_all`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 pub struct DeriveCancelAllParams {

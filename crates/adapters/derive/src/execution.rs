@@ -95,7 +95,7 @@ use crate::{
             parse_derive_subaccount_to_balances, parse_derive_trade_to_fill_report,
         },
         query::{
-            DeriveCancelAllParams, DeriveCancelByLabelParams, DeriveCancelParams,
+            DeriveCancelByInstrumentParams, DeriveCancelByLabelParams, DeriveCancelParams,
             DeriveCancelTriggerOrderParams, DeriveGetOpenOrdersParams, DeriveGetOrderHistoryParams,
             DeriveGetOrderParams, DeriveGetPositionsParams, DeriveGetSubaccountParams,
             DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams,
@@ -1442,11 +1442,7 @@ impl ExecutionClient for DeriveExecutionClient {
         let side_filter = cmd.order_side;
 
         self.spawn_task("cancel_all_orders", async move {
-            // The venue endpoint scopes by instrument only, so when the
-            // caller asks for a single side we list open orders (an idempotent
-            // private read kept on HTTP), filter by side, and cancel each one
-            // over the WebSocket. Calling `cancel_all` directly would drop both
-            // sides and violate the command's filter.
+            // Preserve the requested side because Derive bulk cancellation has no side filter
             if matches!(side_filter, OrderSide::Buy | OrderSide::Sell) {
                 let open_params = DeriveGetOpenOrdersParams::new(subaccount_id);
                 let mut orders = match http_client.get_open_orders(&open_params).await {
@@ -1510,17 +1506,7 @@ impl ExecutionClient for DeriveExecutionClient {
                         );
                     }
                 }
-            } else if let Err(e) = ws_exec
-                .cancel_all_orders(
-                    &DeriveCancelAllParams::new(subaccount_id)
-                        .with_instrument_name(venue_symbol.as_str()),
-                )
-                .await
-            {
-                log::warn!("Derive cancel_all_orders failed for {venue_symbol}: {e}");
-            }
-
-            if !matches!(side_filter, OrderSide::Buy | OrderSide::Sell) {
+            } else {
                 let trigger_orders = match http_client
                     .get_trigger_orders(&DeriveGetTriggerOrdersParams::new(subaccount_id))
                     .await
@@ -1530,7 +1516,7 @@ impl ExecutionClient for DeriveExecutionClient {
                         log::warn!(
                             "Derive cancel_all_orders: failed to list trigger orders for {venue_symbol}: {e}",
                         );
-                        return Ok(());
+                        Vec::new()
                     }
                 };
 
@@ -1550,6 +1536,22 @@ impl ExecutionClient for DeriveExecutionClient {
                             "Derive cancel_all_orders: trigger cancel for {} failed: {e}",
                             order.order_id,
                         );
+                    }
+                }
+
+                match ws_exec
+                    .cancel_by_instrument(&DeriveCancelByInstrumentParams::new(
+                        subaccount_id,
+                        venue_symbol.as_str(),
+                    ))
+                    .await
+                {
+                    Ok(result) if result.cancelled_orders == 0 => {
+                        log::debug!("No open orders to cancel for {venue_symbol}");
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        log::warn!("Derive cancel_all_orders failed for {venue_symbol}: {e}");
                     }
                 }
             }

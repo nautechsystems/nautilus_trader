@@ -143,6 +143,7 @@ pub(crate) fn rate_class_for_method(method: &str) -> RateClass {
         | "private/trigger_order"
         | "private/replace"
         | "private/cancel"
+        | "private/cancel_by_instrument"
         | "private/cancel_trigger_order" => RateClass::Matching,
         "private/cancel_all" => RateClass::CancelAll,
         "private/cancel_by_label" => RateClass::CancelByLabel,
@@ -554,6 +555,7 @@ mod tests {
     #[case("private/trigger_order", RateClass::Matching)]
     #[case("private/replace", RateClass::Matching)]
     #[case("private/cancel", RateClass::Matching)]
+    #[case("private/cancel_by_instrument", RateClass::Matching)]
     #[case("private/cancel_trigger_order", RateClass::Matching)]
     #[case("private/cancel_all", RateClass::CancelAll)]
     #[case("private/cancel_by_label", RateClass::CancelByLabel)]
