@@ -223,6 +223,33 @@ pub(super) fn emit_market_order_submitted(
         return;
     }
 
+    emit_signed_base_quantity_update(
+        order,
+        is_quote_qty,
+        side,
+        amount,
+        expected_base_qty,
+        size_precision,
+        emitter,
+        clock,
+    );
+}
+
+#[expect(clippy::too_many_arguments)]
+pub(super) fn emit_signed_base_quantity_update(
+    order: &mut OrderAny,
+    is_quote_qty: bool,
+    side: OrderSide,
+    amount: Quantity,
+    expected_base_qty: Decimal,
+    size_precision: u8,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+) {
+    if expected_base_qty.is_zero() {
+        return;
+    }
+
     let Ok(base_qty) = Quantity::from_decimal_dp(expected_base_qty, size_precision) else {
         return;
     };

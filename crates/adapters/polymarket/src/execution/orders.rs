@@ -35,9 +35,9 @@ use super::{
     parse::{compute_commission, instrument_fee_exponent, instrument_taker_fee},
     reports::fetch_collateral_balance_pusd,
     responses::{
-        check_fok_status, emit_market_order_submitted, fok_check_order_id,
-        handle_batch_order_responses, handle_order_response, handle_single_order_response,
-        handle_unknown_submit_result, reject_submit_order,
+        check_fok_status, emit_market_order_submitted, emit_signed_base_quantity_update,
+        fok_check_order_id, handle_batch_order_responses, handle_order_response,
+        handle_single_order_response, handle_unknown_submit_result, reject_submit_order,
     },
     submitter::{
         InvalidMarketPriceError, MarketBuyFeeContext, MarketOrderSubmitRequest, UnknownSubmitError,
@@ -105,6 +105,7 @@ impl PolymarketExecutionClient {
         let price_precision = instrument.price_precision();
 
         self.spawn_task("submit_limit_order", async move {
+            let mut order = order;
             if let Err(reason) =
                 PolymarketOrderBuilder::validate_limit_expiration(&order, clock.get_time_ns())
             {
@@ -123,6 +124,17 @@ impl PolymarketExecutionClient {
             };
 
             let expected_venue_order_id = submission.expected_venue_order_id;
+            emit_signed_base_quantity_update(
+                &mut order,
+                false,
+                side,
+                quantity,
+                submission.expected_base_qty,
+                size_precision,
+                &emitter,
+                clock,
+            );
+
             match submitter.post_limit_order_submission(submission).await {
                 Ok(response) => {
                     let fok_order_id = fok_check_order_id(&response, tif);
@@ -623,9 +635,19 @@ impl PolymarketExecutionClient {
             let mut prepared_orders = Vec::with_capacity(batch_orders.len());
             let mut submissions = Vec::with_capacity(batch_orders.len());
 
-            for (batch_order, result) in batch_orders.into_iter().zip(prepare_results) {
+            for (mut batch_order, result) in batch_orders.into_iter().zip(prepare_results) {
                 match result {
                     Ok(submission) => {
+                        emit_signed_base_quantity_update(
+                            &mut batch_order.order,
+                            false,
+                            batch_order.request.side,
+                            batch_order.request.quantity,
+                            submission.expected_base_qty,
+                            batch_order.size_precision,
+                            &emitter,
+                            clock,
+                        );
                         prepared_orders.push(batch_order);
                         submissions.push(submission);
                     }

@@ -585,6 +585,16 @@ fn build_order_report_from_order(
     };
     let instrument_id = instrument.id();
 
+    if matches!(scope, OrderEvidenceScope::Collection { .. })
+        && !instrument_in_load_ids_scope(instrument_id, load_ids)
+    {
+        log::debug!("Dropping loaded out-of-scope open order instrument {instrument_id}");
+        return Ok(OrderRowResult {
+            report: None,
+            counted_filtered: true,
+        });
+    }
+
     if let OrderEvidenceScope::Collection { instrument_filter } = scope
         && instrument_filter.is_some_and(|filter_id| instrument_id != filter_id)
     {
@@ -1339,23 +1349,25 @@ pub(crate) fn retain_mapped_position_reports(
     let mut kept = Vec::with_capacity(reports.len());
 
     for report in reports {
+        if !instrument_in_load_ids_scope(report.instrument_id, load_ids) {
+            log::debug!(
+                "Dropping out-of-scope position instrument {}",
+                report.instrument_id
+            );
+            continue;
+        }
+
         if position_instrument_loaded(report.instrument_id, instruments) {
             kept.push(report);
             continue;
         }
 
-        if instrument_in_load_ids_scope(report.instrument_id, load_ids) {
-            anyhow::bail!(unmapped_in_scope_message(
-                "position",
-                report.instrument_id,
-                None,
-                load_ids,
-            ));
-        }
-        log::debug!(
-            "Dropping out-of-scope unmapped position instrument {}",
-            report.instrument_id
-        );
+        anyhow::bail!(unmapped_in_scope_message(
+            "position",
+            report.instrument_id,
+            None,
+            load_ids,
+        ));
     }
 
     Ok(kept)
@@ -2051,5 +2063,39 @@ mod tests {
 
         assert!(message.contains("unmapped in-scope position"));
         assert!(message.contains("set instrument_config.load_ids"));
+    }
+
+    #[rstest]
+    fn load_ids_scope_applies_to_loaded_position_reports() {
+        let instrument_id = test_instrument().id();
+        let report = || {
+            PositionStatusReport::new(
+                AccountId::from("POLY-001"),
+                instrument_id,
+                PositionSideSpecified::Long,
+                Quantity::from("10.000000"),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+                None,
+                None,
+                None,
+            )
+        };
+
+        let kept = retain_mapped_position_reports(
+            vec![report()],
+            &test_instruments(),
+            Some(std::slice::from_ref(&instrument_id)),
+        )
+        .expect("loaded in-scope position is retained");
+        let dropped = retain_mapped_position_reports(
+            vec![report()],
+            &test_instruments(),
+            Some(&[InstrumentId::from("OTHER.POLYMARKET")]),
+        )
+        .expect("loaded out-of-scope position is dropped");
+
+        assert_eq!(kept.len(), 1);
+        assert!(dropped.is_empty());
     }
 }
