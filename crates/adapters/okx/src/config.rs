@@ -85,7 +85,10 @@ pub struct OKXDataClientConfig {
     /// Maximum retry delay in milliseconds.
     #[builder(default = 10_000)]
     pub retry_delay_max_ms: u64,
-    /// Interval for refreshing instruments in minutes.
+    /// Interval for reconciling instruments from the REST API in minutes.
+    ///
+    /// Set to 0 to disable periodic reconciliation. WebSocket instrument
+    /// updates are always applied regardless of this interval.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
     /// Interval for checking order book feed staleness in seconds.

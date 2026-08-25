@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added custom Python fee model support to simulation configs (#4806), thanks for reporting @gtalknitin
 - Added instrument-scoped order fill-voided event topics
 - Added live socket state events and targeted reconnect controls across adapters
+- Added OKX instrument cache reconciliation and WebSocket instrument updates
 - Added Polymarket quote ticks from `best_bid_ask` market events
 
 ### Breaking Changes
@@ -78,6 +79,7 @@ Released on TBD (UTC).
 
 - Updated maintained examples and tutorials for current APIs and removed unsupported variants
 - Documented Lighter testnet account and API key setup
+- Documented OKX instrument cache reconciliation and WebSocket update behavior
 - Documented Polymarket quote sources and order book feed interaction
 
 ### Deprecations

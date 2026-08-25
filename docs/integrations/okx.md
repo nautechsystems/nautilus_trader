@@ -80,6 +80,35 @@ OKX finance-product endpoints such as `/api/v5/finance/okusd/*` are outside the 
 trading adapter surface.
 :::
 
+## Instrument updates
+
+The data client loads its instrument cache over REST at connect and subscribes to the OKX
+instruments WebSocket channel for each configured instrument type. All update paths honor
+the configured instrument types, families, and contract types, and unchanged definitions
+are never republished.
+
+| Source              | Trigger                                         | Publishes downstream                                   |
+| ------------------- | ----------------------------------------------- | ------------------------------------------------------ |
+| Connect load        | REST at connect                                 | Full cache, once                                       |
+| Instruments channel | Venue push (incremental)                        | New or changed definitions, `InstrumentStatus` on each |
+| REST reconciliation | `update_instruments_interval_mins` (default 60) | New or changed definitions only                        |
+
+Each update first writes the data client, HTTP, and WebSocket caches, then publishes new or
+changed definitions as `DataEvent::Instrument`, so consumers never observe a definition the
+caches do not hold. A material change is any serialized field other than `ts_event` and
+`ts_init`.
+
+- The instruments channel is incremental rather than a snapshot feed: a subscription or
+  reconnect can begin without an initial payload, so reconnect replay alone does not
+  reconcile the instrument cache.
+- Set the interval to `0` to disable periodic reconciliation; instruments channel updates
+  are always applied. One refresh task runs per connection lifecycle and is cancelled on
+  disconnect, failed-connect teardown, stop, and dispose. Spread instruments are included
+  when `load_spreads` is set.
+- Instruments that disappear from a REST response are retained in the cache; they may
+  still back open subscriptions. Suspension, expiry, and delisting arrive as
+  `InstrumentStatus` events through the instruments channel.
+
 ## Symbology
 
 OKX uses specific symbol conventions for different instrument types. Add the `.OKX`
@@ -1080,7 +1109,7 @@ The OKX data client provides the following Python configuration options.
 | `max_retries`                      | `3`                        | Retry attempts for recoverable REST errors.                                    |
 | `retry_delay_initial_ms`           | `1,000`                    | Initial delay before retrying.                                                 |
 | `retry_delay_max_ms`               | `10,000`                   | Maximum exponential backoff delay.                                             |
-| `update_instruments_interval_mins` | `60`                       | Ignored; live updates arrive through the instruments WebSocket channel.        |
+| `update_instruments_interval_mins` | `60`                       | REST instrument cache reconciliation interval in minutes; `0` disables.        |
 | `book_stale_check_interval_secs`   | `5`                        | Stale book check interval.                                                     |
 | `book_stale_threshold_secs`        | `30`                       | Idle time before a stale book warning.                                         |
 | `book_snapshot_timeout_secs`       | `3`                        | Post-reconnect snapshot wait.                                                  |
