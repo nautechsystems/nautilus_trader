@@ -858,8 +858,7 @@ impl FeatherWriter {
     ///
     /// The writer must be wrapped in `Rc<RefCell<>>` to be shareable with the message bus handler.
     ///
-    /// Note: The handler spawns async tasks to write data, so writes happen asynchronously
-    /// and won't block the message bus.
+    /// The handler blocks each write to completion using the shared Nautilus runtime.
     ///
     /// # Errors
     ///
@@ -867,21 +866,30 @@ impl FeatherWriter {
     pub fn subscribe_to_message_bus(
         writer: Rc<RefCell<Self>>,
     ) -> Result<ShareableMessageHandler, Box<dyn std::error::Error>> {
+        let handler = Self::create_any_message_handler(writer);
+        subscribe_any(MStr::pattern("*"), handler.clone(), None);
+        Ok(handler)
+    }
+
+    #[expect(
+        clippy::await_holding_refcell_ref,
+        reason = "The synchronous bus bridge blocks each write to completion"
+    )]
+    fn create_any_message_handler(writer: Rc<RefCell<Self>>) -> ShareableMessageHandler {
         let runtime = writer.borrow().runtime.clone();
 
         // Create handler that downcasts messages and writes them
-        // Note: We use Handle::enter() to allow blocking in the handler context
-        // This works when the handler is called from outside an async runtime
-        let handler = ShareableMessageHandler::from_any(move |message: &dyn Any| {
-            // Enter the runtime context to allow blocking
-            let _guard = runtime.enter();
-
+        ShareableMessageHandler::from_any(move |message: &dyn Any| {
             // Try to downcast to various data types and write them
             macro_rules! try_write {
                 ($message:expr, $type:ty, $name:literal) => {
                     if let Some(value) = $message.downcast_ref::<$type>() {
-                        let mut writer = writer.borrow_mut();
-                        if let Err(e) = runtime.block_on(writer.write(value.clone())) {
+                        let result = super::block_on(&runtime, async {
+                            let mut writer = writer.borrow_mut();
+                            writer.write(value.clone()).await
+                        });
+
+                        if let Err(e) = result {
                             log::warn!("Failed to write {}: {e}", $name);
                         }
                         return;
@@ -931,32 +939,35 @@ impl FeatherWriter {
 
             if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
                 // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write_batch(deltas.deltas.clone())) {
+                let result = super::block_on(&runtime, async {
+                    let mut writer = writer.borrow_mut();
+                    writer.write_batch(deltas.deltas.clone()).await
+                });
+
+                if let Err(e) = result {
                     log::warn!("Failed to write OrderBookDeltas: {e}");
                 }
             } else if let Some(custom) = message.downcast_ref::<CustomData>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write_data(Data::Custom(custom.clone()))) {
+                let result = super::block_on(&runtime, async {
+                    let mut writer = writer.borrow_mut();
+                    writer.write_data(Data::Custom(custom.clone())).await
+                });
+
+                if let Err(e) = result {
                     log::warn!("Failed to write CustomData: {e}");
                 }
             } else if let Some(instrument) = message.downcast_ref::<InstrumentAny>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write_instrument(instrument.clone())) {
+                let result = super::block_on(&runtime, async {
+                    let mut writer = writer.borrow_mut();
+                    writer.write_instrument(instrument.clone()).await
+                });
+
+                if let Err(e) = result {
                     log::warn!("Failed to write InstrumentAny: {e}");
                 }
             }
             // Silently ignore unsupported message types.
-        });
-
-        // Subscribe to all messages using wildcard pattern
-        subscribe_any(
-            MStr::pattern("*"),
-            handler.clone(),
-            None, // No priority
-        );
-
-        Ok(handler)
+        })
     }
 
     /// Unsubscribes from the message bus.

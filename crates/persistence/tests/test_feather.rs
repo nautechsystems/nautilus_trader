@@ -16,7 +16,10 @@
 use std::{cell::RefCell, collections::HashSet, fs::File, rc::Rc, sync::Arc};
 
 use datafusion::arrow::ipc::reader::StreamReader;
-use nautilus_common::clock::{Clock, TestClock};
+use nautilus_common::{
+    clock::{Clock, TestClock},
+    msgbus::{self, MessageBus, typed_handler::ShareableMessageHandler},
+};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
@@ -30,6 +33,92 @@ use nautilus_persistence::backend::feather::{FeatherWriter, RotationConfig};
 use object_store::{ObjectStore, local::LocalFileSystem};
 use rstest::rstest;
 use tempfile::TempDir;
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_direct_writer_lifecycle_inside_multi_thread_runtime() {
+    let temp_dir = TempDir::new().unwrap();
+    let base_path = temp_dir.path().to_str().unwrap().to_string();
+    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let mut writer = FeatherWriter::new(
+        base_path,
+        store,
+        clock,
+        RotationConfig::NoRotation,
+        Some(HashSet::from(["quotes".to_string()])),
+        None,
+        None,
+    );
+    let quote = QuoteTick::new(
+        InstrumentId::from("AUD/USD.SIM"),
+        Price::from("1.00001"),
+        Price::from("1.00002"),
+        Quantity::from("1000"),
+        Quantity::from("1001"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+
+    writer.write(quote).await.unwrap();
+    writer.flush().await.unwrap();
+    writer.close().await.unwrap();
+
+    assert!(writer.is_closed());
+    assert_eq!(collect_feather_files(temp_dir.path()).len(), 1);
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[expect(
+    clippy::await_holding_refcell_ref,
+    reason = "The message-bus writer is single-threaded and the test awaits its final close before reading files"
+)]
+async fn test_legacy_message_bus_subscription_persists_any_route_and_unsubscribes() {
+    let _bus = MessageBus::default().register_message_bus();
+    let temp_dir = TempDir::new().unwrap();
+    let base_path = temp_dir.path().to_str().unwrap().to_string();
+    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let writer = Rc::new(RefCell::new(FeatherWriter::new(
+        base_path,
+        store,
+        clock,
+        RotationConfig::NoRotation,
+        Some(HashSet::from(["quotes".to_string()])),
+        None,
+        None,
+    )));
+    let quote = QuoteTick::new(
+        InstrumentId::from("AUD/USD.SIM"),
+        Price::from("1.00001"),
+        Price::from("1.00002"),
+        Quantity::from("1000"),
+        Quantity::from("1001"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+
+    let handler: ShareableMessageHandler =
+        FeatherWriter::subscribe_to_message_bus(Rc::clone(&writer)).unwrap();
+    msgbus::publish_any("data.quotes.AUD/USD.SIM".into(), &quote);
+    FeatherWriter::unsubscribe_from_message_bus(&handler);
+    msgbus::publish_any("data.quotes.AUD/USD.SIM".into(), &quote);
+    writer.borrow_mut().close().await.unwrap();
+
+    let files = collect_feather_files(temp_dir.path());
+    assert_eq!(files.len(), 1);
+    let row_count: usize = StreamReader::try_new(File::open(&files[0]).unwrap(), None)
+        .unwrap()
+        .map(|batch| batch.unwrap().num_rows())
+        .sum();
+    assert_eq!(
+        row_count, 1,
+        "legacy unsubscribe must prevent the second write"
+    );
+}
 
 #[rstest]
 #[tokio::test]

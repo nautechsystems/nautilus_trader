@@ -18,6 +18,7 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    future::Future,
     rc::Rc,
 };
 
@@ -50,6 +51,13 @@ use crate::{
     backend::feather::{FeatherWriter, RotationConfig},
     parquet::{ObjectStoreLocationKind, create_object_store_location_from_path},
 };
+
+fn block_on_python_future<F, T>(future: F) -> T
+where
+    F: Future<Output = T>,
+{
+    crate::backend::block_on(get_runtime().handle(), future)
+}
 
 /// Python binding for the Rust `FeatherWriter`.
 ///
@@ -137,7 +145,6 @@ impl PyStreamingFeatherWriter {
 
         // Handle replace parameter - delete existing files if requested
         if replace {
-            let runtime = get_runtime();
             let store_ref = object_store.clone();
             let prefix = if base_path.is_empty() {
                 if !is_local_store {
@@ -149,25 +156,22 @@ impl PyStreamingFeatherWriter {
             } else {
                 Some(object_store::path::Path::from(base_path.clone()))
             };
-            runtime
-                .block_on(async {
-                    let mut stream = store_ref.list(prefix.as_ref());
-                    let mut to_delete = Vec::new();
+            block_on_python_future(async {
+                let mut stream = store_ref.list(prefix.as_ref());
+                let mut to_delete = Vec::new();
 
-                    while let Some(result) = futures::StreamExt::next(&mut stream).await {
-                        if let Ok(meta) = result {
-                            to_delete.push(meta.location);
-                        }
+                while let Some(result) = futures::StreamExt::next(&mut stream).await {
+                    if let Ok(meta) = result {
+                        to_delete.push(meta.location);
                     }
+                }
 
-                    for path in to_delete {
-                        let _ = store_ref.delete(&path).await;
-                    }
-                    Ok::<(), anyhow::Error>(())
-                })
-                .map_err(|e| {
-                    PyIOError::new_err(format!("Failed to replace existing files: {e}"))
-                })?;
+                for path in to_delete {
+                    let _ = store_ref.delete(&path).await;
+                }
+                Ok::<(), anyhow::Error>(())
+            })
+            .map_err(|e| PyIOError::new_err(format!("Failed to replace existing files: {e}")))?;
         }
 
         // Convert rotation mode to RotationConfig
@@ -276,12 +280,9 @@ impl PyStreamingFeatherWriter {
             ($type:ty, $name:literal) => {
                 if let Ok(value) = data.extract::<$type>(py) {
                     let mut writer = self.writer.borrow_mut();
-                    let runtime = get_runtime();
-                    return runtime
-                        .block_on(async { writer.write(value).await })
-                        .map_err(|e| {
-                            PyIOError::new_err(format!("Failed to write {}: {e}", $name))
-                        });
+                    return block_on_python_future(async { writer.write(value).await }).map_err(
+                        |e| PyIOError::new_err(format!("Failed to write {}: {e}", $name)),
+                    );
                 }
             };
         }
@@ -289,74 +290,66 @@ impl PyStreamingFeatherWriter {
         // Try to convert from common pyo3 data types
         if let Ok(quote) = data.extract::<QuoteTick>(py) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_data(Data::Quote(quote)).await })
+            return block_on_python_future(async { writer.write_data(Data::Quote(quote)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write QuoteTick: {e}")));
         }
 
         if let Ok(trade) = data.extract::<TradeTick>(py) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_data(Data::Trade(trade)).await })
+            return block_on_python_future(async { writer.write_data(Data::Trade(trade)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write TradeTick: {e}")));
         }
 
         if let Ok(bar) = data.extract::<Bar>(py) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_data(Data::Bar(bar)).await })
+            return block_on_python_future(async { writer.write_data(Data::Bar(bar)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write Bar: {e}")));
         }
 
         if let Ok(delta) = data.extract::<OrderBookDelta>(py) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_data(Data::Delta(delta)).await })
+            return block_on_python_future(async { writer.write_data(Data::Delta(delta)).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDelta: {e}")));
         }
 
         if let Ok(depth) = data.extract::<OrderBookDepth10>(py) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_data(Data::Depth10(Box::new(depth))).await })
-                .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDepth10: {e}")));
+            return block_on_python_future(async {
+                writer.write_data(Data::Depth10(Box::new(depth))).await
+            })
+            .map_err(|e| PyIOError::new_err(format!("Failed to write OrderBookDepth10: {e}")));
         }
 
         if let Ok(price) = data.extract::<IndexPriceUpdate>(py) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_data(Data::IndexPrice(price)).await })
-                .map_err(|e| PyIOError::new_err(format!("Failed to write IndexPriceUpdate: {e}")));
+            return block_on_python_future(async {
+                writer.write_data(Data::IndexPrice(price)).await
+            })
+            .map_err(|e| PyIOError::new_err(format!("Failed to write IndexPriceUpdate: {e}")));
         }
 
         if let Ok(price) = data.extract::<MarkPriceUpdate>(py) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_data(Data::MarkPrice(price)).await })
-                .map_err(|e| PyIOError::new_err(format!("Failed to write MarkPriceUpdate: {e}")));
+            return block_on_python_future(async {
+                writer.write_data(Data::MarkPrice(price)).await
+            })
+            .map_err(|e| PyIOError::new_err(format!("Failed to write MarkPriceUpdate: {e}")));
         }
 
         if let Ok(greeks) = data.extract::<OptionGreeks>(py) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_data(Data::OptionGreeks(greeks)).await })
-                .map_err(|e| PyIOError::new_err(format!("Failed to write OptionGreeks: {e}")));
+            return block_on_python_future(async {
+                writer.write_data(Data::OptionGreeks(greeks)).await
+            })
+            .map_err(|e| PyIOError::new_err(format!("Failed to write OptionGreeks: {e}")));
         }
 
         if let Ok(close) = data.extract::<InstrumentClose>(py) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_data(Data::InstrumentClose(close)).await })
-                .map_err(|e| PyIOError::new_err(format!("Failed to write InstrumentClose: {e}")));
+            return block_on_python_future(async {
+                writer.write_data(Data::InstrumentClose(close)).await
+            })
+            .map_err(|e| PyIOError::new_err(format!("Failed to write InstrumentClose: {e}")));
         }
 
         try_write!(FundingRateUpdate, "FundingRateUpdate");
@@ -393,9 +386,7 @@ impl PyStreamingFeatherWriter {
         // Try instrument types (uses type_str attribute for dispatch)
         if let Ok(instrument) = pyobject_to_instrument_any(py, data.clone_ref(py)) {
             let mut writer = self.writer.borrow_mut();
-            let runtime = get_runtime();
-            return runtime
-                .block_on(async { writer.write_instrument(instrument).await })
+            return block_on_python_future(async { writer.write_instrument(instrument).await })
                 .map_err(|e| PyIOError::new_err(format!("Failed to write instrument: {e}")));
         }
 
@@ -410,10 +401,8 @@ impl PyStreamingFeatherWriter {
     /// be called manually by the client.
     pub fn flush(&self) -> PyResult<()> {
         let mut writer = self.writer.borrow_mut();
-        let runtime = get_runtime();
 
-        runtime
-            .block_on(async { writer.flush().await })
+        block_on_python_future(async { writer.flush().await })
             .map_err(|e| PyIOError::new_err(format!("Failed to flush: {e}")))
     }
 
@@ -422,10 +411,8 @@ impl PyStreamingFeatherWriter {
     /// After calling this, no further writes should be performed.
     pub fn close(&self) -> PyResult<()> {
         let mut writer = self.writer.borrow_mut();
-        let runtime = get_runtime();
 
-        runtime
-            .block_on(async { writer.close().await })
+        block_on_python_future(async { writer.close().await })
             .map_err(|e| PyIOError::new_err(format!("Failed to close: {e}")))
     }
 
