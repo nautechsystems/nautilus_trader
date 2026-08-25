@@ -90,20 +90,5 @@ pub fn transform_hypersync_block(
         block = block.with_blob_gas(used, excess);
     }
 
-    // TODO: HyperSync does not yet publish L1 gas metadata fields
-    // if let (Some(price_hex), Some(l1_used_hex), Some(scalar_hex)) = (
-    //     received_block.l1_gas_price,
-    //     received_block.l1_gas_used,
-    //     received_block.l1_fee_scalar,
-    // ) {
-    //     let price = U256::from_str_radix(price_hex.encode_hex().trim_start_matches("0x"), 16)?;
-    //     let used = from_str_hex_to_u64(l1_used_hex.encode_hex().as_str())?;
-    //     let scalar = from_str_hex_to_u64(scalar_hex.encode_hex().as_str())?;
-    //     block = block.with_l1_fee_components(price, used, scalar);
-    // }
-
     Ok(block)
 }
-
-#[cfg(test)]
-mod tests {}

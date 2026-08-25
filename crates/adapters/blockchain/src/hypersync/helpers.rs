@@ -91,11 +91,7 @@ pub fn extract_block_number(log: &HypersyncLog) -> anyhow::Result<u64> {
 ///
 /// Returns an error if the event signature (topic0) is not present in the log.
 pub fn extract_event_signature(log: &HypersyncLog) -> anyhow::Result<String> {
-    if let Some(topic) = log.topics.first().and_then(|t| t.as_ref()) {
-        Ok(hex::encode(topic))
-    } else {
-        anyhow::bail!("Missing event signature in topic0");
-    }
+    extract_event_signature_bytes(log).map(hex::encode)
 }
 
 /// Extracts the event signature from a log entry and returns it as raw bytes
