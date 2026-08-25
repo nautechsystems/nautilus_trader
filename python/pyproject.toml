@@ -145,13 +145,13 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.14.1", "mypy>=1.20.2,<2.0.0", "ruff>=0.16.1"]
+dev = ["maturin==1.14.1", "mypy>=1.20.2,<2.0.0", "ruff>=0.16.3"]
 test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
   "pytest-xdist[psutil]>=3.8.0",
-  "uvicorn>=0.52.1",
+  "uvicorn>=0.52.3",
   "uvloop>=0.22.1; sys_platform != 'win32'",
 ]
 docs = [

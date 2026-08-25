@@ -7,8 +7,8 @@
 # uv range:       pyproject.toml [tool.uv]
 
 [miri]
-version = "nightly-2026-08-14"
-rustc-version = "1.99.0"
+version = "nightly-2026-08-21"
+rustc-version = "1.100.0"
 
 [uv]
 version = "0.12.5"

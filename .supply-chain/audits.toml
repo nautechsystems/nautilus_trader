@@ -910,6 +910,12 @@ criteria = "safe-to-deploy"
 delta = "1.4.2 -> 1.4.3"
 notes = "Reviewed the published 1.4.2 -> 1.4.3 crate. Raises MSRV to 1.65 and regenerates target tables. Compiler invocation remains the existing build-time capability. No new filesystem, network, credential, or runtime behavior."
 
+[[audits.cc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.4.3 -> 1.4.4"
+notes = "Applies caller-configured Build::env values to existing compiler-family, flag-support, and Android archiver probes, and includes those values in the compiler-family cache key. This makes probes use the same compiler environment as the build. No new process type, filesystem, network, credential, or runtime behavior was added."
+
 [[audits.cfg_aliases]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1664,6 +1670,12 @@ criteria = "safe-to-deploy"
 delta = "0.2.0 -> 0.2.1"
 notes = "Gates the aarch64_sha3 backend off on softfloat ABI targets and adds a compile_error! guard when the feature is forced there, fixing a build warning. The permutation itself is unchanged. No new build, filesystem, network, process, or credential behavior."
 
+[[audits.keccak]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.1 -> 0.2.2"
+notes = "Replaces explicit permutation-loop unrolling with ordinary loops and typed compile-time round-constant arrays, removing the compact software-backend cfg. The round order and operations are preserved. No unsafe code, dependencies, build script, filesystem, network, process, or credential behavior was added."
+
 [[audits.litemap]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -2017,6 +2029,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.103.13 -> 0.103.14"
 notes = "Moves ML-DSA verification from the unstable to stable aws-lc-rs API and simplifies CRL serial lookup error propagation. Cryptographic operations remain delegated to aws-lc-rs; no unsafe, parsing relaxation, or ambient capability was added."
+
+[[audits.rustls-webpki]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.103.14 -> 0.103.15"
+notes = "Reports ML-DSA verification as FIPS submitted when the underlying AWS-LC FIPS provider is active, matching the provider's submitted 4.x module. Signature verification remains delegated to aws-lc-rs; no algorithm, parsing, unsafe code, dependency, build-script, or ambient capability change was added."
 
 [[audits.schemars]]
 who = "Nautech Systems <info@nautechsystems.io>"
