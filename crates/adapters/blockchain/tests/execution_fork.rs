@@ -666,7 +666,6 @@ async fn anvil_fork_usdc_to_weth_market_buy() {
         cache.clone(),
     );
     let config = BlockchainExecutionClientConfig::builder()
-        .trader_id(TraderId::from("TRADER-001"))
         .client_id(AccountId::from("BLOCKCHAIN-FORK-001"))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())

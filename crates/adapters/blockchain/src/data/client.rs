@@ -203,33 +203,12 @@ impl BlockchainDataClient {
                     }
                     data = hypersync_rx.recv() => {
                         if let Some(msg) = data {
-                            let is_block = matches!(&msg, BlockchainMessage::Block(_));
-                            let Some(msg) = Self::ready_live_blockchain_message(
+                            Self::process_live_blockchain_message(
                                 msg,
-                                &core_client.cache,
+                                &mut core_client,
                                 &mut pending_pool_messages,
-                            ) else {
-                                continue;
-                            };
-
-                            let data_event =
-                                Self::data_event_from_blockchain_message(msg, &mut core_client)
-                                    .await;
-
-                            if let Some(event) = data_event {
-                                core_client.send_data(event);
-                            }
-
-                            if is_block {
-                                for data in Self::drain_pending_pool_messages(
-                                    &mut core_client,
-                                    &mut pending_pool_messages,
-                                )
-                                .await
-                                {
-                                    core_client.send_data(data);
-                                }
-                            }
+                            )
+                            .await;
                         } else {
                             log::debug!("HyperSync data channel closed");
                             break;
@@ -244,33 +223,12 @@ impl BlockchainDataClient {
                         // This branch only fires when we actually receive a message
                         match msg {
                             Ok(msg) => {
-                                let is_block = matches!(&msg, BlockchainMessage::Block(_));
-
-                                let Some(msg) = Self::ready_live_blockchain_message(
+                                Self::process_live_blockchain_message(
                                     msg,
-                                    &core_client.cache,
+                                    &mut core_client,
                                     &mut pending_pool_messages,
-                                ) else {
-                                    continue;
-                                };
-
-                                if let Some(data) =
-                                    Self::data_event_from_blockchain_message(msg, &mut core_client)
-                                        .await
-                                {
-                                    core_client.send_data(data);
-                                }
-
-                                if is_block {
-                                    for data in Self::drain_pending_pool_messages(
-                                        &mut core_client,
-                                        &mut pending_pool_messages,
-                                    )
-                                    .await
-                                    {
-                                        core_client.send_data(data);
-                                    }
-                                }
+                                )
+                                .await;
                             }
                             Err(e) => {
                                 log::error!("Error processing RPC message: {e}");
@@ -284,6 +242,30 @@ impl BlockchainDataClient {
         });
 
         self.process_task = Some(handle);
+    }
+
+    async fn process_live_blockchain_message(
+        msg: BlockchainMessage,
+        core_client: &mut BlockchainDataClientCore,
+        pending_pool_messages: &mut VecDeque<BlockchainMessage>,
+    ) {
+        let is_block = matches!(&msg, BlockchainMessage::Block(_));
+        let Some(msg) =
+            Self::ready_live_blockchain_message(msg, &core_client.cache, pending_pool_messages)
+        else {
+            return;
+        };
+
+        if let Some(data) = Self::data_event_from_blockchain_message(msg, core_client).await {
+            core_client.send_data(data);
+        }
+
+        if is_block {
+            for data in Self::drain_pending_pool_messages(core_client, pending_pool_messages).await
+            {
+                core_client.send_data(data);
+            }
+        }
     }
 
     async fn drain_pending_pool_messages(

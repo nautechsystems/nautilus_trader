@@ -2254,25 +2254,20 @@ impl BlockchainDataClientCore {
         profiler: &PoolProfiler,
         cached_timestamp: Option<UnixNanos>,
     ) -> anyhow::Result<UnixNanos> {
-        if let Some(timestamp) = cached_timestamp {
-            return Ok(timestamp);
-        }
-
-        profiler
-            .last_processed_ts
+        cached_timestamp
+            .or(profiler.last_processed_ts)
             .context("missing block timestamp for on-chain snapshot")
     }
 
     fn last_processed_event_for_on_chain_snapshot(
         profiler: &PoolProfiler,
     ) -> anyhow::Result<BlockPosition> {
-        let Some(last_processed_event) = profiler.last_processed_event.clone() else {
-            anyhow::bail!(
+        profiler.last_processed_event.clone().with_context(|| {
+            format!(
                 "cannot fetch on-chain snapshot for pool {} without a processed event",
                 profiler.pool.address
-            );
-        };
-        Ok(last_processed_event)
+            )
+        })
     }
 
     async fn block_scoped_snapshot_position(
