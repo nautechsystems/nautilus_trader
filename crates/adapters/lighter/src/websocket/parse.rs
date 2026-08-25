@@ -74,6 +74,20 @@ const FEE_DECIMALS: u32 = 6;
 /// look up this currency on every call.
 static FEE_USDC: LazyLock<Currency> = LazyLock::new(|| Currency::get_or_create_crypto("USDC"));
 
+#[derive(Debug, thiserror::Error)]
+#[error("failed to construct Lighter commission: {detail}")]
+pub(crate) struct LighterCommissionError {
+    detail: String,
+}
+
+impl LighterCommissionError {
+    pub(crate) fn new(detail: impl Into<String>) -> Self {
+        Self {
+            detail: detail.into(),
+        }
+    }
+}
+
 /// Parses a Lighter trade stream item into a Nautilus [`TradeTick`].
 ///
 /// # Errors
@@ -1180,11 +1194,10 @@ fn parse_optional_price(value: Decimal, precision: u8) -> anyhow::Result<Option<
         .map_err(|e| anyhow::anyhow!("invalid price `{value}` at precision {precision}: {e}"))
 }
 
-fn lighter_fee_to_commission(fee_ticks: Option<i32>) -> anyhow::Result<Money> {
+fn lighter_fee_to_commission(fee_ticks: Option<i32>) -> Result<Money, LighterCommissionError> {
     let ticks = fee_ticks.unwrap_or(0);
     let amount = Decimal::new(i64::from(ticks), FEE_DECIMALS);
-    Money::from_decimal(amount, *FEE_USDC)
-        .map_err(|e| anyhow::anyhow!("failed to construct Lighter commission: {e}"))
+    Money::from_decimal(amount, *FEE_USDC).map_err(|e| LighterCommissionError::new(e.to_string()))
 }
 
 fn nautilus_order_side(side: LighterOrderSide) -> OrderSide {

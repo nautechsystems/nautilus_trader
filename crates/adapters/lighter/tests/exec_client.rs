@@ -1009,18 +1009,35 @@ async fn assert_local_order_denied_once(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     state: &TestServerState,
     reason_part: &str,
-) {
+) -> String {
     let event = next_order_event(rx, Duration::from_secs(2))
         .await
         .expect("expected denied event");
-    match event {
-        OrderEventAny::Denied(d) => assert!(
-            d.reason.as_str().contains(reason_part),
-            "expected reason containing `{reason_part}`, was {:?}",
-            d.reason,
-        ),
+    let reason = match event {
+        OrderEventAny::Denied(d) => {
+            assert!(
+                d.reason.as_str().contains(reason_part),
+                "expected reason containing `{reason_part}`, was {:?}",
+                d.reason,
+            );
+            assert!(
+                [
+                    "INSTRUMENT_NOT_FOUND:",
+                    "SUBMIT_FAILED:",
+                    "UNSUPPORTED_ORDER_LIST:",
+                    "UNSUPPORTED_ORDER_TYPE:",
+                    "UNSUPPORTED_TIME_IN_FORCE:",
+                    "VALIDATION_FAILED:",
+                ]
+                .iter()
+                .any(|prefix| d.reason.as_str().starts_with(prefix)),
+                "expected standardized denial code, was {:?}",
+                d.reason,
+            );
+            d.reason.to_string()
+        }
         other => panic!("expected OrderDenied, was {other:?}"),
-    }
+    };
 
     assert!(
         next_order_event(rx, Duration::from_millis(100))
@@ -1029,6 +1046,7 @@ async fn assert_local_order_denied_once(
         "local denial should emit exactly one order event",
     );
     assert_eq!(state.send_txs().await.len(), 0);
+    reason
 }
 
 fn make_limit_order(
@@ -2187,7 +2205,8 @@ async fn test_submit_market_order_without_quote_denies_locally() {
     client
         .submit_order(submit_command(&order))
         .expect("local denial should not return Err to the engine");
-    assert_local_order_denied_once(&mut rx, &state, "no cached quote").await;
+    let reason = assert_local_order_denied_once(&mut rx, &state, "no cached quote").await;
+    assert!(reason.starts_with("VALIDATION_FAILED:"));
 
     client.disconnect().await.expect("disconnect");
 }
@@ -2212,7 +2231,7 @@ async fn test_submit_fok_limit_order_denies_once_without_error() {
     client
         .submit_order(submit_command(&order))
         .expect("local denial should not return Err to the engine");
-    assert_local_order_denied_once(&mut rx, &state, "fill-or-kill").await;
+    assert_local_order_denied_once(&mut rx, &state, "UNSUPPORTED_TIME_IN_FORCE: FOK").await;
 }
 
 #[rstest]
@@ -2338,14 +2357,7 @@ async fn test_submit_order_venue_rejection_emits_order_rejected() {
         OrderEventAny::Rejected(r) => {
             assert_eq!(r.client_order_id, order.client_order_id());
             let reason = r.reason.as_str();
-            assert!(
-                reason.contains("insufficient margin"),
-                "rejection reason should include the venue message, was `{reason}`",
-            );
-            assert!(
-                reason.contains("21029"),
-                "rejection reason should include the venue code, was `{reason}`",
-            );
+            assert_eq!(reason, "LIGHTER_21029: insufficient margin");
         }
         other => panic!("expected OrderRejected, was {other:?}"),
     }
@@ -2855,14 +2867,7 @@ async fn test_cancel_order_venue_rejection_emits_cancel_rejected_for_pending_can
             assert_eq!(e.instrument_id, eth_perp_id());
             assert_eq!(e.venue_order_id, Some(venue_order_id));
             let reason = e.reason.as_str();
-            assert!(
-                reason.contains("code=21727"),
-                "rejection reason should include the venue code, was `{reason}`",
-            );
-            assert!(
-                reason.contains("order is not cancelable"),
-                "rejection reason should include the venue message, was `{reason}`",
-            );
+            assert_eq!(reason, "LIGHTER_21727: order is not cancelable");
         }
         other => panic!("expected OrderCancelRejected, was {other:?}"),
     }
@@ -2997,14 +3002,7 @@ async fn test_modify_order_venue_rejection_emits_modify_rejected() {
             assert_eq!(e.instrument_id, eth_perp_id());
             assert_eq!(e.venue_order_id, Some(venue_order_id));
             let reason = e.reason.as_str();
-            assert!(
-                reason.contains("code=21702"),
-                "rejection reason should include the venue code, was `{reason}`",
-            );
-            assert!(
-                reason.contains("modify rejected by venue"),
-                "rejection reason should include the venue message, was `{reason}`",
-            );
+            assert_eq!(reason, "LIGHTER_21702: modify rejected by venue");
         }
         other => panic!("expected OrderModifyRejected, was {other:?}"),
     }
@@ -4249,7 +4247,7 @@ async fn test_generate_bounded_mass_status_keeps_active_orders_when_history_is_i
     assert_eq!(order_report.filled_qty, Quantity::zero(4));
     assert_eq!(mass_status.fill_reports().len(), 0);
     assert_eq!(mass_status.position_reports().len(), 1);
-    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 2);
 
     client.disconnect().await.expect("disconnect");
@@ -4318,6 +4316,53 @@ async fn test_generate_bounded_mass_status_keeps_active_orders_when_active_fetch
     assert_eq!(mass_status.position_reports().len(), 1);
     assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 2);
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 0);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_mass_status_keeps_fill_market_orders_when_history_is_incomplete() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    await_subscribe_count(&state, 4).await;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch");
+    let now_ms = now.as_millis() as i64;
+    let venue_order_id = VenueOrderId::from("562947905631053");
+    let order = http_order_fixture(venue_order_id.as_str(), "1004", "open", "0.0000");
+    let mut trade = http_trade_fixture(19_209_006_934, 1004);
+    trade["timestamp"] = json!(now_ms);
+    trade["transaction_time"] = json!(now_ms * 1_000);
+
+    *state.inactive_orders_unscoped_response.lock().await = Some(http_orders_payload(&[], None));
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[order], None));
+    *state.inactive_orders_response.lock().await = Some(http_orders_payload(&[], Some("stuck")));
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[trade]}));
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+    let order_reports = mass_status.order_reports();
+    let fill_reports = mass_status.fill_reports();
+    let order_report = order_reports
+        .get(&venue_order_id)
+        .expect("partial fill-market order report");
+    let fill_report = &fill_reports[&venue_order_id][0];
+
+    assert!(!mass_status.reports_complete());
+    assert_eq!(order_reports.len(), 1);
+    assert_eq!(order_report.venue_order_id, venue_order_id);
+    assert_eq!(order_report.order_status, OrderStatus::Accepted);
+    assert_eq!(fill_report.venue_order_id, venue_order_id);
+    assert_eq!(fill_report.client_order_id, order_report.client_order_id);
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 3);
 
     client.disconnect().await.expect("disconnect");
 }
@@ -4818,6 +4863,53 @@ async fn test_generate_fill_reports_rejects_repeated_cursor() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn test_failed_fill_sweep_does_not_poison_live_replay() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    await_subscribe_count(&state, 4).await;
+
+    let valid_trade = http_trade_fixture(19_209_006_935, 55);
+    let mut invalid_trade = http_trade_fixture(19_209_006_936, 56);
+    invalid_trade["market_id"] = json!(999);
+    *state.inactive_orders_unscoped_response.lock().await = Some(http_orders_payload(&[], None));
+    *state.trades_response.lock().await = Some(json!({
+        "code": 200,
+        "trades": [valid_trade.clone(), invalid_trade],
+    }));
+
+    let mass = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect("mass status")
+        .expect("mass status available");
+
+    assert!(!mass.reports_complete());
+    assert!(mass.fill_reports().is_empty());
+
+    state.push_frame(&json!({
+        "type": "update/account_all_trades",
+        "channel": format!("account_all_trades:{TEST_ACCOUNT_INDEX}"),
+        "trades": {"0": [valid_trade]},
+    }));
+    let replay = next_event_matching(&mut rx, Duration::from_secs(2), |event| {
+        matches!(event, ExecutionEvent::Report(ExecutionReport::Fill(_)))
+    })
+    .await
+    .expect("live replay after failed fill sweep");
+
+    match replay {
+        ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+            assert_eq!(report.trade_id, TradeId::from("19209006935"));
+        }
+        other => panic!("expected FillReport, was {other:?}"),
+    }
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_generate_order_status_reports_rejects_repeated_inactive_cursor() {
     let (addr, state) = start_server().await;
     let (mut client, _rx, _cache) = build_client(addr);
@@ -4841,6 +4933,138 @@ async fn test_generate_order_status_reports_rejects_repeated_inactive_cursor() {
 
     assert!(err.to_string().contains("repeated cursor `stuck`"));
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 2);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_report_commands_reject_unknown_explicit_instrument_without_http_fanout() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    let unknown = InstrumentId::from("UNKNOWN-PERP.LIGHTER");
+
+    let order_error = client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            Some(unknown),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect_err("unknown order-report instrument must fail");
+    let fill_error = client
+        .generate_fill_reports(GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(unknown),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect_err("unknown fill-report instrument must fail");
+    let position_error = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(unknown),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect_err("unknown position-report instrument must fail");
+
+    assert!(order_error.to_string().contains("order report instrument"));
+    assert!(fill_error.to_string().contains("fill instrument"));
+    assert!(
+        position_error
+            .to_string()
+            .contains("position report instrument")
+    );
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(state.trades_calls.load(Ordering::Relaxed), 0);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_open_order_reports_fail_when_an_in_scope_row_cannot_be_parsed() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    let mut unmapped_order = http_order_fixture("281476929510202", "1003", "open", "0.0000");
+    unmapped_order["market_index"] = json!(999);
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[unmapped_order], None));
+
+    let error = client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            Some(eth_perp_id()),
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect_err("unmapped active order must fail direct reconciliation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("incomplete Lighter order reports"),
+        "unexpected error: {error:#}",
+    );
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_single_order_report_fails_when_matching_row_cannot_be_parsed() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    client.connect().await.expect("connect");
+    let venue_order_id = VenueOrderId::from("281476929510202");
+    let mut unmapped_order = http_order_fixture(venue_order_id.as_str(), "1003", "open", "0.0000");
+    unmapped_order["market_index"] = json!(999);
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[unmapped_order], None));
+
+    let error = client
+        .generate_order_status_report(&GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(eth_perp_id()),
+            None,
+            Some(venue_order_id),
+            None,
+            None,
+        ))
+        .await
+        .expect_err("unmapped matching order must fail direct reconciliation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("failed to parse matching Lighter order"),
+        "unexpected error: {error:#}",
+    );
+    assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 0);
 
     client.disconnect().await.expect("disconnect");
 }
@@ -5224,7 +5448,7 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor() {
     client.connect().await.expect("connect");
     *state.inactive_orders_response.lock().await = Some(http_orders_payload(&[], Some("stuck")));
 
-    let reports = client
+    let error = client
         .generate_order_status_reports(&GenerateOrderStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
@@ -5236,9 +5460,9 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor() {
             None,
         ))
         .await
-        .expect("partial active-market seed result");
+        .expect_err("incomplete active-market seed must fail reconciliation");
 
-    assert!(reports.is_empty());
+    assert!(error.to_string().contains("repeated cursor `stuck`"));
     assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 2);
 
     client.disconnect().await.expect("disconnect");
@@ -5484,7 +5708,31 @@ async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached
         "invalid position row must not flatten cached positions: {unexpected_flat:?}",
     );
 
-    let positions = client
+    wait_until_async(
+        || {
+            let client_ptr = std::ptr::addr_of!(client);
+            async move {
+                // SAFETY: this test owns `client` exclusively.
+                let client = unsafe { &*client_ptr };
+                client
+                    .generate_position_status_reports(&GeneratePositionStatusReports::new(
+                        UUID4::new(),
+                        UnixNanos::default(),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                    ))
+                    .await
+                    .is_err()
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let error = client
         .generate_position_status_reports(&GeneratePositionStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
@@ -5495,11 +5743,14 @@ async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached
             None,
         ))
         .await
-        .expect("position reports");
+        .expect_err("incomplete position snapshot must fail direct reconciliation");
 
-    assert_eq!(positions.len(), 1);
-    assert_eq!(positions[0].instrument_id, eth_perp_id());
-    assert_eq!(positions[0].quantity, Quantity::from("1.5000"));
+    assert!(
+        error
+            .to_string()
+            .contains("position snapshot does not cover"),
+        "unexpected error: {error:#}",
+    );
 
     client.disconnect().await.expect("disconnect");
 }
