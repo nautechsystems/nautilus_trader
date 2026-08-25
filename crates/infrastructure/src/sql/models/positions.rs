@@ -27,9 +27,9 @@ use sqlx::{FromRow, Row, postgres::PgRow};
 use crate::sql::models::i64_to_u64;
 
 #[derive(Debug)]
-pub struct PositionSnapshotModel(pub PositionSnapshot);
+pub struct PositionSnapshotRow(pub PositionSnapshot);
 
-impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
+impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<&str, _>("id").map(PositionId::from)?;
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;

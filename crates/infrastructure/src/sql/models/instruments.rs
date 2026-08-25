@@ -35,137 +35,137 @@ use rust_decimal::Decimal;
 use sqlx::{FromRow, Row, postgres::PgRow};
 use ustr::Ustr;
 
-use crate::sql::models::{enums::AssetClassModel, read_u8, read_u64};
+use crate::sql::models::{enums::AssetClassPg, read_u8, read_u64};
 
 #[derive(Debug)]
-pub struct InstrumentAnyModel(pub InstrumentAny);
+pub struct InstrumentAnyRow(pub InstrumentAny);
 
 #[derive(Debug)]
-pub struct BettingInstrumentModel(pub BettingInstrument);
+pub struct BettingInstrumentRow(pub BettingInstrument);
 
 #[derive(Debug)]
-pub struct BinaryOptionModel(pub BinaryOption);
+pub struct BinaryOptionRow(pub BinaryOption);
 
 #[derive(Debug)]
-pub struct CryptoFutureModel(pub CryptoFuture);
+pub struct CryptoFutureRow(pub CryptoFuture);
 
 #[derive(Debug)]
-pub struct CryptoOptionModel(pub CryptoOption);
+pub struct CryptoOptionRow(pub CryptoOption);
 
 #[derive(Debug)]
-pub struct CryptoPerpetualModel(pub CryptoPerpetual);
+pub struct CryptoPerpetualRow(pub CryptoPerpetual);
 
 #[derive(Debug)]
-pub struct CurrencyPairModel(pub CurrencyPair);
+pub struct CurrencyPairRow(pub CurrencyPair);
 
 #[derive(Debug)]
-pub struct EquityModel(pub Equity);
+pub struct EquityRow(pub Equity);
 
 #[derive(Debug)]
-pub struct FuturesContractModel(pub FuturesContract);
+pub struct FuturesContractRow(pub FuturesContract);
 
 #[derive(Debug)]
-pub struct FuturesSpreadModel(pub FuturesSpread);
+pub struct FuturesSpreadRow(pub FuturesSpread);
 
 #[derive(Debug)]
-pub struct OptionContractModel(pub OptionContract);
+pub struct OptionContractRow(pub OptionContract);
 
 #[derive(Debug)]
-pub struct CommodityModel(pub Commodity);
+pub struct CommodityRow(pub Commodity);
 
 #[derive(Debug)]
-pub struct IndexInstrumentModel(pub IndexInstrument);
+pub struct IndexInstrumentRow(pub IndexInstrument);
 
 #[derive(Debug)]
-pub struct CfdModel(pub Cfd);
+pub struct CfdRow(pub Cfd);
 
 #[derive(Debug)]
-pub struct PerpetualContractModel(pub PerpetualContract);
+pub struct PerpetualContractRow(pub PerpetualContract);
 
 #[derive(Debug)]
-pub struct OptionSpreadModel(pub OptionSpread);
+pub struct OptionSpreadRow(pub OptionSpread);
 
 #[derive(Debug)]
-pub struct CryptoFuturesSpreadModel(pub CryptoFuturesSpread);
+pub struct CryptoFuturesSpreadRow(pub CryptoFuturesSpread);
 
 #[derive(Debug)]
-pub struct CryptoOptionSpreadModel(pub CryptoOptionSpread);
+pub struct CryptoOptionSpreadRow(pub CryptoOptionSpread);
 
 #[derive(Debug)]
-pub struct TokenizedAssetModel(pub TokenizedAsset);
+pub struct TokenizedAssetRow(pub TokenizedAsset);
 
-impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
+impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let kind = row.get::<String, _>("kind");
         if kind == "BETTING" {
             Ok(Self(InstrumentAny::Betting(
-                BettingInstrumentModel::from_row(row).unwrap().0,
+                BettingInstrumentRow::from_row(row).unwrap().0,
             )))
         } else if kind == "BINARY_OPTION" {
             Ok(Self(InstrumentAny::BinaryOption(
-                BinaryOptionModel::from_row(row).unwrap().0,
+                BinaryOptionRow::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_FUTURE" {
             Ok(Self(InstrumentAny::CryptoFuture(
-                CryptoFutureModel::from_row(row).unwrap().0,
+                CryptoFutureRow::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_FUTURES_SPREAD" {
             Ok(Self(InstrumentAny::CryptoFuturesSpread(
-                CryptoFuturesSpreadModel::from_row(row).unwrap().0,
+                CryptoFuturesSpreadRow::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_OPTION" {
             Ok(Self(InstrumentAny::CryptoOption(
-                CryptoOptionModel::from_row(row).unwrap().0,
+                CryptoOptionRow::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_OPTION_SPREAD" {
             Ok(Self(InstrumentAny::CryptoOptionSpread(
-                CryptoOptionSpreadModel::from_row(row).unwrap().0,
+                CryptoOptionSpreadRow::from_row(row).unwrap().0,
             )))
         } else if kind == "CRYPTO_PERPETUAL" {
             Ok(Self(InstrumentAny::CryptoPerpetual(
-                CryptoPerpetualModel::from_row(row).unwrap().0,
+                CryptoPerpetualRow::from_row(row).unwrap().0,
             )))
         } else if kind == "CURRENCY_PAIR" {
             Ok(Self(InstrumentAny::CurrencyPair(
-                CurrencyPairModel::from_row(row).unwrap().0,
+                CurrencyPairRow::from_row(row).unwrap().0,
             )))
         } else if kind == "EQUITY" {
             Ok(Self(InstrumentAny::Equity(
-                EquityModel::from_row(row).unwrap().0,
+                EquityRow::from_row(row).unwrap().0,
             )))
         } else if kind == "FUTURES_CONTRACT" {
             Ok(Self(InstrumentAny::FuturesContract(
-                FuturesContractModel::from_row(row).unwrap().0,
+                FuturesContractRow::from_row(row).unwrap().0,
             )))
         } else if kind == "FUTURES_SPREAD" {
             Ok(Self(InstrumentAny::FuturesSpread(
-                FuturesSpreadModel::from_row(row).unwrap().0,
+                FuturesSpreadRow::from_row(row).unwrap().0,
             )))
         } else if kind == "OPTION_CONTRACT" {
             Ok(Self(InstrumentAny::OptionContract(
-                OptionContractModel::from_row(row).unwrap().0,
+                OptionContractRow::from_row(row).unwrap().0,
             )))
         } else if kind == "COMMODITY" {
             Ok(Self(InstrumentAny::Commodity(
-                CommodityModel::from_row(row).unwrap().0,
+                CommodityRow::from_row(row).unwrap().0,
             )))
         } else if kind == "INDEX_INSTRUMENT" {
             Ok(Self(InstrumentAny::IndexInstrument(
-                IndexInstrumentModel::from_row(row).unwrap().0,
+                IndexInstrumentRow::from_row(row).unwrap().0,
             )))
         } else if kind == "CFD" {
-            Ok(Self(InstrumentAny::Cfd(CfdModel::from_row(row).unwrap().0)))
+            Ok(Self(InstrumentAny::Cfd(CfdRow::from_row(row).unwrap().0)))
         } else if kind == "OPTION_SPREAD" {
             Ok(Self(InstrumentAny::OptionSpread(
-                OptionSpreadModel::from_row(row).unwrap().0,
+                OptionSpreadRow::from_row(row).unwrap().0,
             )))
         } else if kind == "PERPETUAL_CONTRACT" {
             Ok(Self(InstrumentAny::PerpetualContract(
-                PerpetualContractModel::from_row(row).unwrap().0,
+                PerpetualContractRow::from_row(row).unwrap().0,
             )))
         } else if kind == "TOKENIZED_ASSET" {
             Ok(Self(InstrumentAny::TokenizedAsset(
-                TokenizedAssetModel::from_row(row).unwrap().0,
+                TokenizedAssetRow::from_row(row).unwrap().0,
             )))
         } else {
             Err(sqlx::Error::Decode(
@@ -176,7 +176,7 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
 }
 
 // TODO: New/updated schema required to support betting instrument loading
-impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
+impl<'r> FromRow<'r, PgRow> for BettingInstrumentRow {
     #[expect(
         clippy::too_many_lines,
         reason = "SQL row mapping mirrors the full betting instrument constructor"
@@ -315,12 +315,12 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
+impl<'r> FromRow<'r, PgRow> for BinaryOptionRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
         let asset_class = row
-            .try_get::<AssetClassModel, _>("asset_class")
+            .try_get::<AssetClassPg, _>("asset_class")
             .map(|res| res.0)?;
         let currency = row
             .try_get::<String, _>("quote_currency")
@@ -418,7 +418,7 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
+impl<'r> FromRow<'r, PgRow> for CryptoFutureRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -523,7 +523,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
+impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
     #[expect(
         clippy::too_many_lines,
         reason = "SQL row mapping mirrors the full crypto option constructor"
@@ -640,7 +640,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
+impl<'r> FromRow<'r, PgRow> for CryptoPerpetualRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -740,7 +740,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
+impl<'r> FromRow<'r, PgRow> for CurrencyPairRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -835,7 +835,7 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for EquityModel {
+impl<'r> FromRow<'r, PgRow> for EquityRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -908,12 +908,12 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
+impl<'r> FromRow<'r, PgRow> for FuturesContractRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::new)?;
         let asset_class = row
-            .try_get::<AssetClassModel, _>("asset_class")
+            .try_get::<AssetClassPg, _>("asset_class")
             .map(|res| res.0)?;
         let exchange = row
             .try_get::<Option<String>, _>("exchange")
@@ -1001,18 +1001,18 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for FuturesSpreadModel {
+impl<'r> FromRow<'r, PgRow> for FuturesSpreadRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!("Implement FromRow for FuturesSpread")
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OptionContractModel {
+impl<'r> FromRow<'r, PgRow> for OptionContractRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::new)?;
         let asset_class = row
-            .try_get::<AssetClassModel, _>("asset_class")
+            .try_get::<AssetClassPg, _>("asset_class")
             .map(|res| res.0)?;
         let exchange = row
             .try_get::<Option<String>, _>("exchange")
@@ -1109,12 +1109,12 @@ impl<'r> FromRow<'r, PgRow> for OptionContractModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CommodityModel {
+impl<'r> FromRow<'r, PgRow> for CommodityRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
         let asset_class = row
-            .try_get::<AssetClassModel, _>("asset_class")
+            .try_get::<AssetClassPg, _>("asset_class")
             .map(|res| res.0)?;
         let quote_currency = row
             .try_get::<String, _>("quote_currency")
@@ -1199,7 +1199,7 @@ impl<'r> FromRow<'r, PgRow> for CommodityModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for IndexInstrumentModel {
+impl<'r> FromRow<'r, PgRow> for IndexInstrumentRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -1234,12 +1234,12 @@ impl<'r> FromRow<'r, PgRow> for IndexInstrumentModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CfdModel {
+impl<'r> FromRow<'r, PgRow> for CfdRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
         let asset_class = row
-            .try_get::<AssetClassModel, _>("asset_class")
+            .try_get::<AssetClassPg, _>("asset_class")
             .map(|res| res.0)?;
         let base_currency = row
             .try_get::<Option<String>, _>("base_currency")
@@ -1329,7 +1329,7 @@ impl<'r> FromRow<'r, PgRow> for CfdModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for PerpetualContractModel {
+impl<'r> FromRow<'r, PgRow> for PerpetualContractRow {
     #[expect(
         clippy::too_many_lines,
         reason = "SQL row mapping mirrors the full perpetual contract constructor"
@@ -1341,7 +1341,7 @@ impl<'r> FromRow<'r, PgRow> for PerpetualContractModel {
             .try_get::<String, _>("underlying")
             .map(|res| Ustr::from(res.as_str()))?;
         let asset_class = row
-            .try_get::<AssetClassModel, _>("asset_class")
+            .try_get::<AssetClassPg, _>("asset_class")
             .map(|res| res.0)?;
         let base_currency = row
             .try_get::<Option<String>, _>("base_currency")
@@ -1441,13 +1441,13 @@ impl<'r> FromRow<'r, PgRow> for PerpetualContractModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for OptionSpreadModel {
+impl<'r> FromRow<'r, PgRow> for OptionSpreadRow {
     fn from_row(_row: &'r PgRow) -> Result<Self, sqlx::Error> {
         todo!("Implement FromRow for OptionSpread")
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadModel {
+impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadRow {
     #[expect(
         clippy::too_many_lines,
         reason = "SQL row mapping mirrors the full crypto futures spread constructor"
@@ -1560,7 +1560,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadModel {
+impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadRow {
     #[expect(
         clippy::too_many_lines,
         reason = "SQL row mapping mirrors the full crypto option spread constructor"
@@ -1673,7 +1673,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadModel {
     }
 }
 
-impl<'r> FromRow<'r, PgRow> for TokenizedAssetModel {
+impl<'r> FromRow<'r, PgRow> for TokenizedAssetRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;

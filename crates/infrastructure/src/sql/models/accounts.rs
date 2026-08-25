@@ -22,9 +22,9 @@ use nautilus_model::{
 use sqlx::{FromRow, Row, postgres::PgRow};
 
 #[derive(Debug)]
-pub struct AccountEventModel(pub AccountState);
+pub struct AccountEventRow(pub AccountState);
 
-impl<'r> FromRow<'r, PgRow> for AccountEventModel {
+impl<'r> FromRow<'r, PgRow> for AccountEventRow {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
         let account_id = row.try_get::<&str, _>("account_id").map(AccountId::from)?;
