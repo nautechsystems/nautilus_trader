@@ -280,6 +280,19 @@ impl HyperliquidExecutionClient {
         )?;
         request.cloid = Some(cloid);
 
+        // Market orders need a limit price derived from the cached quote,
+        // leaving the conversion's zero placeholder when none is cached.
+        if order.order_type() == OrderType::Market {
+            let instrument_id = order.instrument_id();
+            let cache = self.core.cache();
+
+            if let Some(quote) = cache.quote(&instrument_id) {
+                let is_buy = order.order_side() == OrderSide::Buy;
+                request.price =
+                    derive_market_order_price(quote, is_buy, price_decimals, slippage_bps);
+            }
+        }
+
         Ok(request)
     }
 
@@ -942,6 +955,22 @@ impl ExecutionClient for HyperliquidExecutionClient {
         for order in &orders {
             match self.order_request(order, slippage_bps) {
                 Ok(request) => {
+                    // Deny MARKET orders without a cached quote, matching
+                    // the single-order path.
+                    if order.order_type() == OrderType::Market {
+                        let instrument_id = order.instrument_id();
+                        if self.core.cache().quote(&instrument_id).is_none() {
+                            self.emitter.emit_order_denied(
+                                order,
+                                &format!(
+                                    "No cached quote for {instrument_id}: \
+                                     subscribe to quote data before submitting market orders"
+                                ),
+                            );
+                            continue;
+                        }
+                    }
+
                     hyperliquid_orders.push(request);
                     valid_orders.push(order.clone());
                 }
@@ -950,6 +979,20 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         .emit_order_denied(order, &format!("Order conversion failed: {e}"));
                 }
             }
+        }
+
+        // A bracket whose entry failed conversion must not submit its
+        // children: they would rest at the venue as orphan exits.
+        if determine_order_list_grouping(&orders) == HyperliquidExchangeGrouping::NormalTpsl
+            && valid_orders
+                .first()
+                .is_none_or(|o| o.client_order_id() != orders[0].client_order_id())
+        {
+            for order in &valid_orders {
+                self.emitter
+                    .emit_order_denied(order, "Bracket entry order was denied");
+            }
+            return Ok(());
         }
 
         if valid_orders.is_empty() {

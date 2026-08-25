@@ -47,6 +47,7 @@ Released on TBD (UTC).
 - Fixed Betfair modify recovery after ambiguous REST outcomes and instruction failures
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
 - Fixed Hyperliquid execution disconnect cleanup
+- Fixed Hyperliquid market order prices in order list submits
 - Fixed Lighter testnet orders by omitting mainnet-only integrator attribution (#4834), thanks @Buff2out
 - Fixed OKX WebSocket submissions omitting `reduceOnly` (#4827), thanks for reporting @silarin
 - Fixed OKX ambiguous submissions, subscription recovery, and triggered child reconciliation
