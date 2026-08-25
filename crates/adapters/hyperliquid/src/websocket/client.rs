@@ -410,6 +410,7 @@ impl HyperliquidWebSocketClient {
                 match handler.next().await {
                     Some(NautilusWsMessage::Reconnected) => {
                         log::info!("WebSocket reconnected");
+                        subscriptions.reset_after_reconnect();
                         resubscribe_all();
 
                         if handler.send(NautilusWsMessage::Reconnected).is_err() {

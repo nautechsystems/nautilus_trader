@@ -671,11 +671,7 @@ impl DeribitWebSocketClient {
                                 let _ = cmd_tx.send(HandlerCommand::SetHeartbeat { interval });
                             }
 
-                            let channels = subscriptions_state.all_topics();
-
-                            for channel in &channels {
-                                subscriptions_state.mark_failure(channel);
-                            }
+                            let channels = subscriptions_state.reset_after_reconnect();
 
                             // Check if we need to re-authenticate
                             if let Some(cred) = &credential {
@@ -1040,6 +1036,7 @@ impl DeribitWebSocketClient {
             for channel in &channels_to_unsubscribe {
                 self.subscriptions_state.confirm_unsubscribe(channel);
                 self.subscriptions_state.add_reference(channel);
+                self.subscriptions_state.mark_subscribe(channel);
                 self.subscriptions_state.confirm_subscribe(channel);
             }
             return Err(DeribitWsError::Send(e.to_string()));
@@ -1781,5 +1778,49 @@ impl DeribitWebSocketClient {
             .map_err(|e| DeribitWsError::Send(e.to_string()))?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_unsubscribe_send_failure_restores_subscription() {
+        let client = DeribitWebSocketClient::new_unauthenticated(
+            Some("ws://127.0.0.1:0/ws/api/v2".to_string()),
+            30,
+            DeribitEnvironment::Testnet,
+        )
+        .unwrap();
+        let channel = "trades.BTC-PERPETUAL.raw";
+        client.subscriptions_state.add_reference(channel);
+        client.subscriptions_state.mark_subscribe(channel);
+        client.subscriptions_state.confirm_subscribe(channel);
+
+        let error = client
+            .send_unsubscribe(vec![channel.to_string()])
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DeribitWsError::Send(_)));
+        assert_eq!(client.subscriptions_state.get_reference_count(channel), 1);
+        assert_eq!(client.subscriptions_state.len(), 1);
+        assert_eq!(client.subscriptions_state.all_topics(), [channel]);
+        assert!(
+            client
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+        assert!(
+            client
+                .subscriptions_state
+                .pending_unsubscribe_topics()
+                .is_empty()
+        );
     }
 }

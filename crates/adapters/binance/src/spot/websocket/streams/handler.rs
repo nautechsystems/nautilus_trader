@@ -27,7 +27,6 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
 use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
@@ -43,7 +42,12 @@ use super::{
     },
     parse::decode_market_data as decode_sbe,
 };
-use crate::common::consts::BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION;
+use crate::common::{
+    consts::BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION,
+    websocket::{
+        PendingSubscriptionRequest, PendingSubscriptionRequests, reset_requests_after_reconnect,
+    },
+};
 
 /// Binance Spot WebSocket feed handler.
 ///
@@ -61,7 +65,7 @@ pub(super) struct BinanceSpotWsFeedHandler {
     subscriptions: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
     pending_messages: VecDeque<BinanceSpotWsMessage>,
-    pending_requests: AHashMap<u64, Vec<String>>,
+    pending_requests: PendingSubscriptionRequests,
 }
 
 impl BinanceSpotWsFeedHandler {
@@ -83,7 +87,7 @@ impl BinanceSpotWsFeedHandler {
             subscriptions,
             request_id_counter,
             pending_messages: VecDeque::new(),
-            pending_requests: AHashMap::new(),
+            pending_requests: PendingSubscriptionRequests::default(),
         }
     }
 
@@ -124,6 +128,10 @@ impl BinanceSpotWsFeedHandler {
                     if let Message::Text(ref text) = msg
                         && text.as_str() == RECONNECTED
                     {
+                        reset_requests_after_reconnect(
+                            &mut self.pending_requests,
+                            &self.subscriptions,
+                        );
                         log::debug!("Handler received reconnection signal");
                         return Some(BinanceSpotWsMessage::Reconnected);
                     }
@@ -182,13 +190,11 @@ impl BinanceSpotWsFeedHandler {
     fn handle_text_frame(&mut self, text: &str) -> Vec<BinanceSpotWsMessage> {
         if let Ok(error) = serde_json::from_str::<BinanceWsErrorResponse>(text) {
             if let Some(id) = error.id
-                && let Some(streams) = self.pending_requests.remove(&id)
+                && let Some(request) = self.pending_requests.take(id)
             {
-                for stream in &streams {
-                    self.subscriptions.mark_failure(stream);
-                }
+                request.mark_failure(&self.subscriptions);
                 log::warn!(
-                    "Subscription request failed: id={id}, streams={streams:?}, code={}, msg={}",
+                    "Subscription request failed: id={id}, request={request:?}, code={}, msg={}",
                     error.code,
                     error.msg
                 );
@@ -208,18 +214,14 @@ impl BinanceSpotWsFeedHandler {
     }
 
     fn handle_subscription_response(&mut self, response: &BinanceWsResponse) {
-        if let Some(streams) = self.pending_requests.remove(&response.id) {
+        if let Some(request) = self.pending_requests.take(response.id) {
             if response.result.is_none() {
-                for stream in &streams {
-                    self.subscriptions.confirm_subscribe(stream);
-                }
-                log::debug!("Subscription confirmed: streams={streams:?}");
+                request.confirm(&self.subscriptions);
+                log::debug!("Subscription request confirmed: request={request:?}");
             } else {
-                for stream in &streams {
-                    self.subscriptions.mark_failure(stream);
-                }
+                request.mark_failure(&self.subscriptions);
                 log::warn!(
-                    "Subscription failed: streams={streams:?}, result={:?}",
+                    "Subscription request failed: request={request:?}, result={:?}",
                     response.result
                 );
             }
@@ -233,34 +235,49 @@ impl BinanceSpotWsFeedHandler {
         let request = BinanceWsSubscription::subscribe(streams.clone(), request_id);
         let payload = serde_json::to_string(&request)?;
 
-        self.pending_requests.insert(request_id, streams.clone());
-
         for stream in &streams {
             self.subscriptions.mark_subscribe(stream);
         }
 
-        self.send_text(
-            payload,
-            Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
-        )
-        .await?;
+        self.pending_requests
+            .insert(request_id, PendingSubscriptionRequest::subscribe(streams));
+
+        if let Err(e) = self
+            .send_text(
+                payload,
+                Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
+            )
+            .await
+        {
+            if let Some(request) = self.pending_requests.take(request_id) {
+                request.mark_failure(&self.subscriptions);
+            }
+            return Err(e);
+        }
         Ok(())
     }
 
-    async fn handle_unsubscribe(&self, streams: Vec<String>) -> anyhow::Result<()> {
+    async fn handle_unsubscribe(&mut self, streams: Vec<String>) -> anyhow::Result<()> {
         let request_id = self.request_id_counter.fetch_add(1, Ordering::SeqCst);
         let request = BinanceWsSubscription::unsubscribe(streams.clone(), request_id);
         let payload = serde_json::to_string(&request)?;
 
-        self.send_text(
-            payload,
-            Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
-        )
-        .await?;
-
         for stream in &streams {
             self.subscriptions.mark_unsubscribe(stream);
-            self.subscriptions.confirm_unsubscribe(stream);
+        }
+
+        self.pending_requests
+            .insert(request_id, PendingSubscriptionRequest::unsubscribe(streams));
+
+        if let Err(e) = self
+            .send_text(
+                payload,
+                Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
+            )
+            .await
+        {
+            self.pending_requests.take(request_id);
+            return Err(e);
         }
 
         Ok(())
@@ -361,9 +378,10 @@ mod tests {
             subscriptions,
             request_id_counter,
         );
-        handler
-            .pending_requests
-            .insert(1, vec!["btcusdt@trade".to_string()]);
+        handler.pending_requests.insert(
+            1,
+            PendingSubscriptionRequest::subscribe(vec!["btcusdt@trade".to_string()]),
+        );
 
         let out = handler.handle_text_frame(r#"{"code":2,"msg":"Invalid request","id":1}"#);
         assert_eq!(out.len(), 1);
@@ -374,6 +392,6 @@ mod tests {
             }
             other => panic!("expected Error variant, was {other:?}"),
         }
-        assert!(handler.pending_requests.is_empty());
+        assert_eq!(handler.pending_requests.len(), 0);
     }
 }

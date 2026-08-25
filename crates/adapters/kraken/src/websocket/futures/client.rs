@@ -374,10 +374,7 @@ impl KrakenFuturesWebSocketClient {
                         }
                         log::info!("WebSocket reconnected");
 
-                        let confirmed_topics = subscriptions.all_topics();
-                        for topic in &confirmed_topics {
-                            subscriptions.mark_failure(topic);
-                        }
+                        subscriptions.reset_after_reconnect();
 
                         auth_tracker_for_reconnect.invalidate();
                         *original_challenge_for_reconnect.write().await = None;

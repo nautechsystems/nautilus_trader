@@ -553,34 +553,7 @@ impl BybitWebSocketClient {
 
                         log::info!("WebSocket reconnected");
 
-                        // Mark all confirmed subscriptions as failed so they transition to pending state
-                        let confirmed_topics: Vec<String> = {
-                            let confirmed = subscriptions.confirmed();
-                            let mut topics = Vec::new();
-
-                            for entry in confirmed.iter() {
-                                let (channel, symbols) = entry.pair();
-                                for symbol in symbols {
-                                    if symbol.is_empty() {
-                                        topics.push(channel.to_string());
-                                    } else {
-                                        topics.push(format!("{channel}.{symbol}"));
-                                    }
-                                }
-                            }
-                            topics
-                        };
-
-                        if !confirmed_topics.is_empty() {
-                            log::debug!(
-                                "Marking confirmed subscriptions as pending for replay: count={}",
-                                confirmed_topics.len()
-                            );
-
-                            for topic in confirmed_topics {
-                                subscriptions.mark_failure(&topic);
-                            }
-                        }
+                        subscriptions.reset_after_reconnect();
 
                         if requires_auth {
                             log::debug!("Re-authenticating after reconnection");

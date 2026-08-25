@@ -24,7 +24,6 @@ use std::{
     },
 };
 
-use ahash::AHashMap;
 use nautilus_network::{
     RECONNECTED,
     websocket::{SubscriptionState, WebSocketClient},
@@ -38,7 +37,13 @@ use super::messages::{
     BinanceSpotTickerMsg, BinanceSpotTradeMsg, BinanceSpotWsErrorResponse, BinanceSpotWsResponse,
     BinanceWsSubscription,
 };
-use crate::common::{consts::BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION, enums::BinanceWsEventType};
+use crate::common::{
+    consts::BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION,
+    enums::BinanceWsEventType,
+    websocket::{
+        PendingSubscriptionRequest, PendingSubscriptionRequests, reset_requests_after_reconnect,
+    },
+};
 
 /// Handler for Binance Spot public JSON WebSocket streams.
 pub(super) struct BinanceSpotPublicWsHandler {
@@ -49,7 +54,7 @@ pub(super) struct BinanceSpotPublicWsHandler {
     pending_messages: VecDeque<BinanceSpotPublicWsMessage>,
     subscriptions: SubscriptionState,
     request_id_counter: Arc<AtomicU64>,
-    pending_requests: AHashMap<u64, Vec<String>>,
+    pending_requests: PendingSubscriptionRequests,
 }
 
 impl Debug for BinanceSpotPublicWsHandler {
@@ -76,7 +81,7 @@ impl BinanceSpotPublicWsHandler {
             pending_messages: VecDeque::new(),
             subscriptions,
             request_id_counter,
-            pending_requests: AHashMap::new(),
+            pending_requests: PendingSubscriptionRequests::default(),
         }
     }
 
@@ -134,19 +139,17 @@ impl BinanceSpotPublicWsHandler {
     }
 
     async fn send_subscribe(&mut self, streams: Vec<String>) {
+        for stream in &streams {
+            self.subscriptions.mark_subscribe(stream);
+        }
+
         let Some(client) = &self.inner else {
             log::warn!("Cannot subscribe: no client connected");
             return;
         };
 
         let request_id = self.request_id_counter.fetch_add(1, Ordering::Relaxed);
-        self.pending_requests.insert(request_id, streams.clone());
-
-        for stream in &streams {
-            self.subscriptions.mark_subscribe(stream);
-        }
-
-        let request = BinanceWsSubscription::subscribe(streams, request_id);
+        let request = BinanceWsSubscription::subscribe(streams.clone(), request_id);
         let json = match serde_json::to_string(&request) {
             Ok(j) => j,
             Err(e) => {
@@ -155,15 +158,25 @@ impl BinanceSpotPublicWsHandler {
             }
         };
 
+        self.pending_requests
+            .insert(request_id, PendingSubscriptionRequest::subscribe(streams));
+
         if let Err(e) = client
             .send_text(json, Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()))
             .await
         {
+            if let Some(request) = self.pending_requests.take(request_id) {
+                request.mark_failure(&self.subscriptions);
+            }
             log::error!("Failed to send subscribe request: {e}");
         }
     }
 
-    async fn send_unsubscribe(&self, streams: Vec<String>) {
+    async fn send_unsubscribe(&mut self, streams: Vec<String>) {
+        for stream in &streams {
+            self.subscriptions.mark_unsubscribe(stream);
+        }
+
         let Some(client) = &self.inner else {
             log::warn!("Cannot unsubscribe: no client connected");
             return;
@@ -180,16 +193,15 @@ impl BinanceSpotPublicWsHandler {
             }
         };
 
+        self.pending_requests
+            .insert(request_id, PendingSubscriptionRequest::unsubscribe(streams));
+
         if let Err(e) = client
             .send_text(json, Some(BINANCE_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()))
             .await
         {
+            self.pending_requests.take(request_id);
             log::error!("Failed to send unsubscribe request: {e}");
-        }
-
-        for stream in &streams {
-            self.subscriptions.mark_unsubscribe(stream);
-            self.subscriptions.confirm_unsubscribe(stream);
         }
     }
 
@@ -197,6 +209,7 @@ impl BinanceSpotPublicWsHandler {
         if let Ok(text) = std::str::from_utf8(&raw)
             && text == RECONNECTED
         {
+            reset_requests_after_reconnect(&mut self.pending_requests, &self.subscriptions);
             log::debug!("WebSocket reconnected signal received");
             return vec![BinanceSpotPublicWsMessage::Reconnected];
         }
@@ -238,18 +251,14 @@ impl BinanceSpotPublicWsHandler {
         if json.get("result").is_some()
             && let Ok(response) = serde_json::from_value::<BinanceSpotWsResponse>(json.clone())
         {
-            if let Some(streams) = self.pending_requests.remove(&response.id) {
+            if let Some(request) = self.pending_requests.take(response.id) {
                 if response.result.is_none() {
-                    for stream in &streams {
-                        self.subscriptions.confirm_subscribe(stream);
-                    }
-                    log::debug!("Subscription confirmed: streams={streams:?}");
+                    request.confirm(&self.subscriptions);
+                    log::debug!("Subscription request confirmed: request={request:?}");
                 } else {
-                    for stream in &streams {
-                        self.subscriptions.mark_failure(stream);
-                    }
+                    request.mark_failure(&self.subscriptions);
                     log::warn!(
-                        "Subscription failed: streams={streams:?}, result={:?}",
+                        "Subscription request failed: request={request:?}, result={:?}",
                         response.result
                     );
                 }
@@ -257,11 +266,9 @@ impl BinanceSpotPublicWsHandler {
         } else if let Ok(error) = serde_json::from_value::<BinanceSpotWsErrorResponse>(json.clone())
         {
             if let Some(id) = error.id
-                && let Some(streams) = self.pending_requests.remove(&id)
+                && let Some(request) = self.pending_requests.take(id)
             {
-                for stream in &streams {
-                    self.subscriptions.mark_failure(stream);
-                }
+                request.mark_failure(&self.subscriptions);
             }
             log::warn!(
                 "WebSocket error response: code={}, msg={}",
@@ -432,6 +439,46 @@ mod tests {
         assert!(matches!(out[0], BinanceSpotPublicWsMessage::Reconnected));
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn test_subscription_intent_is_preserved_without_active_client() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(1));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+        let subscribe_topic = "btcusdt@trade";
+        let unsubscribe_topic = "ethusdt@trade";
+        subscriptions.mark_subscribe(unsubscribe_topic);
+        subscriptions.confirm_subscribe(unsubscribe_topic);
+
+        let mut handler = BinanceSpotPublicWsHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            subscriptions.clone(),
+            request_id_counter,
+        );
+
+        handler
+            .send_subscribe(vec![subscribe_topic.to_string()])
+            .await;
+        handler
+            .send_unsubscribe(vec![unsubscribe_topic.to_string()])
+            .await;
+
+        assert_eq!(
+            subscriptions.pending_subscribe_topics(),
+            [subscribe_topic.to_string()]
+        );
+        assert_eq!(
+            subscriptions.pending_unsubscribe_topics(),
+            [unsubscribe_topic.to_string()]
+        );
+        assert_eq!(subscriptions.len(), 0);
+        assert_eq!(handler.pending_requests.len(), 0);
+    }
+
     #[tokio::test]
     async fn test_handle_raw_message_error_with_id_emits_error() {
         let signal = Arc::new(AtomicBool::new(false));
@@ -447,9 +494,10 @@ mod tests {
             subscriptions,
             request_id_counter,
         );
-        handler
-            .pending_requests
-            .insert(1, vec!["btcusdt@trade".to_string()]);
+        handler.pending_requests.insert(
+            1,
+            PendingSubscriptionRequest::subscribe(vec!["btcusdt@trade".to_string()]),
+        );
 
         let payload = json!({
             "code": 2,
@@ -468,7 +516,92 @@ mod tests {
             }
             other => panic!("expected Error variant, was {other:?}"),
         }
-        assert!(handler.pending_requests.is_empty());
+        assert_eq!(handler.pending_requests.len(), 0);
+    }
+
+    #[rstest]
+    fn test_subscription_responses_preserve_unsubscribe_intent_until_acknowledged() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(3));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+        let topic = "btcusdt@trade";
+
+        let mut handler = BinanceSpotPublicWsHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            subscriptions.clone(),
+            request_id_counter,
+        );
+        subscriptions.mark_subscribe(topic);
+        handler.pending_requests.insert(
+            1,
+            PendingSubscriptionRequest::subscribe(vec![topic.to_string()]),
+        );
+        subscriptions.mark_unsubscribe(topic);
+        handler.pending_requests.insert(
+            2,
+            PendingSubscriptionRequest::unsubscribe(vec![topic.to_string()]),
+        );
+
+        handler.handle_subscription_response(&json!({"result": null, "id": 1}));
+
+        assert_eq!(
+            subscriptions.pending_unsubscribe_topics(),
+            [topic.to_string()]
+        );
+        assert_eq!(subscriptions.len(), 0);
+        assert_eq!(handler.pending_requests.len(), 1);
+
+        handler.handle_subscription_response(&json!({"result": null, "id": 2}));
+
+        assert!(subscriptions.is_empty());
+        assert_eq!(handler.pending_requests.len(), 0);
+    }
+
+    #[rstest]
+    fn test_stale_responses_do_not_mutate_latest_subscription_request() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let request_id_counter = Arc::new(AtomicU64::new(4));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let subscriptions = SubscriptionState::new('@');
+        let topic = "btcusdt@trade";
+
+        let mut handler = BinanceSpotPublicWsHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            subscriptions.clone(),
+            request_id_counter,
+        );
+        subscriptions.mark_subscribe(topic);
+        handler.pending_requests.insert(
+            1,
+            PendingSubscriptionRequest::subscribe(vec![topic.to_string()]),
+        );
+        subscriptions.mark_unsubscribe(topic);
+        handler.pending_requests.insert(
+            2,
+            PendingSubscriptionRequest::unsubscribe(vec![topic.to_string()]),
+        );
+        subscriptions.mark_subscribe(topic);
+        handler.pending_requests.insert(
+            3,
+            PendingSubscriptionRequest::subscribe(vec![topic.to_string()]),
+        );
+
+        handler.handle_subscription_response(&json!({"result": null, "id": 3}));
+        handler.handle_subscription_response(&json!({"code": 2, "msg": "Stale failure", "id": 1}));
+        handler.handle_subscription_response(&json!({"result": null, "id": 2}));
+
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(subscriptions.all_topics(), [topic]);
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+        assert_eq!(handler.pending_requests.len(), 0);
     }
 
     #[rstest]
