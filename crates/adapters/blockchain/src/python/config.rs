@@ -27,9 +27,9 @@ use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::config::{
-    BlockchainChainAnchorConfig, BlockchainDataClientConfig, BlockchainDeploymentManifest,
-    BlockchainExecutionClientConfig, BlockchainProviderIdentity, BlockchainVerificationConfig,
-    BlockchainVerificationProviderConfig, DexPoolFilters, QuoteSpendLimit,
+    BlockchainChainAnchorConfig, BlockchainDataClientConfig, BlockchainExecutionClientConfig,
+    BlockchainProviderIdentity, BlockchainVerificationConfig, BlockchainVerificationProviderConfig,
+    DexPoolFilters, QuoteSpendLimit,
 };
 
 #[pymethods]
@@ -98,8 +98,8 @@ impl BlockchainVerificationProviderConfig {
 
     fn __repr__(&self) -> String {
         format!(
-            "BlockchainVerificationProviderConfig(identity={:?}, http_rpc_url={})",
-            self.identity, REDACTED
+            "BlockchainVerificationProviderConfig(identity={:?}, http_rpc_url={REDACTED})",
+            self.identity
         )
     }
 }
@@ -147,9 +147,8 @@ impl BlockchainVerificationConfig {
         manifest_digest: String,
         deployment_manifest_json: String,
     ) -> PyResult<Self> {
-        let deployment_manifest =
-            serde_json::from_str::<BlockchainDeploymentManifest>(&deployment_manifest_json)
-                .map_err(|_| to_pyvalue_err("Invalid deployment manifest JSON"))?;
+        let deployment_manifest = serde_json::from_str(&deployment_manifest_json)
+            .map_err(|_| to_pyvalue_err("Invalid deployment manifest JSON"))?;
         Ok(Self::builder()
             .authoritative(authoritative)
             .verifiers(verifiers)
@@ -272,9 +271,8 @@ impl BlockchainDataClientConfig {
     /// Returns a string representation of the configuration.
     fn __repr__(&self) -> String {
         format!(
-            "BlockchainDataClientConfig(chain={:?}, http_rpc_url={}, wss_rpc_url={:?}, use_hypersync_for_live_data={}, from_block={:?})",
+            "BlockchainDataClientConfig(chain={:?}, http_rpc_url={REDACTED}, wss_rpc_url={:?}, use_hypersync_for_live_data={}, from_block={:?})",
             self.chain.name,
-            REDACTED,
             self.wss_rpc_url.as_ref().map(|_| REDACTED),
             self.use_hypersync_for_live_data,
             self.from_block
@@ -402,8 +400,8 @@ impl BlockchainExecutionClientConfig {
     /// Returns a string representation of the configuration.
     fn __repr__(&self) -> String {
         format!(
-            "BlockchainExecutionClientConfig(chain={:?}, wallet_address={}, http_rpc_url={})",
-            self.chain.name, self.wallet_address, REDACTED
+            "BlockchainExecutionClientConfig(chain={:?}, wallet_address={}, http_rpc_url={REDACTED})",
+            self.chain.name, self.wallet_address
         )
     }
 }
