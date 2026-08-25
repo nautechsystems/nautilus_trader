@@ -1696,6 +1696,46 @@ async fn test_generate_order_status_reports_explicit_target_ignores_load_ids_sco
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_fill_reports_explicit_target_ignores_load_ids_scope() {
+    let state = TestServerState::default();
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [load_json("http_trade_report.json")],
+        "next_cursor": "LTE=",
+    }));
+    let addr = start_mock_server(state).await;
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let mut config = create_test_exec_config(addr);
+    config.instrument_config = Some(PolymarketInstrumentProviderConfig {
+        load_ids: Some(vec![InstrumentId::from("OTHER-TOKEN.POLYMARKET")]),
+        ..Default::default()
+    });
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_instrument_to_cache_with_size_precision(&cache, instrument_id, 4);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let reports = client
+        .generate_fill_reports(GenerateFillReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: Some(instrument_id),
+            venue_order_id: None,
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("an explicit fill target is independent of collection load_ids scope");
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(reports[0].instrument_id, instrument_id);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_order_status_reports_rejects_wrong_condition() {
     let state = TestServerState::default();
     let mut order = load_json("http_open_orders_page.json")["data"][0].clone();
@@ -2459,6 +2499,45 @@ async fn test_generate_mass_status_applies_load_ids_to_all_report_types() {
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_position_status_reports_drops_unmapped_dust_before_mapping() {
+    let state = TestServerState::default();
+    *state.positions_response_override.lock().await = Some(json!([
+        {
+            "asset": "11111111111111111111111111111111111111111111111111111111111111111",
+            "conditionId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "size": "0.0000",
+            "avgPrice": "0.5000",
+        },
+        {
+            "asset": "22222222222222222222222222222222222222222222222222222222222222222",
+            "conditionId": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "size": "0.0050",
+            "avgPrice": "0.5000",
+        },
+    ]));
+    let addr = start_mock_server(state).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+
+    let reports = client
+        .generate_position_status_reports(&GeneratePositionStatusReports {
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            instrument_id: None,
+            start: None,
+            end: None,
+            params: None,
+            log_receipt_level: LogLevel::Info,
+            correlation_id: None,
+            causation_id: None,
+        })
+        .await
+        .expect("zero and dust positions are discarded before instrument mapping");
+
+    assert!(reports.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_generate_mass_status_rejects_malformed_in_scope_unmapped_position() {
     let state = TestServerState::default();
     *state.orders_response_override.lock().await = Some(json!({
@@ -2491,6 +2570,57 @@ async fn test_generate_mass_status_rejects_malformed_in_scope_unmapped_position(
         .generate_mass_status(Some(60))
         .await
         .expect_err("an in-scope unmapped position must fail before size conversion");
+
+    assert!(
+        error.to_string().contains("unmapped in-scope position"),
+        "unexpected error: {error:#}"
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_rejects_malformed_position_with_wrong_loaded_condition() {
+    let state = TestServerState::default();
+    *state.orders_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    *state.trades_response_override.lock().await = Some(json!({
+        "data": [],
+        "next_cursor": "LTE=",
+    }));
+    let loaded_condition = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let reported_condition = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    let token_id = "99999999999999999999999999999999999999999999999999999999999999999";
+    *state.positions_response_override.lock().await = Some(json!([{
+        "asset": token_id,
+        "conditionId": reported_condition,
+        "size": "79228162514264337593543950335",
+        "avgPrice": "0.5000",
+    }]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let loaded_instrument_id =
+        InstrumentId::from(format!("{loaded_condition}-{token_id}.POLYMARKET").as_str());
+    add_instrument_to_cache_with_binding(
+        &cache,
+        loaded_instrument_id,
+        (token_id, loaded_condition, "Yes"),
+        "0.0001",
+        4,
+        Decimal::ZERO,
+    );
+    let instrument = cache
+        .borrow()
+        .instrument(&loaded_instrument_id)
+        .unwrap()
+        .clone();
+    client.on_instrument(instrument);
+
+    let error = client
+        .generate_mass_status(Some(60))
+        .await
+        .expect_err("a token match cannot authorize a contradictory condition");
 
     assert!(
         error.to_string().contains("unmapped in-scope position"),

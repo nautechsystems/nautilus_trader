@@ -1326,6 +1326,7 @@ pub(crate) fn apply_fill_time_filters(
 }
 
 /// Builds position status reports from Data API positions, filtering dust.
+#[cfg(test)]
 pub(crate) fn build_position_reports(
     positions: &[DataApiPosition],
     account_id: AccountId,
@@ -1337,23 +1338,24 @@ pub(crate) fn build_position_reports(
         .collect()
 }
 
+#[cfg(test)]
 fn build_position_report(
     position: &DataApiPosition,
     account_id: AccountId,
     ts: UnixNanos,
 ) -> Option<PositionStatusReport> {
-    if position.size < DUST_POSITION_THRESHOLD {
-        if position.size > Decimal::ZERO {
-            log::debug!(
-                "Filtering dust position: {}-{}, size={}",
-                position.condition_id,
-                position.asset,
-                position.size
-            );
-        }
+    if position_is_dust(position) {
         return None;
     }
 
+    build_position_report_from_reportable_position(position, account_id, ts)
+}
+
+fn build_position_report_from_reportable_position(
+    position: &DataApiPosition,
+    account_id: AccountId,
+    ts: UnixNanos,
+) -> Option<PositionStatusReport> {
     let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
     let quantity = match Quantity::from_decimal_dp(position.size, USDC_DECIMALS as u8) {
         Ok(quantity) => quantity,
@@ -1389,72 +1391,61 @@ pub(crate) fn build_reconciliation_position_reports(
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<Vec<PositionStatusReport>> {
     let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
-    let mut admitted_positions = Vec::with_capacity(positions.len());
+    let mut reports = Vec::with_capacity(positions.len());
 
     for position in positions {
-        let instrument_id =
-            instrument_id_from_market_token(&position.condition_id, &position.asset);
-
-        if instrument_filter.is_some_and(|filter_id| {
-            !polymarket_instrument_ids_equivalent(filter_id, instrument_id)
-        }) {
-            continue;
+        if let Some(report) = build_reconciliation_position_report(
+            position,
+            account_id,
+            ts,
+            instruments,
+            instrument_filter,
+            collection_load_ids,
+        )? {
+            reports.push(report);
         }
-
-        if !instrument_in_load_ids_scope(instrument_id, collection_load_ids) {
-            log::debug!("Dropping out-of-scope position instrument {instrument_id}");
-            continue;
-        }
-
-        if !position_instrument_loaded(instrument_id, instruments) {
-            anyhow::bail!(unmapped_in_scope_message(
-                "position",
-                instrument_id,
-                None,
-                collection_load_ids,
-            ));
-        }
-
-        admitted_positions.push(position.clone());
     }
 
-    retain_mapped_position_reports(
-        build_position_reports(&admitted_positions, account_id, ts),
-        instruments,
-        collection_load_ids,
-    )
+    Ok(reports)
 }
 
-pub(crate) fn retain_mapped_position_reports(
-    reports: Vec<PositionStatusReport>,
+fn build_reconciliation_position_report(
+    position: &DataApiPosition,
+    account_id: AccountId,
+    ts: UnixNanos,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    load_ids: Option<&[InstrumentId]>,
-) -> anyhow::Result<Vec<PositionStatusReport>> {
-    let mut kept = Vec::with_capacity(reports.len());
+    instrument_filter: Option<InstrumentId>,
+    collection_load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<Option<PositionStatusReport>> {
+    let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
 
-    for report in reports {
-        if !instrument_in_load_ids_scope(report.instrument_id, load_ids) {
-            log::debug!(
-                "Dropping out-of-scope position instrument {}",
-                report.instrument_id
-            );
-            continue;
-        }
+    if instrument_filter
+        .is_some_and(|filter_id| !polymarket_instrument_ids_equivalent(filter_id, instrument_id))
+    {
+        return Ok(None);
+    }
 
-        if position_instrument_loaded(report.instrument_id, instruments) {
-            kept.push(report);
-            continue;
-        }
+    if !instrument_in_load_ids_scope(instrument_id, collection_load_ids) {
+        log::debug!("Dropping out-of-scope position instrument {instrument_id}");
+        return Ok(None);
+    }
 
+    if position_is_dust(position) {
+        return Ok(None);
+    }
+
+    if !position_instrument_loaded(&position.asset, instrument_id, instruments) {
         anyhow::bail!(unmapped_in_scope_message(
             "position",
-            report.instrument_id,
+            instrument_id,
             None,
-            load_ids,
+            collection_load_ids,
         ));
     }
 
-    Ok(kept)
+    Ok(build_position_report_from_reportable_position(
+        position, account_id, ts,
+    ))
 }
 
 /// Full reconciliation mass status generation.
@@ -1647,13 +1638,30 @@ fn unmapped_in_scope_message(
 }
 
 fn position_instrument_loaded(
+    token_id: &str,
     instrument_id: InstrumentId,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
 ) -> bool {
-    let symbol = instrument_id.symbol.as_str();
-    symbol
-        .rsplit_once('-')
-        .is_some_and(|(_, token_id)| instruments.contains_key(&Ustr::from(token_id)))
+    instruments
+        .get_cloned(&Ustr::from(token_id))
+        .is_some_and(|instrument| {
+            polymarket_instrument_ids_equivalent(instrument.id(), instrument_id)
+        })
+}
+
+fn position_is_dust(position: &DataApiPosition) -> bool {
+    let is_dust = position.size < DUST_POSITION_THRESHOLD;
+
+    if is_dust && position.size > Decimal::ZERO {
+        log::debug!(
+            "Filtering dust position: {}-{}, size={}",
+            position.condition_id,
+            position.asset,
+            position.size
+        );
+    }
+
+    is_dust
 }
 
 fn trade_in_lookback_window(
@@ -2127,62 +2135,5 @@ mod tests {
 
         assert!(reports.is_empty());
         assert_eq!(filtered, 1);
-    }
-
-    #[rstest]
-    fn in_scope_unmapped_position_errors() {
-        let reports = vec![PositionStatusReport::new(
-            AccountId::from("POLY-001"),
-            InstrumentId::from("0xmarket-token.POLYMARKET"),
-            PositionSideSpecified::Long,
-            Quantity::from("10.000000"),
-            UnixNanos::from(1),
-            UnixNanos::from(1),
-            None,
-            None,
-            None,
-        )];
-
-        let error = retain_mapped_position_reports(reports, &AtomicMap::new(), None)
-            .expect_err("in-scope position miss must fail");
-
-        let message = error.to_string();
-
-        assert!(message.contains("unmapped in-scope position"));
-        assert!(message.contains("set instrument_config.load_ids"));
-    }
-
-    #[rstest]
-    fn load_ids_scope_applies_to_loaded_position_reports() {
-        let instrument_id = test_instrument().id();
-        let report = || {
-            PositionStatusReport::new(
-                AccountId::from("POLY-001"),
-                instrument_id,
-                PositionSideSpecified::Long,
-                Quantity::from("10.000000"),
-                UnixNanos::from(1),
-                UnixNanos::from(1),
-                None,
-                None,
-                None,
-            )
-        };
-
-        let kept = retain_mapped_position_reports(
-            vec![report()],
-            &test_instruments(),
-            Some(std::slice::from_ref(&instrument_id)),
-        )
-        .expect("loaded in-scope position is retained");
-        let dropped = retain_mapped_position_reports(
-            vec![report()],
-            &test_instruments(),
-            Some(&[InstrumentId::from("OTHER.POLYMARKET")]),
-        )
-        .expect("loaded out-of-scope position is dropped");
-
-        assert_eq!(kept.len(), 1);
-        assert!(dropped.is_empty());
     }
 }
