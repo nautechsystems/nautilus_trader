@@ -1506,6 +1506,116 @@ fn test_process_limit_post_only_order_that_would_be_a_taker(
 }
 
 #[rstest]
+fn test_l2_delete_final_ask_does_not_fill_resting_bid_from_stale_touch(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let resting_bid_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut resting_bid = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(resting_bid_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut resting_bid, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    process_stale_ask_deletion(&mut engine, instrument_eth_usdt.id());
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert!(
+        saved_messages.is_empty(),
+        "deleting the final ask must not fill from a stale touch, was {saved_messages:?}",
+    );
+    assert!(engine.order_exists(resting_bid_id));
+    assert_eq!(engine.best_ask_price(), None);
+    assert_eq!(engine.get_core().ask, None);
+}
+
+#[rstest]
+fn test_l2_delete_final_ask_does_not_trigger_stop_limit_from_stale_touch(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let config = OrderMatchingEngineConfig {
+        reject_stop_orders: false,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, Some(config));
+
+    let stop_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut stop_order = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1500.00"))
+        .price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(stop_order_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut stop_order, account_id);
+    clear_order_event_handler_messages(&order_event_handler);
+
+    process_stale_ask_deletion(&mut engine, instrument_eth_usdt.id());
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let resting = engine
+        .get_core()
+        .get_order(stop_order_id)
+        .copied()
+        .expect("stop-limit should remain in the matching core");
+    assert!(
+        saved_messages.is_empty(),
+        "deleting the final ask must not trigger from a stale touch, was {saved_messages:?}",
+    );
+    assert_eq!(resting.trigger_price, Some(Price::from("1500.00")));
+    assert_eq!(resting.limit_price, Some(Price::from("1490.00")));
+    assert_eq!(engine.best_ask_price(), None);
+    assert_eq!(engine.get_core().ask, None);
+}
+
+fn process_stale_ask_deletion(engine: &mut OrderMatchingEngine, instrument_id: InstrumentId) {
+    // While paused, publish an opposing touch. The iteration cannot match,
+    // but its final synchronization stores the ask in the matching core.
+    engine.process_status(MarketStatusAction::Pause);
+    let add_ask = OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .sequence(1)
+        .build();
+    engine.process_order_book_delta(&add_ask).unwrap();
+    assert_eq!(engine.get_core().ask, Some(Price::from("1500.00")));
+
+    // Reopen without iterating, then delete the final ask. The delete invokes
+    // one iteration and must clear the stale ask before matching.
+    engine.process_status(MarketStatusAction::Trading);
+    let delete_ask = OrderBookDeltaTestBuilder::new(instrument_id)
+        .book_action(BookAction::Delete)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("0.000"),
+            1,
+        ))
+        .sequence(2)
+        .build();
+    engine.process_order_book_delta(&delete_ask).unwrap();
+}
+
+#[rstest]
 fn test_process_limit_order_not_matched_and_canceled_fok_order(
     instrument_eth_usdt: InstrumentAny,
     order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
