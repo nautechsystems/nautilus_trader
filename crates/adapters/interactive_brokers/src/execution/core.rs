@@ -1617,6 +1617,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
         let order_id_map = Arc::clone(&self.order_id_map);
+        let venue_order_id_map = Arc::clone(&self.venue_order_id_map);
         let instrument_id_map = Arc::clone(&self.instrument_id_map);
         let trader_id_map = Arc::clone(&self.trader_id_map);
         let strategy_id_map = Arc::clone(&self.strategy_id_map);
@@ -1632,6 +1633,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 &cmd,
                 &client_clone,
                 &order_id_map,
+                &venue_order_id_map,
                 &instrument_id_map,
                 &trader_id_map,
                 &strategy_id_map,
@@ -2056,6 +2058,7 @@ impl InteractiveBrokersExecutionClient {
         cmd: &CancelOrder,
         client: &Arc<Client>,
         order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
+        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
         instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
@@ -2079,6 +2082,15 @@ impl InteractiveBrokersExecutionClient {
         let ib_order_id =
             Self::resolve_ib_order_id(client, order_selector, account_id, request_timeout_secs)
                 .await?;
+        Self::cache_cancel_order_tracking(
+            ib_order_id,
+            cmd,
+            order_id_map,
+            venue_order_id_map,
+            instrument_id_map,
+            trader_id_map,
+            strategy_id_map,
+        )?;
 
         if let Err(e) = client.cancel_order(ib_order_id, "").await {
             tracing::error!(

@@ -1967,6 +1967,139 @@ fn test_emit_order_pending_cancel_is_idempotent() {
 }
 
 #[tokio::test]
+async fn test_cancel_order_recovery_tracks_resolved_order_identity() {
+    let (client, mut exec_receiver, _) = create_test_execution_client();
+    let spread = create_test_option_spread();
+    let instrument_id = spread.id;
+    client
+        .instrument_provider
+        .insert_test_instrument(InstrumentAny::from(spread), 54321, 1);
+
+    assert!(client.order_id_map.lock().unwrap().is_empty());
+    assert!(client.venue_order_id_map.lock().unwrap().is_empty());
+    assert!(client.instrument_id_map.lock().unwrap().is_empty());
+    assert!(client.trader_id_map.lock().unwrap().is_empty());
+    assert!(client.strategy_id_map.lock().unwrap().is_empty());
+
+    let trader_id = TraderId::from("TRADER-RESTORED");
+    let strategy_id = StrategyId::from("STRATEGY-RESTORED");
+    let client_order_id = ClientOrderId::from("O-RESTORED-001");
+    let cmd = CancelOrder::new(
+        trader_id,
+        Some(*IB_CLIENT_ID),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        Some(VenueOrderId::from("PERM-456")),
+        UUID4::new(),
+        UnixNanos::new(1),
+        None,
+        None,
+    );
+    let resolved_order_id = 7001;
+
+    InteractiveBrokersExecutionClient::cache_cancel_order_tracking(
+        resolved_order_id,
+        &cmd,
+        &client.order_id_map,
+        &client.venue_order_id_map,
+        &client.instrument_id_map,
+        &client.trader_id_map,
+        &client.strategy_id_map,
+    )
+    .unwrap();
+
+    let mut pending_status = create_test_order_status(resolved_order_id, "PendingCancel");
+    pending_status.perm_id = 456;
+    let exec_sender = get_exec_event_sender();
+    InteractiveBrokersExecutionClient::handle_order_status(
+        &pending_status,
+        &client.order_id_map,
+        &client.venue_order_id_map,
+        &client.instrument_provider,
+        &exec_sender,
+        UnixNanos::new(2),
+        client.core.account_id,
+        &client.instrument_id_map,
+        &client.trader_id_map,
+        &client.strategy_id_map,
+        &client.active_order_contexts,
+        &client.terminal_order_contexts,
+        &client.order_avg_prices,
+        &client.pending_combo_fills,
+        &client.pending_combo_fill_avgs,
+        &client.order_fill_progress,
+        &client.pending_cancel_orders,
+        &client.spread_fill_tracking,
+    )
+    .await
+    .unwrap();
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::PendingCancel(event)) => {
+            assert_eq!(event.trader_id, trader_id);
+            assert_eq!(event.strategy_id, strategy_id);
+            assert_eq!(event.instrument_id, instrument_id);
+            assert_eq!(event.client_order_id, client_order_id);
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+    assert!(
+        client
+            .pending_cancel_orders
+            .lock()
+            .unwrap()
+            .contains(&client_order_id)
+    );
+
+    let mut canceled_status = create_test_order_status(resolved_order_id, "Cancelled");
+    canceled_status.perm_id = 456;
+    InteractiveBrokersExecutionClient::handle_order_status(
+        &canceled_status,
+        &client.order_id_map,
+        &client.venue_order_id_map,
+        &client.instrument_provider,
+        &exec_sender,
+        UnixNanos::new(3),
+        client.core.account_id,
+        &client.instrument_id_map,
+        &client.trader_id_map,
+        &client.strategy_id_map,
+        &client.active_order_contexts,
+        &client.terminal_order_contexts,
+        &client.order_avg_prices,
+        &client.pending_combo_fills,
+        &client.pending_combo_fill_avgs,
+        &client.order_fill_progress,
+        &client.pending_cancel_orders,
+        &client.spread_fill_tracking,
+    )
+    .await
+    .unwrap();
+
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::Canceled(event)) => {
+            assert_eq!(event.trader_id, trader_id);
+            assert_eq!(event.strategy_id, strategy_id);
+            assert_eq!(event.instrument_id, instrument_id);
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("PERM-456")));
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+
+    assert!(exec_receiver.try_recv().is_err());
+    assert!(client.order_id_map.lock().unwrap().is_empty());
+    assert!(client.venue_order_id_map.lock().unwrap().is_empty());
+    assert!(client.instrument_id_map.lock().unwrap().is_empty());
+    assert!(client.trader_id_map.lock().unwrap().is_empty());
+    assert!(client.strategy_id_map.lock().unwrap().is_empty());
+    assert!(client.pending_cancel_orders.lock().unwrap().is_empty());
+    assert!(client.active_order_contexts.lock().unwrap().is_empty());
+    assert!(client.terminal_order_contexts.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn test_handle_order_status_canceled_emits_canceled_event() {
     let instrument_provider = create_test_instrument_provider();
     let spread = create_test_option_spread();
