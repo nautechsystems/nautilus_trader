@@ -1076,6 +1076,7 @@ impl LiveNode {
         // This ensures the cache is populated before execution clients connect.
         let data_connect_result = drive_with_event_buffering(
             self.connect_data_phase(connection_deadline),
+            SourcedAccountHandling::Buffer,
             &mut pending,
             &mut time_evt_rx,
             &mut system_evt_rx,
@@ -1131,6 +1132,7 @@ impl LiveNode {
         // Startup phase 2: Connect execution clients (instruments now in cache)
         let engine_connection_result = drive_with_event_buffering(
             self.connect_exec_phase(connection_deadline),
+            SourcedAccountHandling::Dispatch,
             &mut pending,
             &mut time_evt_rx,
             &mut system_evt_rx,
@@ -3834,17 +3836,25 @@ fn flush_all_pending(
     pending.drain();
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourcedAccountHandling {
+    Buffer,
+    Dispatch,
+}
+
 /// Drives a future to completion while buffering channel events.
 ///
-/// Time events are handled immediately. Legacy account events are forwarded directly.
-/// All sourced execution events are buffered FIFO within their lane; every other execution event
-/// is buffered in its existing legacy pending category.
+/// Time events are handled immediately. Legacy account events are forwarded directly. Sourced
+/// account events can also be forwarded while execution clients connect; all other sourced events
+/// are buffered FIFO within their lane. Every other execution event is buffered in its existing
+/// legacy pending category.
 #[expect(
     clippy::too_many_arguments,
     reason = "startup buffering owns one future plus the pending state and all runner receivers"
 )]
 async fn drive_with_event_buffering<F: std::future::Future>(
     future: F,
+    sourced_account_handling: SourcedAccountHandling,
     pending: &mut PendingEvents,
     time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
@@ -3874,7 +3884,15 @@ async fn drive_with_event_buffering<F: std::future::Future>(
                 pending.system_commands.push(command);
             }
             Some(ingress) = sourced_exec.recv(exec_evt_rx) => {
-                pending.buffer_execution_ingress(ingress);
+                match ingress {
+                    ExecutionEventIngress::Sourced(event)
+                        if sourced_account_handling == SourcedAccountHandling::Dispatch
+                            && matches!(&event.event, ExecutionEvent::Account(_)) =>
+                    {
+                        AsyncRunner::handle_sourced_exec_event(event);
+                    }
+                    ingress => pending.buffer_execution_ingress(ingress),
+                }
             }
             Some(cmd) = exec_cmd_rx.recv() => {
                 pending.exec_cmds.push(cmd);
@@ -8362,6 +8380,27 @@ mod tests {
         ))))
     }
 
+    fn stub_order_report_event() -> ExecutionEvent {
+        use nautilus_model::identifiers::ClientOrderId;
+
+        ExecutionEvent::Report(ExecutionReport::Order(Box::new(OrderStatusReport::new(
+            AccountId::from("TEST-001"),
+            InstrumentId::from("TEST.VENUE"),
+            Some(ClientOrderId::from("O-001")),
+            VenueOrderId::from("V-001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("1.0"),
+            Quantity::from("0.0"),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            UnixNanos::from(3),
+            None,
+        ))))
+    }
+
     #[rstest]
     fn test_flush_all_pending_drains_buffered_channels() {
         let (time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
@@ -8457,6 +8496,104 @@ mod tests {
             UnixNanos::default(),
             None,
         ))
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_sourced_account_registers_while_execution_client_connects() {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        let account_id = AccountId::from("SOURCE-CONNECT-001");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let received = Rc::new(Cell::new(0));
+        let (account_registered_tx, account_registered_rx) = tokio::sync::oneshot::channel();
+        let account_registered_tx = Rc::new(RefCell::new(Some(account_registered_tx)));
+        let handler_cache = cache.clone();
+        let handler_received = received.clone();
+        let handler_account_registered_tx = account_registered_tx.clone();
+        msgbus::register_account_state_endpoint(
+            MessagingSwitchboard::portfolio_update_account(),
+            TypedHandler::from(move |state: &AccountState| {
+                handler_cache
+                    .borrow_mut()
+                    .add_account(AccountAny::Margin(MarginAccount::new(state.clone(), true)))
+                    .unwrap();
+                handler_received.set(handler_received.get() + 1);
+
+                if let Some(tx) = handler_account_registered_tx.borrow_mut().take() {
+                    tx.send(())
+                        .expect("execution client connect should await account registration");
+                }
+            }),
+        );
+
+        assert!(cache.borrow().account(&account_id).is_none());
+
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let (channels, mut sourced_exec) = runner.take_channels_with_sourced();
+        let AsyncRunnerChannels {
+            mut time_evt_rx,
+            mut system_evt_rx,
+            mut system_cmd_rx,
+            mut exec_evt_rx,
+            mut exec_cmd_rx,
+            mut data_evt_rx,
+            mut data_cmd_rx,
+        } = channels;
+        let sink = crate::runner::get_sourced_exec_event_sink(ClientId::from("SOURCE-CONNECT"));
+        let connect_account_id = account_id;
+        let connect = async move {
+            sink.send(stub_order_report_event()).unwrap();
+            sink.send(stub_exec_event()).unwrap();
+            sink.send(ExecutionEvent::Account(AccountState::new(
+                connect_account_id,
+                AccountType::Margin,
+                vec![],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+                None,
+            )))
+            .unwrap();
+
+            account_registered_rx
+                .await
+                .expect("account registration handler should remain available");
+        };
+        let mut pending = PendingEvents::default();
+
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            drive_with_event_buffering(
+                connect,
+                SourcedAccountHandling::Dispatch,
+                &mut pending,
+                &mut time_evt_rx,
+                &mut system_evt_rx,
+                &mut system_cmd_rx,
+                &mut exec_evt_rx,
+                &mut sourced_exec,
+                &mut exec_cmd_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
+            ),
+        )
+        .await
+        .expect("sourced account should be registered during execution client connect");
+
+        assert!(cache.borrow().account(&account_id).is_some());
+        assert_eq!(received.get(), 1);
+        assert_eq!(pending.sourced_exec_evts.len(), 2);
+        assert!(matches!(
+            &pending.sourced_exec_evts[0].event,
+            ExecutionEvent::Report(ExecutionReport::Order(_))
+        ));
+        assert!(matches!(
+            &pending.sourced_exec_evts[1].event,
+            ExecutionEvent::Report(ExecutionReport::Fill(_))
+        ));
     }
 
     #[rstest]
