@@ -6,6 +6,9 @@
 #  You may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 # -------------------------------------------------------------------------------------------------
+"""
+Example of historical download.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +26,9 @@ from nautilus_trader.adapters import interactive_brokers
 
 
 def historical_end() -> dt.datetime:
+    """
+    Historical end.
+    """
     value = os.getenv("IB_V2_HISTORICAL_END")
     if value:
         return dt.datetime.fromisoformat(value).astimezone(dt.UTC)
@@ -30,6 +36,9 @@ def historical_end() -> dt.datetime:
 
 
 async def main() -> None:
+    """
+    Run the example.
+    """
     ib = interactive_brokers
     host, port = resolve_ib_endpoint()
     trading_hours = ib.IbTradingHours.EXTENDED

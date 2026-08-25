@@ -127,7 +127,13 @@ def _engine(
     return BacktestEngine(config)
 
 
-def _ema_config(instrument_id, bar_type, trade_size="1000000", fast=10, slow=20):
+def _ema_config(
+    instrument_id: InstrumentId,
+    bar_type: object,
+    trade_size: object = "1000000",
+    fast: object = 10,
+    slow: object = 20,
+) -> object:
     return ImportableStrategyConfig(
         strategy_path=EMA_CROSS_STRATEGY,
         config_path=EMA_CROSS_CONFIG,
@@ -205,7 +211,14 @@ _BACKTEST_CASH_MARGIN_SUMMARY_LINES = [
 
 
 class TestBacktestAcceptanceTestsUSDJPY:
-    def setup_method(self):
+    """
+    Collect backtest acceptance tests usdjpy tests.
+    """
+
+    def setup_method(self) -> None:
+        """
+        Set up the test fixture.
+        """
         self.engine = _engine(snapshot_orders=True, snapshot_positions=True)
         self.venue = Venue("SIM")
         self.usdjpy = TestInstrumentProvider.usdjpy_sim()
@@ -229,10 +242,16 @@ class TestBacktestAcceptanceTestsUSDJPY:
         )
         self.engine.add_data(ticks)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
+        """
+        Teardown method.
+        """
         self.engine.dispose()
 
-    def test_run_ema_cross_strategy(self):
+    def test_run_ema_cross_strategy(self) -> None:
+        """
+        Test run ema cross strategy.
+        """
         self.engine.add_strategy_from_config(
             _ema_config(self.usdjpy.id, "USD/JPY.SIM-15-MINUTE-BID-INTERNAL"),
         )
@@ -245,7 +264,10 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert result.total_positions > 0
         assert result.total_events > 0
 
-    def test_rerun_ema_cross_strategy_returns_identical_performance(self):
+    def test_rerun_ema_cross_strategy_returns_identical_performance(self) -> None:
+        """
+        Test rerun ema cross strategy returns identical performance.
+        """
         self.engine.add_strategy_from_config(
             _ema_config(self.usdjpy.id, "USD/JPY.SIM-15-MINUTE-BID-INTERNAL"),
         )
@@ -292,7 +314,10 @@ class TestBacktestAcceptanceTestsUSDJPY:
         assert balance_1 == balance_2
         assert event_count_1 == event_count_2
 
-    def test_run_multiple_strategies(self):
+    def test_run_multiple_strategies(self) -> None:
+        """
+        Test run multiple strategies.
+        """
         # v1 uses order_id_tag="001" / "002" to disambiguate two EMACross instances.
         # In v2 the StrategyConfig is a Rust @final type whose pyo3 init enforces
         # `strategy_id: StrategyId | None`, so we cannot route order_id_tag through
@@ -336,7 +361,14 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
-    def setup_method(self):
+    """
+    Collect backtest acceptance tests gbpusdbars internal tests.
+    """
+
+    def setup_method(self) -> None:
+        """
+        Set up the test fixture.
+        """
         self.engine = _engine(snapshot_orders=True, snapshot_positions=True)
         self.venue = Venue("SIM")
         self.gbpusd = TestInstrumentProvider.gbpusd_sim()
@@ -358,10 +390,16 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         )
         self.engine.add_data(ticks)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
+        """
+        Teardown method.
+        """
         self.engine.dispose()
 
-    def test_run_ema_cross_with_five_minute_bar_spec(self):
+    def test_run_ema_cross_with_five_minute_bar_spec(self) -> None:
+        """
+        Test run ema cross with five minute bar spec.
+        """
         self.engine.add_strategy_from_config(
             _ema_config(self.gbpusd.id, "GBP/USD.SIM-5-MINUTE-MID-INTERNAL"),
         )
@@ -372,7 +410,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert result.iterations > 0
         assert result.total_orders > 0
 
-    def test_run_ema_cross_stop_entry_trail_strategy(self):
+    def test_run_ema_cross_stop_entry_trail_strategy(self) -> None:
+        """
+        Test run ema cross stop entry trail strategy.
+        """
         self.engine.add_strategy_from_config(
             ImportableStrategyConfig(
                 strategy_path=EMA_CROSS_STOP_ENTRY_STRATEGY,
@@ -406,7 +447,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert trailing_stops
         assert self.engine.cache.positions_closed_count() > 0
 
-    def test_run_ema_cross_stop_entry_trail_strategy_with_emulation(self):
+    def test_run_ema_cross_stop_entry_trail_strategy_with_emulation(self) -> None:
+        """
+        Test run ema cross stop entry trail strategy with emulation.
+        """
         self.engine.add_strategy_from_config(
             ImportableStrategyConfig(
                 strategy_path=EMA_CROSS_TRAILING_STOP_STRATEGY,
@@ -441,7 +485,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert any(order.status == OrderStatus.FILLED for order in trailing_stops)
         assert self.engine.cache.positions_closed_count() > 0
 
-    def test_run_ema_cross_trailing_stop_activates_at_market(self):
+    def test_run_ema_cross_trailing_stop_activates_at_market(self) -> None:
+        """
+        Test run ema cross trailing stop activates at market.
+        """
         # Regression for v1 parity: a trailing stop submitted with neither trigger_price nor
         # activation_price activates at market and its trigger materializes from trailing_offset
         # on the first update, so it can still trail and fill.
@@ -487,7 +534,14 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
 
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
-    def setup_method(self):
+    """
+    Collect backtest acceptance tests gbpusdbars external tests.
+    """
+
+    def setup_method(self) -> None:
+        """
+        Set up the test fixture.
+        """
         self.engine = _engine(risk_bypass=True)
         self.venue = Venue("SIM")
         self.gbpusd = TestInstrumentProvider.gbpusd_sim()
@@ -516,10 +570,16 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         self.engine.add_data(bid_bars)
         self.engine.add_data(ask_bars)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
+        """
+        Teardown method.
+        """
         self.engine.dispose()
 
-    def test_run_ema_cross_with_minute_bar_spec(self):
+    def test_run_ema_cross_with_minute_bar_spec(self) -> None:
+        """
+        Test run ema cross with minute bar spec.
+        """
         self.engine.add_strategy_from_config(
             _ema_config(self.gbpusd.id, "GBP/USD.SIM-1-MINUTE-BID-EXTERNAL"),
         )
@@ -533,7 +593,14 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
 
 
 class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
-    def setup_method(self):
+    """
+    Collect backtest acceptance tests btcusdtema cross twap tests.
+    """
+
+    def setup_method(self) -> None:
+        """
+        Set up the test fixture.
+        """
         self.engine = _engine(risk_bypass=True)
         self.venue = Venue("BINANCE")
         self.btcusdt = TestInstrumentProvider.btcusdt_binance()
@@ -549,10 +616,16 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
         )
         self.engine.add_instrument(self.btcusdt)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
+        """
+        Teardown method.
+        """
         self.engine.dispose()
 
-    def test_run_ema_cross_with_minute_trade_bars(self):
+    def test_run_ema_cross_with_minute_trade_bars(self) -> None:
+        """
+        Test run ema cross with minute trade bars.
+        """
         bars = TestDataProvider.bars_from_binance_csv(
             self.btcusdt,
             bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
@@ -601,7 +674,10 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
             )
             assert sequence_qty == Decimal("0.010000")
 
-    def test_run_ema_cross_with_trade_ticks_from_bar_data(self):
+    def test_run_ema_cross_with_trade_ticks_from_bar_data(self) -> None:
+        """
+        Test run ema cross with trade ticks from bar data.
+        """
         bars = TestDataProvider.bars_from_binance_csv(
             self.btcusdt,
             bar_type=BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
@@ -638,7 +714,14 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
 
 
 class TestBacktestAcceptanceTestsAUDUSD:
-    def setup_method(self):
+    """
+    Collect backtest acceptance tests audusd tests.
+    """
+
+    def setup_method(self) -> None:
+        """
+        Set up the test fixture.
+        """
         self.engine = _engine(snapshot_orders=True, snapshot_positions=True)
         self.venue = Venue("SIM")
         self.audusd = TestInstrumentProvider.audusd_sim()
@@ -659,10 +742,16 @@ class TestBacktestAcceptanceTestsAUDUSD:
         )
         self.engine.add_data(ticks)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
+        """
+        Teardown method.
+        """
         self.engine.dispose()
 
-    def test_run_ema_cross_with_minute_bar_spec(self):
+    def test_run_ema_cross_with_minute_bar_spec(self) -> None:
+        """
+        Test run ema cross with minute bar spec.
+        """
         self.engine.add_strategy_from_config(
             _ema_config(self.audusd.id, "AUD/USD.SIM-1-MINUTE-MID-INTERNAL"),
         )
@@ -674,7 +763,10 @@ class TestBacktestAcceptanceTestsAUDUSD:
         assert result.total_orders > 0
         assert result.total_positions > 0
 
-    def test_run_ema_cross_with_tick_bar_spec(self):
+    def test_run_ema_cross_with_tick_bar_spec(self) -> None:
+        """
+        Test run ema cross with tick bar spec.
+        """
         self.engine.add_strategy_from_config(
             _ema_config(self.audusd.id, "AUD/USD.SIM-100-TICK-MID-INTERNAL"),
         )
@@ -687,7 +779,14 @@ class TestBacktestAcceptanceTestsAUDUSD:
 
 
 class TestBacktestAcceptanceTestsETHUSDT:
-    def setup_method(self):
+    """
+    Collect backtest acceptance tests ethusdt tests.
+    """
+
+    def setup_method(self) -> None:
+        """
+        Set up the test fixture.
+        """
         self.engine = _engine(snapshot_orders=True, snapshot_positions=True)
         self.venue = Venue("BINANCE")
         self.ethusdt = TestInstrumentProvider.ethusdt_binance()
@@ -708,10 +807,16 @@ class TestBacktestAcceptanceTestsETHUSDT:
         )
         self.engine.add_data(ticks)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
+        """
+        Teardown method.
+        """
         self.engine.dispose()
 
-    def test_run_ema_cross_with_tick_bar_spec(self):
+    def test_run_ema_cross_with_tick_bar_spec(self) -> None:
+        """
+        Test run ema cross with tick bar spec.
+        """
         self.engine.add_strategy_from_config(
             _ema_config(
                 self.ethusdt.id,
@@ -728,7 +833,14 @@ class TestBacktestAcceptanceTestsETHUSDT:
 
 
 class TestBacktestAcceptanceTestsOrderBookImbalance:
-    def setup_method(self):
+    """
+    Collect backtest acceptance tests order book imbalance tests.
+    """
+
+    def setup_method(self) -> None:
+        """
+        Set up the test fixture.
+        """
         self.engine = _engine(risk_bypass=True)
         self.venue = Venue("BETFAIR")
         self.gbp = Currency.from_str("GBP")
@@ -745,10 +857,16 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         self.engine.add_instrument(self.instrument)
         self.engine.add_data(_betfair_order_book_deltas(self.instrument))
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
+        """
+        Teardown method.
+        """
         self.engine.dispose()
 
-    def test_run_order_book_imbalance(self):
+    def test_run_order_book_imbalance(self) -> None:
+        """
+        Test run order book imbalance.
+        """
         self.engine.add_strategy_from_config(
             ImportableStrategyConfig(
                 strategy_path=ORDER_BOOK_IMBALANCE_STRATEGY,
@@ -844,11 +962,17 @@ def _betfair_order_book_deltas(instrument: BettingInstrument) -> list[OrderBookD
 
 @pytest.mark.skip(reason="post-cutover: v1 Betfair data fixture + Python MarketMaker workflow")
 class TestBacktestAcceptanceTestsMarketMaking:
-    def test_run_market_maker(self):
-        pass
+    """
+    Collect backtest acceptance tests market making tests.
+    """
+
+    def test_run_market_maker(self) -> None:
+        """
+        Test run market maker.
+        """
 
 
-def test_correct_account_balance_from_issue_2632():
+def test_correct_account_balance_from_issue_2632() -> None:
     """
     Mirrors `test_correct_account_balance_from_issue_2632` from v1.
 
@@ -969,7 +1093,10 @@ def test_correct_account_balance_from_issue_2632():
     engine.dispose()
 
 
-def test_backtest_result_summary_parity_smoke():
+def test_backtest_result_summary_parity_smoke() -> None:
+    """
+    Test backtest result summary parity smoke.
+    """
     engine = _engine()
     venue = Venue("SIM")
     usd = Currency.from_str("USD")
@@ -1018,7 +1145,10 @@ def test_backtest_result_summary_parity_smoke():
     engine.dispose()
 
 
-def test_backtest_cash_margin_account_order_fill_position_parity_golden():
+def test_backtest_cash_margin_account_order_fill_position_parity_golden() -> None:
+    """
+    Test backtest cash margin account order fill position parity golden.
+    """
     engine = _engine(risk_bypass=True)
     sim = Venue("SIM")
     binance = Venue("BINANCE")
@@ -1136,7 +1266,7 @@ def test_backtest_cash_margin_account_order_fill_position_parity_golden():
     engine.dispose()
 
 
-def _backtest_parity_quotes(instrument) -> list[QuoteTick]:
+def _backtest_parity_quotes(instrument: object) -> list[QuoteTick]:
     quotes: list[QuoteTick] = []
 
     for idx, bid_price in enumerate(_BACKTEST_PARITY_BID_PRICES):
@@ -1155,7 +1285,10 @@ def _backtest_parity_quotes(instrument) -> list[QuoteTick]:
     return quotes
 
 
-def _cash_margin_parity_quotes(instrument, bid_prices: tuple[str, ...]) -> list[QuoteTick]:
+def _cash_margin_parity_quotes(
+    instrument: object,
+    bid_prices: tuple[str, ...],
+) -> list[QuoteTick]:
     quotes: list[QuoteTick] = []
 
     for idx, bid_price in enumerate(bid_prices):
@@ -1175,7 +1308,7 @@ def _cash_margin_parity_quotes(instrument, bid_prices: tuple[str, ...]) -> list[
 
 
 def _assert_filled_market_order(
-    order,
+    order: object,
     side: OrderSide,
     quantity: Quantity,
     avg_px: Decimal,
@@ -1200,7 +1333,7 @@ def _assert_filled_market_order(
 
 
 def _assert_closed_position(
-    position,
+    position: object,
     avg_px_open: float,
     avg_px_close: float,
     realized_pnl: Money,
@@ -1214,7 +1347,7 @@ def _assert_closed_position(
     assert [str(commission) for commission in position.commissions()] == commissions
 
 
-def _build_pnl_quotes(audusd, periods: int, scenario: str) -> list[QuoteTick]:
+def _build_pnl_quotes(audusd: object, periods: int, scenario: str) -> list[QuoteTick]:
     base_ns = 1_577_836_800_000_000_000  # 2020-01-01T00:00:00Z
     out: list[QuoteTick] = []
 
@@ -1227,10 +1360,7 @@ def _build_pnl_quotes(audusd, periods: int, scenario: str) -> list[QuoteTick]:
             else:
                 bid = 0.70020 - ((i - 40) * 0.00002)
         elif scenario == "flips":
-            if i < 40:
-                bid = 0.70000 + (i * 0.00001)
-            else:
-                bid = 0.70040 - ((i - 40) * 0.00001)
+            bid = 0.7 + i * 1e-05 if i < 40 else 0.7004 - (i - 40) * 1e-05
         elif scenario == "rising":
             bid = 0.70000 + (i * 0.00001)
         else:
@@ -1263,7 +1393,7 @@ class TestBacktestPnLAlignmentAcceptance:
 
     """
 
-    def _build_engine(self, oms_type=OmsType.NETTING) -> tuple[BacktestEngine, object]:
+    def _build_engine(self, oms_type: object = OmsType.NETTING) -> tuple[BacktestEngine, object]:
         engine = _engine()
         audusd = TestInstrumentProvider.audusd_sim()
         engine.add_venue(
@@ -1276,7 +1406,10 @@ class TestBacktestPnLAlignmentAcceptance:
         engine.add_instrument(audusd)
         return engine, audusd
 
-    def test_pnl_alignment_multiple_position_cycles(self):
+    def test_pnl_alignment_multiple_position_cycles(self) -> None:
+        """
+        Test pnl alignment multiple position cycles.
+        """
         engine, audusd = self._build_engine(oms_type=OmsType.NETTING)
         engine.add_data(_build_pnl_quotes(audusd, periods=70, scenario="multi_cycle"))
 
@@ -1315,7 +1448,10 @@ class TestBacktestPnLAlignmentAcceptance:
         )
         engine.dispose()
 
-    def test_pnl_alignment_position_flips(self):
+    def test_pnl_alignment_position_flips(self) -> None:
+        """
+        Test pnl alignment position flips.
+        """
         engine, audusd = self._build_engine(oms_type=OmsType.HEDGING)
         engine.add_data(_build_pnl_quotes(audusd, periods=100, scenario="flips"))
 
@@ -1340,7 +1476,7 @@ class TestBacktestPnLAlignmentAcceptance:
         assert result.total_orders == len(actions)
         engine.dispose()
 
-    def test_backtest_postrun_pnl_alignment(self):
+    def test_backtest_postrun_pnl_alignment(self) -> None:
         """
         Checks the shorter open-close-reopen scenario through BacktestResult.
         """
@@ -1375,7 +1511,10 @@ class TestBacktestPnLAlignmentAcceptance:
         pytest.param(OmsType.HEDGING, id="hedging"),
     ],
 )
-def test_backtest_postrun_realized_pnl_by_oms_type(oms_type):
+def test_backtest_postrun_realized_pnl_by_oms_type(oms_type: object) -> None:
+    """
+    Test backtest postrun realized pnl by oms type.
+    """
     engine = _engine()
     audusd = TestInstrumentProvider.audusd_sim()
     engine.add_venue(
@@ -1459,7 +1598,10 @@ def test_backtest_postrun_realized_pnl_by_oms_type(oms_type):
     engine.dispose()
 
 
-def _build_audusd_engine_with_quotes(periods: int = 3, oms_type=OmsType.HEDGING):
+def _build_audusd_engine_with_quotes(
+    periods: int = 3,
+    oms_type: object = OmsType.HEDGING,
+) -> object:
     engine = _engine()
     audusd = TestInstrumentProvider.audusd_sim()
     engine.add_venue(
@@ -1493,7 +1635,14 @@ def _build_audusd_engine_with_quotes(periods: int = 3, oms_type=OmsType.HEDGING)
 
 
 class TestBacktestCommandSettling:
-    def test_cascading_stop_loss_on_fill_processed_same_tick(self):
+    """
+    Collect backtest command settling tests.
+    """
+
+    def test_cascading_stop_loss_on_fill_processed_same_tick(self) -> None:
+        """
+        Test cascading stop loss on fill processed same tick.
+        """
         engine, audusd = _build_audusd_engine_with_quotes(periods=3)
 
         engine.add_strategy_from_config(
@@ -1516,7 +1665,10 @@ class TestBacktestCommandSettling:
         assert result.total_orders == 2
         engine.dispose()
 
-    def test_multi_level_cascade_all_settled_same_tick(self):
+    def test_multi_level_cascade_all_settled_same_tick(self) -> None:
+        """
+        Test multi level cascade all settled same tick.
+        """
         engine, audusd = _build_audusd_engine_with_quotes(periods=3)
 
         engine.add_strategy_from_config(
@@ -1539,7 +1691,10 @@ class TestBacktestCommandSettling:
         assert result.total_orders == 3
         engine.dispose()
 
-    def test_all_same_timestamp_timer_commands_settled(self):
+    def test_all_same_timestamp_timer_commands_settled(self) -> None:
+        """
+        Test all same timestamp timer commands settled.
+        """
         engine, audusd = _build_audusd_engine_with_quotes(periods=3)
 
         engine.add_strategy_from_config(
@@ -1566,24 +1721,41 @@ class TestBacktestCommandSettling:
     reason="post-cutover: databento data_utils/options/spreads + StreamingConfig/DataCatalogConfig wiring",
 )
 class TestBacktestNodeWithBacktestDataIterator:
-    def test_backtest_same_with_and_without_data_configs(self):
-        pass
+    """
+    Collect backtest node with backtest data iterator tests.
+    """
 
-    def test_spread_execution_functionality(self):
-        pass
+    def test_backtest_same_with_and_without_data_configs(self) -> None:
+        """
+        Test backtest same with and without data configs.
+        """
 
-    def test_spread_quote_bars_values(self):
-        pass
+    def test_spread_execution_functionality(self) -> None:
+        """
+        Test spread execution functionality.
+        """
 
-    def test_create_bars_with_fills_basic(self):
-        pass
+    def test_spread_quote_bars_values(self) -> None:
+        """
+        Test spread quote bars values.
+        """
 
-    def test_create_tearsheet_with_bars_with_fills(self):
-        pass
+    def test_create_bars_with_fills_basic(self) -> None:
+        """
+        Test create bars with fills basic.
+        """
+
+    def test_create_tearsheet_with_bars_with_fills(self) -> None:
+        """
+        Test create tearsheet with bars with fills.
+        """
 
 
 @pytest.fixture
-def usdjpy_engine_synthetic():
+def usdjpy_engine_synthetic() -> object:
+    """
+    Usdjpy engine synthetic.
+    """
     engine = _engine()
     venue = Venue("SIM")
     usdjpy = TestInstrumentProvider.usdjpy_sim()
@@ -1601,7 +1773,10 @@ def usdjpy_engine_synthetic():
     engine.dispose()
 
 
-def test_synthetic_run_ema_cross_strategy(usdjpy_engine_synthetic):
+def test_synthetic_run_ema_cross_strategy(usdjpy_engine_synthetic: object) -> None:
+    """
+    Test synthetic run ema cross strategy.
+    """
     engine, usdjpy = usdjpy_engine_synthetic
     engine.add_strategy_from_config(
         _ema_config(usdjpy.id, "USD/JPY.SIM-1-MINUTE-BID-INTERNAL", trade_size="100000"),
@@ -1615,7 +1790,10 @@ def test_synthetic_run_ema_cross_strategy(usdjpy_engine_synthetic):
     assert result.total_events > 0
 
 
-def test_synthetic_run_with_synthetic_trades():
+def test_synthetic_run_with_synthetic_trades() -> None:
+    """
+    Test synthetic run with synthetic trades.
+    """
     engine = _engine()
     ethusdt = TestInstrumentProvider.ethusdt_binance()
     engine.add_venue(
@@ -1663,7 +1841,10 @@ def test_synthetic_run_with_synthetic_trades():
     engine.dispose()
 
 
-def test_engine_construction():
+def test_engine_construction() -> None:
+    """
+    Test engine construction.
+    """
     config = BacktestEngineConfig()
     engine = BacktestEngine(config)
     assert engine.trader_id is not None
@@ -1672,14 +1853,20 @@ def test_engine_construction():
     engine.dispose()
 
 
-def test_engine_construction_with_bypass_logging():
+def test_engine_construction_with_bypass_logging() -> None:
+    """
+    Test engine construction with bypass logging.
+    """
     config = BacktestEngineConfig(bypass_logging=True)
     engine = BacktestEngine(config)
     assert engine.iteration == 0
     engine.dispose()
 
 
-def test_engine_run_empty_produces_zero_iterations():
+def test_engine_run_empty_produces_zero_iterations() -> None:
+    """
+    Test engine run empty produces zero iterations.
+    """
     engine = _engine()
     engine.add_venue(
         venue=Venue("SIM"),
@@ -1693,7 +1880,10 @@ def test_engine_run_empty_produces_zero_iterations():
     engine.dispose()
 
 
-def test_engine_reset_allows_rerun():
+def test_engine_reset_allows_rerun() -> None:
+    """
+    Test engine reset allows rerun.
+    """
     engine = _engine()
     engine.add_venue(
         venue=Venue("SIM"),
@@ -1709,8 +1899,10 @@ def test_engine_reset_allows_rerun():
     engine.dispose()
 
 
-def test_engine_cache_shares_kernel_state():
+def test_engine_cache_shares_kernel_state() -> None:
     """
+    Check the engine cache shares the kernel cache.
+
     The ``BacktestEngine.cache`` getter must return a wrapper backed by the kernel's own
     cache (not a fresh detached one).
 
@@ -1740,7 +1932,10 @@ def test_engine_cache_shares_kernel_state():
     engine.dispose()
 
 
-def test_two_venues_with_separate_instruments():
+def test_two_venues_with_separate_instruments() -> None:
+    """
+    Test two venues with separate instruments.
+    """
     engine = _engine()
     engine.add_venue(
         venue=Venue("SIM"),

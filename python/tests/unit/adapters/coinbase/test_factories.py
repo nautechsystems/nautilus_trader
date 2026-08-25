@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test factories behavior.
+"""
 
 import pytest
 from unit.adapters.example_modules import load_example_module
@@ -36,6 +39,9 @@ coinbase_exec_tester = load_example_module("coinbase", "exec_tester")
 
 
 def test_coinbase_factories_expose_python_names() -> None:
+    """
+    Test coinbase factories expose python names.
+    """
     data_factory = CoinbaseDataClientFactory()
     exec_factory = CoinbaseExecutionClientFactory()
 
@@ -44,6 +50,9 @@ def test_coinbase_factories_expose_python_names() -> None:
 
 
 def test_live_node_builder_accepts_coinbase_data_factory() -> None:
+    """
+    Test live node builder accepts coinbase data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -61,6 +70,9 @@ def test_live_node_builder_accepts_coinbase_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_coinbase_exec_factory() -> None:
+    """
+    Test live node builder accepts coinbase exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("COINBASE-001")
 
@@ -91,43 +103,89 @@ def test_live_node_builder_accepts_coinbase_exec_factory() -> None:
 
 
 def test_coinbase_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test coinbase exec tester runs live orders.
+    """
     captured: dict[str, object] = {}
 
     class CapturingExecTesterConfig:
+        """
+        Collect capturing exec tester config tests.
+        """
+
         def __init__(self, **kwargs: object) -> None:
+            """
+            Initialize the helper.
+            """
             captured["exec_tester_kwargs"] = kwargs
 
     class CapturingNode:
+        """
+        Collect capturing node tests.
+        """
+
         def add_builtin_strategy(self, type_name: str, config: object) -> None:
+            """
+            Add builtin strategy.
+            """
             captured["strategy_type_name"] = type_name
             captured["strategy_config"] = config
 
         def run(self) -> None:
+            """
+            Run.
+            """
             captured["run_called"] = True
 
     class CapturingBuilder:
+        """
+        Collect capturing builder tests.
+        """
+
         def with_reconciliation(self, reconciliation: bool) -> "CapturingBuilder":
+            """
+            With reconciliation.
+            """
             captured["reconciliation"] = reconciliation
             return self
 
         def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> "CapturingBuilder":
+            """
+            With risk engine config.
+            """
             captured["risk_engine_config"] = config
             return self
 
         def add_data_client(self, *args: object) -> "CapturingBuilder":
+            """
+            Add data client.
+            """
             captured["data_client_args"] = args
             return self
 
         def add_exec_client(self, *args: object) -> "CapturingBuilder":
+            """
+            Add exec client.
+            """
             captured["exec_client_args"] = args
             return self
 
         def build(self) -> CapturingNode:
+            """
+            Build.
+            """
             return CapturingNode()
 
     class CapturingLiveNode:
+        """
+        Collect capturing live node tests.
+        """
+
         @staticmethod
         def builder(name: str, trader_id: TraderId, environment: Environment) -> CapturingBuilder:
+            """
+            Builder.
+            """
             captured["builder_args"] = (name, trader_id, environment)
             return CapturingBuilder()
 

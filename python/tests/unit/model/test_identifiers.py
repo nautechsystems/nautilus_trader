@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test identifiers behavior.
+"""
 
 import pickle
 import re
@@ -52,7 +55,10 @@ GENERATED_IDENTIFIER_CASES = (
 )
 
 
-def test_trader_id_equality_and_value():
+def test_trader_id_equality_and_value() -> None:
+    """
+    Test trader id equality and value.
+    """
     tid1 = TraderId("TESTER-000")
     tid2 = TraderId("TESTER-001")
 
@@ -61,7 +67,10 @@ def test_trader_id_equality_and_value():
     assert tid1.value == "TESTER-000"
 
 
-def test_account_id_equality_and_value():
+def test_account_id_equality_and_value() -> None:
+    """
+    Test account id equality and value.
+    """
     aid1 = AccountId("SIM-02851908")
     aid2 = AccountId("SIM-09999999")
 
@@ -71,7 +80,10 @@ def test_account_id_equality_and_value():
     assert aid1 == AccountId("SIM-02851908")
 
 
-def test_actor_id_equality_and_value():
+def test_actor_id_equality_and_value() -> None:
+    """
+    Test actor id equality and value.
+    """
     actor_id = ActorId("actor-001")
     restored = ActorId.from_str("actor-001")
 
@@ -80,7 +92,10 @@ def test_actor_id_equality_and_value():
     assert actor_id.value == "actor-001"
 
 
-def test_symbol_equality():
+def test_symbol_equality() -> None:
+    """
+    Test symbol equality.
+    """
     s1 = Symbol("AUD/USD")
     s2 = Symbol("ETH/USD")
     s3 = Symbol("AUD/USD")
@@ -100,7 +115,10 @@ def test_symbol_equality():
         ("ES.c.0", True),
     ],
 )
-def test_symbol_is_composite(value, expected):
+def test_symbol_is_composite(value: object, expected: object) -> None:
+    """
+    Test symbol is composite.
+    """
     assert Symbol(value).is_composite == expected
 
 
@@ -114,7 +132,10 @@ def test_symbol_is_composite(value, expected):
         ("ES.c.0", "ES"),
     ],
 )
-def test_symbol_root(value, expected):
+def test_symbol_root(value: object, expected: object) -> None:
+    """
+    Test symbol root.
+    """
     assert Symbol(value).root == expected
 
 
@@ -128,24 +149,36 @@ def test_symbol_root(value, expected):
         ("ES.c.0", "ES*"),
     ],
 )
-def test_symbol_topic(value, expected):
+def test_symbol_topic(value: object, expected: object) -> None:
+    """
+    Test symbol topic.
+    """
     assert Symbol(value).topic == expected
 
 
-def test_symbol_str_and_repr():
+def test_symbol_str_and_repr() -> None:
+    """
+    Test symbol str and repr.
+    """
     symbol = Symbol("AUD/USD")
     assert str(symbol) == "AUD/USD"
     assert repr(symbol) == "Symbol('AUD/USD')"
 
 
-def test_symbol_pickle():
+def test_symbol_pickle() -> None:
+    """
+    Test symbol pickle.
+    """
     symbol = Symbol("AUD/USD")
     pickled = pickle.dumps(symbol)
-    unpickled = pickle.loads(pickled)  # noqa: S301
+    unpickled = pickle.loads(pickled)
     assert unpickled == symbol
 
 
-def test_venue_equality():
+def test_venue_equality() -> None:
+    """
+    Test venue equality.
+    """
     v1 = Venue("SIM")
     v2 = Venue("IDEALPRO")
     v3 = Venue("SIM")
@@ -155,20 +188,29 @@ def test_venue_equality():
     assert v1 == v3
 
 
-def test_venue_str_and_repr():
+def test_venue_str_and_repr() -> None:
+    """
+    Test venue str and repr.
+    """
     venue = Venue("NYMEX")
     assert str(venue) == "NYMEX"
     assert repr(venue) == "Venue('NYMEX')"
 
 
-def test_venue_pickle():
+def test_venue_pickle() -> None:
+    """
+    Test venue pickle.
+    """
     venue = Venue("NYMEX")
     pickled = pickle.dumps(venue)
-    unpickled = pickle.loads(pickled)  # noqa: S301
+    unpickled = pickle.loads(pickled)
     assert unpickled == venue
 
 
-def test_instrument_id_equality():
+def test_instrument_id_equality() -> None:
+    """
+    Test instrument id equality.
+    """
     id1 = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
     id2 = InstrumentId(Symbol("AUD/USD"), Venue("IDEALPRO"))
     id3 = InstrumentId(Symbol("GBP/USD"), Venue("SIM"))
@@ -178,19 +220,28 @@ def test_instrument_id_equality():
     assert id1 != id3
 
 
-def test_instrument_id_str_and_repr():
+def test_instrument_id_str_and_repr() -> None:
+    """
+    Test instrument id str and repr.
+    """
     iid = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
     assert str(iid) == "AUD/USD.SIM"
     assert repr(iid) == "InstrumentId('AUD/USD.SIM')"
 
 
-def test_instrument_id_from_str():
+def test_instrument_id_from_str() -> None:
+    """
+    Test instrument id from str.
+    """
     iid = InstrumentId.from_str("AUD/USD.SIM")
     assert str(iid.symbol) == "AUD/USD"
     assert str(iid.venue) == "SIM"
 
 
-def test_instrument_id_from_str_with_utf8():
+def test_instrument_id_from_str_with_utf8() -> None:
+    """
+    Test instrument id from str with utf8.
+    """
     iid = InstrumentId.from_str("TËST-PÉRP.BINANCE")
     assert str(iid.symbol) == "TËST-PÉRP"
     assert str(iid.venue) == "BINANCE"
@@ -216,21 +267,30 @@ def test_instrument_id_from_str_with_utf8():
         ),
     ],
 )
-def test_instrument_id_from_str_invalid(value, expected_err):
+def test_instrument_id_from_str_invalid(value: object, expected_err: object) -> None:
+    """
+    Test instrument id from str invalid.
+    """
     with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
         InstrumentId.from_str(value)
 
     assert str(exc_info.value) == expected_err
 
 
-def test_instrument_id_pickle():
+def test_instrument_id_pickle() -> None:
+    """
+    Test instrument id pickle.
+    """
     iid = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
     pickled = pickle.dumps(iid)
-    unpickled = pickle.loads(pickled)  # noqa: S301
+    unpickled = pickle.loads(pickled)
     assert unpickled == iid
 
 
-def test_option_series_id_construction():
+def test_option_series_id_construction() -> None:
+    """
+    Test option series id construction.
+    """
     series_id = OptionSeriesId("DERIBIT", "ETH", "USDC", 1_700_000_000_000_000_000)
 
     assert series_id.venue == Venue("DERIBIT")
@@ -255,7 +315,10 @@ def test_option_series_id_construction():
         ),
     ],
 )
-def test_option_series_id_invalid_venue_raises(venue, expected_err):
+def test_option_series_id_invalid_venue_raises(venue: Venue, expected_err: object) -> None:
+    """
+    Test option series id invalid venue raises.
+    """
     with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
         OptionSeriesId(venue, "ETH", "USDC", 1_700_000_000_000_000_000)
 
@@ -263,7 +326,10 @@ def test_option_series_id_invalid_venue_raises(venue, expected_err):
     assert str(exc_info.value) == expected_err
 
 
-def test_exec_algorithm_id():
+def test_exec_algorithm_id() -> None:
+    """
+    Test exec algorithm id.
+    """
     ea1 = ExecAlgorithmId("VWAP")
     ea2 = ExecAlgorithmId("TWAP")
 
@@ -274,7 +340,10 @@ def test_exec_algorithm_id():
     assert repr(ea1) == "ExecAlgorithmId('VWAP')"
 
 
-def test_client_id():
+def test_client_id() -> None:
+    """
+    Test client id.
+    """
     c1 = ClientId("MyClient")
     c2 = ClientId("OtherClient")
     c3 = ClientId("MyClient")
@@ -287,7 +356,10 @@ def test_client_id():
     assert repr(c1) == "ClientId('MyClient')"
 
 
-def test_client_order_id():
+def test_client_order_id() -> None:
+    """
+    Test client order id.
+    """
     co1 = ClientOrderId("O-123456")
     co2 = ClientOrderId("O-789012")
     co3 = ClientOrderId("O-123456")
@@ -300,7 +372,10 @@ def test_client_order_id():
     assert repr(co1) == "ClientOrderId('O-123456')"
 
 
-def test_component_id():
+def test_component_id() -> None:
+    """
+    Test component id.
+    """
     comp1 = ComponentId("MyComponent")
     comp2 = ComponentId("OtherComponent")
 
@@ -311,7 +386,10 @@ def test_component_id():
     assert repr(comp1) == "ComponentId('MyComponent')"
 
 
-def test_strategy_id():
+def test_strategy_id() -> None:
+    """
+    Test strategy id.
+    """
     s1 = StrategyId("S-001")
     s2 = StrategyId("S-002")
 
@@ -322,7 +400,10 @@ def test_strategy_id():
     assert repr(s1) == "StrategyId('S-001')"
 
 
-def test_venue_order_id():
+def test_venue_order_id() -> None:
+    """
+    Test venue order id.
+    """
     vo1 = VenueOrderId("V-123456")
     vo2 = VenueOrderId("V-789012")
 
@@ -333,7 +414,10 @@ def test_venue_order_id():
     assert repr(vo1) == "VenueOrderId('V-123456')"
 
 
-def test_order_list_id():
+def test_order_list_id() -> None:
+    """
+    Test order list id.
+    """
     ol1 = OrderListId("OL-123456")
     ol2 = OrderListId("OL-789012")
 
@@ -344,7 +428,10 @@ def test_order_list_id():
     assert repr(ol1) == "OrderListId('OL-123456')"
 
 
-def test_position_id():
+def test_position_id() -> None:
+    """
+    Test position id.
+    """
     p1 = PositionId("P-123456")
     p2 = PositionId("P-789012")
 
@@ -355,7 +442,10 @@ def test_position_id():
     assert repr(p1) == "PositionId('P-123456')"
 
 
-def test_trade_id():
+def test_trade_id() -> None:
+    """
+    Test trade id.
+    """
     t1 = TradeId("T-123456")
     t2 = TradeId("T-789012")
 
@@ -366,23 +456,32 @@ def test_trade_id():
     assert repr(t1) == "TradeId('T-123456')"
 
 
-def test_trade_id_pickle():
+def test_trade_id_pickle() -> None:
+    """
+    Test trade id pickle.
+    """
     trade_id = TradeId("T-123456")
     pickled = pickle.dumps(trade_id)
-    unpickled = pickle.loads(pickled)  # noqa: S301
+    unpickled = pickle.loads(pickled)
 
     assert type(unpickled) is TradeId
     assert unpickled == trade_id
     assert unpickled.value == "T-123456"
 
 
-def test_trade_id_maximum_length():
+def test_trade_id_maximum_length() -> None:
+    """
+    Test trade id maximum length.
+    """
     with pytest.raises(ValueError, match="exceeds maximum length"):
         TradeId("A" * 37)
 
 
 @pytest.mark.parametrize(("identifier_type", "value"), GENERATED_IDENTIFIER_CASES)
-def test_generated_identifier_from_str_invalid(identifier_type, value):
+def test_generated_identifier_from_str_invalid(identifier_type: object, value: object) -> None:
+    """
+    Test generated identifier from str invalid.
+    """
     with pytest.raises(
         ValueError,
         match=re.escape("invalid string for 'value', was empty"),
@@ -394,10 +493,13 @@ def test_generated_identifier_from_str_invalid(identifier_type, value):
 
 
 @pytest.mark.parametrize(("identifier_type", "value"), GENERATED_IDENTIFIER_CASES)
-def test_generated_identifier_pickle_roundtrip(identifier_type, value):
+def test_generated_identifier_pickle_roundtrip(identifier_type: object, value: object) -> None:
+    """
+    Test generated identifier pickle roundtrip.
+    """
     identifier = identifier_type(value)
     pickled = pickle.dumps(identifier)
-    unpickled = pickle.loads(pickled)  # noqa: S301
+    unpickled = pickle.loads(pickled)
 
     assert type(unpickled) is identifier_type
     assert unpickled == identifier
@@ -405,7 +507,10 @@ def test_generated_identifier_pickle_roundtrip(identifier_type, value):
 
 
 @pytest.mark.parametrize(("identifier_type", "value"), GENERATED_IDENTIFIER_CASES)
-def test_generated_identifier_invalid_pickle_state(identifier_type, value):
+def test_generated_identifier_invalid_pickle_state(identifier_type: object, value: object) -> None:
+    """
+    Test generated identifier invalid pickle state.
+    """
     identifier = identifier_type(value)
 
     with pytest.raises(
@@ -426,7 +531,14 @@ def test_generated_identifier_invalid_pickle_state(identifier_type, value):
         (TradeId, "Trade-001", "String is empty"),
     ],
 )
-def test_custom_identifier_invalid_pickle_state(identifier_type, value, expected_error):
+def test_custom_identifier_invalid_pickle_state(
+    identifier_type: object,
+    value: object,
+    expected_error: object,
+) -> None:
+    """
+    Test custom identifier invalid pickle state.
+    """
     identifier = identifier_type(value)
 
     with pytest.raises(ValueError, match=re.escape(expected_error)) as exc_info:
@@ -437,7 +549,10 @@ def test_custom_identifier_invalid_pickle_state(identifier_type, value, expected
     assert identifier.value == value
 
 
-def test_instrument_id_invalid_pickle_state():
+def test_instrument_id_invalid_pickle_state() -> None:
+    """
+    Test instrument id invalid pickle state.
+    """
     instrument_id = InstrumentId.from_str("BTC/USD.BINANCE")
 
     with pytest.raises(
@@ -470,9 +585,12 @@ def test_instrument_id_invalid_pickle_state():
         TradeId("T-123456"),
     ],
 )
-def test_identifier_equality_with_none(identifier):
-    assert (identifier == None) is False  # noqa: E711
-    assert (identifier != None) is True  # noqa: E711
+def test_identifier_equality_with_none(identifier: object) -> None:
+    """
+    Test identifier equality with none.
+    """
+    assert (identifier == None) is False
+    assert (identifier != None) is True
 
 
 @pytest.mark.parametrize(
@@ -494,7 +612,10 @@ def test_identifier_equality_with_none(identifier):
         TradeId("T-123456"),
     ],
 )
-def test_identifier_ordering_with_none_raises(identifier):
+def test_identifier_ordering_with_none_raises(identifier: object) -> None:
+    """
+    Test identifier ordering with none raises.
+    """
     with pytest.raises(TypeError):
         _ = identifier < None
     with pytest.raises(TypeError):

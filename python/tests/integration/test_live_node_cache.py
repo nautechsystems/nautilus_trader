@@ -12,11 +12,15 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test live node cache behavior.
+"""
 
 import os
 import socket
 import threading
 import time
+from typing import ClassVar
 
 import pytest
 
@@ -68,12 +72,18 @@ class GeneralDataActor(DataActor):
 
     @classmethod
     def configure(cls, key: str, token: bytes, *, write_on_start: bool) -> None:
+        """
+        Configure.
+        """
         cls.key = key
         cls.token = token
         cls.write_on_start = write_on_start
         cls.loaded = None
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         cls = type(self)
         if cls.write_on_start:
             self.cache.add(cls.key, cls.token)
@@ -82,34 +92,60 @@ class GeneralDataActor(DataActor):
 
 
 class StateRoundTripActor(DataActor):
-    saved_state: dict[str, bytes] = {}
+    """
+    Collect state round trip actor tests.
+    """
+
+    saved_state: ClassVar[dict[str, bytes]] = {}
     loaded_state: dict[str, bytes] | None = None
 
     @classmethod
     def set_saved_state(cls, saved_state: dict[str, bytes]) -> None:
+        """
+        Set saved state.
+        """
         cls.saved_state = saved_state
         cls.loaded_state = None
 
     def on_save(self) -> dict[str, bytes]:
+        """
+        On save.
+        """
         return type(self).saved_state
 
     def on_load(self, state: dict[str, bytes]) -> None:
+        """
+        On load.
+        """
         type(self).loaded_state = state
 
 
 class StateRoundTripStrategy(Strategy):
-    saved_state: dict[str, bytes] = {}
+    """
+    Collect state round trip strategy tests.
+    """
+
+    saved_state: ClassVar[dict[str, bytes]] = {}
     loaded_state: dict[str, bytes] | None = None
 
     @classmethod
     def set_saved_state(cls, saved_state: dict[str, bytes]) -> None:
+        """
+        Set saved state.
+        """
         cls.saved_state = saved_state
         cls.loaded_state = None
 
     def on_save(self) -> dict[str, bytes]:
+        """
+        On save.
+        """
         return type(self).saved_state
 
     def on_load(self, state: dict[str, bytes]) -> None:
+        """
+        On load.
+        """
         type(self).loaded_state = state
 
 
@@ -129,7 +165,7 @@ def _build_cache_node(
         .with_cache_database_factory(cache_database_config)
         .with_load_state(load_state)
         .with_save_state(save_state)
-        .with_reconciliation(False)
+        .with_reconciliation(reconciliation=False)
         .with_timeout_connection(0)
         .with_timeout_reconciliation(0)
         .with_timeout_portfolio(0)
@@ -151,6 +187,9 @@ def _run_node_lifecycle(node: LiveNode) -> None:
     handle = node.handle()
 
     def stop_when_running() -> None:
+        """
+        Stop when running.
+        """
         deadline = time.monotonic() + 30.0
         while not handle.is_running and time.monotonic() < deadline:
             time.sleep(0.01)
@@ -176,6 +215,9 @@ def _run_node_lifecycle(node: LiveNode) -> None:
 def test_cache_backing_round_trips_general_data(
     config_type: type[PostgresCacheConfig] | type[RedisCacheConfig],
 ) -> None:
+    """
+    Test cache backing round trips general data.
+    """
     token = str(UUID4()).encode()
     key = f"integration-{UUID4()}"
     trader_id = TraderId(f"TESTER-CACHE-{UUID4()}")
@@ -202,6 +244,9 @@ def test_cache_backing_round_trips_general_data(
 
 
 def test_redis_cache_backing_round_trips_actor_and_strategy_state() -> None:
+    """
+    Test redis cache backing round trips actor and strategy state.
+    """
     token = str(UUID4()).encode()
     trader_id = TraderId(f"TESTER-STATE-{UUID4()}")
     actor_id = f"STATE-ROUND-TRIP-ACTOR-{UUID4()}"

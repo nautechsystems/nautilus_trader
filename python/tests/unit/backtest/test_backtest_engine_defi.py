@@ -12,6 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test backtest engine defi behavior.
+"""
+
+from typing import ClassVar
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
@@ -26,23 +31,40 @@ from tests.unit.model.test_defi import _make_pool_liquidity_update
 
 
 class DefiBlockActor(DataActor):
-    received_blocks: list[int] = []
+    """
+    Collect defi block actor tests.
+    """
 
-    def on_start(self):
+    received_blocks: ClassVar[list[int]] = []
+
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_blocks(Blockchain.BASE)
 
-    def on_block(self, block):
+    def on_block(self, block: object) -> None:
+        """
+        On block.
+        """
         type(self).received_blocks.append(block.number)
 
 
 class RequiredConfigDefiBlockActorConfig(DataActorConfig):
+    """
+    Collect required config defi block actor config tests.
+    """
+
     def __init__(
         self,
         required_label: str,
-        actor_id=None,
+        actor_id: object = None,
         log_events: bool = True,
         log_commands: bool = True,
-    ):
+    ) -> None:
+        """
+        Initialize the helper.
+        """
         self.actor_id = actor_id
         self.log_events = log_events
         self.log_commands = log_commands
@@ -50,16 +72,26 @@ class RequiredConfigDefiBlockActorConfig(DataActorConfig):
 
 
 class RequiredConfigDefiBlockActor(DataActor):
+    """
+    Collect required config defi block actor tests.
+    """
+
     received_actor_id: str | None = None
     received_label: str | None = None
 
-    def __init__(self, config: RequiredConfigDefiBlockActorConfig):
+    def __init__(self, config: RequiredConfigDefiBlockActorConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         type(self).received_actor_id = str(config.actor_id)
         type(self).received_label = config.required_label
 
 
-def test_defi_data_uses_model_timestamp_contract():
+def test_defi_data_uses_model_timestamp_contract() -> None:
+    """
+    Test defi data uses model timestamp contract.
+    """
     data = DefiData.Block(_make_block(7, 100))
     pool = _make_pool()
     liquidity = _make_pool_liquidity_update(pool)
@@ -83,7 +115,10 @@ def test_defi_data_uses_model_timestamp_contract():
     assert liquidity_data.ts_init == 10
 
 
-def test_backtest_engine_replays_defi_blocks_to_actor_subscription():
+def test_backtest_engine_replays_defi_blocks_to_actor_subscription() -> None:
+    """
+    Test backtest engine replays defi blocks to actor subscription.
+    """
     DefiBlockActor.received_blocks = []
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     engine.add_actor_from_config(
@@ -111,7 +146,10 @@ def test_backtest_engine_replays_defi_blocks_to_actor_subscription():
         engine.dispose()
 
 
-def test_backtest_engine_importable_actor_config_accepts_required_subclass_kwargs():
+def test_backtest_engine_importable_actor_config_accepts_required_subclass_kwargs() -> None:
+    """
+    Test backtest engine importable actor config accepts required subclass kwargs.
+    """
     RequiredConfigDefiBlockActor.received_actor_id = None
     RequiredConfigDefiBlockActor.received_label = None
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
@@ -135,7 +173,10 @@ def test_backtest_engine_importable_actor_config_accepts_required_subclass_kwarg
         engine.dispose()
 
 
-def test_backtest_engine_accepts_python_defi_pool_event_replay_data():
+def test_backtest_engine_accepts_python_defi_pool_event_replay_data() -> None:
+    """
+    Test backtest engine accepts python defi pool event replay data.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     pool = _make_pool()
     liquidity = _make_pool_liquidity_update(pool)

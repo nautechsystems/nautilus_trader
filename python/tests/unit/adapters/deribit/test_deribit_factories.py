@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test deribit factories behavior.
+"""
 
 import pytest
 from unit.adapters.example_modules import capture_actor_example_main
@@ -42,11 +45,17 @@ deribit_option_chain = load_example_module("deribit", "deribit_option_chain")
 
 
 def test_deribit_factories_expose_python_names() -> None:
+    """
+    Test deribit factories expose python names.
+    """
     assert DeribitDataClientFactory().name() == DERIBIT
     assert DeribitExecutionClientFactory().name() == DERIBIT
 
 
 def test_live_node_builder_accepts_deribit_data_factory() -> None:
+    """
+    Test live node builder accepts deribit data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -67,6 +76,9 @@ def test_live_node_builder_accepts_deribit_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_deribit_exec_factory() -> None:
+    """
+    Test live node builder accepts deribit exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("DERIBIT-001")
 
@@ -100,6 +112,9 @@ def test_live_node_builder_accepts_deribit_exec_factory() -> None:
 
 
 def test_deribit_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test deribit data tester runs.
+    """
     captured = capture_data_tester_main(monkeypatch, deribit_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
@@ -109,6 +124,9 @@ def test_deribit_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_deribit_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test deribit exec tester runs live orders.
+    """
     captured = capture_exec_tester_main(monkeypatch, deribit_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 
@@ -120,6 +138,9 @@ def test_deribit_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_deribit_option_chain_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test deribit option chain runs.
+    """
     captured = capture_actor_example_main(monkeypatch, deribit_option_chain)
     data_client_args = captured["data_client_args"]
     actor_config = captured["importable_actor_config"]

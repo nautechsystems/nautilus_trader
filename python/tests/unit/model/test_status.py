@@ -12,15 +12,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test status behavior.
+"""
 
 from nautilus_trader.model import InstrumentClose
 from nautilus_trader.model import InstrumentCloseType
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import InstrumentStatus
 from nautilus_trader.model import MarketStatusAction
 from nautilus_trader.model import Price
 
 
-def test_instrument_status_construction(audusd_id):
+def test_instrument_status_construction(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument status construction.
+    """
     status = InstrumentStatus(
         instrument_id=audusd_id,
         action=MarketStatusAction.TRADING,
@@ -44,14 +51,20 @@ def test_instrument_status_construction(audusd_id):
     assert status.is_short_sell_restricted is False
 
 
-def test_instrument_status_equality(audusd_id):
+def test_instrument_status_equality(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument status equality.
+    """
     s1 = InstrumentStatus(audusd_id, MarketStatusAction.TRADING, 0, 0)
     s2 = InstrumentStatus(audusd_id, MarketStatusAction.TRADING, 0, 0)
 
     assert s1 == s2
 
 
-def test_instrument_status_repr(audusd_id):
+def test_instrument_status_repr(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument status repr.
+    """
     status = InstrumentStatus(audusd_id, MarketStatusAction.TRADING, 0, 0)
     r = repr(status)
 
@@ -60,7 +73,10 @@ def test_instrument_status_repr(audusd_id):
     assert "TRADING" in r
 
 
-def test_instrument_status_to_dict_and_from_dict_roundtrip(audusd_id):
+def test_instrument_status_to_dict_and_from_dict_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument status to dict and from dict roundtrip.
+    """
     status = InstrumentStatus(
         instrument_id=audusd_id,
         action=MarketStatusAction.TRADING,
@@ -80,11 +96,17 @@ def test_instrument_status_to_dict_and_from_dict_roundtrip(audusd_id):
     assert restored == status
 
 
-def test_instrument_status_fully_qualified_name():
+def test_instrument_status_fully_qualified_name() -> None:
+    """
+    Test instrument status fully qualified name.
+    """
     assert InstrumentStatus.fully_qualified_name() == "nautilus_trader.model:InstrumentStatus"
 
 
-def test_instrument_status_json_roundtrip(audusd_id):
+def test_instrument_status_json_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument status json roundtrip.
+    """
     status = InstrumentStatus(audusd_id, MarketStatusAction.TRADING, 0, 0)
 
     json_bytes = status.to_json_bytes()
@@ -93,7 +115,10 @@ def test_instrument_status_json_roundtrip(audusd_id):
     assert restored == status
 
 
-def test_instrument_status_msgpack_roundtrip(audusd_id):
+def test_instrument_status_msgpack_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument status msgpack roundtrip.
+    """
     status = InstrumentStatus(audusd_id, MarketStatusAction.TRADING, 0, 0)
 
     msgpack_bytes = status.to_msgpack_bytes()
@@ -102,13 +127,19 @@ def test_instrument_status_msgpack_roundtrip(audusd_id):
     assert restored == status
 
 
-def test_instrument_status_get_metadata(audusd_id):
+def test_instrument_status_get_metadata(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument status get metadata.
+    """
     metadata = InstrumentStatus.get_metadata(audusd_id)
 
     assert metadata["instrument_id"] == "AUD/USD.SIM"
 
 
-def test_instrument_close_construction(audusd_id):
+def test_instrument_close_construction(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument close construction.
+    """
     close = InstrumentClose(
         instrument_id=audusd_id,
         close_price=Price.from_str("0.75000"),
@@ -124,7 +155,10 @@ def test_instrument_close_construction(audusd_id):
     assert close.ts_init == 1_000_000_001
 
 
-def test_instrument_close_equality(audusd_id):
+def test_instrument_close_equality(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument close equality.
+    """
     c1 = InstrumentClose(
         audusd_id,
         Price.from_str("0.75000"),
@@ -143,7 +177,10 @@ def test_instrument_close_equality(audusd_id):
     assert c1 == c2
 
 
-def test_instrument_close_repr(audusd_id):
+def test_instrument_close_repr(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument close repr.
+    """
     close = InstrumentClose(
         audusd_id,
         Price.from_str("0.75000"),
@@ -157,7 +194,10 @@ def test_instrument_close_repr(audusd_id):
     assert "END_OF_SESSION" in r
 
 
-def test_instrument_close_to_dict_and_from_dict_roundtrip(audusd_id):
+def test_instrument_close_to_dict_and_from_dict_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument close to dict and from dict roundtrip.
+    """
     close = InstrumentClose(
         instrument_id=audusd_id,
         close_price=Price.from_str("0.75000"),
@@ -173,11 +213,17 @@ def test_instrument_close_to_dict_and_from_dict_roundtrip(audusd_id):
     assert restored == close
 
 
-def test_instrument_close_fully_qualified_name():
+def test_instrument_close_fully_qualified_name() -> None:
+    """
+    Test instrument close fully qualified name.
+    """
     assert InstrumentClose.fully_qualified_name() == "nautilus_trader.model:InstrumentClose"
 
 
-def test_instrument_close_json_roundtrip(audusd_id):
+def test_instrument_close_json_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument close json roundtrip.
+    """
     close = InstrumentClose(
         audusd_id,
         Price.from_str("0.75000"),
@@ -192,7 +238,10 @@ def test_instrument_close_json_roundtrip(audusd_id):
     assert restored == close
 
 
-def test_instrument_close_msgpack_roundtrip(audusd_id):
+def test_instrument_close_msgpack_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument close msgpack roundtrip.
+    """
     close = InstrumentClose(
         audusd_id,
         Price.from_str("0.75000"),
@@ -207,13 +256,19 @@ def test_instrument_close_msgpack_roundtrip(audusd_id):
     assert restored == close
 
 
-def test_instrument_close_get_metadata(audusd_id):
+def test_instrument_close_get_metadata(audusd_id: InstrumentId) -> None:
+    """
+    Test instrument close get metadata.
+    """
     metadata = InstrumentClose.get_metadata(audusd_id, 5)
 
     assert metadata["instrument_id"] == "AUD/USD.SIM"
 
 
-def test_instrument_close_get_fields():
+def test_instrument_close_get_fields() -> None:
+    """
+    Test instrument close get fields.
+    """
     fields = InstrumentClose.get_fields()
 
     assert "close_price" in fields

@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test binance migration behavior.
+"""
 
 import asyncio
 import json
@@ -26,7 +29,7 @@ from threading import Thread
 import pandas as pd
 import pytest
 
-import nautilus_trader.adapters.binance as binance
+from nautilus_trader.adapters import binance
 from nautilus_trader.adapters.binance import BINANCE
 from nautilus_trader.adapters.binance import BINANCE_CLIENT_ID
 from nautilus_trader.adapters.binance import BINANCE_VENUE
@@ -50,7 +53,14 @@ def _serve_exchange_info(payload: bytes, path: str) -> Iterator[tuple[str, list[
     requests: list[str] = []
 
     class ExchangeInfoHandler(BaseHTTPRequestHandler):
+        """
+        Collect exchange info handler tests.
+        """
+
         def do_GET(self) -> None:
+            """
+            Do get.
+            """
             requests.append(self.path)
             if self.path != path:
                 self.send_error(404)
@@ -63,7 +73,9 @@ def _serve_exchange_info(payload: bytes, path: str) -> Iterator[tuple[str, list[
             self.wfile.write(payload)
 
         def log_message(self, format: str, *args: object) -> None:
-            pass
+            """
+            Log message.
+            """
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), ExchangeInfoHandler)
     thread = Thread(target=server.serve_forever)
@@ -78,6 +90,9 @@ def _serve_exchange_info(payload: bytes, path: str) -> Iterator[tuple[str, list[
 
 
 def test_binance_migration_exports_runtime_names() -> None:
+    """
+    Test binance migration exports runtime names.
+    """
     assert BINANCE == "BINANCE"
     assert ClientId.from_str("BINANCE") == BINANCE_CLIENT_ID
     assert Venue.from_str("BINANCE") == BINANCE_VENUE
@@ -87,6 +102,9 @@ def test_binance_migration_exports_runtime_names() -> None:
 
 
 def test_binance_client_order_id_decoders_handle_encoded_and_external_ids() -> None:
+    """
+    Test binance client order id decoders handle encoded and external ids.
+    """
     spot_encoded = "x-TD67BGP9-T0000000000000"
     futures_encoded = "x-aHRE4BCj-T0000000000000"
     external = "external-order-42"
@@ -98,6 +116,9 @@ def test_binance_client_order_id_decoders_handle_encoded_and_external_ids() -> N
 
 
 def test_load_binance_order_book_deltas_maps_every_output_field(tmp_path: Path) -> None:
+    """
+    Test load binance order book deltas maps every output field.
+    """
     csv_path = tmp_path / "depth.csv"
     csv_path.write_text(
         "symbol,timestamp,first_update_id,last_update_id,side,update_type,price,qty,pu\n"
@@ -148,6 +169,9 @@ def test_load_binance_order_book_deltas_maps_every_output_field(tmp_path: Path) 
 
 
 def test_load_binance_order_book_deltas_honors_nrows(tmp_path: Path) -> None:
+    """
+    Test load binance order book deltas honors nrows.
+    """
     csv_path = tmp_path / "depth.csv"
     csv_path.write_text(
         "symbol,timestamp,first_update_id,last_update_id,side,update_type,price,qty,pu\n"
@@ -172,6 +196,9 @@ def test_load_binance_order_book_deltas_honors_nrows(tmp_path: Path) -> None:
 
 
 def test_load_binance_order_book_deltas_rejects_unknown_side(tmp_path: Path) -> None:
+    """
+    Test load binance order book deltas rejects unknown side.
+    """
     csv_path = tmp_path / "depth.csv"
     csv_path.write_text(
         "symbol,timestamp,first_update_id,last_update_id,side,update_type,price,qty,pu\n"
@@ -183,6 +210,9 @@ def test_load_binance_order_book_deltas_rejects_unknown_side(tmp_path: Path) -> 
 
 
 def test_load_binance_order_book_deltas_rejects_missing_file(tmp_path: Path) -> None:
+    """
+    Test load binance order book deltas rejects missing file.
+    """
     csv_path = tmp_path / "missing.csv"
 
     with pytest.raises(RuntimeError, match="failed to open Binance order book CSV"):
@@ -190,6 +220,9 @@ def test_load_binance_order_book_deltas_rejects_missing_file(tmp_path: Path) -> 
 
 
 def test_load_binance_order_book_deltas_rejects_malformed_row(tmp_path: Path) -> None:
+    """
+    Test load binance order book deltas rejects malformed row.
+    """
     csv_path = tmp_path / "depth.csv"
     csv_path.write_text(
         "symbol,timestamp,first_update_id,last_update_id,side,update_type,price,qty,pu\n"
@@ -201,6 +234,9 @@ def test_load_binance_order_book_deltas_rejects_malformed_row(tmp_path: Path) ->
 
 
 def test_load_binance_instruments_uses_provider_config() -> None:
+    """
+    Test load binance instruments uses provider config.
+    """
     payload = (
         WORKSPACE_ROOT
         / "crates/adapters/binance/test_data/futures/http_json/exchange_info_usdm.json"
@@ -231,6 +267,9 @@ def test_load_binance_instruments_uses_provider_config() -> None:
 
 
 def test_load_binance_spot_us_instruments_uses_public_json_without_credentials() -> None:
+    """
+    Test load binance spot us instruments uses public json without credentials.
+    """
     payload = json.loads(
         (
             WORKSPACE_ROOT
@@ -282,6 +321,9 @@ def test_load_binance_spot_us_instruments_uses_public_json_without_credentials()
 
 
 def test_load_binance_instruments_rejects_unsupported_product() -> None:
+    """
+    Test load binance instruments rejects unsupported product.
+    """
     config = BinanceDataClientConfig(product_type=BinanceProductType.MARGIN)
 
     with pytest.raises(ValueError, match="supports Spot, UsdM, or CoinM, was Margin"):

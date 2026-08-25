@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test sandbox factories behavior.
+"""
 
 import pytest
 from unit.adapters.example_modules import capture_exec_tester_main
@@ -39,10 +42,16 @@ sandbox_exec_tester = load_example_module("sandbox", "exec_tester")
 
 
 def test_sandbox_execution_factory_exposes_python_name() -> None:
+    """
+    Test sandbox execution factory exposes python name.
+    """
     assert SandboxExecutionClientFactory().name() == SANDBOX
 
 
 def test_live_node_builder_accepts_sandbox_simulated_exec_factory() -> None:
+    """
+    Test live node builder accepts sandbox simulated exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -65,6 +74,9 @@ def test_live_node_builder_accepts_sandbox_simulated_exec_factory() -> None:
 
 
 def test_live_node_builder_accepts_sandbox_probability_price_fee_model() -> None:
+    """
+    Test live node builder accepts sandbox probability price fee model.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -88,6 +100,9 @@ def test_live_node_builder_accepts_sandbox_probability_price_fee_model() -> None
 
 
 def test_sandbox_config_exposes_fee_model_property() -> None:
+    """
+    Test sandbox config exposes fee model property.
+    """
     config = SandboxExecutionClientConfig(
         venue=Venue.from_str(SANDBOX),
         starting_balances=[Money(100000.0, Currency.from_str("USD"))],
@@ -98,6 +113,9 @@ def test_sandbox_config_exposes_fee_model_property() -> None:
 
 
 def test_live_node_builder_accepts_sandbox_matching_knobs() -> None:
+    """
+    Test live node builder accepts sandbox matching knobs.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -123,6 +141,9 @@ def test_live_node_builder_accepts_sandbox_matching_knobs() -> None:
 
 
 def test_sandbox_config_exposes_matching_knobs() -> None:
+    """
+    Test sandbox config exposes matching knobs.
+    """
     config = SandboxExecutionClientConfig(
         venue=Venue.from_str(SANDBOX),
         starting_balances=[Money(100000.0, Currency.from_str("USD"))],
@@ -145,8 +166,25 @@ def test_sandbox_config_exposes_matching_knobs() -> None:
 
 
 def test_sandbox_config_accepts_custom_fee_model() -> None:
+    """
+    Test sandbox config accepts custom fee model.
+    """
+
     class CustomFeeModel(FeeModel):
-        def get_commission(self, order, fill_quantity, fill_px, instrument):
+        """
+        Collect custom fee model tests.
+        """
+
+        def get_commission(
+            self,
+            _order: object,
+            _fill_quantity: object,
+            _fill_px: object,
+            _instrument: object,
+        ) -> object:
+            """
+            Get commission.
+            """
             return Money.from_str("1.23 USD")
 
     fee_model = CustomFeeModel()
@@ -162,6 +200,9 @@ def test_sandbox_config_accepts_custom_fee_model() -> None:
 def test_sandbox_exec_tester_uses_simulated_exec_and_runs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    Test sandbox exec tester uses simulated exec and runs.
+    """
     captured = capture_exec_tester_main(monkeypatch, sandbox_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
     _, _, data_config = captured["data_client_args"]

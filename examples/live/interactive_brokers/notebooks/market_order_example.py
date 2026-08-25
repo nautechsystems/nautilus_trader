@@ -2,6 +2,9 @@
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 # -------------------------------------------------------------------------------------------------
+"""
+Example of a market order.
+"""
 
 from __future__ import annotations
 

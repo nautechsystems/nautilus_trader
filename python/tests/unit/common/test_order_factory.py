@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test order factory behavior.
+"""
 
 from decimal import Decimal
 
@@ -44,7 +47,10 @@ EXEC_ALGORITHM_ID = ExecAlgorithmId("VWAP")
 EXEC_ALGORITHM_PARAMS = {"speed": "fast"}
 
 
-def test_order_factory_exposes_read_only_identity():
+def test_order_factory_exposes_read_only_identity() -> None:
+    """
+    Test order factory exposes read only identity.
+    """
     factory = _factory()
 
     trader_id = factory.trader_id
@@ -60,7 +66,10 @@ def test_order_factory_exposes_read_only_identity():
     assert strategy_id == StrategyId("S-001")
 
 
-def test_order_factory_generates_and_resets_ids():
+def test_order_factory_generates_and_resets_ids() -> None:
+    """
+    Test order factory generates and resets ids.
+    """
     factory = _factory()
 
     client_order_id = factory.generate_client_order_id()
@@ -77,14 +86,20 @@ def test_order_factory_generates_and_resets_ids():
     assert factory.get_order_list_id_count() == 0
 
 
-def test_order_factory_does_not_expose_internal_count_setters():
+def test_order_factory_does_not_expose_internal_count_setters() -> None:
+    """
+    Test order factory does not expose internal count setters.
+    """
     factory = _factory()
 
     assert not hasattr(factory, "set_client_order_id_count")
     assert not hasattr(factory, "set_order_list_id_count")
 
 
-def test_order_factory_creates_single_order_types_with_forwarded_parameters():
+def test_order_factory_creates_single_order_types_with_forwarded_parameters() -> None:
+    """
+    Test order factory creates single order types with forwarded parameters.
+    """
     factory = _factory()
 
     market_id = ClientOrderId("O-MARKET")
@@ -407,7 +422,10 @@ def test_order_factory_creates_single_order_types_with_forwarded_parameters():
     _assert_trigger_fields(trailing_stop_limit)
 
 
-def test_order_factory_bracket_forwards_leg_parameters():
+def test_order_factory_bracket_forwards_leg_parameters() -> None:
+    """
+    Test order factory bracket forwards leg parameters.
+    """
     factory = _factory()
     entry_id = ClientOrderId("O-BRACKET-ENTRY")
     tp_id = ClientOrderId("O-BRACKET-TP")
@@ -516,7 +534,10 @@ def test_order_factory_bracket_forwards_leg_parameters():
     _assert_trigger_fields(take_profit)
 
 
-def test_order_factory_trailing_stop_market_activates_at_market():
+def test_order_factory_trailing_stop_market_activates_at_market() -> None:
+    """
+    Test order factory trailing stop market activates at market.
+    """
     factory = _factory()
 
     # With neither trigger_price nor activation_price the order activates at market and its
@@ -533,7 +554,10 @@ def test_order_factory_trailing_stop_market_activates_at_market():
     assert order.trailing_offset == Decimal("0.50")
 
 
-def test_order_factory_checked_errors_raise_value_error():
+def test_order_factory_checked_errors_raise_value_error() -> None:
+    """
+    Test order factory checked errors raise value error.
+    """
     factory = _factory()
 
     with pytest.raises(ValueError, match="`tp_price` is required for a LIMIT take-profit"):
@@ -553,21 +577,21 @@ def _factory() -> OrderFactory:
     )
 
 
-def _assert_trigger_fields(order):
+def _assert_trigger_fields(order: object) -> None:
     assert order.emulation_trigger == TriggerType.LAST_PRICE
     assert order.trigger_instrument_id == TRIGGER_INSTRUMENT_ID
 
 
 def _assert_order_base(
-    order,
-    order_type,
-    order_side,
-    client_order_id,
-    tags,
-    time_in_force,
-    reduce_only,
-    quote_quantity,
-):
+    order: object,
+    order_type: object,
+    order_side: object,
+    client_order_id: ClientOrderId,
+    tags: object,
+    time_in_force: object,
+    reduce_only: object,
+    quote_quantity: object,
+) -> None:
     assert order.instrument_id == INSTRUMENT_ID
     assert order.order_type == order_type
     assert order.side == order_side
@@ -578,7 +602,7 @@ def _assert_order_base(
     _assert_algorithm_fields(order, client_order_id, tags)
 
 
-def _assert_algorithm_fields(order, client_order_id, tags):
+def _assert_algorithm_fields(order: object, client_order_id: ClientOrderId, tags: object) -> None:
     assert order.client_order_id == client_order_id
     assert order.exec_algorithm_id == EXEC_ALGORITHM_ID
     assert order.exec_algorithm_params == EXEC_ALGORITHM_PARAMS

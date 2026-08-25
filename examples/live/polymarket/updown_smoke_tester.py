@@ -74,6 +74,9 @@ TOB_OFFSET_TICKS = 5
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     instrument_id = resolve_updown_instrument_id(
         assets=ASSETS,
         interval_mins=INTERVAL_MINS,
@@ -96,7 +99,7 @@ def main() -> None:
 
     node = (
         LiveNode.builder("POLYMARKET-UPDOWN-SMOKE-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -160,6 +163,9 @@ def resolve_updown_instrument_id(
     base_url_gamma: str,
     timeout_secs: int,
 ) -> InstrumentId:
+    """
+    Resolve updown instrument id.
+    """
     slugs = build_updown_event_slugs(
         assets=assets,
         interval_mins=interval_mins,
@@ -188,6 +194,9 @@ def build_updown_event_slugs(
     start_offset_periods: int,
     unix_secs: int | None = None,
 ) -> list[str]:
+    """
+    Build updown event slugs.
+    """
     normalized_assets = []
 
     for asset in assets:
@@ -220,6 +229,9 @@ def request_gamma_events_by_slug(
     slug: str,
     timeout_secs: int,
 ) -> list[dict[str, Any]]:
+    """
+    Request gamma events by slug.
+    """
     parsed_base_url = urllib.parse.urlparse(base_url_gamma)
     if parsed_base_url.scheme not in {"http", "https"}:
         raise ValueError("base_url_gamma must use http or https")
@@ -245,6 +257,9 @@ def find_updown_instrument_id(
     events: list[dict[str, Any]],
     outcome: str,
 ) -> InstrumentId | None:
+    """
+    Find updown instrument id.
+    """
     expected_outcome = outcome.lower()
 
     for event in events:
@@ -271,6 +286,9 @@ def find_updown_instrument_id(
 
 
 def market_is_tradable(market: dict[str, Any]) -> bool:
+    """
+    Market is tradable.
+    """
     return (
         bool(market.get("active"))
         and not bool(market.get("closed"))
@@ -283,6 +301,9 @@ def token_id_for_outcome(
     market: dict[str, Any],
     expected_outcome: str,
 ) -> str | None:
+    """
+    Token id for outcome.
+    """
     outcomes = json_array_field(market.get("outcomes"))
     token_ids = json_array_field(market.get("clobTokenIds"))
 
@@ -297,6 +318,9 @@ def token_id_for_outcome(
 
 
 def json_array_field(value: Any) -> list[Any]:
+    """
+    Json array field.
+    """
     if isinstance(value, list):
         return value
 

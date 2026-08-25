@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test betfair factories behavior.
+"""
 
 from types import ModuleType
 
@@ -41,11 +44,17 @@ betfair_exec_tester = load_example_module("betfair", "exec_tester")
 
 
 def test_betfair_factories_expose_python_names() -> None:
+    """
+    Test betfair factories expose python names.
+    """
     assert BetfairDataClientFactory().name() == BETFAIR
     assert BetfairExecutionClientFactory().name() == BETFAIR
 
 
 def test_live_node_builder_accepts_betfair_data_factory() -> None:
+    """
+    Test live node builder accepts betfair data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -69,6 +78,9 @@ def test_live_node_builder_accepts_betfair_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_betfair_exec_factory() -> None:
+    """
+    Test live node builder accepts betfair exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("BETFAIR-001")
 
@@ -110,6 +122,9 @@ def test_betfair_examples_require_market_target(
     monkeypatch: pytest.MonkeyPatch,
     module: ModuleType,
 ) -> None:
+    """
+    Test betfair examples require market target.
+    """
     monkeypatch.delenv("BETFAIR_MARKET_ID", raising=False)
     monkeypatch.delenv("BETFAIR_INSTRUMENT_ID", raising=False)
 
@@ -122,6 +137,9 @@ def test_betfair_examples_require_instrument_target(
     monkeypatch: pytest.MonkeyPatch,
     module: ModuleType,
 ) -> None:
+    """
+    Test betfair examples require instrument target.
+    """
     monkeypatch.setenv("BETFAIR_MARKET_ID", "1.234567890")
     monkeypatch.delenv("BETFAIR_INSTRUMENT_ID", raising=False)
 
@@ -130,6 +148,9 @@ def test_betfair_examples_require_instrument_target(
 
 
 def test_betfair_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test betfair data tester runs.
+    """
     monkeypatch.setenv("BETFAIR_MARKET_ID", "1.234567890")
     monkeypatch.setenv("BETFAIR_INSTRUMENT_ID", "1.234567890-123456.BETFAIR")
     captured = capture_data_tester_main(monkeypatch, betfair_data_tester)
@@ -147,6 +168,9 @@ def test_betfair_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_betfair_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test betfair exec tester runs live orders.
+    """
     monkeypatch.setenv("BETFAIR_MARKET_ID", "1.234567890")
     monkeypatch.setenv("BETFAIR_INSTRUMENT_ID", "1.234567890-123456.BETFAIR")
     captured = capture_exec_tester_main(monkeypatch, betfair_exec_tester)

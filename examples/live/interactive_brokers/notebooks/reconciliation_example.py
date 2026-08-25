@@ -2,6 +2,9 @@
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 # -------------------------------------------------------------------------------------------------
+"""
+Example of IB reconciliation.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +25,9 @@ from _common import schedule_node_stop
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     account_id = os.getenv("TWS_ACCOUNT")
     if account_id is None:
         raise RuntimeError("Set TWS_ACCOUNT to run the IB v2 reconciliation example")

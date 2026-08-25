@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test msgbus behavior.
+"""
 
 import pytest
 
@@ -21,16 +24,25 @@ from nautilus_trader.model import TraderId
 
 
 @pytest.fixture
-def trader_id():
+def trader_id() -> object:
+    """
+    Trader id.
+    """
     return TraderId.from_str("TRADER-001")
 
 
 @pytest.fixture
-def bus(trader_id):
+def bus(trader_id: TraderId) -> object:
+    """
+    Bus.
+    """
     return MessageBus(trader_id=trader_id)
 
 
-def test_instantiate_defaults(bus, trader_id):
+def test_instantiate_defaults(bus: object, trader_id: TraderId) -> None:
+    """
+    Test instantiate defaults.
+    """
     assert bus.trader_id == trader_id
     assert bus.name == "MessageBus"
     assert bus.has_backing is False
@@ -40,28 +52,43 @@ def test_instantiate_defaults(bus, trader_id):
     assert bus.pub_count == 0
 
 
-def test_instantiate_with_custom_name(trader_id):
+def test_instantiate_with_custom_name(trader_id: TraderId) -> None:
+    """
+    Test instantiate with custom name.
+    """
     bus = MessageBus(trader_id=trader_id, name="CustomBus")
     assert bus.name == "CustomBus"
 
 
-def test_endpoints_empty(bus):
+def test_endpoints_empty(bus: object) -> None:
+    """
+    Test endpoints empty.
+    """
     assert bus.endpoints() == []
 
 
-def test_register_adds_endpoint(bus):
+def test_register_adds_endpoint(bus: object) -> None:
+    """
+    Test register adds endpoint.
+    """
     bus.register("mailbox", [].append)
     assert bus.endpoints() == ["mailbox"]
 
 
-def test_deregister_removes_endpoint(bus):
+def test_deregister_removes_endpoint(bus: object) -> None:
+    """
+    Test deregister removes endpoint.
+    """
     handler = [].append
     bus.register("mailbox", handler)
     bus.deregister("mailbox", handler)
     assert bus.endpoints() == []
 
 
-def test_send_delivers_to_endpoint(bus):
+def test_send_delivers_to_endpoint(bus: object) -> None:
+    """
+    Test send delivers to endpoint.
+    """
     received = []
     bus.register("mailbox", received.append)
     bus.send("mailbox", "msg")
@@ -69,12 +96,18 @@ def test_send_delivers_to_endpoint(bus):
     assert bus.sent_count == 1
 
 
-def test_send_no_endpoint_increments_count(bus):
+def test_send_no_endpoint_increments_count(bus: object) -> None:
+    """
+    Test send no endpoint increments count.
+    """
     bus.send("nowhere", "msg")
     assert bus.sent_count == 1
 
 
-def test_send_multiple_increments_count(bus):
+def test_send_multiple_increments_count(bus: object) -> None:
+    """
+    Test send multiple increments count.
+    """
     received = []
     bus.register("ep", received.append)
     bus.send("ep", "a")
@@ -83,7 +116,10 @@ def test_send_multiple_increments_count(bus):
     assert bus.sent_count == 2
 
 
-def test_deregister_and_send_return_none(bus):
+def test_deregister_and_send_return_none(bus: object) -> None:
+    """
+    Test deregister and send return none.
+    """
     handler = [].append
     bus.register("mailbox", handler)
 
@@ -91,19 +127,31 @@ def test_deregister_and_send_return_none(bus):
     assert bus.deregister("mailbox", handler) is None
 
 
-def test_topics_empty(bus):
+def test_topics_empty(bus: object) -> None:
+    """
+    Test topics empty.
+    """
     assert bus.topics() == []
 
 
-def test_subscriptions_empty(bus):
+def test_subscriptions_empty(bus: object) -> None:
+    """
+    Test subscriptions empty.
+    """
     assert bus.subscriptions() == []
 
 
-def test_has_subscribers_false_when_empty(bus):
+def test_has_subscribers_false_when_empty(bus: object) -> None:
+    """
+    Test has subscribers false when empty.
+    """
     assert not bus.has_subscribers()
 
 
-def test_subscriptions_with_pattern_filter(bus):
+def test_subscriptions_with_pattern_filter(bus: object) -> None:
+    """
+    Test subscriptions with pattern filter.
+    """
     bus.subscribe("data.quotes.*", [].append)
     bus.subscribe("data.trades.*", [].append)
     bus.subscribe("events.order.*", [].append)
@@ -115,43 +163,68 @@ def test_subscriptions_with_pattern_filter(bus):
     assert len(all_subs) == 3
 
 
-def test_has_subscribers_with_pattern(bus):
+def test_has_subscribers_with_pattern(bus: object) -> None:
+    """
+    Test has subscribers with pattern.
+    """
     bus.subscribe("data.quotes.BINANCE", [].append)
     assert bus.has_subscribers("data.quotes.BINANCE")
     assert not bus.has_subscribers("events.order.S1")
 
 
-def test_subscribe_adds_topic(bus):
+def test_subscribe_adds_topic(bus: object) -> None:
+    """
+    Test subscribe adds topic.
+    """
     bus.subscribe("system", [].append)
     assert "system" in bus.topics()
 
 
-def test_subscribe_shows_has_subscribers(bus):
+def test_subscribe_shows_has_subscribers(bus: object) -> None:
+    """
+    Test subscribe shows has subscribers.
+    """
     bus.subscribe("events.*", [].append)
     assert bus.has_subscribers()
 
 
-def test_subscribe_duplicate_ignored(bus):
+def test_subscribe_duplicate_ignored(bus: object) -> None:
+    """
+    Test subscribe duplicate ignored.
+    """
     handler = [].append
     bus.subscribe("a", handler)
     bus.subscribe("a", handler)
     assert len(bus.subscriptions()) == 1
 
 
-def test_unsubscribe_removes_subscription(bus):
+def test_unsubscribe_removes_subscription(bus: object) -> None:
+    """
+    Test unsubscribe removes subscription.
+    """
     handler = [].append
     bus.subscribe("events.order*", handler)
     bus.unsubscribe("events.order*", handler)
     assert bus.subscriptions() == []
 
 
-def test_unsubscribe_nonexistent_does_nothing(bus):
+def test_unsubscribe_nonexistent_does_nothing(bus: object) -> None:
+    """
+    Test unsubscribe nonexistent does nothing.
+    """
     bus.unsubscribe("missing", [].append)
     assert bus.subscriptions() == []
 
 
-def test_is_subscribed_lifecycle(bus):
-    def handler(msg):
+def test_is_subscribed_lifecycle(bus: object) -> None:
+    """
+    Test is subscribed lifecycle.
+    """
+
+    def handler(msg: object) -> object:
+        """
+        Handle the callback.
+        """
         return msg
 
     assert not bus.is_subscribed("topic.test", handler)
@@ -161,12 +234,18 @@ def test_is_subscribed_lifecycle(bus):
     assert not bus.is_subscribed("topic.test", handler)
 
 
-def test_publish_with_no_subscribers(bus):
+def test_publish_with_no_subscribers(bus: object) -> None:
+    """
+    Test publish with no subscribers.
+    """
     bus.publish("empty.topic", "hello")
     assert bus.pub_count == 1
 
 
-def test_publish_delivers_to_subscriber(bus):
+def test_publish_delivers_to_subscriber(bus: object) -> None:
+    """
+    Test publish delivers to subscriber.
+    """
     received = []
     bus.subscribe("system", received.append)
     bus.publish("system", "hello")
@@ -174,7 +253,10 @@ def test_publish_delivers_to_subscriber(bus):
     assert bus.pub_count == 1
 
 
-def test_publish_delivers_to_multiple_subscribers(bus):
+def test_publish_delivers_to_multiple_subscribers(bus: object) -> None:
+    """
+    Test publish delivers to multiple subscribers.
+    """
     sub1, sub2, sub3 = [], [], []
     bus.subscribe("system", sub1.append)
     bus.subscribe("system", sub2.append)
@@ -186,21 +268,30 @@ def test_publish_delivers_to_multiple_subscribers(bus):
     assert bus.pub_count == 1
 
 
-def test_publish_wildcard_star(bus):
+def test_publish_wildcard_star(bus: object) -> None:
+    """
+    Test publish wildcard star.
+    """
     received = []
     bus.subscribe("events.order*", received.append)
     bus.publish("events.order.SCALPER-001", "ORDER")
     assert received == ["ORDER"]
 
 
-def test_publish_no_match_filters(bus):
+def test_publish_no_match_filters(bus: object) -> None:
+    """
+    Test publish no match filters.
+    """
     received = []
     bus.subscribe("events.position*", received.append)
     bus.publish("events.order.S-001", "ORDER")
     assert received == []
 
 
-def test_publish_star_catches_all(bus):
+def test_publish_star_catches_all(bus: object) -> None:
+    """
+    Test publish star catches all.
+    """
     all_msgs = []
     specific = []
     bus.subscribe("*", all_msgs.append)
@@ -210,7 +301,10 @@ def test_publish_star_catches_all(bus):
     assert all_msgs == ["OK!"]
 
 
-def test_publish_question_mark_pattern(bus):
+def test_publish_question_mark_pattern(bus: object) -> None:
+    """
+    Test publish question mark pattern.
+    """
     received = []
     bus.subscribe("test.?", received.append)
     bus.publish("test.a", "ok1")
@@ -219,7 +313,10 @@ def test_publish_question_mark_pattern(bus):
     assert received == ["ok1", "ok2"]
 
 
-def test_publish_combined_wildcards(bus):
+def test_publish_combined_wildcards(bus: object) -> None:
+    """
+    Test publish combined wildcards.
+    """
     received = []
     bus.subscribe("data.*.BINANCE.ETH*", received.append)
     bus.publish("data.trades.BINANCE.ETHUSDT", "t1")
@@ -228,7 +325,10 @@ def test_publish_combined_wildcards(bus):
     assert received == ["t1", "q1"]
 
 
-def test_publish_late_subscribe(bus):
+def test_publish_late_subscribe(bus: object) -> None:
+    """
+    Test publish late subscribe.
+    """
     received = []
     bus.publish("events.order.S-001", "early")
     bus.subscribe("events.order*", received.append)
@@ -237,13 +337,22 @@ def test_publish_late_subscribe(bus):
     assert bus.pub_count == 2
 
 
-def test_publish_priority_order(bus):
+def test_publish_priority_order(bus: object) -> None:
+    """
+    Test publish priority order.
+    """
     order = []
 
-    def low(msg):
+    def low(msg: object) -> None:
+        """
+        Low.
+        """
         order.append(f"low-{msg}")
 
-    def high(msg):
+    def high(msg: object) -> None:
+        """
+        High.
+        """
         order.append(f"high-{msg}")
 
     bus.subscribe("orders", low, priority=0)
@@ -252,7 +361,10 @@ def test_publish_priority_order(bus):
     assert order == ["high-123", "low-123"]
 
 
-def test_publish_python_objects(bus):
+def test_publish_python_objects(bus: object) -> None:
+    """
+    Test publish python objects.
+    """
     received = []
     bus.subscribe("data", received.append)
     obj = {"key": [1, 2, 3], "nested": {"a": True}}
@@ -261,19 +373,36 @@ def test_publish_python_objects(bus):
     assert received[0] is obj
 
 
-def test_request_response_round_trip(bus):
+def test_request_response_round_trip(bus: object) -> None:
+    """
+    Test request response round trip.
+    """
     endpoint_msgs = []
     callback_msgs = []
 
     bus.register("service", endpoint_msgs.append)
 
     class FakeRequest:
-        def __init__(self, req_id, callback):
+        """
+        Collect fake request tests.
+        """
+
+        def __init__(self, req_id: object, callback: object) -> None:
+            """
+            Initialize the helper.
+            """
             self.id = req_id
             self.callback = callback
 
     class FakeResponse:
-        def __init__(self, correlation_id):
+        """
+        Collect fake response tests.
+        """
+
+        def __init__(self, correlation_id: object) -> None:
+            """
+            Initialize the helper.
+            """
             self.correlation_id = correlation_id
 
     req_id = UUID4()
@@ -291,12 +420,22 @@ def test_request_response_round_trip(bus):
     assert len(callback_msgs) == 1
 
 
-def test_duplicate_request_id_rejected(bus):
+def test_duplicate_request_id_rejected(bus: object) -> None:
+    """
+    Test duplicate request id rejected.
+    """
     endpoint_msgs = []
     bus.register("service", endpoint_msgs.append)
 
     class FakeRequest:
-        def __init__(self, req_id, callback):
+        """
+        Collect fake request tests.
+        """
+
+        def __init__(self, req_id: object, callback: object) -> None:
+            """
+            Initialize the helper.
+            """
             self.id = req_id
             self.callback = callback
 
@@ -310,7 +449,10 @@ def test_duplicate_request_id_rejected(bus):
     assert bus.req_count == 1
 
 
-def test_is_pending_request_false_when_empty(bus):
+def test_is_pending_request_false_when_empty(bus: object) -> None:
+    """
+    Test is pending request false when empty.
+    """
     assert not bus.is_pending_request(UUID4())
 
 
@@ -325,7 +467,10 @@ INVALID_ENDPOINTS = [
 
 
 @pytest.mark.parametrize(("endpoint", "message"), INVALID_ENDPOINTS)
-def test_register_invalid_endpoint_raises(bus, endpoint, message):
+def test_register_invalid_endpoint_raises(bus: object, endpoint: object, message: object) -> None:
+    """
+    Test register invalid endpoint raises.
+    """
     with pytest.raises(ValueError, match=message) as exc_info:
         bus.register(endpoint, [].append)
 
@@ -334,7 +479,10 @@ def test_register_invalid_endpoint_raises(bus, endpoint, message):
 
 
 @pytest.mark.parametrize(("endpoint", "message"), INVALID_ENDPOINTS)
-def test_deregister_invalid_endpoint_raises(bus, endpoint, message):
+def test_deregister_invalid_endpoint_raises(bus: object, endpoint: object, message: object) -> None:
+    """
+    Test deregister invalid endpoint raises.
+    """
     handler = [].append
     bus.register("mailbox", handler)
 
@@ -346,7 +494,10 @@ def test_deregister_invalid_endpoint_raises(bus, endpoint, message):
 
 
 @pytest.mark.parametrize(("endpoint", "message"), INVALID_ENDPOINTS)
-def test_send_invalid_endpoint_raises(bus, endpoint, message):
+def test_send_invalid_endpoint_raises(bus: object, endpoint: object, message: object) -> None:
+    """
+    Test send invalid endpoint raises.
+    """
     received = []
     bus.register("mailbox", received.append)
 
@@ -359,9 +510,20 @@ def test_send_invalid_endpoint_raises(bus, endpoint, message):
 
 
 @pytest.mark.parametrize(("endpoint", "message"), INVALID_ENDPOINTS)
-def test_request_invalid_endpoint_raises(bus, endpoint, message):
+def test_request_invalid_endpoint_raises(bus: object, endpoint: object, message: object) -> None:
+    """
+    Test request invalid endpoint raises.
+    """
+
     class FakeRequest:
-        def __init__(self, req_id, callback):
+        """
+        Collect fake request tests.
+        """
+
+        def __init__(self, req_id: object, callback: object) -> None:
+            """
+            Initialize the helper.
+            """
             self.id = req_id
             self.callback = callback
 
@@ -378,13 +540,26 @@ def test_request_invalid_endpoint_raises(bus, endpoint, message):
     assert received == []
 
 
-def test_register_validates_endpoint_before_building_handler(bus):
+def test_register_validates_endpoint_before_building_handler(bus: object) -> None:
+    """
+    Test register validates endpoint before building handler.
+    """
+
     class ExplodingRepr:
-        def __repr__(self):
+        """
+        Collect exploding repr tests.
+        """
+
+        def __repr__(self) -> str:
+            """
+            Repr.
+            """
             raise AssertionError("handler must not be built for an invalid endpoint")
 
-        def __call__(self, msg):
-            pass
+        def __call__(self, msg: object) -> None:
+            """
+            Call.
+            """
 
     with pytest.raises(ValueError, match="was empty") as exc_info:
         bus.register("", ExplodingRepr())
@@ -393,9 +568,15 @@ def test_register_validates_endpoint_before_building_handler(bus):
     assert bus.endpoints() == []
 
 
-def test_request_validates_endpoint_before_reading_request(bus):
+def test_request_validates_endpoint_before_reading_request(bus: object) -> None:
+    """
+    Test request validates endpoint before reading request.
+    """
+
     class RequestWithoutId:
-        pass
+        """
+        Collect request without id tests.
+        """
 
     with pytest.raises(ValueError, match="was empty") as exc_info:
         bus.request("", RequestWithoutId())
@@ -412,7 +593,10 @@ INVALID_PATTERNS = [
 
 
 @pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
-def test_subscribe_invalid_pattern_raises(bus, pattern, message):
+def test_subscribe_invalid_pattern_raises(bus: object, pattern: object, message: object) -> None:
+    """
+    Test subscribe invalid pattern raises.
+    """
     with pytest.raises(ValueError, match=message) as exc_info:
         bus.subscribe(pattern, [].append)
 
@@ -422,7 +606,10 @@ def test_subscribe_invalid_pattern_raises(bus, pattern, message):
 
 
 @pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
-def test_unsubscribe_invalid_pattern_raises(bus, pattern, message):
+def test_unsubscribe_invalid_pattern_raises(bus: object, pattern: object, message: object) -> None:
+    """
+    Test unsubscribe invalid pattern raises.
+    """
     handler = [].append
     bus.subscribe("system", handler)
 
@@ -434,7 +621,14 @@ def test_unsubscribe_invalid_pattern_raises(bus, pattern, message):
 
 
 @pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
-def test_is_subscribed_invalid_pattern_raises(bus, pattern, message):
+def test_is_subscribed_invalid_pattern_raises(
+    bus: object,
+    pattern: object,
+    message: object,
+) -> None:
+    """
+    Test is subscribed invalid pattern raises.
+    """
     with pytest.raises(ValueError, match=message) as exc_info:
         bus.is_subscribed(pattern, [].append)
 
@@ -442,7 +636,14 @@ def test_is_subscribed_invalid_pattern_raises(bus, pattern, message):
 
 
 @pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
-def test_subscriptions_invalid_pattern_raises(bus, pattern, message):
+def test_subscriptions_invalid_pattern_raises(
+    bus: object,
+    pattern: object,
+    message: object,
+) -> None:
+    """
+    Test subscriptions invalid pattern raises.
+    """
     with pytest.raises(ValueError, match=message) as exc_info:
         bus.subscriptions(pattern)
 
@@ -450,20 +651,40 @@ def test_subscriptions_invalid_pattern_raises(bus, pattern, message):
 
 
 @pytest.mark.parametrize(("pattern", "message"), INVALID_PATTERNS)
-def test_has_subscribers_invalid_pattern_raises(bus, pattern, message):
+def test_has_subscribers_invalid_pattern_raises(
+    bus: object,
+    pattern: object,
+    message: object,
+) -> None:
+    """
+    Test has subscribers invalid pattern raises.
+    """
     with pytest.raises(ValueError, match=message) as exc_info:
         bus.has_subscribers(pattern)
 
     assert type(exc_info.value) is ValueError
 
 
-def test_subscribe_validates_pattern_before_building_handler(bus):
+def test_subscribe_validates_pattern_before_building_handler(bus: object) -> None:
+    """
+    Test subscribe validates pattern before building handler.
+    """
+
     class ExplodingRepr:
-        def __repr__(self):
+        """
+        Collect exploding repr tests.
+        """
+
+        def __repr__(self) -> str:
+            """
+            Repr.
+            """
             raise AssertionError("handler must not be built for an invalid pattern")
 
-        def __call__(self, msg):
-            pass
+        def __call__(self, msg: object) -> None:
+            """
+            Call.
+            """
 
     with pytest.raises(ValueError, match="was empty") as exc_info:
         bus.subscribe("", ExplodingRepr())
@@ -473,15 +694,25 @@ def test_subscribe_validates_pattern_before_building_handler(bus):
 
 
 @pytest.mark.parametrize("pattern", ["*", "data.*", "test.?", "a?b", "data.*.BINANCE.ETH*"])
-def test_subscribe_accepts_wildcard_patterns(bus, pattern):
+def test_subscribe_accepts_wildcard_patterns(bus: object, pattern: object) -> None:
+    """
+    Test subscribe accepts wildcard patterns.
+    """
     bus.subscribe(pattern, [].append)
 
     assert bus.topics() == [pattern]
     assert bus.has_subscribers(pattern)
 
 
-def test_subscriptions_entries_report_topic_and_handler(bus):
-    def handler(msg):
+def test_subscriptions_entries_report_topic_and_handler(bus: object) -> None:
+    """
+    Test subscriptions entries report topic and handler.
+    """
+
+    def handler(msg: object) -> object:
+        """
+        Handle the callback.
+        """
         return msg
 
     bus.subscribe("data.quotes", handler)
@@ -494,27 +725,46 @@ def test_subscriptions_entries_report_topic_and_handler(bus):
     assert bus.subscriptions("data.*") == [expected_quotes]
 
 
-def test_streaming_type_registration(bus):
+def test_streaming_type_registration(bus: object) -> None:
+    """
+    Test streaming type registration.
+    """
     assert not bus.is_streaming_type(int)
     bus.add_streaming_type(int)
     assert bus.is_streaming_type(int)
     assert int in bus.streaming_types()
 
 
-def test_streaming_type_not_confused_with_other_types(bus):
+def test_streaming_type_not_confused_with_other_types(bus: object) -> None:
+    """
+    Test streaming type not confused with other types.
+    """
     bus.add_streaming_type(int)
     assert not bus.is_streaming_type(str)
     assert not bus.is_streaming_type(float)
 
 
-def test_add_listener_receives_published_bytes(bus):
+def test_add_listener_receives_published_bytes(bus: object) -> None:
+    """
+    Test add listener receives published bytes.
+    """
     events = []
 
     class DummyListener:
-        def is_closed(self):
+        """
+        Collect dummy listener tests.
+        """
+
+        def is_closed(self) -> bool:
+            """
+            Is closed.
+            """
             return False
 
-        def publish(self, topic, payload):
+        def publish(self, topic: object, payload: object) -> None:
+            """
+            Publish.
+            """
             events.append((topic, payload))
 
     bus.add_listener(DummyListener())
@@ -522,17 +772,33 @@ def test_add_listener_receives_published_bytes(bus):
     assert events == [("any.topic", b"data")]
 
 
-def test_add_listener_skips_closed(bus):
+def test_add_listener_skips_closed(bus: object) -> None:
+    """
+    Test add listener skips closed.
+    """
     events = []
 
     class DummyListener:
-        def __init__(self, closed=False):
+        """
+        Collect dummy listener tests.
+        """
+
+        def __init__(self, closed: object = False) -> None:
+            """
+            Initialize the helper.
+            """
             self._closed = closed
 
-        def is_closed(self):
+        def is_closed(self) -> object:
+            """
+            Is closed.
+            """
             return self._closed
 
-        def publish(self, topic, payload):
+        def publish(self, topic: object, payload: object) -> None:
+            """
+            Publish.
+            """
             events.append((topic, payload))
 
     bus.add_listener(DummyListener(closed=True))
@@ -540,13 +806,19 @@ def test_add_listener_skips_closed(bus):
     assert events == []
 
 
-def test_has_subscribers_with_wildcard_pattern(bus):
+def test_has_subscribers_with_wildcard_pattern(bus: object) -> None:
+    """
+    Test has subscribers with wildcard pattern.
+    """
     bus.subscribe("data.instrument.SIM.*", [].append)
     assert bus.has_subscribers("data.instrument.*")
     assert not bus.has_subscribers("events.*")
 
 
-def test_dispose_clears_state(bus):
+def test_dispose_clears_state(bus: object) -> None:
+    """
+    Test dispose clears state.
+    """
     bus.subscribe("topic", [].append)
     bus.register("ep", [].append)
     bus.dispose()
@@ -555,9 +827,20 @@ def test_dispose_clears_state(bus):
     assert bus.subscriptions() == []
 
 
-def test_dispose_clears_correlation_index(bus):
+def test_dispose_clears_correlation_index(bus: object) -> None:
+    """
+    Test dispose clears correlation index.
+    """
+
     class FakeRequest:
-        def __init__(self):
+        """
+        Collect fake request tests.
+        """
+
+        def __init__(self) -> None:
+            """
+            Initialize the helper.
+            """
             self.id = UUID4()
             self.callback = lambda r: None
 

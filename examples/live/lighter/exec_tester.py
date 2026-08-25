@@ -66,9 +66,12 @@ TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("LIGHTER-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_exec_engine_config(
             LiveExecutionEngineConfig(
                 reconciliation_lookback_mins=60,

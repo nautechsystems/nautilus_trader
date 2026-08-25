@@ -56,6 +56,9 @@ TOB_OFFSET_TICKS = 1
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("AX-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
         .with_exec_engine_config(
@@ -65,7 +68,7 @@ def main() -> None:
                 position_check_interval_secs=30,
             ),
         )
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .with_timeout_disconnection_secs(10)
         .with_delay_post_stop_secs(5)

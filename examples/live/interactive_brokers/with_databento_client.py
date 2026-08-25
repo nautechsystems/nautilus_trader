@@ -6,6 +6,9 @@
 #  You may not use this file except in compliance with the License.
 #  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 # -------------------------------------------------------------------------------------------------
+"""
+Example of IB with Databento.
+"""
 
 from __future__ import annotations
 
@@ -30,6 +33,9 @@ from nautilus_trader.model import TraderId
 
 
 def default_publishers_filepath() -> str:
+    """
+    Default publishers filepath.
+    """
     return str(
         Path(__file__).resolve().parents[3]
         / "crates"
@@ -40,6 +46,9 @@ def default_publishers_filepath() -> str:
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     api_key = os.getenv("DATABENTO_API_KEY")
     if not api_key:
         raise SystemExit("DATABENTO_API_KEY must be set")
@@ -63,7 +72,7 @@ def main() -> None:
         Environment.LIVE,
     )
     builder = builder.with_timeout_connection(env_int("IB_V2_NODE_CONNECTION_TIMEOUT", 15))
-    builder = builder.with_reconciliation(False)
+    builder = builder.with_reconciliation(reconciliation=False)
     builder = builder.add_data_client(
         "DATABENTO",
         DatabentoDataClientFactory(),

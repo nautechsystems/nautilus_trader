@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test arrow behavior.
+"""
 
 import json
 
@@ -47,28 +50,40 @@ from nautilus_trader.serialization import trades_to_arrow_record_batch_bytes
 INSTRUMENT_ID = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
 
 
-def test_get_arrow_schema_map_quote_tick():
+def test_get_arrow_schema_map_quote_tick() -> None:
+    """
+    Test get arrow schema map quote tick.
+    """
     schema = get_arrow_schema_map(QuoteTick)
 
     assert isinstance(schema, dict)
     assert len(schema) > 0
 
 
-def test_get_arrow_schema_map_trade_tick():
+def test_get_arrow_schema_map_trade_tick() -> None:
+    """
+    Test get arrow schema map trade tick.
+    """
     schema = get_arrow_schema_map(TradeTick)
 
     assert isinstance(schema, dict)
     assert len(schema) > 0
 
 
-def test_get_arrow_schema_map_bar():
+def test_get_arrow_schema_map_bar() -> None:
+    """
+    Test get arrow schema map bar.
+    """
     schema = get_arrow_schema_map(Bar)
 
     assert isinstance(schema, dict)
     assert len(schema) > 0
 
 
-def test_deribit_volatility_index_arrow_methods_available():
+def test_deribit_volatility_index_arrow_methods_available() -> None:
+    """
+    Test deribit volatility index arrow methods available.
+    """
     dvol = DeribitVolatilityIndex(
         index_name="btc_usd",
         volatility=72.5,
@@ -84,7 +99,10 @@ def test_deribit_volatility_index_arrow_methods_available():
     assert dvol.ts_init == 1_001
 
 
-def test_hyperliquid_all_mids_arrow_methods_available():
+def test_hyperliquid_all_mids_arrow_methods_available() -> None:
+    """
+    Test hyperliquid all mids arrow methods available.
+    """
     all_mids = HyperliquidAllMids(mids={}, ts_event=1_000, ts_init=1_001)
 
     assert hasattr(all_mids, "encode_record_batch_py")
@@ -94,7 +112,10 @@ def test_hyperliquid_all_mids_arrow_methods_available():
     assert all_mids.ts_init == 1_001
 
 
-def test_hyperliquid_all_mids_from_json_is_classmethod_and_roundtrips():
+def test_hyperliquid_all_mids_from_json_is_classmethod_and_roundtrips() -> None:
+    """
+    Test hyperliquid all mids from json is classmethod and roundtrips.
+    """
     original = HyperliquidAllMids(mids={}, ts_event=1_000, ts_init=1_001)
     payload = json.loads(original.to_json())
 
@@ -106,7 +127,10 @@ def test_hyperliquid_all_mids_from_json_is_classmethod_and_roundtrips():
     assert restored.ts_init == original.ts_init
 
 
-def test_quotes_to_arrow_record_batch_bytes():
+def test_quotes_to_arrow_record_batch_bytes() -> None:
+    """
+    Test quotes to arrow record batch bytes.
+    """
     quotes = [
         QuoteTick(
             instrument_id=INSTRUMENT_ID,
@@ -134,7 +158,10 @@ def test_quotes_to_arrow_record_batch_bytes():
     assert len(result) > 0
 
 
-def test_trades_to_arrow_record_batch_bytes():
+def test_trades_to_arrow_record_batch_bytes() -> None:
+    """
+    Test trades to arrow record batch bytes.
+    """
     trades = [
         TradeTick(
             instrument_id=INSTRUMENT_ID,
@@ -153,7 +180,10 @@ def test_trades_to_arrow_record_batch_bytes():
     assert len(result) > 0
 
 
-def test_bars_to_arrow_record_batch_bytes():
+def test_bars_to_arrow_record_batch_bytes() -> None:
+    """
+    Test bars to arrow record batch bytes.
+    """
     bar_type = BarType(
         instrument_id=INSTRUMENT_ID,
         spec=BarSpecification(
@@ -181,7 +211,10 @@ def test_bars_to_arrow_record_batch_bytes():
     assert len(result) > 0
 
 
-def test_mark_prices_to_arrow_record_batch_bytes():
+def test_mark_prices_to_arrow_record_batch_bytes() -> None:
+    """
+    Test mark prices to arrow record batch bytes.
+    """
     marks = [
         MarkPriceUpdate(
             instrument_id=INSTRUMENT_ID,
@@ -197,7 +230,10 @@ def test_mark_prices_to_arrow_record_batch_bytes():
     assert len(result) > 0
 
 
-def test_index_prices_to_arrow_record_batch_bytes():
+def test_index_prices_to_arrow_record_batch_bytes() -> None:
+    """
+    Test index prices to arrow record batch bytes.
+    """
     prices = [
         IndexPriceUpdate(
             instrument_id=INSTRUMENT_ID,
@@ -213,7 +249,10 @@ def test_index_prices_to_arrow_record_batch_bytes():
     assert len(result) > 0
 
 
-def test_instrument_closes_to_arrow_record_batch_bytes():
+def test_instrument_closes_to_arrow_record_batch_bytes() -> None:
+    """
+    Test instrument closes to arrow record batch bytes.
+    """
     closes = [
         InstrumentClose(
             instrument_id=INSTRUMENT_ID,

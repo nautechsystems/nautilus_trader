@@ -12,6 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test tearsheet behavior.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -40,12 +48,17 @@ from nautilus_trader.analysis import register_tearsheet_chart
 from nautilus_trader.analysis import register_theme
 from nautilus_trader.analysis import tearsheet
 from nautilus_trader.analysis import themes
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import Venue
 
 
 pd = pytest.importorskip("pandas")
 
 
-def test_tearsheet_config_defaults_and_validation():
+def test_tearsheet_config_defaults_and_validation() -> None:
+    """
+    Test tearsheet config defaults and validation.
+    """
     config = TearsheetConfig()
 
     assert config.chart_names == [
@@ -66,7 +79,10 @@ def test_tearsheet_config_defaults_and_validation():
         TearsheetConfig(height=0)
 
 
-def test_theme_registry_returns_builtins_and_suggestions():
+def test_theme_registry_returns_builtins_and_suggestions() -> None:
+    """
+    Test theme registry returns builtins and suggestions.
+    """
     try:
         register_theme(
             name="unit_test_theme",
@@ -94,7 +110,10 @@ def test_theme_registry_returns_builtins_and_suggestions():
         themes._THEMES.pop("unit_test_theme", None)
 
 
-def test_register_theme_validates_name_and_required_colors():
+def test_register_theme_validates_name_and_required_colors() -> None:
+    """
+    Test register theme validates name and required colors.
+    """
     required_colors = {
         "primary": "#000000",
         "positive": "#00ff00",
@@ -111,15 +130,25 @@ def test_register_theme_validates_name_and_required_colors():
         register_theme("unit_test_invalid_theme", "plotly_white", {"primary": "#000000"})
 
 
-def test_chart_registry_registers_direct_and_decorator_forms():
-    def chart_func(returns, **kwargs):
+def test_chart_registry_registers_direct_and_decorator_forms() -> None:
+    """
+    Test chart registry registers direct and decorator forms.
+    """
+
+    def chart_func(returns: object, **kwargs: object) -> object:
+        """
+        Chart func.
+        """
         return returns, kwargs
 
     try:
         register_chart("unit_test_chart_direct", chart_func)
 
         @register_chart("unit_test_chart_decorated")
-        def decorated_chart(returns, **kwargs):
+        def decorated_chart(returns: object, **kwargs: object) -> object:
+            """
+            Build the decorated chart.
+            """
             return returns, kwargs
 
         assert get_chart("unit_test_chart_direct") is chart_func
@@ -133,13 +162,23 @@ def test_chart_registry_registers_direct_and_decorator_forms():
         tearsheet._CHART_REGISTRY.pop("unit_test_chart_decorated", None)
 
 
-def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch):
+def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test create tearsheet uses v2 result and report api.
+    """
     captured = {}
 
     class DummyResult:
-        stats_pnls = {"USD": {"PnL (total)": 12.5}, "AUD": {"PnL (total)": 1.0}}
-        stats_returns = {"Sharpe Ratio (252 days)": 1.23}
-        stats_general = {"Long Ratio": 0.5}
+        """
+        Collect dummy result tests.
+        """
+
+        stats_pnls: ClassVar[dict[str, object]] = {
+            "USD": {"PnL (total)": 12.5},
+            "AUD": {"PnL (total)": 1.0},
+        }
+        stats_returns: ClassVar[dict[str, object]] = {"Sharpe Ratio (252 days)": 1.23}
+        stats_general: ClassVar[dict[str, object]] = {"Long Ratio": 0.5}
         elapsed_time_secs = 1.234
         iterations = 2
         total_events = 3
@@ -147,11 +186,22 @@ def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch):
         total_positions = 5
 
     class DummyCache:
+        """
+        Collect dummy cache tests.
+        """
+
         @staticmethod
-        def strategy_ids():
+        def strategy_ids() -> object:
+            """
+            Strategy ids.
+            """
             return ["S-001"]
 
     class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
         run_id = "R-001"
         run_started = 1_577_836_800_000_000_000
         run_finished = 1_577_836_801_000_000_000
@@ -160,15 +210,24 @@ def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch):
         cache = DummyCache()
 
         @staticmethod
-        def get_result():
+        def get_result() -> object:
+            """
+            Get result.
+            """
             return DummyResult()
 
         @staticmethod
-        def list_venues():
+        def list_venues() -> object:
+            """
+            List venues.
+            """
             return ["SIM"]
 
         @staticmethod
-        def generate_account_report(venue):
+        def generate_account_report(venue: Venue) -> object:
+            """
+            Generate account report.
+            """
             return pd.DataFrame(
                 {
                     "currency": ["USD", "USD"],
@@ -177,7 +236,10 @@ def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch):
                 index=pd.to_datetime(["2020-01-01", "2020-01-02"], utc=True),
             )
 
-    def capture_tearsheet_from_stats(**kwargs):
+    def capture_tearsheet_from_stats(**kwargs: object) -> str:
+        """
+        Capture tearsheet from stats.
+        """
         captured.update(kwargs)
         return "<html></html>"
 
@@ -203,10 +265,17 @@ def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch):
     assert captured["run_info"]["Backtest range"] == "1 days 00:00:00"
 
 
-def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch):
+def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test create tearsheet accepts backtest result and node.
+    """
     captured = {}
 
     class DummyResult:
+        """
+        Collect dummy result tests.
+        """
+
         run_config_id = "run-001"
         run_id = "R-001"
         run_started = 1_577_836_800_000_000_000
@@ -218,29 +287,46 @@ def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch):
         total_events = 3
         total_orders = 4
         total_positions = 5
-        stats_pnls = {"USD": {"PnL (total)": 12.5}, "AUD": {"PnL (total)": 1.0}}
-        stats_returns = {"Sharpe Ratio (252 days)": 1.23}
-        stats_general = {"Long Ratio": 0.5}
-        returns_series = {
+        stats_pnls: ClassVar[dict[str, object]] = {
+            "USD": {"PnL (total)": 12.5},
+            "AUD": {"PnL (total)": 1.0},
+        }
+        stats_returns: ClassVar[dict[str, object]] = {"Sharpe Ratio (252 days)": 1.23}
+        stats_general: ClassVar[dict[str, object]] = {"Long Ratio": 0.5}
+        returns_series: ClassVar[dict[str, object]] = {
             1_577_836_800_000_000_000: 0.01,
             1_577_923_200_000_000_000: -0.02,
         }
-        summary = {"account.SIM.id": "SIM-001"}
+        summary: ClassVar[dict[str, object]] = {"account.SIM.id": "SIM-001"}
 
     class DummyConfig:
+        """
+        Collect dummy config tests.
+        """
+
         id = "run-001"
         dispose_on_completion = False
 
     class DummyNode:
-        configs = [DummyConfig()]
+        """
+        Collect dummy node tests.
+        """
+
+        configs: ClassVar[list[object]] = [DummyConfig()]
 
         @staticmethod
-        def get_engine_cache(run_config_id):
+        def get_engine_cache(run_config_id: object) -> str:
+            """
+            Get engine cache.
+            """
             assert run_config_id == "run-001"
             return "cache"
 
         @staticmethod
-        def generate_account_report(run_config_id, account_id):
+        def generate_account_report(run_config_id: object, account_id: AccountId) -> object:
+            """
+            Generate account report.
+            """
             assert run_config_id == "run-001"
             assert str(account_id) == "SIM-001"
             return pd.DataFrame(
@@ -255,11 +341,17 @@ def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch):
             )
 
         @staticmethod
-        def generate_fills_report(run_config_id):
+        def generate_fills_report(run_config_id: object) -> object:
+            """
+            Generate fills report.
+            """
             assert run_config_id == "run-001"
             return pd.DataFrame()
 
-    def capture_tearsheet_from_stats(**kwargs):
+    def capture_tearsheet_from_stats(**kwargs: object) -> str:
+        """
+        Capture tearsheet from stats.
+        """
         captured.update(kwargs)
         return "<html></html>"
 
@@ -288,16 +380,32 @@ def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch):
     assert captured["engine"].cache == "cache"
 
 
-def test_create_tearsheet_rejects_disposed_node_state(monkeypatch):
+def test_create_tearsheet_rejects_disposed_node_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test create tearsheet rejects disposed node state.
+    """
+
     class DummyResult:
+        """
+        Collect dummy result tests.
+        """
+
         run_config_id = "run-001"
 
     class DummyConfig:
+        """
+        Collect dummy config tests.
+        """
+
         id = "run-001"
         dispose_on_completion = True
 
     class DummyNode:
-        configs = [DummyConfig()]
+        """
+        Collect dummy node tests.
+        """
+
+        configs: ClassVar[list[object]] = [DummyConfig()]
 
     monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", True)
 
@@ -310,9 +418,17 @@ def test_create_tearsheet_rejects_disposed_node_state(monkeypatch):
         )
 
 
-def test_result_account_info_filters_summary_balance_by_currency():
+def test_result_account_info_filters_summary_balance_by_currency() -> None:
+    """
+    Test result account info filters summary balance by currency.
+    """
+
     class DummyResult:
-        summary = {
+        """
+        Collect dummy result tests.
+        """
+
+        summary: ClassVar[dict[str, object]] = {
             "account.SIM.balance.USD.total": "110.0",
             "account.SIM.balance.AUD.total": "220.0",
         }
@@ -327,13 +443,25 @@ def test_result_account_info_filters_summary_balance_by_currency():
     assert account_info == {"Ending balance (SIM, USD)": "110.0"}
 
 
-def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filter(monkeypatch):
+def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Test create tearsheet does not aggregate mixed currency returns without filter.
+    """
     captured = []
 
     class DummyResult:
-        stats_pnls = {"USD": {"PnL (total)": 12.5}, "AUD": {"PnL (total)": 1.0}}
-        stats_returns = {"Sharpe Ratio (252 days)": 1.23}
-        stats_general = {"Long Ratio": 0.5}
+        """
+        Collect dummy result tests.
+        """
+
+        stats_pnls: ClassVar[dict[str, object]] = {
+            "USD": {"PnL (total)": 12.5},
+            "AUD": {"PnL (total)": 1.0},
+        }
+        stats_returns: ClassVar[dict[str, object]] = {"Sharpe Ratio (252 days)": 1.23}
+        stats_general: ClassVar[dict[str, object]] = {"Long Ratio": 0.5}
         elapsed_time_secs = 1.234
         iterations = 2
         total_events = 3
@@ -341,11 +469,22 @@ def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filt
         total_positions = 5
 
     class DummyCache:
+        """
+        Collect dummy cache tests.
+        """
+
         @staticmethod
-        def strategy_ids():
+        def strategy_ids() -> object:
+            """
+            Strategy ids.
+            """
             return ["S-001"]
 
     class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
         run_id = "R-001"
         run_started = 1_577_836_800_000_000_000
         run_finished = 1_577_836_801_000_000_000
@@ -354,15 +493,24 @@ def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filt
         cache = DummyCache()
 
         @staticmethod
-        def get_result():
+        def get_result() -> object:
+            """
+            Get result.
+            """
             return DummyResult()
 
         @staticmethod
-        def list_venues():
+        def list_venues() -> object:
+            """
+            List venues.
+            """
             return ["SIM_USD", "SIM_AUD"]
 
         @staticmethod
-        def generate_account_report(venue):
+        def generate_account_report(venue: Venue) -> object:
+            """
+            Generate account report.
+            """
             currency = "USD" if venue == "SIM_USD" else "AUD"
             return pd.DataFrame(
                 {
@@ -372,7 +520,10 @@ def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filt
                 index=pd.to_datetime(["2020-01-01", "2020-01-02"], utc=True),
             )
 
-    def capture_tearsheet_from_stats(**kwargs):
+    def capture_tearsheet_from_stats(**kwargs: object) -> str:
+        """
+        Capture tearsheet from stats.
+        """
         captured.append(kwargs)
         return "<html></html>"
 
@@ -388,7 +539,10 @@ def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filt
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_create_tearsheet_from_stats_returns_html():
+def test_create_tearsheet_from_stats_returns_html() -> None:
+    """
+    Test create tearsheet from stats returns html.
+    """
     returns = pd.Series(
         [0.01, -0.005, 0.002],
         index=pd.date_range("2020-01-01", periods=3, tz="UTC"),
@@ -409,7 +563,10 @@ def test_create_tearsheet_from_stats_returns_html():
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_create_tearsheet_from_stats_accepts_empty_chart_config():
+def test_create_tearsheet_from_stats_accepts_empty_chart_config() -> None:
+    """
+    Test create tearsheet from stats accepts empty chart config.
+    """
     html = create_tearsheet_from_stats(
         stats_pnls={"USD": {"PnL (total)": 100.0}},
         stats_returns={},
@@ -422,14 +579,14 @@ def test_create_tearsheet_from_stats_accepts_empty_chart_config():
     assert html is not None
 
 
-def _sample_returns():
+def _sample_returns() -> object:
     return pd.Series(
         [0.01, -0.005, 0.002],
         index=pd.date_range("2020-01-01", periods=3, tz="UTC"),
     )
 
 
-def _yearly_returns():
+def _yearly_returns() -> object:
     return pd.Series(
         [0.10, -0.05],
         index=pd.to_datetime(["2020-01-01", "2021-01-01"], utc=True),
@@ -485,12 +642,15 @@ def _yearly_returns():
     ],
 )
 def test_standalone_chart_builders_return_expected_traces(
-    builder,
-    returns_factory,
-    kwargs_factory,
-    trace_types,
-    trace_names,
-):
+    builder: object,
+    returns_factory: object,
+    kwargs_factory: object,
+    trace_types: object,
+    trace_names: object,
+) -> None:
+    """
+    Test standalone chart builders return expected traces.
+    """
     fig = builder(returns_factory(), **kwargs_factory())
 
     assert [trace.type for trace in fig.data] == trace_types
@@ -520,7 +680,15 @@ def test_standalone_chart_builders_return_expected_traces(
         (create_bars_with_fills, (object(), object()), {}),
     ],
 )
-def test_public_visualization_builders_require_plotly(monkeypatch, builder, args, kwargs):
+def test_public_visualization_builders_require_plotly(
+    monkeypatch: pytest.MonkeyPatch,
+    builder: object,
+    args: tuple[object, ...],
+    kwargs: object,
+) -> None:
+    """
+    Test public visualization builders require plotly.
+    """
     monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", False)
 
     with pytest.raises(ImportError, match="plotly is required"):
@@ -528,16 +696,34 @@ def test_public_visualization_builders_require_plotly(monkeypatch, builder, args
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_create_bars_with_fills_uses_engine_fills_report():
+def test_create_bars_with_fills_uses_engine_fills_report() -> None:
+    """
+    Test create bars with fills uses engine fills report.
+    """
+
     class DummyBarType:
+        """
+        Collect dummy bar type tests.
+        """
+
         instrument_id = "AUD/USD.SIM"
 
-        def __str__(self):
+        def __str__(self) -> str:
+            """
+            Str.
+            """
             return "AUD/USD.SIM-1-MINUTE-BID-INTERNAL"
 
     class DummyBar:
+        """
+        Collect dummy bar tests.
+        """
+
         @staticmethod
-        def to_dict():
+        def to_dict() -> object:
+            """
+            To dict.
+            """
             return {
                 "open": "1.00000",
                 "high": "1.00010",
@@ -547,15 +733,29 @@ def test_create_bars_with_fills_uses_engine_fills_report():
             }
 
     class DummyCache:
+        """
+        Collect dummy cache tests.
+        """
+
         @staticmethod
-        def bars(bar_type):
+        def bars(bar_type: object) -> object:
+            """
+            Bars.
+            """
             return [DummyBar()]
 
     class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
         cache = DummyCache()
 
         @staticmethod
-        def generate_fills_report():
+        def generate_fills_report() -> object:
+            """
+            Generate fills report.
+            """
             return pd.DataFrame(
                 {
                     "strategy_id": ["S-001", "S-001"],
@@ -579,16 +779,34 @@ def test_create_bars_with_fills_uses_engine_fills_report():
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_create_bars_with_fills_handles_empty_fills_report():
+def test_create_bars_with_fills_handles_empty_fills_report() -> None:
+    """
+    Test create bars with fills handles empty fills report.
+    """
+
     class DummyBarType:
+        """
+        Collect dummy bar type tests.
+        """
+
         instrument_id = "AUD/USD.SIM"
 
-        def __str__(self):
+        def __str__(self) -> str:
+            """
+            Str.
+            """
             return "AUD/USD.SIM-1-MINUTE-BID-INTERNAL"
 
     class DummyBar:
+        """
+        Collect dummy bar tests.
+        """
+
         @staticmethod
-        def to_dict():
+        def to_dict() -> object:
+            """
+            To dict.
+            """
             return {
                 "open": "1.00000",
                 "high": "1.00010",
@@ -598,15 +816,29 @@ def test_create_bars_with_fills_handles_empty_fills_report():
             }
 
     class DummyCache:
+        """
+        Collect dummy cache tests.
+        """
+
         @staticmethod
-        def bars(bar_type):
+        def bars(bar_type: object) -> object:
+            """
+            Bars.
+            """
             return [DummyBar()]
 
     class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
         cache = DummyCache()
 
         @staticmethod
-        def generate_fills_report():
+        def generate_fills_report() -> object:
+            """
+            Generate fills report.
+            """
             return pd.DataFrame()
 
     fig = create_bars_with_fills(DummyEngine(), DummyBarType(), output_path=None)
@@ -616,7 +848,10 @@ def test_create_bars_with_fills_handles_empty_fills_report():
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_render_bars_with_fills_auto_discovers_bar_type_by_aggregation_source():
+def test_render_bars_with_fills_auto_discovers_bar_type_by_aggregation_source() -> None:
+    """
+    Test render bars with fills auto discovers bar type by aggregation source.
+    """
     from plotly.subplots import make_subplots
 
     from nautilus_trader.model import AggregationSource
@@ -624,8 +859,15 @@ def test_render_bars_with_fills_auto_discovers_bar_type_by_aggregation_source():
     bar_type_str = "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL"
 
     class DummyBar:
+        """
+        Collect dummy bar tests.
+        """
+
         @staticmethod
-        def to_dict():
+        def to_dict() -> object:
+            """
+            To dict.
+            """
             return {
                 "open": "1.00000",
                 "high": "1.00010",
@@ -635,20 +877,37 @@ def test_render_bars_with_fills_auto_discovers_bar_type_by_aggregation_source():
             }
 
     class DummyCache:
+        """
+        Collect dummy cache tests.
+        """
+
         @staticmethod
-        def bar_types(aggregation_source):
+        def bar_types(aggregation_source: object) -> object:
+            """
+            Bar types.
+            """
             # v2 requires aggregation_source; a no-argument call raises TypeError.
             return [bar_type_str] if aggregation_source == AggregationSource.EXTERNAL else []
 
         @staticmethod
-        def bars(bar_type):
+        def bars(bar_type: object) -> object:
+            """
+            Bars.
+            """
             return [DummyBar()]
 
     class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
         cache = DummyCache()
 
         @staticmethod
-        def generate_fills_report():
+        def generate_fills_report() -> object:
+            """
+            Generate fills report.
+            """
             return pd.DataFrame()
 
     fig = make_subplots(rows=1, cols=1)
@@ -658,7 +917,10 @@ def test_render_bars_with_fills_auto_discovers_bar_type_by_aggregation_source():
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_create_tearsheet_from_stats_exports_static_image(tmp_path):
+def test_create_tearsheet_from_stats_exports_static_image(tmp_path: Path) -> None:
+    """
+    Test create tearsheet from stats exports static image.
+    """
     pytest.importorskip("kaleido")
 
     returns = pd.Series(
@@ -688,7 +950,7 @@ def test_create_tearsheet_from_stats_exports_static_image(tmp_path):
     assert output_path.stat().st_size > 0
 
 
-def _run_backtest_with_fills():
+def _run_backtest_with_fills() -> object:
     from nautilus_trader.backtest import BacktestEngine
     from nautilus_trader.backtest import BacktestEngineConfig
     from nautilus_trader.model import AccountType
@@ -746,7 +1008,7 @@ def _run_backtest_with_fills():
     return engine
 
 
-def _run_issue_3899_backtest():
+def _run_issue_3899_backtest() -> object:
     from nautilus_trader.backtest import BacktestEngine
     from nautilus_trader.backtest import BacktestEngineConfig
     from nautilus_trader.model import AccountType
@@ -769,16 +1031,29 @@ def _run_issue_3899_backtest():
     from nautilus_trader.trading import Strategy
 
     class BuyHoldThenSellStrategy(Strategy):
-        def __init__(self):
+        """
+        Collect buy hold then sell strategy tests.
+        """
+
+        def __init__(self) -> None:
+            """
+            Initialize the helper.
+            """
             super().__init__()
             self.instrument = None
             self.bar_type = None
             self.day_index = 0
 
-        def on_start(self):
+        def on_start(self) -> None:
+            """
+            On start.
+            """
             self.subscribe_bars(self.bar_type)
 
-        def on_bar(self, bar):
+        def on_bar(self, _bar: object) -> None:
+            """
+            On bar.
+            """
             self.day_index += 1
             if self.day_index not in {1, 7}:
                 return
@@ -850,7 +1125,10 @@ def _run_issue_3899_backtest():
     return engine, timestamps[-1].value
 
 
-def test_issue_3899_equity_curve_tracks_open_position_mark_to_market():
+def test_issue_3899_equity_curve_tracks_open_position_mark_to_market() -> None:
+    """
+    Test issue 3899 equity curve tracks open position mark to market.
+    """
     engine, final_ts = _run_issue_3899_backtest()
 
     try:
@@ -873,7 +1151,10 @@ def test_issue_3899_equity_curve_tracks_open_position_mark_to_market():
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_create_tearsheet_end_to_end_real_engine():
+def test_create_tearsheet_end_to_end_real_engine() -> None:
+    """
+    Test create tearsheet end to end real engine.
+    """
     engine = _run_backtest_with_fills()
 
     try:
@@ -918,7 +1199,10 @@ def test_create_tearsheet_end_to_end_real_engine():
     assert engine.cache.positions_open_count() == 0
 
 
-def test_to_returns_series_normalizes_inputs():
+def test_to_returns_series_normalizes_inputs() -> None:
+    """
+    Test to returns series normalizes inputs.
+    """
     # None and empty inputs collapse to an empty float Series.
     assert tearsheet._to_returns_series(None).empty
     assert tearsheet._to_returns_series(pd.Series(dtype=float)).empty
@@ -945,45 +1229,88 @@ def test_to_returns_series_normalizes_inputs():
     assert normalized.iloc[0] == pytest.approx(0.01)
 
 
-def _account_report(rows):
+def _account_report(rows: object) -> object:
     return pd.DataFrame(
         {"currency": [currency for _, currency, _ in rows], "total": [total for *_, total in rows]},
         index=pd.to_datetime([ts for ts, _, _ in rows], utc=True),
     )
 
 
-def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots():
+def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots() -> None:
+    """
+    Test resolve tearsheet returns prefers mark to market snapshots.
+    """
+
     class DummyCurrency:
+        """
+        Collect dummy currency tests.
+        """
+
         code = "USD"
 
     class DummyMoney:
+        """
+        Collect dummy money tests.
+        """
+
         currency = DummyCurrency()
 
-        def __init__(self, value):
+        def __init__(self, value: object) -> None:
+            """
+            Initialize the helper.
+            """
             self.value = value
 
-        def as_double(self):
+        def as_double(self) -> object:
+            """
+            As double.
+            """
             return self.value
 
     class DummySnapshot:
+        """
+        Collect dummy snapshot tests.
+        """
+
         base_currency_equity = None
 
-        def __init__(self, value, ts_event, unpriced=False):
+        def __init__(self, value: object, ts_event: object, unpriced: object = False) -> None:
+            """
+            Initialize the helper.
+            """
             self.total_equity = [DummyMoney(value)]
             self.ts_event = ts_event
             self.unpriced_instruments = ["KO.XNAS"] if unpriced else []
 
     class DummyAccount:
+        """
+        Collect dummy account tests.
+        """
+
         id = "SIM-001"
 
     class DummyCache:
+        """
+        Collect dummy cache tests.
+        """
+
         @staticmethod
-        def account_for_venue(venue):
+        def account_for_venue(venue: Venue) -> object:
+            """
+            Account for venue.
+            """
             return DummyAccount()
 
     class DummyPortfolio:
+        """
+        Collect dummy portfolio tests.
+        """
+
         @staticmethod
-        def snapshots(account_id):
+        def snapshots(account_id: AccountId) -> object:
+            """
+            Snapshots.
+            """
             return [
                 DummySnapshot(100.0, 1_577_880_000_000_000_000),
                 DummySnapshot(105.0, 1_577_901_600_000_000_000),
@@ -993,15 +1320,25 @@ def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots():
             ]
 
     class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
         cache = DummyCache()
         portfolio = DummyPortfolio()
 
         @staticmethod
-        def list_venues():
+        def list_venues() -> object:
+            """
+            List venues.
+            """
             return ["SIM"]
 
         @staticmethod
-        def generate_account_report(venue):
+        def generate_account_report(venue: Venue) -> object:
+            """
+            Generate account report.
+            """
             return _account_report(
                 [("2020-01-01", "USD", "100.0"), ("2020-01-02", "USD", "110.0")],
             )
@@ -1012,38 +1349,87 @@ def test_resolve_tearsheet_returns_prefers_mark_to_market_snapshots():
     assert returns.tolist() == pytest.approx([0.10, 0.0, 0.10])
 
 
-def test_calculate_snapshot_returns_rejects_mixed_account_currencies():
+def test_calculate_snapshot_returns_rejects_mixed_account_currencies() -> None:
+    """
+    Test calculate snapshot returns rejects mixed account currencies.
+    """
+
     class DummyCurrency:
-        def __init__(self, code):
+        """
+        Collect dummy currency tests.
+        """
+
+        def __init__(self, code: object) -> None:
+            """
+            Initialize the helper.
+            """
             self.code = code
 
     class DummyMoney:
-        def __init__(self, value, currency):
+        """
+        Collect dummy money tests.
+        """
+
+        def __init__(self, value: object, currency: object) -> None:
+            """
+            Initialize the helper.
+            """
             self.value = value
             self.currency = DummyCurrency(currency)
 
-        def as_double(self):
+        def as_double(self) -> object:
+            """
+            As double.
+            """
             return self.value
 
     class DummySnapshot:
+        """
+        Collect dummy snapshot tests.
+        """
+
         base_currency_equity = None
 
-        def __init__(self, value, currency, ts_event):
+        def __init__(self, value: object, currency: object, ts_event: object) -> None:
+            """
+            Initialize the helper.
+            """
             self.total_equity = [DummyMoney(value, currency)]
             self.ts_event = ts_event
 
     class DummyAccount:
-        def __init__(self, account_id):
+        """
+        Collect dummy account tests.
+        """
+
+        def __init__(self, account_id: AccountId) -> None:
+            """
+            Initialize the helper.
+            """
             self.id = account_id
 
     class DummyCache:
+        """
+        Collect dummy cache tests.
+        """
+
         @staticmethod
-        def account_for_venue(venue):
+        def account_for_venue(venue: Venue) -> object:
+            """
+            Account for venue.
+            """
             return DummyAccount(venue)
 
     class DummyPortfolio:
+        """
+        Collect dummy portfolio tests.
+        """
+
         @staticmethod
-        def snapshots(account_id):
+        def snapshots(account_id: AccountId) -> object:
+            """
+            Snapshots.
+            """
             currency = "USD" if account_id == "SIM_USD" else "AUD"
             return [
                 DummySnapshot(100.0, currency, 1_577_836_800_000_000_000),
@@ -1051,35 +1437,56 @@ def test_calculate_snapshot_returns_rejects_mixed_account_currencies():
             ]
 
     class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
         cache = DummyCache()
         portfolio = DummyPortfolio()
 
         @staticmethod
-        def list_venues():
+        def list_venues() -> object:
+            """
+            List venues.
+            """
             return ["SIM_USD", "SIM_AUD"]
 
     assert tearsheet._calculate_snapshot_returns(engine=DummyEngine()) is None
 
 
-def test_resolve_snapshot_equity_uses_requested_total_currency():
+def test_resolve_snapshot_equity_uses_requested_total_currency() -> None:
+    """
+    Test resolve snapshot equity uses requested total currency.
+    """
     from nautilus_trader.model import Currency
     from nautilus_trader.model import Money
 
     class DummySnapshot:
+        """
+        Collect dummy snapshot tests.
+        """
+
         base_currency_equity = Money(90.0, Currency.from_str("EUR"))
-        total_equity = [Money(100.0, Currency.from_str("USD"))]
+        total_equity: ClassVar[list[object]] = [Money(100.0, Currency.from_str("USD"))]
 
     assert tearsheet._resolve_snapshot_equity(DummySnapshot(), "USD") == (100.0, "USD")
     assert tearsheet._resolve_snapshot_equity(DummySnapshot(), "AUD") is None
 
 
-def test_resolve_snapshot_equity_rejects_implicit_multi_currency_total():
+def test_resolve_snapshot_equity_rejects_implicit_multi_currency_total() -> None:
+    """
+    Test resolve snapshot equity rejects implicit multi currency total.
+    """
     from nautilus_trader.model import Currency
     from nautilus_trader.model import Money
 
     class DummySnapshot:
+        """
+        Collect dummy snapshot tests.
+        """
+
         base_currency_equity = Money(100.0, Currency.from_str("USD"))
-        total_equity = [
+        total_equity: ClassVar[list[object]] = [
             Money(100.0, Currency.from_str("USD")),
             Money(50.0, Currency.from_str("AUD")),
         ]
@@ -1087,14 +1494,28 @@ def test_resolve_snapshot_equity_rejects_implicit_multi_currency_total():
     assert tearsheet._resolve_snapshot_equity(DummySnapshot(), None) is None
 
 
-def test_calculate_account_returns_rejects_single_venue_mixed_currency():
+def test_calculate_account_returns_rejects_single_venue_mixed_currency() -> None:
+    """
+    Test calculate account returns rejects single venue mixed currency.
+    """
+
     class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
         @staticmethod
-        def list_venues():
+        def list_venues() -> object:
+            """
+            List venues.
+            """
             return ["SIM"]
 
         @staticmethod
-        def generate_account_report(venue):
+        def generate_account_report(venue: Venue) -> object:
+            """
+            Generate account report.
+            """
             return _account_report(
                 [("2020-01-01", "USD", "100.0"), ("2020-01-02", "EUR", "200.0")],
             )
@@ -1105,7 +1526,10 @@ def test_calculate_account_returns_rejects_single_venue_mixed_currency():
     assert tearsheet._resolve_tearsheet_returns(engine=engine).empty
 
 
-def test_calculate_account_returns_aggregates_same_currency_across_venues():
+def test_calculate_account_returns_aggregates_same_currency_across_venues() -> None:
+    """
+    Test calculate account returns aggregates same currency across venues.
+    """
     reports = {
         "SIM_A": _account_report(
             [("2020-01-01", "USD", "100.0"), ("2020-01-02", "USD", "110.0")],
@@ -1116,12 +1540,22 @@ def test_calculate_account_returns_aggregates_same_currency_across_venues():
     }
 
     class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
         @staticmethod
-        def list_venues():
+        def list_venues() -> object:
+            """
+            List venues.
+            """
             return list(reports)
 
         @staticmethod
-        def generate_account_report(venue):
+        def generate_account_report(venue: Venue) -> object:
+            """
+            Generate account report.
+            """
             return reports[venue]
 
     returns = tearsheet._calculate_account_returns(engine=DummyEngine())
@@ -1131,7 +1565,10 @@ def test_calculate_account_returns_aggregates_same_currency_across_venues():
     assert returns.iloc[0] == pytest.approx(160 / 150 - 1)
 
 
-def test_normalize_theme_config_fills_table_colors():
+def test_normalize_theme_config_fills_table_colors() -> None:
+    """
+    Test normalize theme config fills table colors.
+    """
     minimal = {
         "template": "plotly_white",
         "colors": {
@@ -1152,7 +1589,10 @@ def test_normalize_theme_config_fills_table_colors():
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_create_tearsheet_from_stats_renders_per_currency_pnl():
+def test_create_tearsheet_from_stats_renders_per_currency_pnl() -> None:
+    """
+    Test create tearsheet from stats renders per currency pnl.
+    """
     html = create_tearsheet_from_stats(
         stats_pnls={"USD": {"PnL (total)": 100.0}, "AUD": {"PnL (total)": -5.0}},
         stats_returns={},
@@ -1168,10 +1608,20 @@ def test_create_tearsheet_from_stats_renders_per_currency_pnl():
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_register_tearsheet_chart_renders_custom_chart_in_grid():
+def test_register_tearsheet_chart_renders_custom_chart_in_grid() -> None:
+    """
+    Test register tearsheet chart renders custom chart in grid.
+    """
     import plotly.graph_objects as go
 
-    def _render_custom(fig, row, col, returns, theme_config, **kwargs):
+    def _render_custom(
+        fig: object,
+        row: object,
+        col: object,
+        returns: object,
+        theme_config: object,
+        **kwargs: object,
+    ) -> None:
         fig.add_trace(
             go.Scatter(x=[1, 2, 3], y=[3, 2, 1], name="CustomSignal"),
             row=row,
@@ -1196,7 +1646,10 @@ def test_register_tearsheet_chart_renders_custom_chart_in_grid():
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_tearsheet_unknown_chart_name_raises_with_suggestion():
+def test_tearsheet_unknown_chart_name_raises_with_suggestion() -> None:
+    """
+    Test tearsheet unknown chart name raises with suggestion.
+    """
     # An unregistered chart name fails loud with a suggestion rather than
     # silently rendering an empty titled cell.
     with pytest.raises(KeyError, match="Did you mean: equity"):
@@ -1211,13 +1664,19 @@ def test_tearsheet_unknown_chart_name_raises_with_suggestion():
 
 
 @pytest.mark.parametrize("num_charts", [9, 11, 16])
-def test_calculate_grid_layout_grows_to_fit_all_charts(num_charts):
+def test_calculate_grid_layout_grows_to_fit_all_charts(num_charts: object) -> None:
+    """
+    Test calculate grid layout grows to fit all charts.
+    """
     rows, cols, *_ = tearsheet._calculate_grid_layout([TearsheetEquityChart()] * num_charts)
 
     assert rows * cols >= num_charts
 
 
-def test_calculate_grid_layout_raises_when_layout_too_small():
+def test_calculate_grid_layout_raises_when_layout_too_small() -> None:
+    """
+    Test calculate grid layout raises when layout too small.
+    """
     from nautilus_trader.analysis.config import GridLayout
 
     charts = [TearsheetEquityChart(), TearsheetEquityChart()]
@@ -1228,10 +1687,20 @@ def test_calculate_grid_layout_raises_when_layout_too_small():
 
 
 @pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
-def test_create_tearsheet_renders_chart_beyond_default_grid():
+def test_create_tearsheet_renders_chart_beyond_default_grid() -> None:
+    """
+    Test create tearsheet renders chart beyond default grid.
+    """
     import plotly.graph_objects as go
 
-    def _render_ninth(fig, row, col, returns, theme_config, **kwargs):
+    def _render_ninth(
+        fig: object,
+        row: object,
+        col: object,
+        returns: object,
+        theme_config: object,
+        **kwargs: object,
+    ) -> None:
         fig.add_trace(go.Scatter(x=[1], y=[1], name="NinthChart"), row=row, col=col)
 
     try:
@@ -1255,7 +1724,10 @@ def test_create_tearsheet_renders_chart_beyond_default_grid():
     assert any(trace.name == "NinthChart" for trace in fig.data)
 
 
-def test_register_tearsheet_chart_validates_inputs():
+def test_register_tearsheet_chart_validates_inputs() -> None:
+    """
+    Test register tearsheet chart validates inputs.
+    """
     with pytest.raises(ValueError, match="cannot be empty"):
         register_tearsheet_chart("", "scatter", "X", lambda **kwargs: None)
 
@@ -1264,7 +1736,10 @@ def test_register_tearsheet_chart_validates_inputs():
 
 
 @pytest.fixture
-def two_month_returns():
+def two_month_returns() -> object:
+    """
+    Two month returns.
+    """
     # Two +10% single-day returns, one per consecutive month: the equity index ends
     # each month at 1.10 then 1.21, so compounded monthly returns are [10%, 10%] and
     # simple (fixed-base) monthly returns are [10%, 11%], both totalling 21%.
@@ -1272,19 +1747,28 @@ def two_month_returns():
     return pd.Series([0.10, 0.10], index=index)
 
 
-def test_aggregate_period_returns_compounding_uses_running_base(two_month_returns):
+def test_aggregate_period_returns_compounding_uses_running_base(two_month_returns: object) -> None:
+    """
+    Test aggregate period returns compounding uses running base.
+    """
     result = tearsheet._aggregate_period_returns(two_month_returns, "ME", compounding=True)
 
     assert result.tolist() == pytest.approx([10.0, 10.0])
 
 
-def test_aggregate_period_returns_simple_uses_fixed_initial_base(two_month_returns):
+def test_aggregate_period_returns_simple_uses_fixed_initial_base(two_month_returns: object) -> None:
+    """
+    Test aggregate period returns simple uses fixed initial base.
+    """
     result = tearsheet._aggregate_period_returns(two_month_returns, "ME", compounding=False)
 
     assert result.tolist() == pytest.approx([10.0, 11.0])
 
 
-def test_aggregate_period_returns_simple_sums_to_total_return(two_month_returns):
+def test_aggregate_period_returns_simple_sums_to_total_return(two_month_returns: object) -> None:
+    """
+    Test aggregate period returns simple sums to total return.
+    """
     total = ((1 + two_month_returns).prod() - 1) * 100  # 21%
 
     simple = tearsheet._aggregate_period_returns(two_month_returns, "ME", compounding=False)
@@ -1294,7 +1778,10 @@ def test_aggregate_period_returns_simple_sums_to_total_return(two_month_returns)
     assert ((1 + compounded / 100).prod() - 1) * 100 == pytest.approx(total)
 
 
-def test_aggregate_period_returns_simple_is_order_independent():
+def test_aggregate_period_returns_simple_is_order_independent() -> None:
+    """
+    Test aggregate period returns simple is order independent.
+    """
     # Same two returns as the sorted fixture, but rows out of date order
     unsorted = pd.Series([0.10, 0.10], index=pd.to_datetime(["2024-02-29", "2024-01-31"]))
 
@@ -1304,7 +1791,10 @@ def test_aggregate_period_returns_simple_is_order_independent():
 
 
 @pytest.mark.parametrize("compounding", [True, False])
-def test_aggregate_period_returns_empty_interior_period_is_zero(compounding):
+def test_aggregate_period_returns_empty_interior_period_is_zero(compounding: object) -> None:
+    """
+    Test aggregate period returns empty interior period is zero.
+    """
     # Jan and Mar have returns, Feb has none (an empty interior month)
     returns = pd.Series([0.10, 0.10], index=pd.to_datetime(["2024-01-31", "2024-03-31"]))
 
@@ -1315,7 +1805,10 @@ def test_aggregate_period_returns_empty_interior_period_is_zero(compounding):
     assert not result.isna().any()
 
 
-def test_aggregate_period_returns_single_period_modes_match():
+def test_aggregate_period_returns_single_period_modes_match() -> None:
+    """
+    Test aggregate period returns single period modes match.
+    """
     returns = pd.Series([0.10], index=pd.to_datetime(["2024-01-31"]))
 
     compounded = tearsheet._aggregate_period_returns(returns, "ME", compounding=True)
@@ -1325,17 +1818,26 @@ def test_aggregate_period_returns_single_period_modes_match():
     assert simple.tolist() == pytest.approx([10.0])
 
 
-def test_monthly_returns_chart_compounding_kwarg():
+def test_monthly_returns_chart_compounding_kwarg() -> None:
+    """
+    Test monthly returns chart compounding kwarg.
+    """
     assert TearsheetMonthlyReturnsChart().kwargs() == {"compounding": True}
     assert TearsheetMonthlyReturnsChart(compounding=False).kwargs() == {"compounding": False}
 
 
-def test_yearly_returns_chart_compounding_kwarg():
+def test_yearly_returns_chart_compounding_kwarg() -> None:
+    """
+    Test yearly returns chart compounding kwarg.
+    """
     assert TearsheetYearlyReturnsChart().kwargs() == {"compounding": True}
     assert TearsheetYearlyReturnsChart(compounding=False).kwargs() == {"compounding": False}
 
 
-def test_create_monthly_returns_heatmap_simple_default_title(two_month_returns):
+def test_create_monthly_returns_heatmap_simple_default_title(two_month_returns: object) -> None:
+    """
+    Test create monthly returns heatmap simple default title.
+    """
     compounded = create_monthly_returns_heatmap(two_month_returns)
     simple = create_monthly_returns_heatmap(two_month_returns, compounding=False)
 
@@ -1343,7 +1845,10 @@ def test_create_monthly_returns_heatmap_simple_default_title(two_month_returns):
     assert simple.layout.title.text == "Monthly Returns (% of initial capital)"
 
 
-def test_create_yearly_returns_simple_default_title(two_month_returns):
+def test_create_yearly_returns_simple_default_title(two_month_returns: object) -> None:
+    """
+    Test create yearly returns simple default title.
+    """
     compounded = create_yearly_returns(two_month_returns)
     simple = create_yearly_returns(two_month_returns, compounding=False)
 
@@ -1351,13 +1856,19 @@ def test_create_yearly_returns_simple_default_title(two_month_returns):
     assert simple.layout.title.text == "Yearly Returns (% of initial capital)"
 
 
-def test_create_monthly_returns_heatmap_explicit_title_preserved(two_month_returns):
+def test_create_monthly_returns_heatmap_explicit_title_preserved(two_month_returns: object) -> None:
+    """
+    Test create monthly returns heatmap explicit title preserved.
+    """
     fig = create_monthly_returns_heatmap(two_month_returns, compounding=False, title="Custom")
 
     assert fig.layout.title.text == "Custom"
 
 
-def test_tearsheet_figure_routes_compounding_flag_to_renderer(two_month_returns):
+def test_tearsheet_figure_routes_compounding_flag_to_renderer(two_month_returns: object) -> None:
+    """
+    Test tearsheet figure routes compounding flag to renderer.
+    """
     config = TearsheetConfig(charts=[TearsheetMonthlyReturnsChart(compounding=False)])
 
     fig = tearsheet._create_tearsheet_figure(
@@ -1375,7 +1886,13 @@ def test_tearsheet_figure_routes_compounding_flag_to_renderer(two_month_returns)
     assert heatmaps[0].z[0] == pytest.approx([10.0, 11.0])
 
 
-def test_create_tearsheet_figure_requires_plotly(monkeypatch, two_month_returns):
+def test_create_tearsheet_figure_requires_plotly(
+    monkeypatch: pytest.MonkeyPatch,
+    two_month_returns: object,
+) -> None:
+    """
+    Test create tearsheet figure requires plotly.
+    """
     monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", False)
 
     with pytest.raises(ImportError, match="plotly is required"):

@@ -12,11 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test configs behavior.
+"""
 
-import nautilus_trader.network as network
+from nautilus_trader import network
 
 
 def test_network_exposes_transport_backend_config_only() -> None:
+    """
+    Test network exposes transport backend config only.
+    """
     public_names = {name for name in vars(network) if not name.startswith("_")}
 
     assert public_names == {"TransportBackend"}

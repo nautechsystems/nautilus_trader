@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test fixed arithmetic behavior.
+"""
 
 import math
 import sys
@@ -131,19 +134,40 @@ FLOAT_INFINITY_CASES = [
 ]
 
 
-def make_value(type_, value, *, precision=0, currency=USD):
+def make_value(
+    type_: type,
+    value: object,
+    *,
+    precision: object = 0,
+    currency: object = USD,
+) -> object:
+    """
+    Make value.
+    """
     if type_ is Money:
         return Money(value, currency)
     return type_(value, precision)
 
 
-def make_raw_value(type_, raw, *, precision=FIXED_PRECISION, currency=TST):
+def make_raw_value(
+    type_: type,
+    raw: object,
+    *,
+    precision: object = FIXED_PRECISION,
+    currency: object = TST,
+) -> object:
+    """
+    Make raw value.
+    """
     if type_ is Money:
         return Money.from_raw(raw, currency)
     return type_.from_raw(raw, precision)
 
 
-def make_operand(type_, kind, value):
+def make_operand(type_: type, kind: object, value: object) -> object:
+    """
+    Make operand.
+    """
     if kind == "same_type":
         return make_value(type_, value)
     if kind == "decimal":
@@ -162,13 +186,16 @@ def make_operand(type_, kind, value):
     ARITHMETIC_CASES,
 )
 def test_arithmetic_dunder_supported_branches(
-    type_,
-    operand_kind,
-    dunder,
-    receiver_value,
-    operand_value,
-    expected_value,
-):
+    type_: type,
+    operand_kind: object,
+    dunder: str,
+    receiver_value: object,
+    operand_value: object,
+    expected_value: object,
+) -> None:
+    """
+    Test arithmetic dunder supported branches.
+    """
     receiver = make_value(type_, receiver_value)
     operand = make_operand(type_, operand_kind, operand_value)
 
@@ -195,12 +222,15 @@ def test_arithmetic_dunder_supported_branches(
     FRACTIONAL_DECIMAL_CASES,
 )
 def test_arithmetic_dunder_fractional_decimal_branch(
-    type_,
-    dunder,
-    receiver_value,
-    operand_value,
-    expected_value,
-):
+    type_: type,
+    dunder: str,
+    receiver_value: object,
+    operand_value: object,
+    expected_value: object,
+) -> None:
+    """
+    Test arithmetic dunder fractional decimal branch.
+    """
     receiver = make_value(
         type_,
         Decimal(receiver_value),
@@ -232,7 +262,14 @@ def test_arithmetic_dunder_fractional_decimal_branch(
         pytest.param("__rmod__", 1, id="rmod"),
     ],
 )
-def test_arithmetic_dunder_bool_uses_decimal_branch(type_, dunder, expected):
+def test_arithmetic_dunder_bool_uses_decimal_branch(
+    type_: type,
+    dunder: str,
+    expected: object,
+) -> None:
+    """
+    Test arithmetic dunder bool uses decimal branch.
+    """
     result = getattr(make_value(type_, 2), dunder)(True)
 
     assert type(result) is Decimal
@@ -241,7 +278,10 @@ def test_arithmetic_dunder_bool_uses_decimal_branch(type_, dunder, expected):
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", ["__add__", "__radd__"])
-def test_arithmetic_dunder_large_int_uses_decimal_string_fallback(type_, dunder):
+def test_arithmetic_dunder_large_int_uses_decimal_string_fallback(type_: type, dunder: str) -> None:
+    """
+    Test arithmetic dunder large int uses decimal string fallback.
+    """
     result = getattr(make_value(type_, 1), dunder)(10**20)
 
     assert type(result) is Decimal
@@ -251,7 +291,14 @@ def test_arithmetic_dunder_large_int_uses_decimal_string_fallback(type_, dunder)
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("operand_kind", OPERAND_CASES)
 @pytest.mark.parametrize("dunder", ZERO_DIVISOR_DUNDERS)
-def test_arithmetic_dunder_zero_divisor_raises(type_, operand_kind, dunder):
+def test_arithmetic_dunder_zero_divisor_raises(
+    type_: type,
+    operand_kind: object,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder zero divisor raises.
+    """
     reflected = dunder.startswith("__r")
     receiver = make_value(type_, 0 if reflected else 1)
     operand = make_operand(type_, operand_kind, 1 if reflected else 0)
@@ -264,7 +311,10 @@ def test_arithmetic_dunder_zero_divisor_raises(type_, operand_kind, dunder):
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", ZERO_DIVISOR_DUNDERS)
-def test_arithmetic_dunder_bool_zero_divisor_raises(type_, dunder):
+def test_arithmetic_dunder_bool_zero_divisor_raises(type_: type, dunder: str) -> None:
+    """
+    Test arithmetic dunder bool zero divisor raises.
+    """
     reflected = dunder.startswith("__r")
     receiver = make_value(type_, 0 if reflected else 1)
     operand = bool(reflected)
@@ -278,7 +328,14 @@ def test_arithmetic_dunder_bool_zero_divisor_raises(type_, dunder):
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("zero", [-0.0, Decimal("-0"), "-0"])
 @pytest.mark.parametrize("dunder", DIRECT_ZERO_DIVISOR_DUNDERS)
-def test_arithmetic_dunder_signed_zero_divisor_raises(type_, zero, dunder):
+def test_arithmetic_dunder_signed_zero_divisor_raises(
+    type_: type,
+    zero: object,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder signed zero divisor raises.
+    """
     with pytest.raises(ZeroDivisionError) as exc_info:
         getattr(make_value(type_, 1), dunder)(zero)
 
@@ -289,11 +346,14 @@ def test_arithmetic_dunder_signed_zero_divisor_raises(type_, zero, dunder):
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", ARITHMETIC_DUNDERS)
 def test_arithmetic_dunder_incompatible_operand_raises(
-    type_,
-    operand,
-    expected_type,
-    dunder,
-):
+    type_: type,
+    operand: object,
+    expected_type: type,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder incompatible operand raises.
+    """
     with pytest.raises(TypeError) as exc_info:
         getattr(make_value(type_, 1), dunder)(operand)
 
@@ -312,7 +372,14 @@ def test_arithmetic_dunder_incompatible_operand_raises(
     ],
 )
 @pytest.mark.parametrize("dunder", ARITHMETIC_DUNDERS)
-def test_arithmetic_dunder_other_fixed_type_raises(type_, operand_type, dunder):
+def test_arithmetic_dunder_other_fixed_type_raises(
+    type_: type,
+    operand_type: object,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder other fixed type raises.
+    """
     operand = make_value(operand_type, 1)
 
     with pytest.raises(TypeError) as exc_info:
@@ -323,7 +390,10 @@ def test_arithmetic_dunder_other_fixed_type_raises(type_, operand_type, dunder):
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", ARITHMETIC_DUNDERS)
-def test_arithmetic_dunder_float_nan_propagates(type_, dunder):
+def test_arithmetic_dunder_float_nan_propagates(type_: type, dunder: str) -> None:
+    """
+    Test arithmetic dunder float nan propagates.
+    """
     result = getattr(make_value(type_, 2), dunder)(math.nan)
 
     assert type(result) is float
@@ -333,10 +403,13 @@ def test_arithmetic_dunder_float_nan_propagates(type_, dunder):
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize(("dunder", "expected"), FLOAT_INFINITY_CASES)
 def test_arithmetic_dunder_float_infinity_matches_native_operation(
-    type_,
-    dunder,
-    expected,
-):
+    type_: type,
+    dunder: str,
+    expected: object,
+) -> None:
+    """
+    Test arithmetic dunder float infinity matches native operation.
+    """
     result = getattr(make_value(type_, 2), dunder)(math.inf)
 
     assert type(result) is float
@@ -348,7 +421,13 @@ def test_arithmetic_dunder_float_infinity_matches_native_operation(
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", FLOAT_OVERFLOW_DUNDERS)
-def test_arithmetic_dunder_float_multiplication_overflow_returns_infinity(type_, dunder):
+def test_arithmetic_dunder_float_multiplication_overflow_returns_infinity(
+    type_: type,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder float multiplication overflow returns infinity.
+    """
     result = getattr(make_value(type_, 2), dunder)(sys.float_info.max)
 
     assert type(result) is float
@@ -357,7 +436,13 @@ def test_arithmetic_dunder_float_multiplication_overflow_returns_infinity(type_,
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", FLOAT_DIVISION_OVERFLOW_DUNDERS)
-def test_arithmetic_dunder_float_division_overflow_returns_infinity(type_, dunder):
+def test_arithmetic_dunder_float_division_overflow_returns_infinity(
+    type_: type,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder float division overflow returns infinity.
+    """
     result = getattr(make_value(type_, 2), dunder)(FLOAT_MIN_SUBNORMAL)
 
     assert type(result) is float
@@ -367,9 +452,12 @@ def test_arithmetic_dunder_float_division_overflow_returns_infinity(type_, dunde
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", FLOAT_REFLECTED_DIVISION_OVERFLOW_DUNDERS)
 def test_arithmetic_dunder_reflected_float_division_overflow_returns_infinity(
-    type_,
-    dunder,
-):
+    type_: type,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder reflected float division overflow returns infinity.
+    """
     result = getattr(make_raw_value(type_, 1), dunder)(sys.float_info.max)
 
     assert type(result) is float
@@ -378,7 +466,10 @@ def test_arithmetic_dunder_reflected_float_division_overflow_returns_infinity(
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", ARITHMETIC_DUNDERS)
-def test_arithmetic_dunder_float_rejects_unsupported_precision(type_, dunder):
+def test_arithmetic_dunder_float_rejects_unsupported_precision(type_: type, dunder: str) -> None:
+    """
+    Test arithmetic dunder float rejects unsupported precision.
+    """
     receiver = make_raw_value(type_, 1, precision=WEI_PRECISION, currency=WEI)
 
     with pytest.raises(ValueError, match="maximum float precision") as exc_info:
@@ -389,7 +480,10 @@ def test_arithmetic_dunder_float_rejects_unsupported_precision(type_, dunder):
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", ["__add__", "__radd__"])
-def test_arithmetic_dunder_same_type_overflow_raises(type_, dunder):
+def test_arithmetic_dunder_same_type_overflow_raises(type_: type, dunder: str) -> None:
+    """
+    Test arithmetic dunder same type overflow raises.
+    """
     maximum = 17_014_118_346_046.0 if HIGH_PRECISION else 9_223_372_036.0
     if type_ is Quantity:
         maximum *= 2
@@ -403,7 +497,13 @@ def test_arithmetic_dunder_same_type_overflow_raises(type_, dunder):
 
 @pytest.mark.parametrize("type_", [pytest.param(Price), pytest.param(Money)])
 @pytest.mark.parametrize("dunder", ["__add__", "__radd__"])
-def test_arithmetic_dunder_same_type_negative_addition_overflow_raises(type_, dunder):
+def test_arithmetic_dunder_same_type_negative_addition_overflow_raises(
+    type_: type,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder same type negative addition overflow raises.
+    """
     minimum = -17_014_118_346_046.0 if HIGH_PRECISION else -9_223_372_036.0
     value = make_value(type_, minimum)
 
@@ -415,7 +515,10 @@ def test_arithmetic_dunder_same_type_negative_addition_overflow_raises(type_, du
 
 @pytest.mark.parametrize("type_", [pytest.param(Price), pytest.param(Money)])
 @pytest.mark.parametrize("dunder", ["__sub__", "__rsub__"])
-def test_arithmetic_dunder_same_type_subtraction_overflow_raises(type_, dunder):
+def test_arithmetic_dunder_same_type_subtraction_overflow_raises(type_: type, dunder: str) -> None:
+    """
+    Test arithmetic dunder same type subtraction overflow raises.
+    """
     minimum = -17_014_118_346_046.0 if HIGH_PRECISION else -9_223_372_036.0
     receiver = make_value(type_, minimum if dunder == "__sub__" else 1)
     operand = make_value(type_, 1 if dunder == "__sub__" else minimum)
@@ -428,7 +531,13 @@ def test_arithmetic_dunder_same_type_subtraction_overflow_raises(type_, dunder):
 
 @pytest.mark.parametrize("type_", [pytest.param(Price), pytest.param(Money)])
 @pytest.mark.parametrize("dunder", ["__sub__", "__rsub__"])
-def test_arithmetic_dunder_same_type_positive_subtraction_overflow_raises(type_, dunder):
+def test_arithmetic_dunder_same_type_positive_subtraction_overflow_raises(
+    type_: type,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder same type positive subtraction overflow raises.
+    """
     maximum = 17_014_118_346_046.0 if HIGH_PRECISION else 9_223_372_036.0
     receiver = make_value(type_, maximum if dunder == "__sub__" else -1)
     operand = make_value(type_, -1 if dunder == "__sub__" else maximum)
@@ -447,10 +556,13 @@ def test_arithmetic_dunder_same_type_positive_subtraction_overflow_raises(type_,
     ],
 )
 def test_quantity_same_type_negative_subtraction_raises(
-    dunder,
-    receiver_value,
-    operand_value,
-):
+    dunder: str,
+    receiver_value: object,
+    operand_value: object,
+) -> None:
+    """
+    Test quantity same type negative subtraction raises.
+    """
     receiver = Quantity(receiver_value, 0)
     operand = Quantity(operand_value, 0)
 
@@ -462,7 +574,13 @@ def test_quantity_same_type_negative_subtraction_raises(
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", ["__mul__", "__rmul__"])
-def test_arithmetic_dunder_same_type_maximum_multiplication_succeeds(type_, dunder):
+def test_arithmetic_dunder_same_type_maximum_multiplication_succeeds(
+    type_: type,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder same type maximum multiplication succeeds.
+    """
     maximum = 17_014_118_346_046.0 if HIGH_PRECISION else 9_223_372_036.0
     if type_ is Quantity:
         maximum *= 2
@@ -480,7 +598,10 @@ def test_arithmetic_dunder_same_type_maximum_multiplication_succeeds(type_, dund
     "dunder",
     ["__truediv__", "__rtruediv__", "__floordiv__", "__rfloordiv__"],
 )
-def test_arithmetic_dunder_same_type_division_overflow_raises(type_, dunder):
+def test_arithmetic_dunder_same_type_division_overflow_raises(type_: type, dunder: str) -> None:
+    """
+    Test arithmetic dunder same type division overflow raises.
+    """
     maximum = 17_014_118_346_046.0
     if type_ is Quantity:
         maximum *= 2
@@ -500,7 +621,10 @@ def test_arithmetic_dunder_same_type_division_overflow_raises(type_, dunder):
     "dunder",
     ["__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__"],
 )
-def test_arithmetic_dunder_decimal_overflow_raises(type_, dunder):
+def test_arithmetic_dunder_decimal_overflow_raises(type_: type, dunder: str) -> None:
+    """
+    Test arithmetic dunder decimal overflow raises.
+    """
     operand = DECIMAL_MIN if dunder in {"__sub__", "__rsub__"} else DECIMAL_MAX
 
     with pytest.raises(OverflowError) as exc_info:
@@ -511,7 +635,13 @@ def test_arithmetic_dunder_decimal_overflow_raises(type_, dunder):
 
 @pytest.mark.parametrize("type_", [pytest.param(Price), pytest.param(Money)])
 @pytest.mark.parametrize("dunder", ["__add__", "__radd__"])
-def test_arithmetic_dunder_negative_decimal_addition_overflow_raises(type_, dunder):
+def test_arithmetic_dunder_negative_decimal_addition_overflow_raises(
+    type_: type,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder negative decimal addition overflow raises.
+    """
     with pytest.raises(OverflowError) as exc_info:
         getattr(make_value(type_, -2), dunder)(DECIMAL_MIN)
 
@@ -520,7 +650,13 @@ def test_arithmetic_dunder_negative_decimal_addition_overflow_raises(type_, dund
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", ["__mul__", "__rmul__"])
-def test_arithmetic_dunder_negative_decimal_multiplication_overflow_raises(type_, dunder):
+def test_arithmetic_dunder_negative_decimal_multiplication_overflow_raises(
+    type_: type,
+    dunder: str,
+) -> None:
+    """
+    Test arithmetic dunder negative decimal multiplication overflow raises.
+    """
     with pytest.raises(OverflowError) as exc_info:
         getattr(make_value(type_, 2), dunder)(DECIMAL_MIN)
 
@@ -538,11 +674,14 @@ def test_arithmetic_dunder_negative_decimal_multiplication_overflow_raises(type_
     ],
 )
 def test_arithmetic_dunder_decimal_remainder_boundaries_succeed(
-    type_,
-    dunder,
-    operand,
-    expected,
-):
+    type_: type,
+    dunder: str,
+    operand: object,
+    expected: object,
+) -> None:
+    """
+    Test arithmetic dunder decimal remainder boundaries succeed.
+    """
     result = getattr(make_value(type_, 2), dunder)(operand)
 
     assert type(result) is Decimal
@@ -555,13 +694,17 @@ def test_arithmetic_dunder_decimal_remainder_boundaries_succeed(
     ["__truediv__", "__rtruediv__", "__floordiv__", "__rfloordiv__"],
 )
 @pytest.mark.parametrize("negative", [False, True], ids=["positive", "negative"])
-def test_arithmetic_dunder_decimal_division_overflow_raises(type_, dunder, negative):
+def test_arithmetic_dunder_decimal_division_overflow_raises(
+    type_: type,
+    dunder: str,
+    negative: object,
+) -> None:
+    """
+    Test arithmetic dunder decimal division overflow raises.
+    """
     reflected = dunder.startswith("__r")
     if reflected:
-        if type_ is Money:
-            receiver = Money.from_raw(1, TST)
-        else:
-            receiver = type_.from_raw(1, FIXED_PRECISION)
+        receiver = Money.from_raw(1, TST) if type_ is Money else type_.from_raw(1, FIXED_PRECISION)
         operand = DECIMAL_MIN if negative else DECIMAL_MAX
     else:
         receiver = make_value(type_, 8)
@@ -576,7 +719,10 @@ def test_arithmetic_dunder_decimal_division_overflow_raises(type_, dunder, negat
 
 
 @pytest.mark.parametrize("dunder", ARITHMETIC_DUNDERS)
-def test_money_arithmetic_dunder_currency_mismatch_raises(dunder):
+def test_money_arithmetic_dunder_currency_mismatch_raises(dunder: str) -> None:
+    """
+    Test money arithmetic dunder currency mismatch raises.
+    """
     usd = Money(2, USD)
     aud = Money(3, Currency.from_str("AUD"))
 
@@ -593,7 +739,10 @@ def test_money_arithmetic_dunder_currency_mismatch_raises(dunder):
 
 @pytest.mark.parametrize("type_", TYPE_CASES)
 @pytest.mark.parametrize("dunder", ADD_SUB_DUNDERS)
-def test_addition_subtraction_dunder_mixed_scale_raises(type_, dunder):
+def test_addition_subtraction_dunder_mixed_scale_raises(type_: type, dunder: str) -> None:
+    """
+    Test addition subtraction dunder mixed scale raises.
+    """
     lhs_currency = TST
     rhs_currency = Currency(
         code=TST.code,
@@ -627,11 +776,14 @@ def test_addition_subtraction_dunder_mixed_scale_raises(type_, dunder):
     ],
 )
 def test_addition_subtraction_dunder_compatible_standard_scales_succeeds(
-    type_,
-    dunder,
-    receiver_raw,
-    operand_raw,
-):
+    type_: type,
+    dunder: str,
+    receiver_raw: object,
+    operand_raw: object,
+) -> None:
+    """
+    Test addition subtraction dunder compatible standard scales succeeds.
+    """
     zero_precision_currency = Currency(
         code=TST.code,
         precision=0,

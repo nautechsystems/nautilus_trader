@@ -12,8 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test option greeks replay behavior.
+"""
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -52,17 +56,26 @@ class _GreeksRecorder(DataActor):
     # PyO3 #[new] maps to __new__, so subclasses must not define __init__,
     # and the `received` list is attached to the instance after construction.
     def on_option_greeks(self, greeks: OptionGreeks) -> None:
+        """
+        On option greeks.
+        """
         self.received.append(greeks)
 
 
 @pytest.fixture
-def catalog(tmp_path) -> ParquetDataCatalog:
+def catalog(tmp_path: Path) -> ParquetDataCatalog:
+    """
+    Catalog.
+    """
     path = str(tmp_path / "catalog")
     os.makedirs(path, exist_ok=True)
     return ParquetDataCatalog(path)
 
 
 def test_write_and_query_option_greeks_round_trip(catalog: ParquetDataCatalog) -> None:
+    """
+    Test write and query option greeks round trip.
+    """
     # Arrange
     written = _make_greeks()
 
@@ -91,6 +104,9 @@ def test_write_and_query_option_greeks_round_trip(catalog: ParquetDataCatalog) -
 
 
 def test_catalog_loaded_greeks_reach_on_option_greeks(catalog: ParquetDataCatalog) -> None:
+    """
+    Test catalog loaded greeks reach on option greeks.
+    """
     # Arrange: persist, then load back through the non-FFI catalog query path
     catalog.write_option_greeks([_make_greeks()])
     loaded = catalog.query_option_greeks()

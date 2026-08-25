@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test imbalance behavior.
+"""
 
 import pytest
 
@@ -20,26 +23,41 @@ from nautilus_trader.model import Quantity
 
 
 @pytest.fixture
-def imbalance():
+def imbalance() -> object:
+    """
+    Imbalance.
+    """
     return BookImbalanceRatio()
 
 
 def test_name(imbalance: BookImbalanceRatio) -> None:
+    """
+    Test name.
+    """
     assert imbalance.name == "BookImbalanceRatio"
 
 
 def test_str_repr_returns_expected_string(imbalance: BookImbalanceRatio) -> None:
+    """
+    Test str repr returns expected string.
+    """
     # Arrange, Act, Assert
     assert str(imbalance) == "BookImbalanceRatio()"
     assert repr(imbalance) == "BookImbalanceRatio()"
 
 
 def test_initialized_without_inputs_returns_false(imbalance: BookImbalanceRatio) -> None:
+    """
+    Test initialized without inputs returns false.
+    """
     # Arrange, Act, Assert
     assert not imbalance.initialized
 
 
 def test_initialized_with_required_inputs(imbalance: BookImbalanceRatio) -> None:
+    """
+    Test initialized with required inputs.
+    """
     # Arrange
     imbalance.update(Quantity.from_int(100), Quantity.from_int(100))
 
@@ -51,6 +69,9 @@ def test_initialized_with_required_inputs(imbalance: BookImbalanceRatio) -> None
 
 
 def test_reset(imbalance: BookImbalanceRatio) -> None:
+    """
+    Test reset.
+    """
     # Arrange
     imbalance.update(Quantity.from_int(100), Quantity.from_int(100))
     imbalance.reset()
@@ -63,6 +84,9 @@ def test_reset(imbalance: BookImbalanceRatio) -> None:
 
 
 def test_multiple_inputs_with_bid_imbalance(imbalance: BookImbalanceRatio) -> None:
+    """
+    Test multiple inputs with bid imbalance.
+    """
     # Arrange
     imbalance.update(Quantity.from_int(200), Quantity.from_int(100))
     imbalance.update(Quantity.from_int(200), Quantity.from_int(100))
@@ -76,6 +100,9 @@ def test_multiple_inputs_with_bid_imbalance(imbalance: BookImbalanceRatio) -> No
 
 
 def test_multiple_inputs_with_ask_imbalance(imbalance: BookImbalanceRatio) -> None:
+    """
+    Test multiple inputs with ask imbalance.
+    """
     # Arrange
     imbalance.update(Quantity.from_int(100), Quantity.from_int(200))
     imbalance.update(Quantity.from_int(100), Quantity.from_int(200))

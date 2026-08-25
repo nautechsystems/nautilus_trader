@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test currency behavior.
+"""
 
 import pickle
 
@@ -22,7 +25,10 @@ from nautilus_trader.model import Currency
 from nautilus_trader.model import CurrencyType
 
 
-def test_negative_precision_raises():
+def test_negative_precision_raises() -> None:
+    """
+    Test negative precision raises.
+    """
     with pytest.raises(OverflowError):
         Currency(
             code="AUD",
@@ -33,7 +39,10 @@ def test_negative_precision_raises():
         )
 
 
-def test_precision_over_maximum_raises():
+def test_precision_over_maximum_raises() -> None:
+    """
+    Test precision over maximum raises.
+    """
     with pytest.raises(ValueError, match="precision"):
         Currency(
             code="AUD",
@@ -44,7 +53,10 @@ def test_precision_over_maximum_raises():
         )
 
 
-def test_properties():
+def test_properties() -> None:
+    """
+    Test properties.
+    """
     currency = Currency(
         code="AUD",
         precision=2,
@@ -60,7 +72,10 @@ def test_properties():
     assert currency.currency_type == CurrencyType.FIAT
 
 
-def test_equality():
+def test_equality() -> None:
+    """
+    Test equality.
+    """
     c1 = Currency(
         code="AUD",
         precision=2,
@@ -87,7 +102,10 @@ def test_equality():
     assert c1 != c3
 
 
-def test_hash():
+def test_hash() -> None:
+    """
+    Test hash.
+    """
     c1 = Currency(
         code="AUD",
         precision=2,
@@ -106,7 +124,10 @@ def test_hash():
     assert hash(c1) == hash(c2)
 
 
-def test_str_and_repr():
+def test_str_and_repr() -> None:
+    """
+    Test str and repr.
+    """
     currency = Currency(
         code="AUD",
         precision=2,
@@ -122,7 +143,10 @@ def test_str_and_repr():
     )
 
 
-def test_pickle_round_trip():
+def test_pickle_round_trip() -> None:
+    """
+    Test pickle round trip.
+    """
     currency = Currency(
         code="AUD",
         precision=2,
@@ -131,13 +155,16 @@ def test_pickle_round_trip():
         currency_type=CurrencyType.FIAT,
     )
     pickled = pickle.dumps(currency)
-    unpickled = pickle.loads(pickled)  # noqa: S301
+    unpickled = pickle.loads(pickled)
 
     assert unpickled == currency
     assert repr(unpickled) == repr(currency)
 
 
-def test_register_and_lookup():
+def test_register_and_lookup() -> None:
+    """
+    Test register and lookup.
+    """
     ape = Currency(
         code="APE",
         precision=8,
@@ -151,7 +178,10 @@ def test_register_and_lookup():
     assert result == ape
 
 
-def test_register_overwrite_false_preserves_existing():
+def test_register_overwrite_false_preserves_existing() -> None:
+    """
+    Test register overwrite false preserves existing.
+    """
     another_aud = Currency(
         code="AUD",
         precision=8,
@@ -166,7 +196,10 @@ def test_register_overwrite_false_preserves_existing():
     assert result.currency_type == CurrencyType.FIAT
 
 
-def test_from_str_known_currency():
+def test_from_str_known_currency() -> None:
+    """
+    Test from str known currency.
+    """
     result = Currency.from_str("AUD")
 
     assert result.code == "AUD"
@@ -176,7 +209,10 @@ def test_from_str_known_currency():
     assert result.currency_type == CurrencyType.FIAT
 
 
-def test_from_str_unknown_defaults_to_crypto():
+def test_from_str_unknown_defaults_to_crypto() -> None:
+    """
+    Test from str unknown defaults to crypto.
+    """
     result = Currency.from_str("SOME_CURRENCY")
 
     assert result.code == "SOME_CURRENCY"
@@ -184,7 +220,10 @@ def test_from_str_unknown_defaults_to_crypto():
     assert result.currency_type == CurrencyType.CRYPTO
 
 
-def test_from_str_strict_unknown_raises():
+def test_from_str_strict_unknown_raises() -> None:
+    """
+    Test from str strict unknown raises.
+    """
     expected_err = "Unknown currency: SOME_CURRENCY"
 
     with pytest.raises(ValueError, match=expected_err) as exc_info:
@@ -193,7 +232,10 @@ def test_from_str_strict_unknown_raises():
     assert str(exc_info.value) == expected_err
 
 
-def test_from_str_not_strict_returns_crypto():
+def test_from_str_not_strict_returns_crypto() -> None:
+    """
+    Test from str not strict returns crypto.
+    """
     result = Currency.from_str("ZXX_EXOTIC", strict=False)
 
     assert result.code == "ZXX_EXOTIC"
@@ -212,7 +254,10 @@ def test_from_str_not_strict_returns_crypto():
         ("ETH", Currency.from_str("ETH")),
     ],
 )
-def test_from_str_builtins(code, expected):
+def test_from_str_builtins(code: object, expected: object) -> None:
+    """
+    Test from str builtins.
+    """
     assert Currency.from_str(code) == expected
 
 
@@ -220,11 +265,17 @@ def test_from_str_builtins(code, expected):
     ("code", "expected"),
     [("AUD", True), ("BTC", False), ("XAG", False)],
 )
-def test_is_fiat(code, expected):
+def test_is_fiat(code: object, expected: object) -> None:
+    """
+    Test is fiat.
+    """
     assert Currency.is_fiat(code) == expected
 
 
-def test_is_fiat_unknown_currency_raises():
+def test_is_fiat_unknown_currency_raises() -> None:
+    """
+    Test is fiat unknown currency raises.
+    """
     expected_err = "Unknown currency: NON_EXISTENT"
 
     with pytest.raises(ValueError, match=expected_err) as exc_info:
@@ -237,7 +288,10 @@ def test_is_fiat_unknown_currency_raises():
     ("code", "expected"),
     [("BTC", True), ("AUD", False), ("XAG", False)],
 )
-def test_is_crypto(code, expected):
+def test_is_crypto(code: object, expected: object) -> None:
+    """
+    Test is crypto.
+    """
     assert Currency.is_crypto(code) == expected
 
 
@@ -245,15 +299,24 @@ def test_is_crypto(code, expected):
     ("code", "expected"),
     [("BTC", False), ("AUD", False), ("XAG", True)],
 )
-def test_is_commodity_backed(code, expected):
+def test_is_commodity_backed(code: object, expected: object) -> None:
+    """
+    Test is commodity backed.
+    """
     assert Currency.is_commodity_backed(code) == expected
 
 
-def test_equality_with_none():
-    assert Currency.from_str("AUD") != None  # noqa: E711
+def test_equality_with_none() -> None:
+    """
+    Test equality with none.
+    """
+    assert Currency.from_str("AUD") != None
 
 
-def test_register_overwrite_true_replaces_existing():
+def test_register_overwrite_true_replaces_existing() -> None:
+    """
+    Test register overwrite true replaces existing.
+    """
     custom = Currency(
         code="AUD",
         precision=4,

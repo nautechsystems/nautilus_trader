@@ -63,6 +63,9 @@ TOB_OFFSET_TICKS = 500
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     ib_account_id = os.getenv("TWS_ACCOUNT")
     if not ib_account_id:
         raise SystemExit("TWS_ACCOUNT must be set to the target IB account")
@@ -74,7 +77,7 @@ def main() -> None:
 
     node = (
         LiveNode.builder("IB-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,

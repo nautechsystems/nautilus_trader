@@ -1,3 +1,7 @@
+"""
+Example of synthetic data pnl test.
+"""
+
 from datetime import UTC
 from datetime import datetime
 from decimal import Decimal
@@ -33,6 +37,9 @@ USD = Currency.from_str("USD")
 
 
 def create_6E_instrument(venue: Venue) -> FuturesContract:
+    """
+    Create 6e instrument.
+    """
     symbol = Symbol("6E")
     return FuturesContract(
         # Core identification parameters for the Euro FX futures contract
@@ -68,19 +75,36 @@ def create_6E_instrument(venue: Venue) -> FuturesContract:
 
 
 class MinimalStrategyConfig(StrategyConfig):
+    """
+    Collect minimal strategy config tests.
+    """
+
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
         kwargs.pop("instrument_id", None)
         kwargs.pop("bar_type", None)
         return super().__new__(cls, *args, **kwargs)
 
     def __init__(self, instrument_id: InstrumentId, bar_type: BarType) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.instrument_id = instrument_id
         self.bar_type = bar_type
 
 
 class MinimalStrategy(Strategy):
-    def __init__(self, config: MinimalStrategyConfig):
+    """
+    Collect minimal strategy tests.
+    """
+
+    def __init__(self, config: MinimalStrategyConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._config = config
         self.bars_processed = -1
@@ -88,10 +112,16 @@ class MinimalStrategy(Strategy):
         self.portfolio_realized_pnl_values: dict[datetime, Money | None] = {}
         self.portfolio_unrealized_pnl_values: dict[datetime, Money | None] = {}
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_bars(self._config.bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
+        """
+        On bar.
+        """
         self.bars_processed += 1
 
         bar_dt = unix_nanos_to_dt(bar.ts_event)
@@ -114,7 +144,8 @@ class MinimalStrategy(Strategy):
                 self._config.instrument_id,
             )  # Has only commission -2.50. Is OK as no trade was closed yet.
             unrealized_pnl = self.portfolio.unrealized_pnl(self._config.instrument_id)
-            self.log.info(f"{self.bars_processed=}, {realized_pnl=}, {unrealized_pnl=}")
+            log_msg = f"self.bars_processed={self.bars_processed!r}, realized_pnl={realized_pnl!r}, unrealized_pnl={unrealized_pnl!r}"
+            self.log.info(log_msg)
             # <------------------- PUT DEBUG POINT HERE
 
         # Debug point 2: Closed position
@@ -125,7 +156,8 @@ class MinimalStrategy(Strategy):
             unrealized_pnl = self.portfolio.unrealized_pnl(
                 self._config.instrument_id,
             )  # Returns 0, that is OK when closed position
-            self.log.info(f"{self.bars_processed=}, {realized_pnl=}, {unrealized_pnl=}")
+            log_msg = f"self.bars_processed={self.bars_processed!r}, realized_pnl={realized_pnl!r}, unrealized_pnl={unrealized_pnl!r}"
+            self.log.info(log_msg)
             # <------------------- PUT DEBUG POINT HERE
 
         # Open positions at bar(s): 1
@@ -138,7 +170,8 @@ class MinimalStrategy(Strategy):
             )
             self.submit_order(order)
             self.order_placed = True
-            self.log.info(f"Market order placed at {bar.close}")
+            log_msg = f"Market order placed at {bar.close}"
+            self.log.info(log_msg)
 
         # Close positions at bar(s): 7
         if (not is_flat) and self.bars_processed in {7}:
@@ -151,7 +184,9 @@ class MinimalStrategy(Strategy):
             self.submit_order(order)
 
     def on_stop(self) -> None:
-        pass
+        """
+        On stop.
+        """
 
 
 if __name__ == "__main__":

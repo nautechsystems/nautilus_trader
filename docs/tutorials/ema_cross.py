@@ -26,7 +26,7 @@ class EMACrossConfig(StrategyConfig):
         "slow_ema_period",
     )
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
         for field in cls._CUSTOM_FIELDS:
             kwargs.pop(field, None)
         return super().__new__(cls, *args, **kwargs)
@@ -38,7 +38,7 @@ class EMACrossConfig(StrategyConfig):
         trade_size: Decimal,
         fast_ema_period: int = 10,
         slow_ema_period: int = 20,
-        **_kwargs,
+        **_kwargs: object,
     ) -> None:
         super().__init__()
         self.instrument_id = instrument_id
@@ -49,17 +49,17 @@ class EMACrossConfig(StrategyConfig):
 
 
 class EMACross(Strategy):
-    def __init__(self, config: EMACrossConfig):
+    def __init__(self, config: EMACrossConfig) -> None:
         super().__init__(config)
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
-    def on_start(self):
+    def on_start(self) -> None:
         self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
         self.subscribe_bars(self.config.bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, _bar: Bar) -> None:
         if not self.indicators_initialized():
             return
 
@@ -76,7 +76,7 @@ class EMACross(Strategy):
                 self.close_all_positions(self.config.instrument_id)
                 self.sell()
 
-    def buy(self):
+    def buy(self) -> None:
         instrument = self.cache.instrument(self.config.instrument_id)
         order = self.order_factory.market(
             self.config.instrument_id,
@@ -85,7 +85,7 @@ class EMACross(Strategy):
         )
         self.submit_order(order)
 
-    def sell(self):
+    def sell(self) -> None:
         instrument = self.cache.instrument(self.config.instrument_id)
         order = self.order_factory.market(
             self.config.instrument_id,
@@ -94,5 +94,5 @@ class EMACross(Strategy):
         )
         self.submit_order(order)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         self.close_all_positions(self.config.instrument_id)

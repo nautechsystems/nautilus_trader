@@ -64,7 +64,7 @@ after Rust changes.
 1. **Build**: `maturin develop` compiles all Rust code into a single extension module
    under `nautilus_trader/_libnautilus/`.
 2. **Re-exports**: Each submodule's `__init__.py` re-exports components from `_libnautilus`.
-3. **Type stubs**: `.pyi` files provide type information for IDEs and `mypy`.
+3. **Type stubs**: `.pyi` files provide type information for IDEs and `ty`.
 4. **Docstrings**: `generate_docstrings.py` copies `///` doc comments from the Rust source
    to PyO3 wrappers, so `__doc__` stays in sync without manual duplication.
 

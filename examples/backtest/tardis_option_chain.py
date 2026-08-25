@@ -68,6 +68,10 @@ VENUE = "DERIBIT"
 
 @dataclass(frozen=True)
 class OptionMetadata:
+    """
+    Collect option metadata tests.
+    """
+
     instrument_id: InstrumentId
     underlying: str
     settlement_currency: str
@@ -77,6 +81,10 @@ class OptionMetadata:
 
 @dataclass(frozen=True)
 class SeriesSelection:
+    """
+    Collect series selection tests.
+    """
+
     series_id: OptionSeriesId
     instrument_ids: list[InstrumentId]
     strikes: list[Price]
@@ -85,6 +93,10 @@ class SeriesSelection:
 
 @dataclass(frozen=True)
 class SelectedOption:
+    """
+    Collect selected option tests.
+    """
+
     instrument_id: InstrumentId
     strike: Price
     quote: Any
@@ -92,6 +104,10 @@ class SelectedOption:
 
 
 class OptionChainBacktestConfig(StrategyConfig):
+    """
+    Collect option chain backtest config tests.
+    """
+
     _CUSTOM_FIELDS = (
         "series_id",
         "selection_mode",
@@ -103,6 +119,9 @@ class OptionChainBacktestConfig(StrategyConfig):
     )
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -116,8 +135,11 @@ class OptionChainBacktestConfig(StrategyConfig):
         target_strike: str | None = None,
         trade_size: str = "1",
         snapshot_interval_ms: int = 1_000,
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.series_id = series_id
         self.selection_mode = selection_mode
@@ -129,7 +151,14 @@ class OptionChainBacktestConfig(StrategyConfig):
 
 
 class OptionChainBacktest(Strategy):
+    """
+    Collect option chain backtest tests.
+    """
+
     def __init__(self, config: OptionChainBacktestConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._series_id = OptionSeriesId.from_str(config.series_id)
         self._selection_mode = config.selection_mode
@@ -141,6 +170,9 @@ class OptionChainBacktest(Strategy):
         self._orders_submitted = False
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         if self._selection_mode == "strike":
             if self._target_strike is None:
                 raise ValueError("target_strike is required when selection_mode is 'strike'")
@@ -155,10 +187,11 @@ class OptionChainBacktest(Strategy):
         )
 
     def on_option_chain(self, slice: OptionChainSlice) -> None:
-        self.log.info(
-            f"OPTION_CHAIN | {slice.series_id} | atm={slice.atm_strike} | "
-            f"calls={slice.call_count()} puts={slice.put_count()} strikes={slice.strike_count()}",
-        )
+        """
+        On option chain.
+        """
+        log_msg = f"OPTION_CHAIN | {slice.series_id} | atm={slice.atm_strike} | calls={slice.call_count()} puts={slice.put_count()} strikes={slice.strike_count()}"
+        self.log.info(log_msg)
 
         if self._orders_submitted:
             return
@@ -167,15 +200,16 @@ class OptionChainBacktest(Strategy):
         if selected is None:
             return
 
-        self.log.info(
-            f"Selected option {selected.instrument_id} at strike {selected.strike} "
-            f"with delta {selected.delta}",
-        )
+        log_msg = f"Selected option {selected.instrument_id} at strike {selected.strike} with delta {selected.delta}"
+        self.log.info(log_msg)
         self.submit_order(self._maker_order(selected))
         self.submit_order(self._taker_order(selected))
         self._orders_submitted = True
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.unsubscribe_option_chain(self._series_id)
 
     def _select_contract(self, slice: OptionChainSlice) -> SelectedOption | None:
@@ -278,6 +312,9 @@ class OptionChainBacktest(Strategy):
 
 
 def parse_args() -> argparse.Namespace:
+    """
+    Parse args.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog-path", type=Path, default=Path("./catalog"))
     parser.add_argument("--underlying", default="BTC")
@@ -291,6 +328,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     args = parse_args()
     options = load_option_metadata(args.catalog_path, args.underlying)
     selection = nearest_series(options)
@@ -352,6 +392,9 @@ def main() -> None:
 
 
 def load_option_metadata(catalog_path: Path, underlying: str) -> list[OptionMetadata]:
+    """
+    Load option metadata.
+    """
     catalog = ParquetDataCatalog(str(catalog_path))
     options = [
         metadata
@@ -369,6 +412,9 @@ def load_option_metadata(catalog_path: Path, underlying: str) -> list[OptionMeta
 
 
 def option_metadata(instrument: Any) -> OptionMetadata | None:
+    """
+    Option metadata.
+    """
     if instrument.type_name == "CryptoOption":
         return OptionMetadata(
             instrument_id=instrument.id,
@@ -389,6 +435,9 @@ def option_metadata(instrument: Any) -> OptionMetadata | None:
 
 
 def nearest_series(options: list[OptionMetadata]) -> SeriesSelection:
+    """
+    Nearest series.
+    """
     expiration_ns = min(metadata.expiration_ns for metadata in options)
     same_expiry = [metadata for metadata in options if metadata.expiration_ns == expiration_ns]
     settlement_currency = next(
@@ -422,10 +471,16 @@ def nearest_series(options: list[OptionMetadata]) -> SeriesSelection:
 
 
 def median_strike(strikes: list[Price]) -> Price:
+    """
+    Median strike.
+    """
     return strikes[len(strikes) // 2]
 
 
 def option_fee_model(name: str) -> CappedOptionFeeModel | TieredNotionalOptionFeeModel:
+    """
+    Option fee model.
+    """
     if name == "tiered":
         return TieredNotionalOptionFeeModel(
             maker_rate=Decimal("0.0002"),
@@ -438,6 +493,9 @@ def option_fee_model(name: str) -> CappedOptionFeeModel | TieredNotionalOptionFe
 
 
 def starting_balance(settlement_currency: str) -> str:
+    """
+    Return the starting balance.
+    """
     if settlement_currency in {"BTC", "ETH"}:
         return f"10 {settlement_currency}"
     return f"1000000 {settlement_currency}"

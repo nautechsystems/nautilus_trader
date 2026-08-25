@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test interactive brokers factories behavior.
+"""
 
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
@@ -39,11 +42,17 @@ ib_exec_tester = load_example_module("interactive_brokers", "exec_tester")
 
 
 def test_interactive_brokers_factories_expose_python_names() -> None:
+    """
+    Test interactive brokers factories expose python names.
+    """
     assert InteractiveBrokersDataClientFactory().name() == IB
     assert InteractiveBrokersExecutionClientFactory().name() == IB
 
 
 def test_interactive_brokers_instrument_provider_config_and_empty_surface() -> None:
+    """
+    Test interactive brokers instrument provider config and empty surface.
+    """
     instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
     contract = {"secType": "STK", "symbol": "MSFT", "exchange": "SMART"}
     config = InteractiveBrokersInstrumentProviderConfig(
@@ -82,6 +91,9 @@ def test_interactive_brokers_instrument_provider_config_and_empty_surface() -> N
 
 
 def test_live_node_builder_accepts_interactive_brokers_data_factory() -> None:
+    """
+    Test live node builder accepts interactive brokers data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -102,6 +114,9 @@ def test_live_node_builder_accepts_interactive_brokers_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_interactive_brokers_exec_factory() -> None:
+    """
+    Test live node builder accepts interactive brokers exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     node = (
         LiveNode.builder("IB-EXEC-PYTEST-001", trader_id, Environment.LIVE)
@@ -129,6 +144,9 @@ def test_live_node_builder_accepts_interactive_brokers_exec_factory() -> None:
 def test_interactive_brokers_data_tester_runs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    Test interactive brokers data tester runs.
+    """
     captured = capture_data_tester_main(monkeypatch, ib_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
@@ -140,6 +158,9 @@ def test_interactive_brokers_data_tester_runs(
 def test_interactive_brokers_exec_tester_requires_account(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    Test interactive brokers exec tester requires account.
+    """
     monkeypatch.delenv("TWS_ACCOUNT", raising=False)
 
     with pytest.raises(SystemExit, match="TWS_ACCOUNT must be set"):
@@ -149,6 +170,9 @@ def test_interactive_brokers_exec_tester_requires_account(
 def test_interactive_brokers_exec_tester_runs_live_orders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    Test interactive brokers exec tester runs live orders.
+    """
     monkeypatch.setenv("TWS_ACCOUNT", "U1234567")
     captured = capture_exec_tester_main(monkeypatch, ib_exec_tester)
     kwargs = captured["exec_tester_kwargs"]

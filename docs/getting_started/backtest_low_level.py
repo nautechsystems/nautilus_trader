@@ -133,7 +133,7 @@ class EMACrossTWAPConfig(StrategyConfig):
         "twap_interval_secs",
     )
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
         for field in cls._CUSTOM_FIELDS:
             kwargs.pop(field, None)
         return super().__new__(cls, *args, **kwargs)
@@ -147,7 +147,7 @@ class EMACrossTWAPConfig(StrategyConfig):
         slow_ema_period: int = 20,
         twap_horizon_secs: float = 10.0,
         twap_interval_secs: float = 2.5,
-        **_kwargs,
+        **_kwargs: object,
     ) -> None:
         super().__init__()
         self.instrument_id = instrument_id
@@ -160,7 +160,7 @@ class EMACrossTWAPConfig(StrategyConfig):
 
 
 class EMACrossTWAP(Strategy):
-    def __init__(self, config: EMACrossTWAPConfig):
+    def __init__(self, config: EMACrossTWAPConfig) -> None:
         super().__init__(config)
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
@@ -170,12 +170,12 @@ class EMACrossTWAP(Strategy):
             "interval_secs": str(config.twap_interval_secs),
         }
 
-    def on_start(self):
+    def on_start(self) -> None:
         self.register_indicator_for_bars(self.config.bar_type, self.fast_ema)
         self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
         self.subscribe_bars(self.config.bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, _bar: Bar) -> None:
         if not self.indicators_initialized():
             return
 
@@ -192,13 +192,13 @@ class EMACrossTWAP(Strategy):
                 self.close_all_positions(self.config.instrument_id)
                 self.sell()
 
-    def buy(self):
+    def buy(self) -> None:
         self.submit_twap_order(OrderSide.BUY)
 
-    def sell(self):
+    def sell(self) -> None:
         self.submit_twap_order(OrderSide.SELL)
 
-    def submit_twap_order(self, side: OrderSide):
+    def submit_twap_order(self, side: OrderSide) -> None:
         instrument = self.cache.instrument(self.config.instrument_id)
         order = self.order_factory.market(
             self.config.instrument_id,
@@ -209,7 +209,7 @@ class EMACrossTWAP(Strategy):
         )
         self.submit_order(order)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
         self.close_all_positions(self.config.instrument_id)
 
 

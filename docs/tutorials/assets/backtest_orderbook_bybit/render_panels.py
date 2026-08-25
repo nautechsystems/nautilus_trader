@@ -73,7 +73,7 @@ GRID = COLORS["grid"]
 class TopBookSamplerConfig(DataActorConfig):
     _CUSTOM_FIELDS = ("instrument_id", "book_type", "sample_every_secs")
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -83,7 +83,7 @@ class TopBookSamplerConfig(DataActorConfig):
         instrument_id: InstrumentId,
         book_type: str = "L2_MBP",
         sample_every_secs: int = 1,
-        **_kwargs,
+        **_kwargs: object,
     ) -> None:
         super().__init__()
         self.instrument_id = instrument_id
@@ -147,7 +147,7 @@ def apply_layout(fig: go.Figure, title: str, height: int = 480) -> None:
     fig.update_yaxes(gridcolor=GRID, zeroline=False)
 
 
-def run_backtest(nrows: int = 1_000_000):
+def run_backtest(nrows: int = 1_000_000) -> object:
     update_path = DATA_DIR / "2024-12-01_XRPUSDT_ob500.data.zip"
     df_raw = load_bybit_order_book_deltas(update_path, nrows=nrows)
 

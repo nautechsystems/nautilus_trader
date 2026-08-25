@@ -83,7 +83,7 @@ def apply_layout(fig: go.Figure, title: str, height: int = 500) -> None:
     fig.update_yaxes(gridcolor=GRID, zeroline=False)
 
 
-def run_backtest():
+def run_backtest() -> object:
     config = BacktestEngineConfig(
         trader_id=TraderId.from_str("BACKTESTER-001"),
         logging=LoggerConfig(stdout_level=LogLevel.ERROR),
@@ -274,8 +274,8 @@ def panel_a_price_overview(bars: pd.DataFrame) -> go.Figure:
 def panel_b_zoom(
     bars: pd.DataFrame,
     entries: list[dict],
-    closes: list[dict],
-    cycles: list[dict],
+    _closes: list[dict],
+    _cycles: list[dict],
 ) -> go.Figure:
     sel = (bars["ts"] >= ZOOM_START) & (bars["ts"] <= ZOOM_END)
     z = bars.loc[sel].reset_index(drop=True)

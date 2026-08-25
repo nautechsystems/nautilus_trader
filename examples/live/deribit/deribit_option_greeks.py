@@ -46,6 +46,10 @@ MAX_SUBSCRIPTIONS = 10
 
 
 class OptionGreeksTesterConfig(DataActorConfig):
+    """
+    Collect option greeks tester config tests.
+    """
+
     def __init__(
         self,
         underlying: str = "BTC",
@@ -54,6 +58,9 @@ class OptionGreeksTesterConfig(DataActorConfig):
         log_events: bool = True,
         log_commands: bool = True,
     ) -> None:
+        """
+        Initialize the helper.
+        """
         self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
         self.log_events = log_events
         self.log_commands = log_commands
@@ -67,12 +74,18 @@ class OptionGreeksTester(DataActor):
     """
 
     def __init__(self, config: OptionGreeksTesterConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._subscribed_ids: list[InstrumentId] = []
         self._underlying = config.underlying
         self._max_subscriptions = config.max_subscriptions
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         call_options = []
 
         for instrument in self.cache.instruments():
@@ -81,29 +94,39 @@ class OptionGreeksTester(DataActor):
                 call_options.append(instrument)
 
         if not call_options:
-            self.log.warning(f"No {self._underlying} call options found in cache")
+            log_msg = f"No {self._underlying} call options found in cache"
+            self.log.warning(log_msg)
             return
 
         call_options.sort(key=lambda instrument: str(instrument.id.symbol))
         client_id = ClientId.from_str(DERIBIT)
 
         for instrument in call_options[: self._max_subscriptions]:
-            self.log.info(f"Subscribing to Greeks: {instrument.id}")
+            log_msg = f"Subscribing to Greeks: {instrument.id}"
+            self.log.info(log_msg)
             self.subscribe_option_greeks(instrument.id, client_id=client_id)
             self._subscribed_ids.append(instrument.id)
 
-        self.log.info(f"Subscribed to {len(self._subscribed_ids)} option Greeks streams")
+        log_msg = f"Subscribed to {len(self._subscribed_ids)} option Greeks streams"
+        self.log.info(log_msg)
 
     def on_option_greeks(self, greeks: OptionGreeks) -> None:
-        self.log.info(
+        """
+        On option greeks.
+        """
+        log_msg = (
             f"GREEKS {greeks.instrument_id}: "
             f"delta={greeks.delta:.4f} gamma={greeks.gamma:.6f} "
             f"vega={greeks.vega:.4f} theta={greeks.theta:.4f} "
             f"mark_iv={greeks.mark_iv} bid_iv={greeks.bid_iv} ask_iv={greeks.ask_iv} "
-            f"underlying={greeks.underlying_price} oi={greeks.open_interest}",
+            f"underlying={greeks.underlying_price} oi={greeks.open_interest}"
         )
+        self.log.info(log_msg)
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         client_id = ClientId.from_str(DERIBIT)
 
         for instrument_id in self._subscribed_ids:
@@ -113,6 +136,9 @@ class OptionGreeksTester(DataActor):
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder(
             "DERIBIT-OPTION-GREEKS-001",

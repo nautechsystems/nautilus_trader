@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Example of blockchain actors.
+"""
 
 from typing import Any
 from typing import Self
@@ -33,9 +36,16 @@ from nautilus_trader.model import PoolSwap
 
 
 class BlockchainActorConfig(DataActorConfig):
+    """
+    Collect blockchain actor config tests.
+    """
+
     _CUSTOM_FIELDS = ("actor_id", "chain", "client_id", "pools")
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -49,6 +59,9 @@ class BlockchainActorConfig(DataActorConfig):
         client_id: ClientId | str | None = None,
         pools: list[InstrumentId | str] | None = None,
     ) -> None:
+        """
+        Initialize the helper.
+        """
         self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
         self.log_events = log_events
         self.log_commands = log_commands
@@ -62,7 +75,14 @@ class BlockchainActorConfig(DataActorConfig):
 
 
 class BlockchainActor(DataActor):
+    """
+    Collect blockchain actor tests.
+    """
+
     def __init__(self, config: BlockchainActorConfig | None = None) -> None:
+        """
+        Initialize the helper.
+        """
         if config is None:
             config = BlockchainActorConfig()
         super().__init__(config)
@@ -111,7 +131,11 @@ class BlockchainActor(DataActor):
         self.log.info(repr(event), LogColor.BLUE)
 
     def on_pool(self, pool: Pool) -> None:
-        self.log.info(f"Received pool: {pool.instrument_id}", LogColor.GREEN)
+        """
+        On pool.
+        """
+        log_msg = f"Received pool: {pool.instrument_id}"
+        self.log.info(log_msg, color=LogColor.GREEN)
 
     def on_block(self, block: Block) -> None:
         """
@@ -127,14 +151,10 @@ class BlockchainActor(DataActor):
             total_positions = pool.get_total_active_positions()
             liquidity = pool.get_active_liquidity()
             liquidity_utilization_rate = pool.liquidity_utilization_rate()
-            self.log.info(
-                f"Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}",
-                LogColor.BLUE,
-            )
-            self.log.info(
-                f"Pool {pool_id} has a liquidity utilization rate of {liquidity_utilization_rate * 100:.4f}%",
-                LogColor.BLUE,
-            )
+            log_msg = f"Pool {pool_id} contains {total_ticks} active ticks and {total_positions} active positions with liquidity of {liquidity}"
+            self.log.info(log_msg, color=LogColor.BLUE)
+            log_msg = f"Pool {pool_id} has a liquidity utilization rate of {liquidity_utilization_rate * 100:.4f}%"
+            self.log.info(log_msg, color=LogColor.BLUE)
 
     def on_pool_swap(self, swap: PoolSwap) -> None:
         """

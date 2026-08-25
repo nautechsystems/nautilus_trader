@@ -55,6 +55,9 @@ MIN_SECONDS_BETWEEN_TRIGGERS = 5.0
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("AX-BOOK-IMBALANCE-001", TRADER_ID, Environment.LIVE)
         .with_exec_engine_config(
@@ -62,7 +65,7 @@ def main() -> None:
                 reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
             ),
         )
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .with_timeout_connection(20)
         .with_timeout_reconciliation(10)

@@ -33,7 +33,8 @@ Regenerating the fixture:
     git checkout <upstream_revision>  # UPSTREAM_REVISION in this script
     python3 -m venv .venv
     .venv/bin/pip install .
-    .venv/bin/python <nautilus_trader repository root>/crates/adapters/derive/tests/oracle-py/generate_oracle.py
+    .venv/bin/python <nautilus_trader repository root>/crates/adapters/derive/tests/oracle-py/
+        generate_oracle.py
 
 The generator resolves its default output path from its own location, so it
 writes the fixture into `test_data/common/` regardless of the working

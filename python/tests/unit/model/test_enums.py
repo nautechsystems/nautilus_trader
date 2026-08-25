@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test enums behavior.
+"""
 
 import pytest
 
@@ -28,7 +31,10 @@ from nautilus_trader.model import PoolLiquidityUpdateType
 from nautilus_trader.model import TradingState
 
 
-def test_model_enum_variants_are_iterable():
+def test_model_enum_variants_are_iterable() -> None:
+    """
+    Test model enum variants are iterable.
+    """
     variants = list(AccountType.variants())
     assert AccountType.CASH in variants
     assert AccountType.MARGIN in variants
@@ -44,13 +50,19 @@ def test_model_enum_variants_are_iterable():
         (TradingState, TradingState.ACTIVE, "ACTIVE"),
     ],
 )
-def test_model_enums_from_str(enum_type, member, name):
+def test_model_enums_from_str(enum_type: object, member: object, name: object) -> None:
+    """
+    Test model enums from str.
+    """
     assert enum_type.from_str(name) == member
     assert member.name == name
     assert isinstance(hash(member), int)
 
 
-def test_pool_liquidity_update_type_from_str():
+def test_pool_liquidity_update_type_from_str() -> None:
+    """
+    Test pool liquidity update type from str.
+    """
     assert PoolLiquidityUpdateType.from_str("Mint") == PoolLiquidityUpdateType.MINT
 
 
@@ -62,7 +74,10 @@ def test_pool_liquidity_update_type_from_str():
         (AggressorSide.SELL, "SELL"),
     ],
 )
-def test_aggressor_side_canonical_names(member, name):
+def test_aggressor_side_canonical_names(member: object, name: object) -> None:
+    """
+    Test aggressor side canonical names.
+    """
     assert member.name == name
     assert str(member) == name
 
@@ -76,11 +91,17 @@ def test_aggressor_side_canonical_names(member, name):
         ("SELLER", AggressorSide.SELL),
     ],
 )
-def test_aggressor_side_from_str_accepts_historical(text, member):
+def test_aggressor_side_from_str_accepts_historical(text: object, member: object) -> None:
+    """
+    Test aggressor side from str accepts historical.
+    """
     assert AggressorSide.from_str(text) == member
 
 
-def test_aggressor_side_has_no_alias_members():
+def test_aggressor_side_has_no_alias_members() -> None:
+    """
+    Test aggressor side has no alias members.
+    """
     with pytest.raises(AttributeError):
         _ = AggressorSide.BUYER
     with pytest.raises(AttributeError):
@@ -88,6 +109,9 @@ def test_aggressor_side_has_no_alias_members():
 
 
 @pytest.mark.parametrize("enum_type", [BookType, OrderSide, OrderType])
-def test_workflow_enums_reject_malformed_values(enum_type):
+def test_workflow_enums_reject_malformed_values(enum_type: object) -> None:
+    """
+    Test workflow enums reject malformed values.
+    """
     with pytest.raises(ValueError, match="Matching variant not found"):
         enum_type.from_str("NOT_A_VARIANT")

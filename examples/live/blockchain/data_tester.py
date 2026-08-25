@@ -48,6 +48,9 @@ USE_HYPERSYNC = True
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     if not os.getenv("ENVIO_API_TOKEN"):
         raise SystemExit("ENVIO_API_TOKEN must be set for HyperSync access")
 

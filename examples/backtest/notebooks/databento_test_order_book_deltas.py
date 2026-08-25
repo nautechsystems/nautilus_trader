@@ -1,3 +1,7 @@
+"""
+Example of databento test order book deltas.
+"""
+
 # ---
 # jupyter:
 #   jupytext:
@@ -12,6 +16,7 @@
 #     language: python
 #     name: python3
 # ---
+
 
 # %% [markdown]
 # # Databento order-book deltas

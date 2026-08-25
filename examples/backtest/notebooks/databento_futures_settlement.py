@@ -1,3 +1,7 @@
+"""
+Example of databento futures settlement.
+"""
+
 # ---
 # jupyter:
 #   jupytext:
@@ -12,6 +16,7 @@
 #     language: python
 #     name: python3
 # ---
+
 
 # %% [markdown]
 # # Futures settlement at expiry
@@ -42,29 +47,57 @@ from nautilus_trader.trading import StrategyConfig
 
 
 class FuturesSettlementConfig(StrategyConfig):
+    """
+    Collect futures settlement config tests.
+    """
+
     _CUSTOM_FIELDS = ("future_id", "next_future_id")
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         for field in cls._CUSTOM_FIELDS:
             kwargs.pop(field, None)
         return super().__new__(cls, *args, **kwargs)
 
-    def __init__(self, future_id: InstrumentId, next_future_id: InstrumentId, **_kwargs):
+    def __init__(
+        self,
+        future_id: InstrumentId,
+        next_future_id: InstrumentId,
+        **_kwargs: object,
+    ) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.future_id = future_id
         self.next_future_id = next_future_id
 
 
 class FuturesSettlementStrategy(Strategy):
-    def __init__(self, config: FuturesSettlementConfig):
+    """
+    Collect futures settlement strategy tests.
+    """
+
+    def __init__(self, config: FuturesSettlementConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self.order_submitted = False
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_quotes(self.config.future_id)
         self.subscribe_quotes(self.config.next_future_id)
 
-    def on_quote(self, tick):
+    def on_quote(self, tick) -> None:
+        """
+        On quote.
+        """
         if tick.instrument_id != self.config.future_id or self.order_submitted:
             return
 

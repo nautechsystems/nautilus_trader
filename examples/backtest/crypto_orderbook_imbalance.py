@@ -13,6 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Example of crypto orderbook imbalance.
+"""
 
 import sys
 from pathlib import Path

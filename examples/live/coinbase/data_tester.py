@@ -43,6 +43,9 @@ BAR_TYPE = BarType.from_str(f"{INSTRUMENT_ID}-1-MINUTE-LAST-EXTERNAL")
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("COINBASE-DATA-TESTER-001", TRADER_ID, Environment.LIVE)
         .add_data_client(

@@ -396,8 +396,8 @@ clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, and .pyc files)
 	rm -rf .coverage .benchmarks 2>/dev/null || true
 
 .PHONY: clean-caches
-clean-caches:  #-- Clean pytest, mypy, ruff, uv, and cargo caches
-	rm -rf .pytest_cache .mypy_cache .ruff_cache python/.pytest_cache python/.mypy_cache python/.ruff_cache 2>/dev/null || true
+clean-caches:  #-- Clean pytest, ruff, uv, and cargo caches
+	rm -rf .pytest_cache .ruff_cache python/.pytest_cache python/.ruff_cache 2>/dev/null || true
 	-uv cache prune --force
 	-cargo clean --workspace
 
@@ -485,7 +485,7 @@ pre-flight:  #-- Run pre-flight checks (format, tests, build, generated drift, a
 		&& $(MAKE) --no-print-directory build-debug \
 		&& $(MAKE) --no-print-directory check-generated-drift \
 		&& $(MAKE) --no-print-directory pytest \
-		&& $(MAKE) --no-print-directory pytest-doctest mypy \
+		&& $(MAKE) --no-print-directory pytest-doctest ty \
 		&& $(MAKE) --no-print-directory security-audit \
 	$(call timer_end,Pre-flight)
 
@@ -1305,8 +1305,8 @@ pytest-doctest: build-debug  #-- Run supported Python doctests
 	$(info $(M) Running supported Python doctests...)
 	$Q bash scripts/ci/test-python-doctests.bash "$(CURDIR)/python"
 
-.PHONY: mypy
-mypy: build-debug  #-- Type-check supported Python examples
+.PHONY: ty
+ty: build-debug  #-- Type-check supported Python examples
 	$(info $(M) Type-checking supported Python examples...)
 	$Q bash scripts/ci/test-python-types.bash python examples
 

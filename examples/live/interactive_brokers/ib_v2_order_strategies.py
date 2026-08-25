@@ -2,6 +2,9 @@
 #  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
 #  https://nautechsystems.io
 # -------------------------------------------------------------------------------------------------
+"""
+Example of ib v2 order strategies.
+"""
 
 from __future__ import annotations
 
@@ -41,6 +44,9 @@ from nautilus_trader.trading import StrategyConfig
 
 
 def env_bool(name: str, default: bool = False) -> bool:
+    """
+    Env bool.
+    """
     value = os.getenv(name)
     if value is None:
         return default
@@ -48,18 +54,30 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 
 def env_int(name: str, default: int) -> int:
+    """
+    Env int.
+    """
     return int(os.getenv(name, str(default)))
 
 
 def env_price(name: str, default: str) -> Price:
+    """
+    Env price.
+    """
     return Price.from_str(os.getenv(name, default))
 
 
 def env_quantity(name: str, default: str = "1") -> Quantity:
+    """
+    Env quantity.
+    """
     return Quantity.from_str(os.getenv(name, default))
 
 
 def env_order_side(name: str, default: OrderSide) -> OrderSide:
+    """
+    Env order side.
+    """
     value = os.getenv(name)
     if value is None:
         return default
@@ -73,6 +91,9 @@ def env_order_side(name: str, default: OrderSide) -> OrderSide:
 
 
 def env_ib_oca_type(name: str, default: Any) -> int:
+    """
+    Env ib oca type.
+    """
     value = os.getenv(name)
     if value is not None:
         return int(value)
@@ -80,6 +101,9 @@ def env_ib_oca_type(name: str, default: Any) -> int:
 
 
 def env_ib_trigger_method(name: str, default: Any) -> int:
+    """
+    Env ib trigger method.
+    """
     value = os.getenv(name)
     if value is not None:
         return int(value)
@@ -87,28 +111,46 @@ def env_ib_trigger_method(name: str, default: Any) -> int:
 
 
 def env_instrument_id(name: str, default: str) -> InstrumentId:
+    """
+    Env instrument id.
+    """
     return InstrumentId.from_str(os.getenv(name, default))
 
 
 def ib_order_tags(**values: object) -> str:
+    """
+    Ib order tags.
+    """
     return "IBOrderTags:" + json.dumps(values, separators=(",", ":"), sort_keys=True)
 
 
 def ib_client_id() -> ClientId:
+    """
+    Ib client id.
+    """
     return ClientId.from_str("IB")
 
 
 def databento_client_id() -> ClientId:
+    """
+    Databento client id.
+    """
     return ClientId.from_str("DATABENTO")
 
 
 def bar_type_from_env(name: str, instrument_id: InstrumentId) -> BarType:
+    """
+    Bar type from env.
+    """
     return BarType.from_str(
         os.getenv(name, f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"),
     )
 
 
 def contract_id_from_instrument(instrument: Any | None) -> int:
+    """
+    Contract id from instrument.
+    """
     info = getattr(instrument, "info", None)
     if not isinstance(info, dict):
         return 0
@@ -121,7 +163,14 @@ def contract_id_from_instrument(instrument: Any | None) -> int:
 
 
 class IbV2SubscriptionStrategy(Strategy):
+    """
+    Collect ib v2subscription strategy tests.
+    """
+
     def __init__(self) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(
             StrategyConfig(
                 strategy_id=StrategyId.from_str("IB-V2-SUBSCRIPTION-STRATEGY"),
@@ -137,10 +186,16 @@ class IbV2SubscriptionStrategy(Strategy):
         self._max_prints = env_int("IB_V2_SUBSCRIPTION_MAX_PRINTS", 5)
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         print(f"{self.strategy_id}: requesting {self.instrument_id}", flush=True)
         self.request_instrument(self.instrument_id, client_id=ib_client_id())
 
     def on_instrument(self, instrument: Any) -> None:
+        """
+        On instrument.
+        """
         if instrument.id != self.instrument_id:
             return
 
@@ -178,21 +233,33 @@ class IbV2SubscriptionStrategy(Strategy):
             self.subscribe_index_prices(self.instrument_id, client_id=ib_client_id())
 
     def on_quote(self, quote: Any) -> None:
+        """
+        On quote.
+        """
         self._quote_count += 1
         if self._quote_count <= self._max_prints:
             print(f"{self.strategy_id}: quote #{self._quote_count}: {quote}", flush=True)
 
     def on_trade(self, trade: Any) -> None:
+        """
+        On trade.
+        """
         self._trade_count += 1
         if self._trade_count <= self._max_prints:
             print(f"{self.strategy_id}: trade #{self._trade_count}: {trade}", flush=True)
 
     def on_bar(self, bar: Any) -> None:
+        """
+        On bar.
+        """
         self._bar_count += 1
         if self._bar_count <= self._max_prints:
             print(f"{self.strategy_id}: bar #{self._bar_count}: {bar}", flush=True)
 
     def on_index_price(self, index_price: Any) -> None:
+        """
+        On index price.
+        """
         self._index_price_count += 1
         if self._index_price_count <= self._max_prints:
             print(
@@ -202,7 +269,14 @@ class IbV2SubscriptionStrategy(Strategy):
 
 
 class DatabentoSubscriptionStrategy(Strategy):
+    """
+    Collect databento subscription strategy tests.
+    """
+
     def __init__(self) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(
             StrategyConfig(
                 strategy_id=StrategyId.from_str("IB-V2-DATABENTO-SUBSCRIPTION"),
@@ -215,14 +289,17 @@ class DatabentoSubscriptionStrategy(Strategy):
         self._max_prints = env_int("IB_V2_SUBSCRIPTION_MAX_PRINTS", 5)
 
     def on_start(self) -> None:
-        if env_bool("IB_V2_DATABENTO_SUBSCRIBE_QUOTES", True):
+        """
+        On start.
+        """
+        if env_bool("IB_V2_DATABENTO_SUBSCRIBE_QUOTES", default=True):
             print(
                 f"{self.strategy_id}: subscribing Databento quotes for {self.instrument_id}",
                 flush=True,
             )
             self.subscribe_quotes(self.instrument_id, client_id=databento_client_id())
 
-        if env_bool("IB_V2_DATABENTO_SUBSCRIBE_BARS", True):
+        if env_bool("IB_V2_DATABENTO_SUBSCRIBE_BARS", default=True):
             print(
                 f"{self.strategy_id}: subscribing Databento bars for {self.bar_type}",
                 flush=True,
@@ -230,6 +307,9 @@ class DatabentoSubscriptionStrategy(Strategy):
             self.subscribe_bars(self.bar_type, client_id=databento_client_id())
 
     def on_quote(self, quote: Any) -> None:
+        """
+        On quote.
+        """
         self._quote_count += 1
         if self._quote_count <= self._max_prints:
             print(
@@ -238,6 +318,9 @@ class DatabentoSubscriptionStrategy(Strategy):
             )
 
     def on_bar(self, bar: Any) -> None:
+        """
+        On bar.
+        """
         self._bar_count += 1
         if self._bar_count <= self._max_prints:
             print(
@@ -247,7 +330,14 @@ class DatabentoSubscriptionStrategy(Strategy):
 
 
 class OptionGreeksStrategy(Strategy):
+    """
+    Collect option greeks strategy tests.
+    """
+
     def __init__(self) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(
             StrategyConfig(
                 strategy_id=StrategyId.from_str("IB-V2-OPTION-GREEKS-STRATEGY"),
@@ -262,10 +352,16 @@ class OptionGreeksStrategy(Strategy):
         self._max_prints = env_int("IB_V2_OPTION_GREEKS_MAX_PRINTS", 5)
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         print(f"{self.strategy_id}: requesting option {self.instrument_id}", flush=True)
         self.request_instrument(self.instrument_id, client_id=ib_client_id())
 
     def on_instrument(self, instrument: Any) -> None:
+        """
+        On instrument.
+        """
         if instrument.id != self.instrument_id or self._subscribed:
             return
 
@@ -277,6 +373,9 @@ class OptionGreeksStrategy(Strategy):
         self.subscribe_option_greeks(self.instrument_id, client_id=ib_client_id())
 
     def on_option_greeks(self, greeks: Any) -> None:
+        """
+        On option greeks.
+        """
         self._count += 1
         if self._count <= self._max_prints:
             print(
@@ -285,15 +384,25 @@ class OptionGreeksStrategy(Strategy):
             )
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         if self._subscribed:
             self.unsubscribe_option_greeks(self.instrument_id, client_id=ib_client_id())
 
 
 class IbV2OrderStrategy(Strategy):
+    """
+    Collect ib v2order strategy tests.
+    """
+
     strategy_id_value = "IB-V2-ORDER-001"
     instrument_id_value = default_es_future_instrument_id()
 
     def __init__(self) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(
             StrategyConfig(
                 strategy_id=StrategyId.from_str(self.strategy_id_value),
@@ -308,6 +417,9 @@ class IbV2OrderStrategy(Strategy):
         self._orders_submitted = False
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         if not env_bool("IB_V2_ENABLE_ORDER_SUBMISSION"):
             print(
                 f"{self.strategy_id}: registered; set IB_V2_ENABLE_ORDER_SUBMISSION=1 to submit.",
@@ -325,6 +437,9 @@ class IbV2OrderStrategy(Strategy):
         self.request_instrument(self.instrument_id, client_id=ib_client_id())
 
     def on_instrument(self, instrument: Any) -> None:
+        """
+        On instrument.
+        """
         if instrument.id != self.instrument_id:
             return
 
@@ -343,15 +458,27 @@ class IbV2OrderStrategy(Strategy):
         self.submit_example_orders()
 
     def submit_example_orders(self) -> None:
+        """
+        Submit example orders.
+        """
         raise NotImplementedError
 
     def client_order_id(self, suffix: str) -> ClientOrderId:
+        """
+        Client order id.
+        """
         return ClientOrderId.from_str(f"{self.strategy_id}-{suffix}")
 
     def init_id(self) -> UUID4:
+        """
+        Init id.
+        """
         return UUID4.from_str(str(uuid4()))
 
     def timestamp_ns(self) -> int:
+        """
+        Timestamp ns.
+        """
         return self.clock.timestamp_ns()
 
     def market_order(
@@ -365,6 +492,9 @@ class IbV2OrderStrategy(Strategy):
         linked_order_ids: list[ClientOrderId] | None = None,
         parent_order_id: ClientOrderId | None = None,
     ) -> MarketOrder:
+        """
+        Market order.
+        """
         trader_id = self.trader_id
         if trader_id is None:
             raise RuntimeError("Strategy is not registered")
@@ -401,6 +531,9 @@ class IbV2OrderStrategy(Strategy):
         linked_order_ids: list[ClientOrderId] | None = None,
         parent_order_id: ClientOrderId | None = None,
     ) -> LimitOrder:
+        """
+        Limit order.
+        """
         trader_id = self.trader_id
         if trader_id is None:
             raise RuntimeError("Strategy is not registered")
@@ -438,6 +571,9 @@ class IbV2OrderStrategy(Strategy):
         linked_order_ids: list[ClientOrderId] | None = None,
         parent_order_id: ClientOrderId | None = None,
     ) -> StopMarketOrder:
+        """
+        Stop market order.
+        """
         trader_id = self.trader_id
         if trader_id is None:
             raise RuntimeError("Strategy is not registered")
@@ -464,10 +600,16 @@ class IbV2OrderStrategy(Strategy):
         )
 
     def submit_ib_order(self, order: object) -> None:
+        """
+        Submit ib order.
+        """
         self.submit_order(order, client_id=ib_client_id())
 
     def on_order_accepted(self, event: Any) -> None:
-        if not env_bool("IB_V2_CANCEL_ON_ACCEPT", True):
+        """
+        On order accepted.
+        """
+        if not env_bool("IB_V2_CANCEL_ON_ACCEPT", default=True):
             return
 
         order = self.cache.order(event.client_order_id)
@@ -486,9 +628,16 @@ class IbV2OrderStrategy(Strategy):
 
 
 class BracketOrderStrategy(IbV2OrderStrategy):
+    """
+    Collect bracket order strategy tests.
+    """
+
     strategy_id_value = "IB-V2-BRACKET-STRATEGY"
 
     def submit_example_orders(self) -> None:
+        """
+        Submit example orders.
+        """
         quantity = env_quantity("IB_V2_BRACKET_QUANTITY")
         entry_id = self.client_order_id("ENTRY")
         target_id = self.client_order_id("TARGET")
@@ -530,9 +679,16 @@ class BracketOrderStrategy(IbV2OrderStrategy):
 
 
 class MarketOrderStrategy(IbV2OrderStrategy):
+    """
+    Collect market order strategy tests.
+    """
+
     strategy_id_value = "IB-V2-MARKET-STRATEGY"
 
     def submit_example_orders(self) -> None:
+        """
+        Submit example orders.
+        """
         order = self.market_order(
             self.client_order_id("MARKET"),
             env_order_side("IB_V2_MARKET_SIDE", OrderSide.BUY),
@@ -542,9 +698,16 @@ class MarketOrderStrategy(IbV2OrderStrategy):
 
 
 class OcaGroupStrategy(IbV2OrderStrategy):
+    """
+    Collect oca group strategy tests.
+    """
+
     strategy_id_value = "IB-V2-OCA-STRATEGY"
 
     def submit_example_orders(self) -> None:
+        """
+        Submit example orders.
+        """
         ib = interactive_brokers
         quantity = env_quantity("IB_V2_OCA_QUANTITY")
         oca_group = os.getenv("IB_V2_OCA_GROUP", f"TEST_OCA_V2_{uuid4().hex[:12]}")
@@ -572,9 +735,16 @@ class OcaGroupStrategy(IbV2OrderStrategy):
 
 
 class SimpleConditionsStrategy(IbV2OrderStrategy):
+    """
+    Collect simple conditions strategy tests.
+    """
+
     strategy_id_value = "IB-V2-CONDITIONS-STRATEGY"
 
     def submit_example_orders(self) -> None:
+        """
+        Submit example orders.
+        """
         ib = interactive_brokers
         time_str = (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)).strftime("%Y%m%d-%H:%M:%S")
         time_condition = {
@@ -592,13 +762,13 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
             tags=[
                 ib_order_tags(
                     conditions=[time_condition],
-                    conditionsCancelOrder=env_bool("IB_V2_CONDITIONS_CANCEL_ORDER", False),
+                    conditionsCancelOrder=env_bool("IB_V2_CONDITIONS_CANCEL_ORDER", default=False),
                 ),
             ],
         )
         self.submit_ib_order(time_order)
 
-        if not env_bool("IB_V2_ENABLE_PRICE_CONDITION", True):
+        if not env_bool("IB_V2_ENABLE_PRICE_CONDITION", default=True):
             return
 
         con_id = env_int("IB_V2_CONDITION_CONTRACT_ID", 0) or contract_id_from_instrument(
@@ -633,7 +803,7 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
             tags=[
                 ib_order_tags(
                     conditions=[price_condition],
-                    conditionsCancelOrder=env_bool("IB_V2_CONDITIONS_CANCEL_ORDER", False),
+                    conditionsCancelOrder=env_bool("IB_V2_CONDITIONS_CANCEL_ORDER", default=False),
                 ),
             ],
         )
@@ -647,7 +817,10 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
                 tags=[
                     ib_order_tags(
                         conditions=[time_condition, price_condition],
-                        conditionsCancelOrder=env_bool("IB_V2_CONDITIONS_CANCEL_ORDER", False),
+                        conditionsCancelOrder=env_bool(
+                            "IB_V2_CONDITIONS_CANCEL_ORDER",
+                            default=False,
+                        ),
                     ),
                 ],
             )
@@ -655,10 +828,17 @@ class SimpleConditionsStrategy(IbV2OrderStrategy):
 
 
 class SpreadOrderStrategy(IbV2OrderStrategy):
+    """
+    Collect spread order strategy tests.
+    """
+
     strategy_id_value = "IB-V2-SPREAD-STRATEGY"
     instrument_id_value = default_es_put_spread_instrument_id()
 
     def __init__(self) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.instrument_id = env_instrument_id(
             "IB_V2_SPREAD_INSTRUMENT_ID",
@@ -667,6 +847,9 @@ class SpreadOrderStrategy(IbV2OrderStrategy):
         self._flatten_submitted = False
 
     def submit_example_orders(self) -> None:
+        """
+        Submit example orders.
+        """
         order = self.market_order(
             self.client_order_id("SPREAD"),
             OrderSide.BUY,
@@ -675,12 +858,21 @@ class SpreadOrderStrategy(IbV2OrderStrategy):
         self.submit_ib_order(order)
 
     def on_order_submitted(self, event: Any) -> None:
+        """
+        On order submitted.
+        """
         print(f"{self.strategy_id}: order submitted: {event}", flush=True)
 
     def on_order_rejected(self, event: Any) -> None:
+        """
+        On order rejected.
+        """
         print(f"{self.strategy_id}: order rejected: {event}", flush=True)
 
     def on_order_filled(self, event: Any) -> None:
+        """
+        On order filled.
+        """
         print(f"{self.strategy_id}: order filled: {event}", flush=True)
         if not env_bool("IB_V2_SPREAD_FLATTEN_ON_FILL") or self._flatten_submitted:
             return
@@ -698,10 +890,17 @@ class SpreadOrderStrategy(IbV2OrderStrategy):
 
 
 class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
+    """
+    Collect databento instrument id strategy tests.
+    """
+
     strategy_id_value = "IB-V2-DB-ID-STRATEGY"
     instrument_id_value = default_ym_future_instrument_id()
 
     def __init__(self) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.instrument_id = env_instrument_id(
             "IB_V2_DATABENTO_INSTRUMENT_ID",
@@ -716,6 +915,9 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
         self._max_prints = env_int("IB_V2_SUBSCRIPTION_MAX_PRINTS", 5)
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         print(f"{self.strategy_id}: requesting {self.instrument_id}", flush=True)
         self.request_instrument(self.instrument_id, client_id=ib_client_id())
 
@@ -727,6 +929,9 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
             )
 
     def on_instrument(self, instrument: Any) -> None:
+        """
+        On instrument.
+        """
         instrument_id = str(instrument.id)
         if instrument_id not in self._seen_instrument_ids:
             self._seen_instrument_ids.add(instrument_id)
@@ -767,6 +972,9 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
             self.submit_example_orders()
 
     def submit_example_orders(self) -> None:
+        """
+        Submit example orders.
+        """
         if self._orders_submitted:
             return
 
@@ -810,22 +1018,37 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
         self.submit_ib_order(stop)
 
     def on_trade(self, trade: Any) -> None:
+        """
+        On trade.
+        """
         self._trade_count += 1
         if self._trade_count <= self._max_prints:
             print(f"{self.strategy_id}: trade #{self._trade_count}: {trade}", flush=True)
 
     def on_bar(self, bar: Any) -> None:
+        """
+        On bar.
+        """
         self._bar_count += 1
         if self._bar_count <= self._max_prints:
             print(f"{self.strategy_id}: bar #{self._bar_count}: {bar}", flush=True)
 
     def on_historical_bars(self, bars: Sequence[Bar]) -> None:
+        """
+        On historical bars.
+        """
         print(f"{self.strategy_id}: received {len(bars)} historical bar(s)", flush=True)
 
     def on_position_opened(self, event: Any) -> None:
+        """
+        On position opened.
+        """
         print(f"{self.strategy_id}: position opened: {event}", flush=True)
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         if self._live_trades_subscribed:
             self.unsubscribe_trades(self.instrument_id, client_id=ib_client_id())
 

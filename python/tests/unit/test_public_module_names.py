@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test public module names behavior.
+"""
 
 from __future__ import annotations
 
@@ -50,6 +53,9 @@ GENERATED_MODULE_CLASSES = _generated_module_classes()
 
 
 def test_generated_public_modules_discovered() -> None:
+    """
+    Test generated public modules discovered.
+    """
     assert GENERATED_MODULE_CLASSES, "No generated public modules discovered"
 
 
@@ -62,6 +68,9 @@ def test_generated_classes_use_public_module(
     module_name: str,
     class_names: tuple[str, ...],
 ) -> None:
+    """
+    Test generated classes use public module.
+    """
     module = importlib.import_module(module_name)
     missing = []
     non_types = []

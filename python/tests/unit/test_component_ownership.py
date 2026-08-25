@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test component ownership behavior.
+"""
 
 import gc
 import weakref
@@ -33,24 +36,39 @@ from nautilus_trader.trading import Strategy
 
 
 class OwnershipActor(DataActor):
-    pass
+    """
+    Collect ownership actor tests.
+    """
 
 
 class OwnershipStrategy(Strategy):
-    pass
+    """
+    Collect ownership strategy tests.
+    """
 
 
 class OwnershipExecutionAlgorithm(ExecutionAlgorithm):
-    pass
+    """
+    Collect ownership execution algorithm tests.
+    """
 
 
 class TimerOwnershipActor(DataActor):
-    def on_timer(self, event):
-        pass
+    """
+    Collect timer ownership actor tests.
+    """
+
+    def on_timer(self, event: object) -> None:
+        """
+        On timer.
+        """
 
 
 @pytest.fixture(name="engine")
-def fixture_engine():
+def fixture_engine() -> object:
+    """
+    Fixture engine.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     yield engine
     engine.dispose()
@@ -60,7 +78,10 @@ def fixture_engine():
     "component_type",
     [OwnershipActor, OwnershipStrategy, OwnershipExecutionAlgorithm],
 )
-def test_unregistered_component_is_collected(component_type):
+def test_unregistered_component_is_collected(component_type: object) -> None:
+    """
+    Test unregistered component is collected.
+    """
     component = component_type()
     sentinel = weakref.ref(component)
 
@@ -71,7 +92,10 @@ def test_unregistered_component_is_collected(component_type):
     assert sentinel() is None
 
 
-def test_registered_components_stay_alive_until_cleared(engine):
+def test_registered_components_stay_alive_until_cleared(engine: object) -> None:
+    """
+    Test registered components stay alive until cleared.
+    """
     actor = OwnershipActor()
     strategy = OwnershipStrategy()
     exec_algorithm = OwnershipExecutionAlgorithm()
@@ -107,7 +131,10 @@ def test_registered_components_stay_alive_until_cleared(engine):
     }
 
 
-def test_registered_component_keeps_config_reachable_after_disposal(engine):
+def test_registered_component_keeps_config_reachable_after_disposal(engine: object) -> None:
+    """
+    Test registered component keeps config reachable after disposal.
+    """
     config = {"label": "ownership"}
     actor = OwnershipActor(config)
 
@@ -117,7 +144,10 @@ def test_registered_component_keeps_config_reachable_after_disposal(engine):
     assert actor.config == config
 
 
-def test_registered_component_clock_callback_released_on_clear(engine):
+def test_registered_component_clock_callback_released_on_clear(engine: object) -> None:
+    """
+    Test registered component clock callback released on clear.
+    """
     actor = TimerOwnershipActor()
     engine.add_actor(actor)
 
@@ -145,25 +175,38 @@ DATA_TYPE = DataType("RustTestCustomData", {"source": "ownership"}, str(INSTRUME
 
 
 class SubscribingActor(DataActor):
-    def __init__(self, config=None):
+    """
+    Collect subscribing actor tests.
+    """
+
+    def __init__(self, config: object = None) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self.received = []
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_data(DATA_TYPE)
 
-    def on_data(self, data):
+    def on_data(self, data: object) -> None:
+        """
+        On data.
+        """
         self.received.append(data.data.value)
 
 
-def _custom_data():
+def _custom_data() -> object:
     return [
         CustomData(DATA_TYPE, RustTestCustomData(INSTRUMENT_ID, 1.25, True, 1, 1)),
         CustomData(DATA_TYPE, RustTestCustomData(INSTRUMENT_ID, 2.5, False, 2, 2)),
     ]
 
 
-def test_actor_can_be_retired_and_replaced_between_runs(engine):
+def test_actor_can_be_retired_and_replaced_between_runs(engine: object) -> None:
     """
     Retiring an actor and adding a replacement leaves a working engine.
 
@@ -193,7 +236,10 @@ def test_actor_can_be_retired_and_replaced_between_runs(engine):
     assert retired.received == [1.25, 2.5], "a retired actor must receive no further data"
 
 
-def test_repeated_registration_cycles_do_not_accumulate(engine):
+def test_repeated_registration_cycles_do_not_accumulate(engine: object) -> None:
+    """
+    Test repeated registration cycles do not accumulate.
+    """
     sentinels = []
 
     for cycle in range(25):

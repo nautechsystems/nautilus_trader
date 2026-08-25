@@ -13,6 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Example of crypto ema cross ethusdt trade ticks.
+"""
 
 import sys
 from decimal import Decimal

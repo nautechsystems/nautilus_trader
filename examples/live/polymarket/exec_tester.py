@@ -61,6 +61,9 @@ TOB_OFFSET_TICKS = 5
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     instrument_config = PolymarketInstrumentProviderConfig(
         event_slugs=[EVENT_SLUG],
         load_ids=[INSTRUMENT_ID],
@@ -69,7 +72,7 @@ def main() -> None:
 
     node = (
         LiveNode.builder("POLYMARKET-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_exec_engine_config(
             LiveExecutionEngineConfig(
                 reconciliation_instrument_ids=[str(INSTRUMENT_ID)],

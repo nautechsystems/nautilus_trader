@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test logging behavior.
+"""
 
 import subprocess
 import sys
@@ -33,7 +36,10 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.model import TraderId
 
 
-def test_logger_methods_and_name():
+def test_logger_methods_and_name() -> None:
+    """
+    Test logger methods and name.
+    """
     logger = Logger("TestLogger")
 
     assert logger.name == "TestLogger"
@@ -52,7 +58,10 @@ def test_logger_methods_and_name():
     logger.flush()
 
 
-def test_logger_methods_accept_omitted_color():
+def test_logger_methods_accept_omitted_color() -> None:
+    """
+    Test logger methods accept omitted color.
+    """
     logger = Logger("TestLogger")
 
     for method_name in ["trace", "debug", "info", "warning", "error", "exception"]:
@@ -62,14 +71,20 @@ def test_logger_methods_accept_omitted_color():
     logger.flush()
 
 
-def test_logging_raw_functions():
+def test_logging_raw_functions() -> None:
+    """
+    Test logging raw functions.
+    """
     logger_log(LogLevel.INFO, LogColor.NORMAL, "CommonTests", "hello")
     log_header(TraderId("TRADER-001"), "machine", UUID4(), "CommonTests")
     log_sysinfo("CommonTests")
     logger_flush()
 
 
-def test_init_tracing_before_logging_succeeds_in_fresh_process():
+def test_init_tracing_before_logging_succeeds_in_fresh_process() -> None:
+    """
+    Test init tracing before logging succeeds in fresh process.
+    """
     script = textwrap.dedent(
         """
         import tempfile
@@ -109,13 +124,19 @@ def test_init_tracing_before_logging_succeeds_in_fresh_process():
     assert result.returncode == 0, result.stderr
 
 
-def test_logging_clock_mode_functions_are_callable():
+def test_logging_clock_mode_functions_are_callable() -> None:
+    """
+    Test logging clock mode functions are callable.
+    """
     logging_clock_set_static_mode()
     logging_clock_set_static_time(123)
     logging_clock_set_realtime_mode()
 
 
-def test_init_tracing_sets_initialized_flag():
+def test_init_tracing_sets_initialized_flag() -> None:
+    """
+    Test init tracing sets initialized flag.
+    """
     if not tracing_is_initialized():
         init_tracing()
 

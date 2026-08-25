@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test tester configs behavior.
+"""
 
 from decimal import Decimal
 
@@ -26,6 +29,9 @@ from nautilus_trader.testkit import ExecTesterConfig
 
 
 def test_data_tester_config_readback() -> None:
+    """
+    Test data tester config readback.
+    """
     actor_id = ActorId("DATA-TESTER-001")
     client_id = ClientId("DATA-001")
     instrument_id = InstrumentId.from_str("BTCUSDT.BINANCE")
@@ -100,6 +106,9 @@ def test_data_tester_config_readback() -> None:
 
 
 def test_exec_tester_config_readback() -> None:
+    """
+    Test exec tester config readback.
+    """
     strategy_id = StrategyId("EXEC-TESTER-001")
     instrument_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     client_id = ClientId("EXEC-001")
@@ -179,30 +188,45 @@ def test_exec_tester_config_readback() -> None:
 
 
 def test_exec_tester_config_defaults_to_hyphenated_client_order_ids() -> None:
+    """
+    Test exec tester config defaults to hyphenated client order ids.
+    """
     config = ExecTesterConfig()
 
     assert config.use_hyphens_in_client_order_ids is True
 
 
 def test_exec_tester_config_disables_hyphens_in_client_order_ids() -> None:
+    """
+    Test exec tester config disables hyphens in client order ids.
+    """
     config = ExecTesterConfig(use_hyphens_in_client_order_ids=False)
 
     assert config.use_hyphens_in_client_order_ids is False
 
 
 def test_exec_tester_config_uses_uuid_client_order_ids() -> None:
+    """
+    Test exec tester config uses uuid client order ids.
+    """
     config = ExecTesterConfig(use_uuid_client_order_ids=True)
 
     assert config.use_uuid_client_order_ids is True
 
 
 def test_exec_tester_config_uses_quote_quantity() -> None:
+    """
+    Test exec tester config uses quote quantity.
+    """
     config = ExecTesterConfig(use_quote_quantity=True)
 
     assert config.use_quote_quantity is True
 
 
 def test_exec_tester_config_uses_individual_cancels_on_stop() -> None:
+    """
+    Test exec tester config uses individual cancels on stop.
+    """
     config = ExecTesterConfig(use_individual_cancels_on_stop=True)
 
     assert config.use_individual_cancels_on_stop is True

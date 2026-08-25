@@ -57,6 +57,10 @@ SNAPSHOT_INTERVAL_MS = 2_000
 
 
 class OptionChainTesterConfig(DataActorConfig):
+    """
+    Collect option chain tester config tests.
+    """
+
     _CUSTOM_FIELDS = (
         "actor_id",
         "underlying",
@@ -66,6 +70,9 @@ class OptionChainTesterConfig(DataActorConfig):
     )
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -80,6 +87,9 @@ class OptionChainTesterConfig(DataActorConfig):
         log_events: bool = True,
         log_commands: bool = True,
     ) -> None:
+        """
+        Initialize the helper.
+        """
         self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
         self.log_events = log_events
         self.log_commands = log_commands
@@ -95,6 +105,9 @@ class OptionChainTester(DataActor):
     """
 
     def __init__(self, config: OptionChainTesterConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._underlying = config.underlying
         self._strikes_above = config.strikes_above
@@ -103,6 +116,9 @@ class OptionChainTester(DataActor):
         self._series_id: OptionSeriesId | None = None
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         instruments = self.cache.instruments()
 
         # Collect option instruments: (instrument, settlement_currency, expiry_ns)
@@ -121,7 +137,8 @@ class OptionChainTester(DataActor):
             options.append((inst, str(inst.settlement_currency), expiry))
 
         if not options:
-            self.log.warning(f"No {self._underlying} options found in cache")
+            log_msg = f"No {self._underlying} options found in cache"
+            self.log.warning(log_msg)
             return
 
         # Find the nearest (soonest) future expiry
@@ -137,10 +154,11 @@ class OptionChainTester(DataActor):
         # Count options at nearest expiry with matching settlement
         count = sum(1 for _, s, exp in options if exp == nearest_expiry and s == settlement)
 
-        self.log.info(
+        log_msg = (
             f"Found {count} {self._underlying} options at nearest expiry "
-            f"(ts={nearest_expiry}, settlement={settlement})",
+            f"(ts={nearest_expiry}, settlement={settlement})"
         )
+        self.log.info(log_msg)
 
         # Build OptionSeriesId for the nearest expiry
         series_id = OptionSeriesId(
@@ -151,7 +169,8 @@ class OptionChainTester(DataActor):
         )
         self._series_id = series_id
 
-        self.log.info(f"Subscribing to option chain: {series_id}")
+        log_msg = f"Subscribing to option chain: {series_id}"
+        self.log.info(log_msg)
 
         # Build StrikeRange
         strike_range = StrikeRange.atm_relative(
@@ -169,12 +188,16 @@ class OptionChainTester(DataActor):
         )
 
     def on_option_chain(self, slice: OptionChainSlice) -> None:
+        """
+        On option chain.
+        """
         atm = slice.atm_strike or "-"
-        self.log.info(
+        log_msg = (
             f"OPTION_CHAIN | {slice.series_id} | atm={atm} | "
             f"calls={slice.call_count()} puts={slice.put_count()} | "
-            f"strikes={slice.strike_count()}",
+            f"strikes={slice.strike_count()}"
         )
+        self.log.info(log_msg)
 
         for strike in slice.strikes():
             call = slice.get_call(strike)
@@ -208,18 +231,26 @@ class OptionChainTester(DataActor):
             else:
                 put_info = "-"
 
-            self.log.info(f"  K={strike} | CALL: {call_info} | PUT: {put_info}")
+            log_msg = f"  K={strike} | CALL: {call_info} | PUT: {put_info}"
+            self.log.info(log_msg)
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         if self._series_id is not None:
             self.unsubscribe_option_chain(
                 series_id=self._series_id,
                 client_id=ClientId(DERIBIT),
             )
-            self.log.info(f"Unsubscribed from option chain {self._series_id}")
+            log_msg = f"Unsubscribed from option chain {self._series_id}"
+            self.log.info(log_msg)
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("DERIBIT-OPTION-CHAIN-001", TRADER_ID, Environment.LIVE)
         .add_data_client(

@@ -13,6 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Example of crypto ema cross with binance provider.
+"""
 
 import asyncio
 import sys
@@ -44,7 +47,10 @@ from ema_cross import EMACross
 from ema_cross import EMACrossConfig
 
 
-async def load_instrument(instrument_id: InstrumentId):
+async def load_instrument(instrument_id: InstrumentId) -> object:
+    """
+    Load instrument.
+    """
     instruments = await load_binance_instruments(
         BinanceDataClientConfig(
             product_type=BinanceProductType.USD_M,

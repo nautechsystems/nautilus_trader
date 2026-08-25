@@ -89,6 +89,9 @@ class SpotSwapQuoterConfig(StrategyConfig):
     )
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        """
+        Create a new instance.
+        """
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -102,8 +105,11 @@ class SpotSwapQuoterConfig(StrategyConfig):
         tob_offset_ticks: int = 100,
         log_data: bool = False,
         close_positions_on_stop: bool = True,
-        **kwargs: Any,
+        **_kwargs: Any,
     ) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.spot_instrument_id = spot_instrument_id
         self.swap_instrument_id = swap_instrument_id
@@ -123,6 +129,9 @@ class SpotSwapQuoter(Strategy):
     """
 
     def __init__(self, config: SpotSwapQuoterConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self._config = config
         self.spot_instrument: Any | None = None
@@ -141,17 +150,22 @@ class SpotSwapQuoter(Strategy):
         self._swap_ask_order: Any | None = None
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         self.spot_instrument = self.cache.instrument(self._config.spot_instrument_id)
         if self.spot_instrument is None:
+            log_msg = f"Could not find spot instrument for {self._config.spot_instrument_id}"
             self.log.error(
-                f"Could not find spot instrument for {self._config.spot_instrument_id}",
+                log_msg,
             )
             self.stop()
             return
 
         self.swap_instrument = self.cache.instrument(self._config.swap_instrument_id)
         if self.swap_instrument is None:
-            self.log.error(f"Could not find swap instrument for {self._config.swap_instrument_id}")
+            log_msg = f"Could not find swap instrument for {self._config.swap_instrument_id}"
+            self.log.error(log_msg)
             self.stop()
             return
 
@@ -194,12 +208,16 @@ class SpotSwapQuoter(Strategy):
         )
 
         self.submit_order(order)
+        log_msg = f"Opened position on {self._config.spot_instrument_id} with order {order.client_order_id}"
         self.log.info(
-            f"Opened position on {self._config.spot_instrument_id} with order {order.client_order_id}",
+            log_msg,
             LogColor.BLUE,
         )
 
     def on_quote(self, quote: QuoteTick) -> None:
+        """
+        On quote.
+        """
         if self._config.log_data:
             self.log.info(repr(quote), LogColor.CYAN)
 
@@ -230,12 +248,14 @@ class SpotSwapQuoter(Strategy):
         min_price = self.spot_instrument.price_increment.as_decimal()
 
         if desired_bid <= 0:
+            log_msg = f"Calculated bid price {desired_bid} <= 0, using min price {min_price}"
             self.log.warning(
-                f"Calculated bid price {desired_bid} <= 0, using min price {min_price}",
+                log_msg,
             )
             desired_bid = min_price
         if desired_ask <= desired_bid:
-            self.log.warning(f"Calculated ask price {desired_ask} <= bid {desired_bid}, skipping")
+            log_msg = f"Calculated ask price {desired_ask} <= bid {desired_bid}, skipping"
+            self.log.warning(log_msg)
             return
 
         # Place BID order if none exists
@@ -292,13 +312,15 @@ class SpotSwapQuoter(Strategy):
         min_price = self.swap_instrument.price_increment.as_decimal()
 
         if desired_bid <= 0:
+            log_msg = f"Calculated swap bid price {desired_bid} <= 0, using min price {min_price}"
             self.log.warning(
-                f"Calculated swap bid price {desired_bid} <= 0, using min price {min_price}",
+                log_msg,
             )
             desired_bid = min_price
         if desired_ask <= desired_bid:
+            log_msg = f"Calculated swap ask price {desired_ask} <= bid {desired_bid}, skipping"
             self.log.warning(
-                f"Calculated swap ask price {desired_ask} <= bid {desired_bid}, skipping",
+                log_msg,
             )
             return
 
@@ -331,6 +353,9 @@ class SpotSwapQuoter(Strategy):
             self.submit_order(order)
 
     def on_order_filled(self, event: OrderFilled) -> None:
+        """
+        On order filled.
+        """
         # Reset state on fills so quotes are re-placed
         if self._spot_bid_order and event.client_order_id == self._spot_bid_order.client_order_id:
             self._spot_bid_order = None
@@ -343,6 +368,9 @@ class SpotSwapQuoter(Strategy):
             self._swap_ask_order = None
 
     def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.cancel_all_orders(self._config.spot_instrument_id)
         self.cancel_all_orders(self._config.swap_instrument_id)
 
@@ -358,6 +386,9 @@ class SpotSwapQuoter(Strategy):
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("OKX-SPOT-SWAP-QUOTER-001", TRADER_ID, Environment.LIVE)
         .with_exec_engine_config(
@@ -368,7 +399,7 @@ def main() -> None:
                 ],
             ),
         )
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))  # Must bypass for spot for now
         .with_timeout_connection(20)
         .with_timeout_reconciliation(10)

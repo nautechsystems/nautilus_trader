@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test rma behavior.
+"""
 
 import pytest
 
@@ -22,36 +25,57 @@ from tests.stubs import TestDataProviderPyo3
 
 @pytest.fixture
 def rma() -> WilderMovingAverage:
+    """
+    Rma.
+    """
     return WilderMovingAverage(10)
 
 
 def test_name_returns_expected_string(rma: WilderMovingAverage) -> None:
+    """
+    Test name returns expected string.
+    """
     # Arrange, Act, Assert
     assert rma.name == "WilderMovingAverage"
 
 
 def test_str_repr_returns_expected_string(rma: WilderMovingAverage) -> None:
+    """
+    Test str repr returns expected string.
+    """
     # Arrange, Act, Assert
     assert str(rma) == "WilderMovingAverage(10)"
     assert repr(rma) == "WilderMovingAverage(10)"
 
 
 def test_period_returns_expected_value(rma: WilderMovingAverage) -> None:
+    """
+    Test period returns expected value.
+    """
     # Arrange, Act, Assert
     assert rma.period == 10
 
 
 def test_multiplier_returns_expected_value(rma: WilderMovingAverage) -> None:
+    """
+    Test multiplier returns expected value.
+    """
     # Arrange, Act, Assert
     assert rma.alpha == 0.1
 
 
 def test_initialized_without_inputs_returns_false(rma: WilderMovingAverage) -> None:
+    """
+    Test initialized without inputs returns false.
+    """
     # Arrange, Act, Assert
     assert not rma.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(rma: WilderMovingAverage) -> None:
+    """
+    Test initialized with required inputs returns true.
+    """
     # Arrange
     rma.update_raw(1.00000)
     rma.update_raw(2.00000)
@@ -71,6 +95,9 @@ def test_initialized_with_required_inputs_returns_true(rma: WilderMovingAverage)
 
 
 def test_handle_quote_tick_updates_indicator() -> None:
+    """
+    Test handle quote tick updates indicator.
+    """
     # Arrange
     indicator = WilderMovingAverage(10, PriceType.MID)
 
@@ -85,6 +112,9 @@ def test_handle_quote_tick_updates_indicator() -> None:
 
 
 def test_handle_trade_tick_updates_indicator(rma: WilderMovingAverage) -> None:
+    """
+    Test handle trade tick updates indicator.
+    """
     # Arrange
 
     tick = TestDataProviderPyo3.trade_tick()
@@ -98,6 +128,9 @@ def test_handle_trade_tick_updates_indicator(rma: WilderMovingAverage) -> None:
 
 
 def test_handle_bar_updates_indicator(rma: WilderMovingAverage) -> None:
+    """
+    Test handle bar updates indicator.
+    """
     # Arrange
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -110,6 +143,9 @@ def test_handle_bar_updates_indicator(rma: WilderMovingAverage) -> None:
 
 
 def test_value_with_one_input_returns_expected_value(rma: WilderMovingAverage) -> None:
+    """
+    Test value with one input returns expected value.
+    """
     # Arrange
     rma.update_raw(1.00000)
 
@@ -118,6 +154,9 @@ def test_value_with_one_input_returns_expected_value(rma: WilderMovingAverage) -
 
 
 def test_value_with_three_inputs_returns_expected_value(rma: WilderMovingAverage) -> None:
+    """
+    Test value with three inputs returns expected value.
+    """
     # Arrange
     rma.update_raw(1.00000)
     rma.update_raw(2.00000)
@@ -128,6 +167,9 @@ def test_value_with_three_inputs_returns_expected_value(rma: WilderMovingAverage
 
 
 def test_value_with_ten_inputs_returns_expected_value(rma: WilderMovingAverage) -> None:
+    """
+    Test value with ten inputs returns expected value.
+    """
     # Arrange
     rma.update_raw(1.0)
     rma.update_raw(2.0)
@@ -145,6 +187,9 @@ def test_value_with_ten_inputs_returns_expected_value(rma: WilderMovingAverage) 
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(rma: WilderMovingAverage) -> None:
+    """
+    Test reset successfully returns indicator to fresh state.
+    """
     # Arrange
     for _i in range(10):
         rma.update_raw(1.00000)

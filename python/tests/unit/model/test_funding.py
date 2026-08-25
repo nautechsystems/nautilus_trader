@@ -12,14 +12,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test funding behavior.
+"""
 
 import pickle
 from decimal import Decimal
 
 from nautilus_trader.model import FundingRateUpdate
+from nautilus_trader.model import InstrumentId
 
 
-def test_funding_rate_update_construction(audusd_id):
+def test_funding_rate_update_construction(audusd_id: InstrumentId) -> None:
+    """
+    Test funding rate update construction.
+    """
     funding = FundingRateUpdate(
         instrument_id=audusd_id,
         rate=Decimal("0.0001"),
@@ -37,21 +44,30 @@ def test_funding_rate_update_construction(audusd_id):
     assert funding.ts_init == 1_000_000_001
 
 
-def test_funding_rate_update_equality(audusd_id):
+def test_funding_rate_update_equality(audusd_id: InstrumentId) -> None:
+    """
+    Test funding rate update equality.
+    """
     f1 = FundingRateUpdate(audusd_id, Decimal("0.0001"), 0, 0, interval=480)
     f2 = FundingRateUpdate(audusd_id, Decimal("0.0001"), 0, 0, interval=480)
 
     assert f1 == f2
 
 
-def test_funding_rate_update_hash(audusd_id):
+def test_funding_rate_update_hash(audusd_id: InstrumentId) -> None:
+    """
+    Test funding rate update hash.
+    """
     f1 = FundingRateUpdate(audusd_id, Decimal("0.0001"), 0, 0, interval=480)
     f2 = FundingRateUpdate(audusd_id, Decimal("0.0001"), 0, 0, interval=480)
 
     assert hash(f1) == hash(f2)
 
 
-def test_funding_rate_update_repr(audusd_id):
+def test_funding_rate_update_repr(audusd_id: InstrumentId) -> None:
+    """
+    Test funding rate update repr.
+    """
     funding = FundingRateUpdate(audusd_id, Decimal("0.0001"), 0, 0)
     r = repr(funding)
 
@@ -60,7 +76,10 @@ def test_funding_rate_update_repr(audusd_id):
     assert "0.0001" in r
 
 
-def test_funding_rate_update_to_dict_and_from_dict_roundtrip(audusd_id):
+def test_funding_rate_update_to_dict_and_from_dict_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test funding rate update to dict and from dict roundtrip.
+    """
     funding = FundingRateUpdate(
         instrument_id=audusd_id,
         rate=Decimal("0.0001"),
@@ -85,20 +104,29 @@ def test_funding_rate_update_to_dict_and_from_dict_roundtrip(audusd_id):
     assert restored == funding
 
 
-def test_funding_rate_update_fully_qualified_name():
+def test_funding_rate_update_fully_qualified_name() -> None:
+    """
+    Test funding rate update fully qualified name.
+    """
     assert FundingRateUpdate.fully_qualified_name() == "nautilus_trader.model:FundingRateUpdate"
 
 
-def test_funding_rate_update_pickle_roundtrip(audusd_id):
+def test_funding_rate_update_pickle_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test funding rate update pickle roundtrip.
+    """
     funding = FundingRateUpdate(audusd_id, Decimal("0.0001"), 0, 0, interval=480)
 
     pickled = pickle.dumps(funding)
-    unpickled = pickle.loads(pickled)  # noqa: S301
+    unpickled = pickle.loads(pickled)
 
     assert unpickled == funding
 
 
-def test_funding_rate_update_json_roundtrip(audusd_id):
+def test_funding_rate_update_json_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test funding rate update json roundtrip.
+    """
     funding = FundingRateUpdate(audusd_id, Decimal("0.0001"), 0, 0, interval=480)
 
     json_bytes = funding.to_json()
@@ -107,7 +135,10 @@ def test_funding_rate_update_json_roundtrip(audusd_id):
     assert restored == funding
 
 
-def test_funding_rate_update_msgpack_roundtrip(audusd_id):
+def test_funding_rate_update_msgpack_roundtrip(audusd_id: InstrumentId) -> None:
+    """
+    Test funding rate update msgpack roundtrip.
+    """
     funding = FundingRateUpdate(audusd_id, Decimal("0.0001"), 0, 0, interval=480)
 
     msgpack_bytes = funding.to_msgpack()
@@ -116,13 +147,19 @@ def test_funding_rate_update_msgpack_roundtrip(audusd_id):
     assert restored == funding
 
 
-def test_funding_rate_update_get_metadata(audusd_id):
+def test_funding_rate_update_get_metadata(audusd_id: InstrumentId) -> None:
+    """
+    Test funding rate update get metadata.
+    """
     metadata = FundingRateUpdate.get_metadata(audusd_id)
 
     assert metadata["instrument_id"] == "AUD/USD.SIM"
 
 
-def test_funding_rate_update_get_fields():
+def test_funding_rate_update_get_fields() -> None:
+    """
+    Test funding rate update get fields.
+    """
     fields = FundingRateUpdate.get_fields()
 
     assert fields == {

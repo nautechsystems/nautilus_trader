@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test mark price behavior.
+"""
 
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarkPriceUpdate
@@ -21,11 +24,17 @@ from nautilus_trader.model import Price
 BTCUSDT_BINANCE = InstrumentId.from_str("BTCUSDT.BINANCE")
 
 
-def test_fully_qualified_name():
+def test_fully_qualified_name() -> None:
+    """
+    Test fully qualified name.
+    """
     assert MarkPriceUpdate.fully_qualified_name() == "nautilus_trader.model:MarkPriceUpdate"
 
 
-def test_hash_str_and_repr():
+def test_hash_str_and_repr() -> None:
+    """
+    Test hash str and repr.
+    """
     update = MarkPriceUpdate(
         instrument_id=BTCUSDT_BINANCE,
         value=Price.from_str("100000.00"),
@@ -38,7 +47,10 @@ def test_hash_str_and_repr():
     assert repr(update) == "MarkPriceUpdate(BTCUSDT.BINANCE,100000.00,1,2)"
 
 
-def test_to_dict():
+def test_to_dict() -> None:
+    """
+    Test to dict.
+    """
     update = MarkPriceUpdate(
         instrument_id=BTCUSDT_BINANCE,
         value=Price.from_str("100000.00"),
@@ -57,7 +69,10 @@ def test_to_dict():
     }
 
 
-def test_from_dict_roundtrip():
+def test_from_dict_roundtrip() -> None:
+    """
+    Test from dict roundtrip.
+    """
     update = MarkPriceUpdate(
         instrument_id=BTCUSDT_BINANCE,
         value=Price.from_str("100000.00"),
@@ -70,7 +85,10 @@ def test_from_dict_roundtrip():
     assert result == update
 
 
-def test_equality():
+def test_equality() -> None:
+    """
+    Test equality.
+    """
     update1 = MarkPriceUpdate(
         instrument_id=BTCUSDT_BINANCE,
         value=Price.from_str("100000.00"),

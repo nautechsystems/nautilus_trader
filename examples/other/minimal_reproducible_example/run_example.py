@@ -13,6 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Example of a minimal reproducible run.
+"""
 
 from datetime import UTC
 from datetime import datetime
@@ -42,6 +45,9 @@ USD = Currency.from_str("USD")
 
 
 def generate_artificial_bars(instrument: CurrencyPair, bar_type: BarType) -> list[Bar]:
+    """
+    Generate artificial bars.
+    """
     # Changes between generated bars
     PRICE_CHANGE = instrument.price_increment.as_double() * 10  # 10 ticks
     TIME_CHANGE_NANOS = 60 * NANOSECONDS_IN_SECOND  # 1 minute
@@ -104,7 +110,10 @@ def generate_artificial_bars(instrument: CurrencyPair, bar_type: BarType) -> lis
     return generated_bars
 
 
-def run_backtest():
+def run_backtest() -> None:
+    """
+    Run backtest.
+    """
     # Step 1: Configure and create backtest engine
     engine_config = BacktestEngineConfig(
         trader_id=TraderId.from_str("BACKTEST_TRADER-001"),

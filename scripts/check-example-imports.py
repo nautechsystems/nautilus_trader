@@ -22,10 +22,14 @@ from __future__ import annotations
 import ast
 import json
 import re
-from collections.abc import Iterator
 from contextlib import suppress
 from functools import cache
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -121,6 +125,7 @@ def _example_sources() -> Iterator[tuple[str, str | bytes]]:
 def _check_imports(
     label: str,
     source: str | bytes,
+    *,
     report_syntax: bool = True,
 ) -> list[str]:
     issues = []
@@ -175,6 +180,9 @@ def _check_imports(
 
 
 def main() -> int:
+    """
+    Check every example source and return 1 when invalid imports are found.
+    """
     issues = []
     checked = 0
 

@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test binance factories behavior.
+"""
 
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
@@ -40,11 +43,17 @@ binance_exec_tester = load_example_module("binance", "exec_tester")
 
 
 def test_binance_factories_expose_python_names() -> None:
+    """
+    Test binance factories expose python names.
+    """
     assert BinanceDataClientFactory().name() == BINANCE
     assert BinanceExecutionClientFactory().name() == BINANCE
 
 
 def test_binance_config_proxy_readback_exposes_presence_only() -> None:
+    """
+    Test binance config proxy readback exposes presence only.
+    """
     proxy_url = "http://user:password@proxy.example.test"
     data_config = BinanceDataClientConfig(proxy_url=proxy_url)
     data_config_without_proxy = BinanceDataClientConfig()
@@ -63,6 +72,9 @@ def test_binance_config_proxy_readback_exposes_presence_only() -> None:
 
 
 def test_live_node_builder_accepts_binance_data_factory() -> None:
+    """
+    Test live node builder accepts binance data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -83,6 +95,9 @@ def test_live_node_builder_accepts_binance_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_binance_exec_factory() -> None:
+    """
+    Test live node builder accepts binance exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("BINANCE-001")
 
@@ -116,6 +131,9 @@ def test_live_node_builder_accepts_binance_exec_factory() -> None:
 
 
 def test_binance_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test binance data tester runs.
+    """
     captured = capture_data_tester_main(monkeypatch, binance_data_tester)
     kwargs = captured["data_tester_kwargs"]
     _, _, config = captured["data_client_args"]
@@ -128,6 +146,9 @@ def test_binance_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_binance_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test binance exec tester runs live orders.
+    """
     captured = capture_exec_tester_main(monkeypatch, binance_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 

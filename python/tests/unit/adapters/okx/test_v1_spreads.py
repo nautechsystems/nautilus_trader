@@ -12,11 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test v1 spreads behavior.
+"""
 
 from nautilus_trader.adapters.okx import OKXHttpClient
 
 
 def test_http_client_exposes_generic_spread_execution_methods() -> None:
+    """
+    Test http client exposes generic spread execution methods.
+    """
     assert hasattr(OKXHttpClient, "place_order")
     assert hasattr(OKXHttpClient, "cancel_order")
     assert hasattr(OKXHttpClient, "cancel_all_orders")
@@ -25,6 +31,9 @@ def test_http_client_exposes_generic_spread_execution_methods() -> None:
 
 
 def test_http_client_does_not_expose_spread_specific_execution_methods() -> None:
+    """
+    Test http client does not expose spread specific execution methods.
+    """
     assert not hasattr(OKXHttpClient, "place_spread_order")
     assert not hasattr(OKXHttpClient, "cancel_spread_order")
     assert not hasattr(OKXHttpClient, "cancel_all_spread_orders")

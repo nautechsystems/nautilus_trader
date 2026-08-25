@@ -56,10 +56,13 @@ ORDER_QTY = "2.00"
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     market_id, instrument_id = load_market_target()
     node = (
         LiveNode.builder("BETFAIR-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,
@@ -111,6 +114,9 @@ def main() -> None:
 
 
 def load_market_target() -> tuple[str, InstrumentId]:
+    """
+    Load market target.
+    """
     market_id = os.getenv("BETFAIR_MARKET_ID")
     instrument_id = os.getenv("BETFAIR_INSTRUMENT_ID")
 

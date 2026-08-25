@@ -1,3 +1,7 @@
+"""
+Example of databento option exercise.
+"""
+
 # ---
 # jupyter:
 #   jupytext:
@@ -12,6 +16,7 @@
 #     language: python
 #     name: python3
 # ---
+
 
 # %% [markdown]
 # # Option exercise at expiry
@@ -46,30 +51,53 @@ from nautilus_trader.trading import StrategyConfig
 
 
 class OptionExerciseConfig(StrategyConfig):
+    """
+    Collect option exercise config tests.
+    """
+
     _CUSTOM_FIELDS = ("future_id", "option_id")
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         for field in cls._CUSTOM_FIELDS:
             kwargs.pop(field, None)
         return super().__new__(cls, *args, **kwargs)
 
-    def __init__(self, future_id: InstrumentId, option_id: InstrumentId, **_kwargs):
+    def __init__(self, future_id: InstrumentId, option_id: InstrumentId, **_kwargs: object) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self.future_id = future_id
         self.option_id = option_id
 
 
 class OptionExerciseStrategy(Strategy):
-    def __init__(self, config: OptionExerciseConfig):
+    """
+    Collect option exercise strategy tests.
+    """
+
+    def __init__(self, config: OptionExerciseConfig) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self.order_submitted = False
         self.bar_type = BarType.from_str(f"{config.future_id}-1-MINUTE-LAST-EXTERNAL")
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_quotes(self.config.option_id)
         self.subscribe_bars(self.bar_type)
 
-    def on_quote(self, tick):
+    def on_quote(self, tick) -> None:
+        """
+        On quote.
+        """
         if tick.instrument_id != self.config.option_id or self.order_submitted:
             return
 

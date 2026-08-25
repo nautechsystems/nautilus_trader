@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Generic CSV and Parquet data loaders for tick and bar data.
+"""
 
 import io
 from os import PathLike
@@ -29,6 +32,7 @@ class CSVTickDataLoader:
     def load(
         file_path: PathLike[str] | str | io.IOBase,
         index_col: str | int = "timestamp",
+        *,
         parse_dates: bool = True,
         datetime_format: str = "mixed",
         **kwargs: Any,
@@ -75,6 +79,7 @@ class CSVBarDataLoader:
     def load(
         file_path: PathLike[str] | str | io.IOBase,
         index_col: str | int = "timestamp",
+        *,
         parse_dates: bool = True,
         **kwargs: Any,
     ) -> pd.DataFrame:
@@ -135,8 +140,7 @@ class ParquetTickDataLoader:
 
         """
         df = pd.read_parquet(file_path)
-        df = df.set_index(timestamp_column)
-        return df
+        return df.set_index(timestamp_column)
 
 
 class ParquetBarDataLoader:
@@ -160,5 +164,4 @@ class ParquetBarDataLoader:
 
         """
         df = pd.read_parquet(file_path)
-        df = df.set_index("timestamp")
-        return df
+        return df.set_index("timestamp")

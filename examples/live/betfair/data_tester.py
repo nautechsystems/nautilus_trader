@@ -43,6 +43,9 @@ STREAM_CONFLATE_MS = 0
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     market_id, instrument_id = load_market_target()
     builder = LiveNode.builder(
         "BETFAIR-DATA-TESTER-001",
@@ -77,6 +80,9 @@ def main() -> None:
 
 
 def load_market_target() -> tuple[str, InstrumentId]:
+    """
+    Load market target.
+    """
     market_id = os.getenv("BETFAIR_MARKET_ID")
     instrument_id = os.getenv("BETFAIR_INSTRUMENT_ID")
 

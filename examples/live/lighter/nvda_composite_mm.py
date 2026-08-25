@@ -14,10 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Run a Lighter NVDA RWA composite market maker with the built-in CompositeMarketMaker
-strategy: Databento ``NVDA.EQUS`` quotes drive the signal and ``NVDA-PERP.LIGHTER``
-is the quoted target. This is the Python counterpart of the Rust tutorial binary
-``examples/tutorials/src/bin/lighter_nvda_composite_mm.rs``.
+Run a Lighter NVDA RWA composite market maker with the built-in CompositeMarketMaker strategy: Databento ``NVDA.EQUS`` quotes drive the signal and ``NVDA-PERP.LIGHTER`` is the quoted target. This is the Python counterpart of the Rust tutorial binary ``examples/tutorials/src/bin/lighter_nvda_composite_mm.rs``.
 
 WARNING: Running this script connects to the configured Lighter environment and
 places REAL post-only orders immediately. With the default testnet environment no
@@ -78,12 +75,15 @@ PUBLISHERS_FILEPATH = (
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     if not DATABENTO_API_KEY:
         raise SystemExit("DATABENTO_API_KEY must be set")
 
     node = (
         LiveNode.builder("LIGHTER-NVDA-COMPOSITE-MM-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_delay_post_stop_secs(5)
         .add_data_client(
             None,

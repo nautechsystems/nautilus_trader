@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test aroon behavior.
+"""
 
 import pytest
 
@@ -29,24 +32,39 @@ from tests.stubs import TestDataProviderPyo3
 
 @pytest.fixture
 def aroon() -> AroonOscillator:
+    """
+    Aroon.
+    """
     return AroonOscillator(10)
 
 
 def test_name_returns_expected_string(aroon: AroonOscillator) -> None:
+    """
+    Test name returns expected string.
+    """
     assert aroon.name == "AroonOscillator"
 
 
 def test_period(aroon: AroonOscillator) -> None:
+    """
+    Test period.
+    """
     # Arrange, Act, Assert
     assert aroon.period == 10
 
 
 def test_initialized_without_inputs_returns_false(aroon: AroonOscillator) -> None:
+    """
+    Test initialized without inputs returns false.
+    """
     # Arrange, Act, Assert
     assert not aroon.initialized
 
 
 def test_initialized_with_required_inputs_returns_true(aroon: AroonOscillator) -> None:
+    """
+    Test initialized with required inputs returns true.
+    """
     # Arrange, Act
     for _i in range(20):
         aroon.update_raw(110.08, 109.61)
@@ -55,7 +73,10 @@ def test_initialized_with_required_inputs_returns_true(aroon: AroonOscillator) -
     assert aroon.initialized
 
 
-def test_handle_bar_updates_indicator(aroon: AroonOscillator) -> None:
+def test_handle_bar_updates_indicator() -> None:
+    """
+    Test handle bar updates indicator.
+    """
     # Arrange
     indicator = AroonOscillator(1)
     bar = TestDataProviderPyo3.bar_5decimal()
@@ -69,6 +90,9 @@ def test_handle_bar_updates_indicator(aroon: AroonOscillator) -> None:
 
 
 def test_handle_bar_uses_bar_high_and_low() -> None:
+    """
+    Test handle bar uses bar high and low.
+    """
     # Arrange
     indicator = AroonOscillator(1)
 
@@ -84,6 +108,9 @@ def test_handle_bar_uses_bar_high_and_low() -> None:
 
 
 def test_handle_quote_tick_updates_indicator() -> None:
+    """
+    Test handle quote tick updates indicator.
+    """
     # Arrange
     indicator = AroonOscillator(1)
 
@@ -98,6 +125,9 @@ def test_handle_quote_tick_updates_indicator() -> None:
 
 
 def test_handle_trade_tick_updates_indicator() -> None:
+    """
+    Test handle trade tick updates indicator.
+    """
     # Arrange
     indicator = AroonOscillator(1)
 
@@ -112,6 +142,9 @@ def test_handle_trade_tick_updates_indicator() -> None:
 
 
 def test_value_with_two_inputs() -> None:
+    """
+    Test value with two inputs.
+    """
     # Arrange
     aroon = AroonOscillator(1)
 
@@ -127,6 +160,9 @@ def test_value_with_two_inputs() -> None:
 
 
 def test_value_with_twenty_inputs(aroon: AroonOscillator) -> None:
+    """
+    Test value with twenty inputs.
+    """
     # Arrange, Act
     aroon.update_raw(110.08, 109.61)
     aroon.update_raw(110.15, 109.91)
@@ -156,6 +192,9 @@ def test_value_with_twenty_inputs(aroon: AroonOscillator) -> None:
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(aroon: AroonOscillator) -> None:
+    """
+    Test reset successfully returns indicator to fresh state.
+    """
     # Arrange
     for _i in range(1000):
         aroon.update_raw(110.08, 109.61)

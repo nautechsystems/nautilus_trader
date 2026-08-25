@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test hyperliquid factories behavior.
+"""
 
 import inspect
 
@@ -42,11 +45,17 @@ hyperliquid_exec_tester = load_example_module("hyperliquid", "exec_tester")
 
 
 def test_hyperliquid_factories_expose_python_names() -> None:
+    """
+    Test hyperliquid factories expose python names.
+    """
     assert HyperliquidDataClientFactory().name() == HYPERLIQUID
     assert HyperliquidExecutionClientFactory().name() == HYPERLIQUID
 
 
 def test_resolve_execution_account_address_prefers_explicit_account() -> None:
+    """
+    Test resolve execution account address prefers explicit account.
+    """
     account_address = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
     resolved = hyperliquid_resolve_execution_account_address(
@@ -59,6 +68,9 @@ def test_resolve_execution_account_address_prefers_explicit_account() -> None:
 
 
 def test_resolve_execution_account_address_uses_vault_fallback() -> None:
+    """
+    Test resolve execution account address uses vault fallback.
+    """
     vault_address = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 
     resolved = hyperliquid_resolve_execution_account_address(
@@ -70,6 +82,9 @@ def test_resolve_execution_account_address_uses_vault_fallback() -> None:
 
 
 def test_resolve_execution_account_address_rejects_invalid_vault() -> None:
+    """
+    Test resolve execution account address rejects invalid vault.
+    """
     with pytest.raises(ValueError, match="Vault address must be 20 bytes of valid hex"):
         hyperliquid_resolve_execution_account_address(
             vault_address="0xinvalid",
@@ -79,6 +94,9 @@ def test_resolve_execution_account_address_rejects_invalid_vault() -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_trading_binding_signatures_and_empty_cancel() -> None:
+    """
+    Test websocket trading binding signatures and empty cancel.
+    """
     client = HyperliquidWebSocketClient(
         url="ws://127.0.0.1:9/ws",
         environment=HyperliquidEnvironment.MAINNET,
@@ -138,6 +156,9 @@ async def test_websocket_trading_binding_signatures_and_empty_cancel() -> None:
 
 
 def test_live_node_builder_accepts_hyperliquid_data_factory() -> None:
+    """
+    Test live node builder accepts hyperliquid data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -155,6 +176,9 @@ def test_live_node_builder_accepts_hyperliquid_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_hyperliquid_exec_factory() -> None:
+    """
+    Test live node builder accepts hyperliquid exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("HYPERLIQUID-001")
 
@@ -183,6 +207,9 @@ def test_live_node_builder_accepts_hyperliquid_exec_factory() -> None:
 
 
 def test_hyperliquid_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test hyperliquid data tester runs.
+    """
     captured = capture_data_tester_main(monkeypatch, hyperliquid_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
@@ -192,6 +219,9 @@ def test_hyperliquid_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_hyperliquid_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test hyperliquid exec tester runs live orders.
+    """
     captured = capture_exec_tester_main(monkeypatch, hyperliquid_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
 

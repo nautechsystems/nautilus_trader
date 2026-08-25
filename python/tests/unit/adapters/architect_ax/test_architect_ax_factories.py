@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test architect ax factories behavior.
+"""
 
 from decimal import Decimal
 
@@ -46,11 +49,17 @@ architect_ax_exec_tester = load_example_module("architect_ax", "exec_tester")
 
 
 def test_architect_ax_factories_expose_python_names() -> None:
+    """
+    Test architect ax factories expose python names.
+    """
     assert AxDataClientFactory().name() == AX
     assert AxExecutionClientFactory().name() == AX
 
 
 def test_live_node_builder_accepts_architect_ax_data_factory() -> None:
+    """
+    Test live node builder accepts architect ax data factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
 
     node = (
@@ -68,6 +77,9 @@ def test_live_node_builder_accepts_architect_ax_data_factory() -> None:
 
 
 def test_live_node_builder_accepts_architect_ax_exec_factory() -> None:
+    """
+    Test live node builder accepts architect ax exec factory.
+    """
     trader_id = TraderId.from_str("TESTER-001")
     account_id = AccountId.from_str("AX-001")
 
@@ -97,6 +109,9 @@ def test_live_node_builder_accepts_architect_ax_exec_factory() -> None:
 
 
 def test_architect_ax_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test architect ax data tester runs.
+    """
     captured = capture_data_tester_main(monkeypatch, architect_ax_data_tester)
     kwargs = captured["data_tester_kwargs"]
     data_client_config = captured["data_client_args"][2]
@@ -136,6 +151,9 @@ def test_architect_ax_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_architect_ax_exec_tester_runs_live_orders(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """
+    Test architect ax exec tester runs live orders.
+    """
     captured = capture_exec_tester_main(monkeypatch, architect_ax_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
     exec_engine_config = captured["exec_engine_config"]

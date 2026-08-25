@@ -1,3 +1,21 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+"""
+Test generate stubs behavior.
+"""
+
 from __future__ import annotations
 
 import ast
@@ -15,7 +33,7 @@ import pytest
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 
 
-def _load_module(module_path: Path, module_name: str):
+def _load_module(module_path: Path, module_name: str) -> object:
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec is not None
@@ -47,14 +65,17 @@ check_pyo3_names = _load_module(
     ],
 )
 def test_python_libdir_env_sets_loader_path(
-    monkeypatch,
-    platform,
-    shared,
-    libdir,
-    existing,
-    expected_var,
-    expected_value,
-):
+    monkeypatch: pytest.MonkeyPatch,
+    platform: object,
+    shared: object,
+    libdir: object,
+    existing: object,
+    expected_var: object,
+    expected_value: object,
+) -> None:
+    """
+    Test python libdir env sets loader path.
+    """
     # Arrange
     monkeypatch.setattr(generate_stubs.sys, "platform", platform)
     monkeypatch.setattr(
@@ -78,7 +99,10 @@ def test_python_libdir_env_sets_loader_path(
         assert env[expected_var] == expected_value
 
 
-def test_python_libdir_env_does_not_mutate_os_environ(monkeypatch):
+def test_python_libdir_env_does_not_mutate_os_environ(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Test python libdir env does not mutate os environ.
+    """
     # Arrange
     monkeypatch.setattr(generate_stubs.sys, "platform", "linux")
     monkeypatch.setattr(
@@ -118,7 +142,14 @@ def test_python_libdir_env_does_not_mutate_os_environ(monkeypatch):
         ),
     ],
 )
-def test_stub_generator_command_uses_selected_profile(monkeypatch, profile, expected):
+def test_stub_generator_command_uses_selected_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    profile: object,
+    expected: object,
+) -> None:
+    """
+    Test stub generator command uses selected profile.
+    """
     if profile is None:
         monkeypatch.delenv("NAUTILUS_STUB_PROFILE", raising=False)
     else:
@@ -129,7 +160,10 @@ def test_stub_generator_command_uses_selected_profile(monkeypatch, profile, expe
     assert command == expected
 
 
-def test_write_config_stub_uses_runtime_exports(tmp_path):
+def test_write_config_stub_uses_runtime_exports(tmp_path: Path) -> None:
+    """
+    Test write config stub uses runtime exports.
+    """
     # Arrange
     runtime_path = tmp_path / "config" / "__init__.py"
     runtime_path.parent.mkdir()
@@ -166,7 +200,10 @@ __all__ = [
     ) == ["CacheConfig", "TearsheetConfig"]
 
 
-def test_write_config_stub_rejects_export_drift(tmp_path):
+def test_write_config_stub_rejects_export_drift(tmp_path: Path) -> None:
+    """
+    Test write config stub rejects export drift.
+    """
     # Arrange
     runtime_path = tmp_path / "config" / "__init__.py"
     runtime_path.parent.mkdir()
@@ -192,7 +229,10 @@ __all__ = ["TearsheetConfig"]
     )
 
 
-def test_collect_rust_class_fixups_reads_pymethods_and_identifier_macros(tmp_path):
+def test_collect_rust_class_fixups_reads_pymethods_and_identifier_macros(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups reads pymethods and identifier macros.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "model" / "src" / "python" / "sample.rs"
     rust_file.parent.mkdir(parents=True)
@@ -241,7 +281,12 @@ identifier_for_python!(crate::identifiers::AccountId);
     assert fixups["AccountId"].staticmethods == {"_safe_constructor", "from_str"}
 
 
-def test_collect_rust_class_fixups_keeps_fallback_name_when_pyo3_name_is_ignored(tmp_path):
+def test_collect_rust_class_fixups_keeps_fallback_name_when_pyo3_name_is_ignored(
+    tmp_path: Path,
+) -> None:
+    """
+    Test collect rust class fixups keeps fallback name when pyo3 name is ignored.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "model" / "src" / "python" / "sample.rs"
     rust_file.parent.mkdir(parents=True)
@@ -267,7 +312,10 @@ impl Currency {
     assert fixups["Currency"].renames == {"is_commodidity_backed": "is_commodity_backed"}
 
 
-def test_collect_rust_class_fixups_renames_get_prefixed_getter(tmp_path):
+def test_collect_rust_class_fixups_renames_get_prefixed_getter(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups renames get prefixed getter.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "adapter" / "src" / "python" / "config.rs"
     rust_file.parent.mkdir(parents=True)
@@ -292,7 +340,10 @@ impl ClientConfig {
     assert fixups["ClientConfig"].renames == {"get_ws_url": "ws_url"}
 
 
-def test_collect_rust_class_fixups_detects_classmethods(tmp_path):
+def test_collect_rust_class_fixups_detects_classmethods(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups detects classmethods.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "model" / "src" / "python" / "sample.rs"
     rust_file.parent.mkdir(parents=True)
@@ -323,7 +374,10 @@ impl PriceType {
     assert fixups["PriceType"].staticmethods == set()
 
 
-def test_signature_defaults_handle_lifetime_generic_methods(tmp_path):
+def test_signature_defaults_handle_lifetime_generic_methods(tmp_path: Path) -> None:
+    """
+    Test signature defaults handle lifetime generic methods.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "adapters" / "hyperliquid" / "src" / "python" / "http.rs"
     rust_file.parent.mkdir(parents=True)
@@ -368,7 +422,10 @@ class HyperliquidHttpClient:
     assert "include_outcomes: bool = False" in updated
 
 
-def test_signature_defaults_ignore_var_kwargs_when_filtering_safe_defaults(tmp_path):
+def test_signature_defaults_ignore_var_kwargs_when_filtering_safe_defaults(tmp_path: Path) -> None:
+    """
+    Test signature defaults ignore var kwargs when filtering safe defaults.
+    """
     rust_file = tmp_path / "crates" / "common" / "src" / "python" / "actor.rs"
     rust_file.parent.mkdir(parents=True)
     rust_file.write_text(
@@ -409,7 +466,10 @@ class DataActorConfig:
     assert "_kwargs: dict | None = ..." in updated
 
 
-def test_signature_defaults_replace_stale_stub_defaults(tmp_path):
+def test_signature_defaults_replace_stale_stub_defaults(tmp_path: Path) -> None:
+    """
+    Test signature defaults replace stale stub defaults.
+    """
     rust_file = tmp_path / "crates" / "trading" / "src" / "python" / "strategy.rs"
     rust_file.parent.mkdir(parents=True)
     rust_file.write_text(
@@ -436,7 +496,10 @@ class StrategyConfig:
     assert "log_events: bool = False" in updated
 
 
-def test_signature_defaults_translate_decimal_constants(tmp_path):
+def test_signature_defaults_translate_decimal_constants(tmp_path: Path) -> None:
+    """
+    Test signature defaults translate decimal constants.
+    """
     rust_file = tmp_path / "crates" / "risk" / "src" / "python" / "sizing.rs"
     rust_file.parent.mkdir(parents=True)
     rust_file.write_text(
@@ -476,7 +539,10 @@ class FixedRiskSizer:
     assert "exchange_rate: decimal.Decimal = decimal.Decimal(1)" in updated
 
 
-def test_collect_rust_class_fixups_reads_custom_data_stub_module(tmp_path):
+def test_collect_rust_class_fixups_reads_custom_data_stub_module(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups reads custom data stub module.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "adapters" / "hyperliquid" / "src" / "data_types.rs"
     rust_file.parent.mkdir(parents=True)
@@ -500,7 +566,10 @@ pub struct HyperliquidAllMids {
     assert fixups["HyperliquidAllMids"].classmethods == {"from_json"}
 
 
-def test_collect_rust_class_fixups_detects_cfg_attr_wrapped_custom_data(tmp_path):
+def test_collect_rust_class_fixups_detects_cfg_attr_wrapped_custom_data(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups detects cfg attr wrapped custom data.
+    """
     # Arrange: mirrors the multi-line cfg_attr form used in
     # crates/adapters/hyperliquid/src/data_types.rs
     rust_file = tmp_path / "crates" / "adapters" / "hyperliquid" / "src" / "data_types.rs"
@@ -532,7 +601,10 @@ pub struct HyperliquidAllMids {
     assert fixups["HyperliquidAllMids"].classmethods == {"from_json"}
 
 
-def test_collect_rust_class_fixups_ignores_custom_data_without_stub_module(tmp_path):
+def test_collect_rust_class_fixups_ignores_custom_data_without_stub_module(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups ignores custom data without stub module.
+    """
     # Arrange: DeribitVolatilityIndex pattern, cfg_attr-wrapped custom_data
     # with no stub_module must not register stub fixups.
     rust_file = tmp_path / "crates" / "adapters" / "deribit" / "src" / "data_types.rs"
@@ -557,7 +629,10 @@ pub struct DeribitVolatilityIndex {
     assert "DeribitVolatilityIndex" not in fixups
 
 
-def test_collect_rust_class_fixups_preserves_attrs_across_doc_comments(tmp_path):
+def test_collect_rust_class_fixups_preserves_attrs_across_doc_comments(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups preserves attrs across doc comments.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "model" / "src" / "python" / "sample.rs"
     rust_file.parent.mkdir(parents=True)
@@ -587,7 +662,10 @@ impl AccountState {
     assert "from_dict" in fixups["AccountState"].staticmethods
 
 
-def test_collect_rust_class_fixups_handles_multiline_attributes(tmp_path):
+def test_collect_rust_class_fixups_handles_multiline_attributes(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups handles multiline attributes.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "core" / "src" / "python" / "sample.rs"
     rust_file.parent.mkdir(parents=True)
@@ -615,7 +693,10 @@ impl UUID4 {
     assert fixups["UUID4"].staticmethods == {"_safe_constructor"}
 
 
-def test_collect_rust_class_fixups_handles_multiline_attributes_before_impl(tmp_path):
+def test_collect_rust_class_fixups_handles_multiline_attributes_before_impl(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups handles multiline attributes before impl.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "trading" / "src" / "python" / "sample.rs"
     rust_file.parent.mkdir(parents=True)
@@ -660,7 +741,10 @@ class PyStrategy:
     assert "    @property\n    def trader_id(self) -> model.TraderId | None: ..." in updated
 
 
-def test_collect_rust_class_fixups_detects_cfg_attr_subclass_pyclass(tmp_path):
+def test_collect_rust_class_fixups_detects_cfg_attr_subclass_pyclass(tmp_path: Path) -> None:
+    """
+    Test collect rust class fixups detects cfg attr subclass pyclass.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "trading" / "src" / "strategy" / "config.rs"
     rust_file.parent.mkdir(parents=True)
@@ -685,7 +769,12 @@ pub struct StrategyConfig {}
     assert fixups["StrategyConfig"].subclass is True
 
 
-def test_collect_rust_class_fixups_ignores_subclass_in_pyclass_string_values(tmp_path):
+def test_collect_rust_class_fixups_ignores_subclass_in_pyclass_string_values(
+    tmp_path: Path,
+) -> None:
+    """
+    Test collect rust class fixups ignores subclass in pyclass string values.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "test" / "src" / "config.rs"
     rust_file.parent.mkdir(parents=True)
@@ -711,7 +800,10 @@ pub struct RustConfig {}
     assert fixups["RustConfig"].subclass is False
 
 
-def test_remove_final_from_subclassable_classes():
+def test_remove_final_from_subclassable_classes() -> None:
+    """
+    Test remove final from subclassable classes.
+    """
     # Arrange
     content = """
 @typing.final
@@ -736,7 +828,10 @@ class NonSubclassable:
     assert "@typing.final\nclass NonSubclassable:" in updated
 
 
-def test_apply_rust_class_fixups_restores_properties_and_staticmethods():
+def test_apply_rust_class_fixups_restores_properties_and_staticmethods() -> None:
+    """
+    Test apply rust class fixups restores properties and staticmethods.
+    """
     # Arrange
     content = """
 @typing.final
@@ -765,7 +860,10 @@ class Sample:
     assert "def get_metadata(\n        self, value: builtins.str" not in updated
 
 
-def test_apply_rust_class_fixups_rewrites_setters_as_property_setters():
+def test_apply_rust_class_fixups_rewrites_setters_as_property_setters() -> None:
+    """
+    Test apply rust class fixups rewrites setters as property setters.
+    """
     # Arrange
     content = """
 class DataActorConfig:
@@ -789,7 +887,10 @@ class DataActorConfig:
     assert "def set_actor_id" not in updated
 
 
-def test_add_optional_defaults_skips_property_setters():
+def test_add_optional_defaults_skips_property_setters() -> None:
+    """
+    Test add optional defaults skips property setters.
+    """
     # Arrange
     content = """
 class DataActorConfig:
@@ -808,7 +909,10 @@ class DataActorConfig:
     assert "def actor_id(self, actor_id: model.ActorId | None) -> None: ..." in updated
 
 
-def test_apply_rust_class_fixups_injects_missing_deserializers():
+def test_apply_rust_class_fixups_injects_missing_deserializers() -> None:
+    """
+    Test apply rust class fixups injects missing deserializers.
+    """
     # Arrange
     content = """
 @typing.final
@@ -843,7 +947,10 @@ class Other:
     )
 
 
-def test_apply_rust_class_fixups_suppresses_implementation_detail_methods():
+def test_apply_rust_class_fixups_suppresses_implementation_detail_methods() -> None:
+    """
+    Test apply rust class fixups suppresses implementation detail methods.
+    """
     # Arrange
     content = """
 @typing.final
@@ -871,7 +978,10 @@ class Sample:
     assert "@property\n    def value" in updated
 
 
-def test_apply_rust_class_fixups_adds_classmethod_decorator():
+def test_apply_rust_class_fixups_adds_classmethod_decorator() -> None:
+    """
+    Test apply rust class fixups adds classmethod decorator.
+    """
     # Arrange
     content = """
 class PriceType(Enum):
@@ -896,7 +1006,10 @@ class PriceType(Enum):
     assert "def from_str(self," not in updated
 
 
-def test_apply_rust_class_fixups_drops_extra_classmethod_cls_param():
+def test_apply_rust_class_fixups_drops_extra_classmethod_cls_param() -> None:
+    """
+    Test apply rust class fixups drops extra classmethod cls param.
+    """
     # Arrange
     content = """
 @typing.final
@@ -917,7 +1030,10 @@ class HyperliquidAllMids:
     assert "_cls" not in updated
 
 
-def test_apply_rust_class_fixups_renames_methods():
+def test_apply_rust_class_fixups_renames_methods() -> None:
+    """
+    Test apply rust class fixups renames methods.
+    """
     # Arrange
     content = """
 @typing.final
@@ -952,7 +1068,10 @@ class Currency:
     assert "arbitrum_chain" not in updated
 
 
-def test_normalize_stub_content_strips_builtin_type_qualifiers():
+def test_normalize_stub_content_strips_builtin_type_qualifiers() -> None:
+    """
+    Test normalize stub content strips builtin type qualifiers.
+    """
     # Arrange
     content = """
 import builtins
@@ -970,7 +1089,10 @@ def parse(values: builtins.list[builtins.int]) -> builtins.dict[builtins.str, bu
     assert "builtins." not in updated
 
 
-def test_normalize_stub_content_preserves_builtins_import_when_still_needed():
+def test_normalize_stub_content_preserves_builtins_import_when_still_needed() -> None:
+    """
+    Test normalize stub content preserves builtins import when still needed.
+    """
     # Arrange
     content = """
 import builtins
@@ -1011,11 +1133,17 @@ def parse_error() -> builtins.Exception: ...
         ("NO_ORDER_SIDE", "NO_ORDER_SIDE"),
     ],
 )
-def test_to_screaming_snake_case(input_name, expected):
+def test_to_screaming_snake_case(input_name: object, expected: object) -> None:
+    """
+    Test to screaming snake case.
+    """
     assert generate_stubs.to_screaming_snake_case(input_name) == expected
 
 
-def test_rename_enum_variants_transforms_renamed_enums():
+def test_rename_enum_variants_transforms_renamed_enums() -> None:
+    """
+    Test rename enum variants transforms renamed enums.
+    """
     # Arrange
     content = """
 class AccountType(Enum):
@@ -1044,7 +1172,10 @@ class OtherClass:
     assert "class OtherClass:" in updated
 
 
-def test_rename_enum_variants_skips_non_renamed_enums():
+def test_rename_enum_variants_skips_non_renamed_enums() -> None:
+    """
+    Test rename enum variants skips non renamed enums.
+    """
     # Arrange
     content = """
 class BookType(Enum):
@@ -1060,7 +1191,10 @@ class BookType(Enum):
     assert updated == content
 
 
-def test_rename_enum_variants_handles_enum_dot_enum_base():
+def test_rename_enum_variants_handles_enum_dot_enum_base() -> None:
+    """
+    Test rename enum variants handles enum dot enum base.
+    """
     # Arrange
     content = """
 class HyperliquidProductType(enum.Enum):
@@ -1079,7 +1213,10 @@ class HyperliquidProductType(enum.Enum):
     assert "    SPOT = ..." in updated
 
 
-def test_rename_enum_variants_handles_multi_word_variants():
+def test_rename_enum_variants_handles_multi_word_variants() -> None:
+    """
+    Test rename enum variants handles multi word variants.
+    """
     # Arrange
     content = """
 class DexType(Enum):
@@ -1102,7 +1239,10 @@ class DexType(Enum):
     assert "    CLAM_ENHANCED = ..." in updated
 
 
-def test_rename_enum_variants_uses_source_variants_for_digit_boundaries():
+def test_rename_enum_variants_uses_source_variants_for_digit_boundaries() -> None:
+    """
+    Test rename enum variants uses source variants for digit boundaries.
+    """
     # Arrange
     content = """
 class Blockchain(Enum):
@@ -1126,7 +1266,10 @@ class Blockchain(Enum):
     assert "    METAL_L2" not in updated
 
 
-def test_collect_renamed_enums_detects_rename_all(tmp_path):
+def test_collect_renamed_enums_detects_rename_all(tmp_path: Path) -> None:
+    """
+    Test collect renamed enums detects rename all.
+    """
     # Arrange
     rust_file = tmp_path / "crates" / "model" / "src" / "enums.rs"
     rust_file.parent.mkdir(parents=True)
@@ -1169,7 +1312,10 @@ pub struct NotAnEnum {
     assert "NotAnEnum" not in result
 
 
-def test_collect_module_constants_detects_m_add(tmp_path):
+def test_collect_module_constants_detects_m_add(tmp_path: Path) -> None:
+    """
+    Test collect module constants detects m add.
+    """
     # Arrange
     mod_rs = tmp_path / "crates" / "core" / "src" / "python" / "mod.rs"
     mod_rs.parent.mkdir(parents=True)
@@ -1208,7 +1354,10 @@ pub const MY_CONSTANT: u64 = 42;
     assert consts[names.index("MY_CONSTANT")].python_type == "int"
 
 
-def test_collect_module_constants_uses_adapter_package_path(tmp_path):
+def test_collect_module_constants_uses_adapter_package_path(tmp_path: Path) -> None:
+    """
+    Test collect module constants uses adapter package path.
+    """
     # Arrange
     mod_rs = tmp_path / "crates" / "adapters" / "polymarket" / "src" / "python" / "mod.rs"
     mod_rs.parent.mkdir(parents=True)
@@ -1238,7 +1387,10 @@ pub const POLYMARKET: &str = "POLYMARKET";
     assert "polymarket" not in result
 
 
-def test_remove_stale_top_level_adapter_stubs_deletes_generated_aliases(tmp_path):
+def test_remove_stale_top_level_adapter_stubs_deletes_generated_aliases(tmp_path: Path) -> None:
+    """
+    Test remove stale top level adapter stubs deletes generated aliases.
+    """
     # Arrange
     root = tmp_path / "nautilus_trader"
     adapters_dir = root / "adapters"
@@ -1265,7 +1417,10 @@ def test_remove_stale_top_level_adapter_stubs_deletes_generated_aliases(tmp_path
     assert non_stale_dir.exists()
 
 
-def test_sync_adapter_all_exports_copies_runtime_all_into_stub(tmp_path):
+def test_sync_adapter_all_exports_copies_runtime_all_into_stub(tmp_path: Path) -> None:
+    """
+    Test sync adapter all exports copies runtime all into stub.
+    """
     # Arrange: runtime facade declares a curated __all__; stub has the raw generated one.
     root = tmp_path / "nautilus_trader"
     adapter_dir = root / "adapters" / "bybit"
@@ -1317,7 +1472,10 @@ BYBIT: str
     assert "class BybitHttpClient: ..." in stub
 
 
-def test_sync_adapter_all_exports_rejects_runtime_name_absent_from_stub(tmp_path):
+def test_sync_adapter_all_exports_rejects_runtime_name_absent_from_stub(tmp_path: Path) -> None:
+    """
+    Test sync adapter all exports rejects runtime name absent from stub.
+    """
     # Arrange: runtime exports a name the stub does not define or import.
     root = tmp_path / "nautilus_trader"
     adapter_dir = root / "adapters" / "binance"
@@ -1340,7 +1498,10 @@ BINANCE: str
         generate_stubs.sync_adapter_all_exports(root)
 
 
-def test_read_runtime_all_rejects_non_static_or_duplicated_list(tmp_path):
+def test_read_runtime_all_rejects_non_static_or_duplicated_list(tmp_path: Path) -> None:
+    """
+    Test read runtime all rejects non static or duplicated list.
+    """
     # Arrange
     runtime_path = tmp_path / "__init__.py"
     runtime_path.write_text("__all__ = ['A', 'A', 'B']\n")
@@ -1350,7 +1511,10 @@ def test_read_runtime_all_rejects_non_static_or_duplicated_list(tmp_path):
         generate_stubs._read_runtime_all(runtime_path)
 
 
-def test_generated_stubs_do_not_expose_top_level_adapter_packages():
+def test_generated_stubs_do_not_expose_top_level_adapter_packages() -> None:
+    """
+    Test generated stubs do not expose top level adapter packages.
+    """
     # Arrange
     adapters_dir = STUB_ROOT / "adapters"
 
@@ -1366,7 +1530,10 @@ def test_generated_stubs_do_not_expose_top_level_adapter_packages():
     assert not exposed
 
 
-def test_add_names_to_all_inserts_sorted():
+def test_add_names_to_all_inserts_sorted() -> None:
+    """
+    Test add names to all inserts sorted.
+    """
     # Arrange
     content = """
 __all__ = [
@@ -1385,7 +1552,10 @@ __all__ = [
     assert names == sorted(names)
 
 
-def test_insert_constants_after_all():
+def test_insert_constants_after_all() -> None:
+    """
+    Test insert constants after all.
+    """
     # Arrange
     content = """
 __all__ = [
@@ -1407,7 +1577,10 @@ class Foo:
     assert all_pos < const_pos < class_pos
 
 
-def test_binance_stub_exposes_python_migration_surface():
+def test_binance_stub_exposes_python_migration_surface() -> None:
+    """
+    Test binance stub exposes python migration surface.
+    """
     stub = (STUB_ROOT / "adapters" / "binance" / "__init__.pyi").read_text()
     stub_module = ast.parse(stub)
     exported = next(
@@ -1477,7 +1650,10 @@ def test_binance_stub_exposes_python_migration_surface():
         assert function.body[0].value.value is Ellipsis
 
 
-def test_fix_enum_defaults_in_signatures():
+def test_fix_enum_defaults_in_signatures() -> None:
+    """
+    Test fix enum defaults in signatures.
+    """
     # Arrange
     content = """
 class AggregationSource(Enum):
@@ -1515,7 +1691,10 @@ class Strategy:
     assert "Standard = ..." in updated
 
 
-def test_elide_forward_class_defaults_in_signatures():
+def test_elide_forward_class_defaults_in_signatures() -> None:
+    """
+    Test elide forward class defaults in signatures.
+    """
     content = """
 class Client:
     def __init__(self, network: DydxNetwork = DydxNetwork.MAINNET) -> None: ...
@@ -1542,7 +1721,10 @@ class HyperliquidEnvironment(Enum):
     assert "HyperliquidEnvironment.MAINNET" not in updated
 
 
-def test_elide_forward_class_defaults_in_signatures_keeps_earlier_local_defaults():
+def test_elide_forward_class_defaults_in_signatures_keeps_earlier_local_defaults() -> None:
+    """
+    Test elide forward class defaults in signatures keeps earlier local defaults.
+    """
     content = """
 class BitmexEnvironment(Enum):
     MAINNET = ...
@@ -1732,7 +1914,10 @@ def _parse_stub_enum_variants(stub_root: Path) -> dict[str, list[str]]:
 SCREAMING_SNAKE_RE = re.compile(r"^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*_?$")
 
 
-def test_live_stub_exposes_native_live_node_config_signature():
+def test_live_stub_exposes_native_live_node_config_signature() -> None:
+    """
+    Test live stub exposes native live node config signature.
+    """
     live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
 
     assert "@typing.final\nclass LiveNodeConfig:" in live_stub
@@ -1748,7 +1933,10 @@ def test_live_stub_exposes_native_live_node_config_signature():
     assert '"PortfolioConfig"' in live_stub
 
 
-def test_live_stub_exposes_run_async_coroutine_signature():
+def test_live_stub_exposes_run_async_coroutine_signature() -> None:
+    """
+    Test live stub exposes run async coroutine signature.
+    """
     live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
 
     assert (
@@ -1757,7 +1945,10 @@ def test_live_stub_exposes_run_async_coroutine_signature():
     )
 
 
-def test_live_stub_exposes_builder_engine_config_methods():
+def test_live_stub_exposes_builder_engine_config_methods() -> None:
+    """
+    Test live stub exposes builder engine config methods.
+    """
     live_stub = (STUB_ROOT / "live" / "__init__.pyi").read_text()
 
     assert (
@@ -1802,7 +1993,10 @@ def test_live_stub_exposes_builder_engine_config_methods():
         ("nautilus_trader.persistence", "StreamingFeatherWriter"),
     ],
 )
-def test_stub_constructor_matches_runtime(module_name, class_name):
+def test_stub_constructor_matches_runtime(module_name: object, class_name: object) -> None:
+    """
+    Test stub constructor matches runtime.
+    """
     runtime_class = getattr(importlib.import_module(module_name), class_name)
     stub_path = STUB_ROOT.joinpath(*module_name.split(".")[1:], "__init__.pyi")
     stub_module = ast.parse(stub_path.read_text())
@@ -1846,7 +2040,10 @@ def test_stub_constructor_matches_runtime(module_name, class_name):
     assert stub_defaults == runtime_defaults
 
 
-def test_stub_members_match_runtime_names():  # noqa: C901
+def test_stub_members_match_runtime_names() -> None:  # noqa: C901
+    """
+    Test stub members match runtime names.
+    """
     forward_missing = []
     reverse_missing = []
     kind_mismatches = []
@@ -1950,7 +2147,7 @@ def test_stub_members_match_runtime_names():  # noqa: C901
     )
 
 
-def _has_rust_affix(name, allowed_names=frozenset()):
+def _has_rust_affix(name: object, allowed_names: object = frozenset()) -> object:
     return name not in allowed_names and (
         name.startswith("py_")
         or name.endswith("_py")
@@ -1958,7 +2155,7 @@ def _has_rust_affix(name, allowed_names=frozenset()):
     )
 
 
-def _stub_names_missing_at_runtime(stub_names, runtime_names):
+def _stub_names_missing_at_runtime(stub_names: object, runtime_names: object) -> object:
     return {
         name
         for name in stub_names
@@ -1967,7 +2164,7 @@ def _stub_names_missing_at_runtime(stub_names, runtime_names):
     }
 
 
-def _stub_function_kind(fn):
+def _stub_function_kind(fn: object) -> str:
     for decorator in fn.decorator_list:
         if isinstance(decorator, ast.Name) and decorator.id == "property":
             return "property"
@@ -1979,7 +2176,7 @@ def _stub_function_kind(fn):
     return "method"
 
 
-def _stub_member_kinds(stub_body, class_scope):
+def _stub_member_kinds(stub_body: object, class_scope: object) -> object:
     kinds: dict[str, str] = {}
 
     for node in stub_body:
@@ -1998,7 +2195,7 @@ def _stub_member_kinds(stub_body, class_scope):
     return kinds
 
 
-def _runtime_member_kind(runtime_class, name):
+def _runtime_member_kind(runtime_class: object, name: object) -> str | None:
     obj = inspect.getattr_static(runtime_class, name, None)
     if obj is None:
         return None
@@ -2019,17 +2216,17 @@ def _runtime_member_kind(runtime_class, name):
     return None
 
 
-def _keyword_alias(name):
+def _keyword_alias(name: object) -> str | None:
     return f"{name}_" if keyword.iskeyword(name) else None
 
 
 def _collect_reverse_member_drift(
-    class_key,
-    runtime_class,
-    stub_kinds,
-    reverse_missing,
-    kind_mismatches,
-):
+    class_key: object,
+    runtime_class: object,
+    stub_kinds: object,
+    reverse_missing: object,
+    kind_mismatches: object,
+) -> None:
     module_name, class_name = class_key
     non_contract_dto = class_key in NON_CONTRACT_DTO_CLASSES
 
@@ -2055,28 +2252,53 @@ def _collect_reverse_member_drift(
         reverse_missing.append(f"{module_name}.{class_name}.{name} ({runtime_kind})")
 
 
-def test_collect_reverse_member_drift_reports_gaps_and_respects_allowlists(monkeypatch):
+def test_collect_reverse_member_drift_reports_gaps_and_respects_allowlists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Test collect reverse member drift reports gaps and respects allowlists.
+    """
+
     class Runtime:
+        """
+        Collect runtime tests.
+        """
+
         @property
         def matched_prop(self) -> int:
+            """
+            Matched prop.
+            """
             return 1
 
         def matched_method(self) -> None:
-            pass
+            """
+            Return the matched method.
+            """
 
         @property
         def drifted_to_method(self) -> int:
+            """
+            Drifted to method.
+            """
             return 1
 
         @property
         def allowlisted_prop(self) -> int:
+            """
+            Allowlisted prop.
+            """
             return 1
 
         def deferred_method(self) -> None:
-            pass
+            """
+            Deferred method.
+            """
 
         def unreported_gap(self) -> None:
-            pass
+            """
+            Unreported gap.
+            """
 
     stub = ast.parse(
         "class Runtime:\n"
@@ -2101,9 +2323,15 @@ def test_collect_reverse_member_drift_reports_gaps_and_respects_allowlists(monke
     ]
 
 
-def test_collect_reverse_member_drift_resolves_keyword_alias():
+def test_collect_reverse_member_drift_resolves_keyword_alias() -> None:
+    """
+    Test collect reverse member drift resolves keyword alias.
+    """
+
     class TransactionLike:
-        pass
+        """
+        Collect transaction like tests.
+        """
 
     setattr(TransactionLike, "from", property(lambda self: "x"))
 
@@ -2126,7 +2354,10 @@ def test_collect_reverse_member_drift_resolves_keyword_alias():
     assert kind_mismatches == []
 
 
-def test_pylist_construction_propagates_pyresult_collections():
+def test_pylist_construction_propagates_pyresult_collections() -> None:
+    """
+    Test pylist construction propagates pyresult collections.
+    """
     violations = []
     list_pattern = re.compile(r"PyList::new\(py,\s*(\w+)(\?)?\)")
 
@@ -2148,7 +2379,10 @@ def test_pylist_construction_propagates_pyresult_collections():
     )
 
 
-def test_stub_signatures_match_runtime():
+def test_stub_signatures_match_runtime() -> None:
+    """
+    Test stub signatures match runtime.
+    """
     parameter_mismatches = []
     default_mismatches = []
 
@@ -2187,7 +2421,7 @@ def test_stub_signatures_match_runtime():
     assert not default_mismatches, "Stub default mismatches:\n" + "\n".join(default_mismatches)
 
 
-def _module_signature_mismatches(module_name, stub_module, module):
+def _module_signature_mismatches(module_name: object, stub_module: object, module) -> object:
     parameter_mismatches = []
     default_mismatches = []
 
@@ -2226,7 +2460,11 @@ def _module_signature_mismatches(module_name, stub_module, module):
     return parameter_mismatches, default_mismatches
 
 
-def _method_signature_mismatches(module_name, stub_class, runtime_class):
+def _method_signature_mismatches(
+    module_name: object,
+    stub_class: object,
+    runtime_class: object,
+) -> object:
     parameter_mismatches = []
     default_mismatches = []
 
@@ -2275,7 +2513,7 @@ def _method_signature_mismatches(module_name, stub_class, runtime_class):
     return parameter_mismatches, default_mismatches
 
 
-def _stub_methods_by_name(stub_class: ast.ClassDef | ast.Module):
+def _stub_methods_by_name(stub_class: ast.ClassDef | ast.Module) -> object:
     methods = {}
 
     for node in stub_class.body:
@@ -2284,7 +2522,7 @@ def _stub_methods_by_name(stub_class: ast.ClassDef | ast.Module):
     return methods
 
 
-def _stub_parameter_names(method: ast.FunctionDef | ast.AsyncFunctionDef):
+def _stub_parameter_names(method: ast.FunctionDef | ast.AsyncFunctionDef) -> object:
     names = [argument.arg for argument in method.args.posonlyargs + method.args.args]
     if method.args.vararg:
         names.append(method.args.vararg.arg)
@@ -2294,7 +2532,7 @@ def _stub_parameter_names(method: ast.FunctionDef | ast.AsyncFunctionDef):
     return names
 
 
-def _normalized_parameter_names(stub_parameters, runtime_parameters):
+def _normalized_parameter_names(stub_parameters: object, runtime_parameters: object) -> object:
     if stub_parameters and stub_parameters[0] in {"self", "cls"}:
         if not runtime_parameters or runtime_parameters[0] not in {"self", "cls"}:
             stub_parameters = stub_parameters[1:]
@@ -2303,7 +2541,7 @@ def _normalized_parameter_names(stub_parameters, runtime_parameters):
     return stub_parameters, runtime_parameters
 
 
-def _concrete_stub_defaults(method: ast.FunctionDef | ast.AsyncFunctionDef):
+def _concrete_stub_defaults(method: ast.FunctionDef | ast.AsyncFunctionDef) -> object:
     positional_arguments = method.args.posonlyargs + method.args.args
     positional_defaults = [None] * (len(positional_arguments) - len(method.args.defaults)) + list(
         method.args.defaults,
@@ -2325,7 +2563,10 @@ def _concrete_stub_defaults(method: ast.FunctionDef | ast.AsyncFunctionDef):
     return defaults
 
 
-def test_generated_config_stubs_include_signature_defaults():
+def test_generated_config_stubs_include_signature_defaults() -> None:
+    """
+    Test generated config stubs include signature defaults.
+    """
     rust_fixups = generate_stubs.collect_rust_class_fixups(WORKSPACE_ROOT)
     renamed_enums = generate_stubs.collect_renamed_enums(WORKSPACE_ROOT)
     mismatches = []
@@ -2348,7 +2589,7 @@ def test_generated_config_stubs_include_signature_defaults():
     )
 
 
-def _iter_supported_stub_configs(adapter):
+def _iter_supported_stub_configs(adapter: object) -> object:
     for stub_file in sorted(STUB_ROOT.rglob("__init__.pyi")):
         relative_package = stub_file.relative_to(STUB_ROOT).parent
         module_name = _module_name_from_stub_path(relative_package)
@@ -2368,7 +2609,10 @@ def _iter_supported_stub_configs(adapter):
                 yield module_name, stub_class
 
 
-def test_non_adapter_config_constructors_have_runtime_readback():
+def test_non_adapter_config_constructors_have_runtime_readback() -> None:
+    """
+    Test non adapter config constructors have runtime readback.
+    """
     mismatches = []
 
     for module_name, stub_class in _iter_supported_stub_configs(adapter=False):
@@ -2380,7 +2624,10 @@ def test_non_adapter_config_constructors_have_runtime_readback():
     assert mismatches == [], "Non-adapter config readback drift:\n" + "\n".join(mismatches)
 
 
-def test_adapter_config_constructors_have_runtime_readback():
+def test_adapter_config_constructors_have_runtime_readback() -> None:
+    """
+    Test adapter config constructors have runtime readback.
+    """
     mismatches = []
 
     for module_name, stub_class in _iter_supported_stub_configs(adapter=True):
@@ -2396,7 +2643,10 @@ def test_adapter_config_constructors_have_runtime_readback():
     assert mismatches == [], "Adapter config readback drift:\n" + "\n".join(mismatches)
 
 
-def test_adapter_config_readback_returns_constructor_values(tmp_path):
+def test_adapter_config_readback_returns_constructor_values(tmp_path: Path) -> None:
+    """
+    Test adapter config readback returns constructor values.
+    """
     from nautilus_trader.adapters.architect_ax import AxDataClientConfig
     from nautilus_trader.adapters.betfair import BetfairDataClientConfig
     from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
@@ -2450,7 +2700,10 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path):
     assert bitmex_config.account_id == AccountId("BITMEX-001")
 
 
-def test_adapter_config_runtime_setter_policy(tmp_path):
+def test_adapter_config_runtime_setter_policy(tmp_path: Path) -> None:
+    """
+    Test adapter config runtime setter policy.
+    """
     from nautilus_trader.adapters.architect_ax import AxDataClientConfig
     from nautilus_trader.adapters.interactive_brokers import DockerizedIBGatewayConfig
     from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
@@ -2483,7 +2736,10 @@ def test_adapter_config_runtime_setter_policy(tmp_path):
     assert provider_config.cache_path == str(tmp_path)
 
 
-def test_adapter_config_secret_values_are_not_exposed(tmp_path):
+def test_adapter_config_secret_values_are_not_exposed(tmp_path: Path) -> None:
+    """
+    Test adapter config secret values are not exposed.
+    """
     from nautilus_trader.model import AccountId
     from nautilus_trader.model import TraderId
 
@@ -2541,7 +2797,10 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path):
     assert failures == [], "Adapter config secret policy drift:\n" + "\n".join(failures)
 
 
-def test_adapter_config_sensitive_readback_values_are_not_represented():
+def test_adapter_config_sensitive_readback_values_are_not_represented() -> None:
+    """
+    Test adapter config sensitive readback values are not represented.
+    """
     from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
     from nautilus_trader.adapters.derive import DeriveDataClientConfig
@@ -2578,10 +2837,10 @@ def test_adapter_config_sensitive_readback_values_are_not_represented():
 
 
 def _config_constructor_readback_mismatches(
-    module_name,
-    module,
-    stub_class,
-):
+    module_name: object,
+    module: object,
+    stub_class: object,
+) -> object:
     constructor = next(
         (
             node
@@ -2654,7 +2913,7 @@ def _config_constructor_readback_mismatches(
     return mismatches
 
 
-def _config_readback_name(field_key):
+def _config_readback_name(field_key: object) -> object:
     module_name, _, field_name = field_key
     if not module_name.startswith("nautilus_trader.adapters."):
         return CONFIG_READBACK_REPLACEMENTS.get(field_key, field_name)
@@ -2668,7 +2927,11 @@ def _config_readback_name(field_key):
     )
 
 
-def _adapter_config_field_policy(runtime_class, properties, field_key):
+def _adapter_config_field_policy(
+    runtime_class: object,
+    properties: object,
+    field_key: object,
+) -> object:
     module_name, class_name, field_name = field_key
     raw_property_exists = (
         field_name in properties
@@ -2701,11 +2964,11 @@ def _adapter_config_field_policy(runtime_class, properties, field_key):
 
 
 def _config_readback_descriptor_mismatches(
-    runtime_class,
-    properties,
-    field_key,
-    readback_name,
-):
+    runtime_class: object,
+    properties: object,
+    field_key: object,
+    readback_name: object,
+) -> object:
     module_name, class_name, field_name = field_key
     if readback_name not in properties:
         return [f"{module_name}.{class_name}.{field_name}: missing property {readback_name}"]
@@ -2720,7 +2983,10 @@ def _config_readback_descriptor_mismatches(
     return []
 
 
-def test_supported_config_py_new_and_getters_match_rust_fields():
+def test_supported_config_py_new_and_getters_match_rust_fields() -> None:
+    """
+    Test supported config py new and getters match rust fields.
+    """
     configs = list(_iter_supported_stub_configs(adapter=None))
     assert {(module_name, stub_class.name) for module_name, stub_class in configs} == {
         (module_name, stub_class.name)
@@ -2774,7 +3040,10 @@ def test_supported_config_py_new_and_getters_match_rust_fields():
     assert mismatches == [], "Rust/PyO3 config parity drift:\n" + "\n".join(mismatches)
 
 
-def test_pyo3_constructor_params_stop_at_new_function():
+def test_pyo3_constructor_params_stop_at_new_function() -> None:
+    """
+    Test pyo3 constructor params stop at new function.
+    """
     impl_block = """
         #[new]
         fn py_new(config: String) -> Self {
@@ -2788,7 +3057,10 @@ def test_pyo3_constructor_params_stop_at_new_function():
     assert _pyo3_constructor_param_names([impl_block]) == {"config"}
 
 
-def test_pyo3_getter_names_handle_supported_name_forms():
+def test_pyo3_getter_names_handle_supported_name_forms() -> None:
+    """
+    Test pyo3 getter names handle supported name forms.
+    """
     impl_block = """
         #[getter("quoted")]
         fn py_quoted(&self) -> String {
@@ -2811,7 +3083,10 @@ def test_pyo3_getter_names_handle_supported_name_forms():
     assert _pyo3_getter_names(impl_block) == {"quoted", "renamed", "value"}
 
 
-def test_rust_function_signature_skips_visibility_parentheses():
+def test_rust_function_signature_skips_visibility_parentheses() -> None:
+    """
+    Test rust function signature skips visibility parentheses.
+    """
     content = "pub(crate) fn py_new(value: String) -> Self { Self { value } }"
 
     assert _rust_function_signature_after_position(content, 0) == (
@@ -2842,7 +3117,7 @@ def _config_constructor_fixups_for_stub(
     return config_fixups
 
 
-def _rust_config_source_inventory(config_names):
+def _rust_config_source_inventory(config_names: object) -> object:
     (
         struct_blocks,
         impl_blocks,
@@ -2880,7 +3155,7 @@ def _rust_config_source_inventory(config_names):
 
 
 # Each branch indexes a distinct Rust form during the same file pass
-def _collect_rust_config_source_blocks(config_names):  # noqa: C901
+def _collect_rust_config_source_blocks(config_names: object):  # noqa: C901
     struct_blocks = {}
     impl_blocks = {}
     getter_macro_blocks = {}
@@ -2928,7 +3203,7 @@ def _collect_rust_config_source_blocks(config_names):  # noqa: C901
     )
 
 
-def _rust_block_after_position(content, start):
+def _rust_block_after_position(content: object, start: object) -> object:
     open_brace = content.index("{", start)
     depth = 0
 
@@ -2943,7 +3218,7 @@ def _rust_block_after_position(content, start):
     raise AssertionError(f"Could not find Rust block after position {start}")
 
 
-def _pyo3_constructor_param_names(impl_blocks):
+def _pyo3_constructor_param_names(impl_blocks: object) -> object:
     params = set()
 
     for block in impl_blocks:
@@ -2963,7 +3238,7 @@ def _pyo3_constructor_param_names(impl_blocks):
     return params
 
 
-def _rust_argument_names(arguments):
+def _rust_argument_names(arguments: object) -> object:
     names = set()
 
     for argument in generate_stubs._split_signature_params(arguments):
@@ -2983,7 +3258,7 @@ def _rust_argument_names(arguments):
     return names
 
 
-def _pyo3_getter_names(content):
+def _pyo3_getter_names(content: object) -> object:
     getters = set()
 
     pattern = r'#\[getter(?:\((?:"([^"]+)"|([A-Za-z_]\w*))\))?\]'
@@ -3002,7 +3277,7 @@ def _pyo3_getter_names(content):
     return getters
 
 
-def _rust_function_signature_after_position(content, start):
+def _rust_function_signature_after_position(content: object, start: object) -> object:
     match = RUST_FUNCTION_RE.search(content, start)
     if match is None:
         raise AssertionError(f"Could not find Rust function after position {start}")
@@ -3025,7 +3300,7 @@ def _rust_function_signature_after_position(content, start):
     return match.group(1), content[open_paren + 1 : close_paren], match.start()
 
 
-def _stub_constructor_param_names(stub_class):
+def _stub_constructor_param_names(stub_class: object) -> object:
     constructor = next(
         node
         for node in stub_class.body
@@ -3039,14 +3314,17 @@ def _stub_constructor_param_names(stub_class):
     }
 
 
-def test_package_stub_exports_portfolio_module():
+def test_package_stub_exports_portfolio_module() -> None:
+    """
+    Test package stub exports portfolio module.
+    """
     package_stub = (STUB_ROOT / "__init__.pyi").read_text()
 
     assert "from . import portfolio" in package_stub
     assert '"portfolio"' in package_stub
 
 
-def test_stub_enum_variants_match_screaming_snake_case():
+def test_stub_enum_variants_match_screaming_snake_case() -> None:
     """
     Verify every renamed enum in .pyi stubs uses SCREAMING_SNAKE_CASE variants.
 
@@ -3069,7 +3347,10 @@ def test_stub_enum_variants_match_screaming_snake_case():
     )
 
 
-def test_subclassable_pyclasses_are_not_final_in_stubs():
+def test_subclassable_pyclasses_are_not_final_in_stubs() -> None:
+    """
+    Test subclassable pyclasses are not final in stubs.
+    """
     # Arrange
     fixups = generate_stubs.collect_rust_class_fixups(WORKSPACE_ROOT)
     subclassable = {
@@ -3100,7 +3381,7 @@ def test_subclassable_pyclasses_are_not_final_in_stubs():
     )
 
 
-def test_stub_enum_variants_match_runtime():
+def test_stub_enum_variants_match_runtime() -> None:
     """
     Verify .pyi stub enum members match the importable runtime enum members.
     """
@@ -3158,7 +3439,7 @@ def _collect_runtime_enum_variants(stub_root: Path) -> dict[str, list[str]]:
     return result
 
 
-def _iter_public_runtime_modules(stub_root: Path):
+def _iter_public_runtime_modules(stub_root: Path) -> object:
     for stub_path in sorted(stub_root.rglob("__init__.pyi")):
         relative_package = stub_path.relative_to(stub_root).parent
         if any(part.startswith("_") for part in relative_package.parts):

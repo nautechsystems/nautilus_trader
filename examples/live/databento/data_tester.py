@@ -47,6 +47,9 @@ USE_EXCHANGE_AS_VENUE = False
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     api_key = os.getenv("DATABENTO_API_KEY")
     if not api_key:
         raise SystemExit("DATABENTO_API_KEY must be set")

@@ -23,30 +23,40 @@ results, using backtest result statistics and report DataFrames.
 from __future__ import annotations
 
 import numbers
-from collections.abc import Callable
 from collections.abc import Mapping
 from difflib import get_close_matches
 from pathlib import Path
 from typing import TYPE_CHECKING
-from typing import Any
 
-from nautilus_trader.analysis.config import TearsheetChart
 from nautilus_trader.analysis.config import TearsheetConfig
+from nautilus_trader.analysis.themes import get_theme
 from nautilus_trader.core import NAUTILUS_VERSION
 from nautilus_trader.core import unix_nanos_to_iso8601
+from nautilus_trader.model import AccountId
 from nautilus_trader.model import AggregationSource
 from nautilus_trader.model import BarType
 
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from types import ModuleType
+    from typing import Any
+
     import pandas as pd
 
+    from nautilus_trader.analysis.config import GridLayout
+    from nautilus_trader.analysis.config import TearsheetChart
     from nautilus_trader.backtest import BacktestEngine
     from nautilus_trader.backtest import BacktestNode
     from nautilus_trader.backtest import BacktestResult
+    from nautilus_trader.common import Cache
+    from nautilus_trader.model import Currency
+    from nautilus_trader.model import PortfolioSnapshot
+    from nautilus_trader.model import Venue
+    from nautilus_trader.portfolio import Portfolio
 
 
-def _require_pandas():
+def _require_pandas() -> ModuleType:
     try:
         import pandas as pd
     except ImportError as e:
@@ -82,12 +92,17 @@ except ImportError:
 
 TRADING_DAYS_PER_YEAR = 252
 
+_GRID_ONE_ROW_MAX_CHARTS = 2
+_GRID_TWO_ROWS_MAX_CHARTS = 4
+_GRID_THREE_ROWS_MAX_CHARTS = 6
+_GRID_DEFAULT_ROWS = 4
+
 _STATIC_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".svg", ".pdf"})
 
 _CHART_REGISTRY: dict[str, Callable] = {}
 
 
-def _require_not_none(value: Any, name: str) -> None:
+def _require_not_none(value: object, name: str) -> None:
     if value is None:
         raise ValueError(f"{name} must not be None")
 
@@ -104,8 +119,8 @@ def _format_optional_duration(start_ns: int | None, end_ns: int | None) -> str:
     return str(pd.Timedelta(end_ns - start_ns, unit="ns"))
 
 
-def _to_returns_series(returns) -> pd.Series:
-    pandas = _require_pandas()
+def _to_returns_series(returns: pd.Series | Mapping | list | None) -> pd.Series:
+    pandas: Any = _require_pandas()
     if returns is None:
         return pandas.Series(dtype=float)
 
@@ -352,8 +367,8 @@ def create_tearsheet(
     engine: BacktestEngine | BacktestResult,
     output_path: str | None = "tearsheet.html",
     title: str = "NautilusTrader Backtest Results",
-    currency=None,
-    config=None,
+    currency: Currency | None = None,
+    config: TearsheetConfig | None = None,
     benchmark_returns: pd.Series | None = None,
     benchmark_name: str = "Benchmark",
     node: BacktestNode | None = None,
@@ -406,11 +421,10 @@ def create_tearsheet(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
 
     _require_not_none(engine, "engine")
 
@@ -487,10 +501,10 @@ def _create_tearsheet_from_result(
     result: BacktestResult,
     node: BacktestNode | None,
     run_config_id: str | None,
-    currency,
+    currency: Currency | None,
     output_path: str | None,
     title: str,
-    config,
+    config: TearsheetConfig | None,
     benchmark_returns: pd.Series | None,
     benchmark_name: str,
 ) -> str | None:
@@ -545,7 +559,10 @@ def _validate_result_node_state(node: BacktestNode, run_config_id: str) -> None:
         return
 
 
-def _filter_stats_pnls(stats_pnls, currency) -> dict:
+def _filter_stats_pnls(
+    stats_pnls: Mapping[str, Any],
+    currency: Currency | None,
+) -> dict[str, Any]:
     stats_pnls = dict(stats_pnls)
     if currency is None:
         return stats_pnls
@@ -580,7 +597,7 @@ def _result_account_info(
     result: BacktestResult,
     node: BacktestNode | None,
     run_config_id: str | None,
-    currency=None,
+    currency: Currency | None = None,
 ) -> dict[str, str]:
     currency_code = getattr(currency, "code", str(currency)) if currency is not None else None
     summary = result.summary
@@ -592,8 +609,6 @@ def _result_account_info(
     account_info = {}
 
     if node is not None and run_config_id is not None:
-        from nautilus_trader.model import AccountId
-
         for venue, account_id in sorted(account_ids.items()):
             report = node.generate_account_report(
                 run_config_id,
@@ -629,7 +644,7 @@ def _result_account_info(
 
 def _resolve_tearsheet_returns(
     engine: BacktestEngine,
-    currency=None,
+    currency: Currency | None = None,
 ) -> pd.Series:
     """
     Pick the best available returns series for the tearsheet.
@@ -652,7 +667,7 @@ def _resolve_tearsheet_returns(
 
 def _calculate_snapshot_returns(
     engine: BacktestEngine,
-    currency=None,
+    currency: Currency | None = None,
 ) -> pd.Series | None:
     """
     Compute daily returns from complete, currency-compatible portfolio snapshots.
@@ -666,10 +681,12 @@ def _calculate_snapshot_returns(
 
     portfolio = getattr(engine, "portfolio", None)
     cache = getattr(engine, "cache", None)
+
     if portfolio is None or cache is None:
         return None
 
     venues = engine.list_venues()
+
     if not venues:
         return None
 
@@ -692,16 +709,14 @@ def _calculate_snapshot_returns(
         return None
 
     combined = pd.concat(equity_by_account.values(), axis=1).sort_index().ffill().dropna()
-    if combined.empty:
-        return None
 
-    return _calculate_daily_balance_returns(combined.sum(axis=1))
+    return None if combined.empty else _calculate_daily_balance_returns(combined.sum(axis=1))
 
 
 def _collect_snapshot_equity(
-    venues,
-    cache,
-    portfolio,
+    venues: list[Venue],
+    cache: Cache,
+    portfolio: Portfolio,
     target_currency: str | None,
     one_day_ns: int,
 ) -> tuple[dict[str, pd.Series], set[str]] | None:
@@ -742,7 +757,7 @@ def _collect_snapshot_equity(
 
 
 def _snapshot_equity_series(
-    snapshots,
+    snapshots: list[PortfolioSnapshot],
     target_currency: str | None,
     account_id: str,
     one_day_ns: int,
@@ -781,7 +796,10 @@ def _snapshot_equity_series(
     return series.sort_index().groupby(level=0).last(), observed_currencies
 
 
-def _resolve_snapshot_equity(snapshot, target_currency: str | None) -> tuple[float, str] | None:
+def _resolve_snapshot_equity(
+    snapshot: PortfolioSnapshot,
+    target_currency: str | None,
+) -> tuple[float, str] | None:
     base_equity = snapshot.base_currency_equity
     total_equity = snapshot.total_equity
 
@@ -805,7 +823,7 @@ def _resolve_snapshot_equity(snapshot, target_currency: str | None) -> tuple[flo
 
 def _calculate_account_returns(
     engine: BacktestEngine,
-    currency=None,
+    currency: Currency | None = None,
 ) -> pd.Series | None:
     """
     Compute daily portfolio returns by aggregating v2 account reports.
@@ -850,13 +868,14 @@ def _calculate_account_returns(
         return None
 
     combined = pd.concat(balance_series, axis=1).sort_index().ffill().dropna()
-    if combined.empty:
-        return None
 
-    return _calculate_daily_balance_returns(combined.sum(axis=1))
+    return None if combined.empty else _calculate_daily_balance_returns(combined.sum(axis=1))
 
 
-def _collect_account_info(engine: BacktestEngine, currency=None) -> dict[str, str]:
+def _collect_account_info(
+    engine: BacktestEngine,
+    currency: Currency | None = None,
+) -> dict[str, str]:
     target_currency = getattr(currency, "code", str(currency)) if currency is not None else None
     account_info: dict[str, str] = {}
 
@@ -936,6 +955,7 @@ def _calculate_daily_balance_returns(total_balance: pd.Series) -> pd.Series | No
 def _aggregate_period_returns(
     returns: pd.Series,
     freq: str,
+    *,
     compounding: bool = True,
 ) -> pd.Series:
     if compounding:
@@ -959,12 +979,12 @@ def create_tearsheet_from_stats(
     returns: pd.Series,
     output_path: str | None = "tearsheet.html",
     title: str = "NautilusTrader Backtest Results",
-    config=None,
+    config: TearsheetConfig | None = None,
     benchmark_returns: pd.Series | None = None,
     benchmark_name: str = "Benchmark",
     run_info: dict[str, Any] | None = None,
     account_info: dict[str, Any] | None = None,
-    engine=None,
+    engine: BacktestEngine | _BacktestNodeEngineView | None = None,
 ) -> str | None:
     """
     Generate an interactive HTML tearsheet from precomputed statistics.
@@ -1029,11 +1049,10 @@ def create_tearsheet_from_stats(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
 
     returns = _to_returns_series(returns)
     benchmark_returns = (
@@ -1074,8 +1093,7 @@ def create_tearsheet_from_stats(
     if output_path:
         _write_figure(fig, output_path)
         return None
-    else:
-        return fig.to_html()
+    return fig.to_html()
 
 
 def create_equity_curve(
@@ -1114,11 +1132,10 @@ def create_equity_curve(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
 
     returns = _to_returns_series(returns)
     benchmark_returns = (
@@ -1200,13 +1217,10 @@ def create_drawdown_chart(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
-
-    from nautilus_trader.analysis.themes import get_theme
 
     returns = _to_returns_series(returns)
     theme_config = _normalize_theme_config(get_theme(theme))
@@ -1245,6 +1259,7 @@ def create_monthly_returns_heatmap(
     returns: pd.Series,
     output_path: str | None = None,
     title: str | None = None,
+    *,
     compounding: bool = True,
 ) -> go.Figure:
     """
@@ -1275,11 +1290,10 @@ def create_monthly_returns_heatmap(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
 
     if title is None:
         title = "Monthly Returns (%)" if compounding else "Monthly Returns (% of initial capital)"
@@ -1290,7 +1304,7 @@ def create_monthly_returns_heatmap(
         fig.update_layout(title=title)
         return fig
 
-    monthly = _aggregate_period_returns(returns, "ME", compounding)
+    monthly = _aggregate_period_returns(returns, "ME", compounding=compounding)
 
     monthly_pivot = pd.DataFrame(
         {
@@ -1373,11 +1387,10 @@ def create_returns_distribution(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
 
     returns = _to_returns_series(returns)
     fig = go.Figure()
@@ -1438,11 +1451,10 @@ def create_rolling_sharpe(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
 
     returns = _to_returns_series(returns)
     if returns.empty or len(returns) < window:
@@ -1491,6 +1503,7 @@ def create_yearly_returns(
     returns: pd.Series,
     output_path: str | None = None,
     title: str | None = None,
+    *,
     compounding: bool = True,
 ) -> go.Figure:
     """
@@ -1521,11 +1534,10 @@ def create_yearly_returns(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
 
     if title is None:
         title = "Yearly Returns" if compounding else "Yearly Returns (% of initial capital)"
@@ -1536,7 +1548,7 @@ def create_yearly_returns(
         fig.update_layout(title=title)
         return fig
 
-    yearly = _aggregate_period_returns(returns, "YE", compounding)
+    yearly = _aggregate_period_returns(returns, "YE", compounding=compounding)
 
     colors = ["#2ca02c" if r >= 0 else "#d62728" for r in yearly.to_numpy()]
 
@@ -1573,12 +1585,12 @@ def _create_tearsheet_figure(
     stats_pnls: dict[str, Any] | dict[str, dict[str, Any]],
     returns: pd.Series,
     title: str,
-    config=None,
+    config: TearsheetConfig | None = None,
     benchmark_returns: pd.Series | None = None,
     benchmark_name: str = "Benchmark",
     run_info: dict[str, Any] | None = None,
     account_info: dict[str, Any] | None = None,
-    engine=None,
+    engine: BacktestEngine | _BacktestNodeEngineView | None = None,
 ) -> go.Figure:
     """
     Create the complete tearsheet figure with subplots using dynamic chart registry.
@@ -1620,13 +1632,10 @@ def _create_tearsheet_figure(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
-
-    from nautilus_trader.analysis.themes import get_theme
 
     if config is None:
         config = TearsheetConfig()
@@ -1746,8 +1755,6 @@ def _create_stats_table(  # noqa: C901
 
     """
     if theme_config is None:
-        from nautilus_trader.analysis.themes import get_theme
-
         theme_config = _normalize_theme_config(get_theme("plotly_white"))
     metrics = []
     values = []
@@ -1815,14 +1822,12 @@ def _render_run_info(
     theme_config: dict[str, Any],
     run_info: dict[str, Any] | None = None,
     account_info: dict[str, Any] | None = None,
-    **kwargs: Any,
+    **_kwargs: Any,
 ) -> None:
     """
     Render run information and account summary table.
     """
     if theme_config is None:
-        from nautilus_trader.analysis.themes import get_theme
-
         theme_config = _normalize_theme_config(get_theme("plotly_white"))
 
     metrics = []
@@ -1879,7 +1884,7 @@ def _render_stats_table(
     stats_returns: dict[str, Any],
     stats_general: dict[str, Any],
     theme_config: dict[str, Any],
-    **kwargs: Any,
+    **_kwargs: Any,
 ) -> None:
     """
     Render performance statistics table (PnL, Returns, General).
@@ -1903,7 +1908,7 @@ def _render_equity(
     theme_config: dict[str, Any],
     benchmark_returns: pd.Series | None = None,
     benchmark_name: str = "Benchmark",
-    **kwargs: Any,
+    **_kwargs: Any,
 ) -> None:
     """
     Render equity curve with optional benchmark.
@@ -1950,7 +1955,7 @@ def _render_drawdown(
     col: int,
     returns: pd.Series,
     theme_config: dict[str, Any],
-    **kwargs: Any,
+    **_kwargs: Any,
 ) -> None:
     """
     Render drawdown chart.
@@ -1990,7 +1995,7 @@ def _render_monthly_returns(
     if returns.empty:
         return
 
-    monthly = _aggregate_period_returns(returns, "ME", kwargs.get("compounding", True))
+    monthly = _aggregate_period_returns(returns, "ME", compounding=kwargs.get("compounding", True))
     monthly_pivot = pd.DataFrame(
         {
             "Year": monthly.index.year,
@@ -2041,7 +2046,7 @@ def _render_distribution(
     col: int,
     returns: pd.Series,
     theme_config: dict[str, Any],
-    **kwargs: Any,
+    **_kwargs: Any,
 ) -> None:
     """
     Render returns distribution histogram.
@@ -2072,7 +2077,7 @@ def _render_rolling_sharpe(
     returns: pd.Series,
     theme_config: dict[str, Any],
     window: int = 60,
-    **kwargs: Any,
+    **_kwargs: Any,
 ) -> None:
     """
     Render rolling Sharpe ratio.
@@ -2117,7 +2122,7 @@ def _render_yearly_returns(
     if returns.empty:
         return
 
-    yearly = _aggregate_period_returns(returns, "YE", kwargs.get("compounding", True))
+    yearly = _aggregate_period_returns(returns, "YE", compounding=kwargs.get("compounding", True))
     colors = [
         theme_config["colors"]["positive"] if r >= 0 else theme_config["colors"]["negative"]
         for r in yearly.to_numpy()
@@ -2176,13 +2181,10 @@ def create_bars_with_fills(
 
     """
     if not PLOTLY_AVAILABLE:
-        msg = (
+        raise ImportError(
             "plotly is required for visualization. "
-            "Install it with: pip install nautilus_trader[visualization]"
+            "Install it with: pip install nautilus_trader[visualization]",
         )
-        raise ImportError(msg)
-
-    from nautilus_trader.analysis.themes import get_theme
 
     _require_not_none(engine, "engine")
     _require_not_none(bar_type, "bar_type")
@@ -2209,7 +2211,6 @@ def create_bars_with_fills(
         col=1,
         engine=engine,
         bar_type=bar_type,
-        title=title,
         theme_config=theme_config,
     )
 
@@ -2238,11 +2239,10 @@ def _render_bars_with_fills(  # noqa: C901
     fig: go.Figure,
     row: int,
     col: int,
-    engine=None,
-    bar_type=None,
-    title: str | None = None,
+    engine: BacktestEngine | None = None,
+    bar_type: BarType | str | None = None,
     theme_config: dict[str, Any] | None = None,
-    **kwargs: Any,
+    **_kwargs: Any,
 ) -> None:
     """
     Render bars with order fills chart.
@@ -2259,8 +2259,6 @@ def _render_bars_with_fills(  # noqa: C901
         The backtest engine. Required.
     bar_type : str | BarType, optional
         The bar type to visualize. Can be a string or BarType object.
-    title : str, optional
-        Chart title override.
     theme_config : dict[str, Any], optional
         Theme configuration dictionary. If None, defaults to plotly_white theme.
     **kwargs : Any
@@ -2271,8 +2269,6 @@ def _render_bars_with_fills(  # noqa: C901
         return
 
     if theme_config is None:
-        from nautilus_trader.analysis.themes import get_theme
-
         theme_config = _normalize_theme_config(get_theme("plotly_white"))
 
     if bar_type is None:
@@ -2476,7 +2472,7 @@ def register_tearsheet_chart(
 
 def _calculate_grid_layout(
     charts: list[TearsheetChart],
-    custom_layout: Any = None,
+    custom_layout: GridLayout | None = None,
 ) -> tuple[int, int, list, list[str], list[float], float, float]:
     """
     Calculate dynamic grid layout based on selected charts.
@@ -2505,19 +2501,21 @@ def _calculate_grid_layout(
         h_spacing = custom_layout.horizontal_spacing
     else:
         num_charts = len(charts)
-        if num_charts <= 2:
+        if num_charts <= _GRID_ONE_ROW_MAX_CHARTS:
             rows, cols = 1, num_charts
             heights = [1.0 / rows] * rows
-        elif num_charts <= 4:
+        elif num_charts <= _GRID_TWO_ROWS_MAX_CHARTS:
             rows, cols = 2, 2
             heights = [1.0 / rows] * rows
-        elif num_charts <= 6:
+        elif num_charts <= _GRID_THREE_ROWS_MAX_CHARTS:
             rows, cols = 3, 2
             heights = [1.0 / rows] * rows
         else:
             cols = 2
-            rows = max(4, (num_charts + cols - 1) // cols)
-            heights = [0.50, 0.22, 0.16, 0.12] if rows == 4 else [1.0 / rows] * rows
+            rows = max(_GRID_DEFAULT_ROWS, (num_charts + cols - 1) // cols)
+            heights = (
+                [0.50, 0.22, 0.16, 0.12] if rows == _GRID_DEFAULT_ROWS else [1.0 / rows] * rows
+            )
 
         v_spacing = 0.10
         h_spacing = 0.10

@@ -52,6 +52,9 @@ if uvloop is not None:
 
 
 def build_node(trader_id: str) -> LiveNode:
+    """
+    Build node.
+    """
     return LiveNode.build(
         "TEST",
         LiveNodeConfig(
@@ -69,16 +72,18 @@ def build_node(trader_id: str) -> LiveNode:
 
 
 @requires_uvloop
-def test_node_runs_on_a_uvloop_event_loop():
+def test_node_runs_on_a_uvloop_event_loop() -> None:
     """
-    Suspension uses the private `_asyncio_future_blocking` protocol, so it must hold on
-    uvloop.
+    Check await suspension still works on uvloop.
     """
     node = build_node("LOOPS-001")
     handle = node.handle()
     observed = {}
 
     async def main() -> None:
+        """
+        Run the entry point.
+        """
         observed["loop"] = type(asyncio.get_running_loop()).__module__
         task = asyncio.create_task(node.run_async())
         await asyncio.sleep(0.2)
@@ -95,17 +100,23 @@ def test_node_runs_on_a_uvloop_event_loop():
 
 
 @requires_uvloop
-def test_uvloop_host_stays_responsive_while_the_node_runs():
+def test_uvloop_host_stays_responsive_while_the_node_runs() -> None:
+    """
+    Test uvloop host stays responsive while the node runs.
+    """
     node = build_node("LOOPS-002")
     handle = node.handle()
     gaps: list[float] = []
 
     async def main() -> None:
+        """
+        Run the entry point.
+        """
         task = asyncio.create_task(node.run_async())
 
         # Sample the running loop, not the startup drain, which is deliberately unbudgeted.
         async with asyncio.timeout(15.0):
-            while not handle.is_running:  # noqa: ASYNC110
+            while not handle.is_running:
                 await asyncio.sleep(0.01)
 
         # uvloop's `loop.time()` is millisecond-granular, so measure with perf_counter.
@@ -131,15 +142,17 @@ def test_uvloop_host_stays_responsive_while_the_node_runs():
     assert gaps[-1] < 0.5, f"host loop stalled for {gaps[-1] * 1000:.1f}ms"
 
 
-def test_loop_closed_with_a_pending_run_still_stops_the_node():
+def test_loop_closed_with_a_pending_run_still_stops_the_node() -> None:
     """
-    A closed loop can never resume the run, so `close` must drain shutdown rather than
-    leak.
+    Drain shutdown when the loop closes during a pending run.
     """
     node = build_node("LOOPS-003")
     handle = node.handle()
 
     async def main() -> None:
+        """
+        Run the entry point.
+        """
         task = asyncio.create_task(node.run_async())
         assert task is not None
         await asyncio.sleep(0.2)
@@ -153,11 +166,17 @@ def test_loop_closed_with_a_pending_run_still_stops_the_node():
 
 
 @requires_uvloop
-def test_loop_closed_with_a_pending_run_on_uvloop():
+def test_loop_closed_with_a_pending_run_on_uvloop() -> None:
+    """
+    Test loop closed with a pending run on uvloop.
+    """
     node = build_node("LOOPS-004")
     handle = node.handle()
 
     async def main() -> None:
+        """
+        Run the entry point.
+        """
         task = asyncio.create_task(node.run_async())
         assert task is not None
         await asyncio.sleep(0.2)
@@ -177,21 +196,27 @@ class TimerBurstActor(DataActor):
 
     @classmethod
     def configure(cls, count: int) -> None:
+        """
+        Configure.
+        """
         cls.count = count
         cls.fired = 0
 
     def on_start(self) -> None:
+        """
+        On start.
+        """
         cls = type(self)
         due = datetime.now(UTC) + timedelta(milliseconds=300)
         for index in range(cls.count):
             self.clock.set_time_alert(f"burst-{index}", due, self._on_alert)
 
-    def _on_alert(self, event) -> None:
+    def _on_alert(self, _event: object) -> None:
         type(self).fired += 1
 
 
 @pytest.mark.parametrize("loop_runner", LOOP_RUNNERS)
-def test_host_loop_stall_under_a_timer_burst(loop_runner):
+def test_host_loop_stall_under_a_timer_burst(loop_runner: object) -> None:
     """
     Measure how long a dispatch batch holds the host loop when the runner is saturated.
 
@@ -214,14 +239,17 @@ def test_host_loop_stall_under_a_timer_burst(loop_runner):
     gaps: list[float] = []
 
     async def main() -> None:
+        """
+        Run the entry point.
+        """
         task = asyncio.create_task(node.run_async())
         loop = asyncio.get_running_loop()
 
         # Startup registers the alerts inside the first poll; sample the drain, not the setup.
         startup_deadline = loop.time() + 15.0
-        while not handle.is_running and loop.time() < startup_deadline:  # noqa: ASYNC110
+        while not handle.is_running and loop.time() < startup_deadline:
             await asyncio.sleep(0.01)
-        while TimerBurstActor.fired == 0 and loop.time() < startup_deadline:  # noqa: ASYNC110
+        while TimerBurstActor.fired == 0 and loop.time() < startup_deadline:
             await asyncio.sleep(0.001)
 
         deadline = time.perf_counter() + 10.0

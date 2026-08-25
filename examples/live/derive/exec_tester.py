@@ -57,6 +57,9 @@ MAX_FEE_PER_CONTRACT = "1000"
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     exec_config = DeriveExecutionClientConfig(
         account_id=ACCOUNT_ID,
         environment=DERIVE_ENVIRONMENT,
@@ -65,7 +68,7 @@ def main() -> None:
 
     node = (
         LiveNode.builder("DERIVE-EXEC-TESTER-001", TRADER_ID, Environment.LIVE)
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
             None,

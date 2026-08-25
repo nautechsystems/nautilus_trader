@@ -48,6 +48,9 @@ STREAM_OPTIONS = StreamNormalizedRequestOptions.from_json(
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("TARDIS-DATA-TESTER-001", TRADER_ID, Environment.SANDBOX)
         .add_data_client(

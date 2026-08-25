@@ -1,3 +1,22 @@
+#!/usr/bin/env python3
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+"""
+Check that PyO3 functions and classes expose explicit public names.
+"""
+
 from __future__ import annotations
 
 import re
@@ -273,6 +292,9 @@ def _candidate_paths(root: Path) -> list[Path]:
 
 
 def main() -> int:
+    """
+    Check the candidate Rust files and return 1 when any violations are found.
+    """
     root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("crates")
     violations = [violation for path in _candidate_paths(root) for violation in _check_file(path)]
     if violations:

@@ -29,18 +29,21 @@ import pytest
 
 uvicorn = pytest.importorskip("uvicorn", reason="uvicorn is an optional test dependency")
 
-from nautilus_trader.common import Environment  # noqa: E402 (guarded import above)
-from nautilus_trader.live import LiveExecutionEngineConfig  # noqa: E402
-from nautilus_trader.live import LiveNode  # noqa: E402
-from nautilus_trader.live import LiveNodeConfig  # noqa: E402
-from nautilus_trader.live import NodeState  # noqa: E402
-from nautilus_trader.model import TraderId  # noqa: E402
+from nautilus_trader.common import Environment
+from nautilus_trader.live import LiveExecutionEngineConfig
+from nautilus_trader.live import LiveNode
+from nautilus_trader.live import LiveNodeConfig
+from nautilus_trader.live import NodeState
+from nautilus_trader.model import TraderId
 
 
 pytestmark = pytest.mark.asyncio
 
 
 def build_node(trader_id: str) -> LiveNode:
+    """
+    Build node.
+    """
     return LiveNode.build(
         "TEST",
         LiveNodeConfig(
@@ -65,7 +68,10 @@ def make_app(node: LiveNode, record: dict) -> object:
     cache = node.cache
     record["handle"] = handle
 
-    async def app(scope, receive, send) -> None:
+    async def app(scope: object, receive: object, send: object) -> None:
+        """
+        App.
+        """
         if scope["type"] == "lifespan":
             while True:
                 message = await receive()
@@ -100,7 +106,10 @@ def make_app(node: LiveNode, record: dict) -> object:
     return app
 
 
-async def serve(app) -> tuple:
+async def serve(app: object) -> tuple:
+    """
+    Serve.
+    """
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning", lifespan="on")
     server = uvicorn.Server(config)
     server.install_signal_handlers = lambda: None  # The test owns the loop and its signals
@@ -108,7 +117,7 @@ async def serve(app) -> tuple:
     task = asyncio.create_task(server.serve())
 
     async with asyncio.timeout(20.0):
-        while not server.started:  # noqa: ASYNC110
+        while not server.started:
             await asyncio.sleep(0.01)
 
     port = server.servers[0].sockets[0].getsockname()[1]
@@ -116,14 +125,24 @@ async def serve(app) -> tuple:
 
 
 async def get_json(port: int, path: str = "/") -> dict:
+    """
+    Get json.
+    """
+
     def request() -> dict:
+        """
+        Request.
+        """
         with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=10) as response:
             return json.loads(response.read())
 
     return await asyncio.to_thread(request)
 
 
-async def test_node_runs_inside_uvicorn_and_serves_requests():
+async def test_node_runs_inside_uvicorn_and_serves_requests() -> None:
+    """
+    Test node runs inside uvicorn and serves requests.
+    """
     node = build_node("UVICORN-001")
     record = {"trader_id": node.trader_id}
     server, server_task, port = await serve(make_app(node, record))
@@ -150,7 +169,10 @@ async def test_node_runs_inside_uvicorn_and_serves_requests():
     assert record["task"].exception() is None
 
 
-async def test_uvicorn_shutdown_stops_the_node_through_the_lifespan():
+async def test_uvicorn_shutdown_stops_the_node_through_the_lifespan() -> None:
+    """
+    Test uvicorn shutdown stops the node through the lifespan.
+    """
     node = build_node("UVICORN-002")
     record = {"trader_id": node.trader_id}
     server, server_task, port = await serve(make_app(node, record))
@@ -166,7 +188,10 @@ async def test_uvicorn_shutdown_stops_the_node_through_the_lifespan():
     assert record["task"].exception() is None
 
 
-async def test_http_requests_stay_responsive_under_repeated_polling():
+async def test_http_requests_stay_responsive_under_repeated_polling() -> None:
+    """
+    Test http requests stay responsive under repeated polling.
+    """
     node = build_node("UVICORN-003")
     record = {"trader_id": node.trader_id}
     server, server_task, port = await serve(make_app(node, record))

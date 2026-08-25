@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test bar behavior.
+"""
 
 import pickle
 import sys
@@ -33,16 +36,25 @@ from nautilus_trader.model import Venue
 
 
 @pytest.fixture
-def one_min_bid():
+def one_min_bid() -> object:
+    """
+    One min bid.
+    """
     return BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 
 
 @pytest.fixture
-def audusd_1_min_bid(audusd_id, one_min_bid):
+def audusd_1_min_bid(audusd_id: InstrumentId, one_min_bid: object) -> object:
+    """
+    Audusd 1 min bid.
+    """
     return BarType(audusd_id, one_min_bid)
 
 
-def test_bar_spec_equality():
+def test_bar_spec_equality() -> None:
+    """
+    Test bar spec equality.
+    """
     spec1 = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
     spec2 = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
     spec3 = BarSpecification(1, BarAggregation.MINUTE, PriceType.ASK)
@@ -51,14 +63,20 @@ def test_bar_spec_equality():
     assert spec1 != spec3
 
 
-def test_bar_spec_hash_and_str():
+def test_bar_spec_hash_and_str() -> None:
+    """
+    Test bar spec hash and str.
+    """
     spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
 
     assert isinstance(hash(spec), int)
     assert str(spec) == "1-MINUTE-BID"
 
 
-def test_bar_spec_properties():
+def test_bar_spec_properties() -> None:
+    """
+    Test bar spec properties.
+    """
     spec = BarSpecification(1, BarAggregation.HOUR, PriceType.BID)
 
     assert spec.step == 1
@@ -76,7 +94,14 @@ def test_bar_spec_properties():
         (1, BarAggregation.DAY, "1-DAY-BID"),
     ],
 )
-def test_bar_spec_str_with_various_aggregations(step, aggregation, expected_str):
+def test_bar_spec_str_with_various_aggregations(
+    step: object,
+    aggregation: object,
+    expected_str: object,
+) -> None:
+    """
+    Test bar spec str with various aggregations.
+    """
     spec = BarSpecification(step, aggregation, PriceType.BID)
     assert str(spec) == expected_str
 
@@ -121,12 +146,22 @@ def test_bar_spec_str_with_various_aggregations(step, aggregation, expected_str)
         ),
     ],
 )
-def test_bar_spec_invalid_periodic_step(step, aggregation, expected_msg):
+def test_bar_spec_invalid_periodic_step(
+    step: object,
+    aggregation: object,
+    expected_msg: object,
+) -> None:
+    """
+    Test bar spec invalid periodic step.
+    """
     with pytest.raises(ValueError, match=expected_msg):
         BarSpecification(step, aggregation, PriceType.BID)
 
 
-def test_bar_spec_12_month_round_trips():
+def test_bar_spec_12_month_round_trips() -> None:
+    """
+    Test bar spec 12 month round trips.
+    """
     # 12-MONTH is a valid specification (OKX yearly candles)
     spec = BarSpecification(12, BarAggregation.MONTH, PriceType.LAST)
 
@@ -151,7 +186,10 @@ def test_bar_spec_12_month_round_trips():
         (7, BarAggregation.RENKO),
     ],
 )
-def test_bar_spec_non_periodic_step_passes(step, aggregation):
+def test_bar_spec_non_periodic_step_passes(step: object, aggregation: object) -> None:
+    """
+    Test bar spec non periodic step passes.
+    """
     spec = BarSpecification(step, aggregation, PriceType.BID)
 
     assert spec.step == step
@@ -159,7 +197,10 @@ def test_bar_spec_non_periodic_step_passes(step, aggregation):
     assert spec.price_type == PriceType.BID
 
 
-def test_bar_spec_from_str_rejects_invalid_periodic_step():
+def test_bar_spec_from_str_rejects_invalid_periodic_step() -> None:
+    """
+    Test bar spec from str rejects invalid periodic step.
+    """
     with pytest.raises(ValueError, match=r"Invalid step in bar_type\.spec\.step"):
         BarSpecification.from_str("60-MINUTE-BID")
 
@@ -173,7 +214,14 @@ def test_bar_spec_from_str_rejects_invalid_periodic_step():
         (12, BarAggregation.MONTH, 360),
     ],
 )
-def test_bar_spec_max_interval_converts_without_panic(step, aggregation, expected_days):
+def test_bar_spec_max_interval_converts_without_panic(
+    step: object,
+    aggregation: object,
+    expected_days: object,
+) -> None:
+    """
+    Test bar spec max interval converts without panic.
+    """
     spec = BarSpecification(step, aggregation, PriceType.LAST)
     parsed = BarSpecification.from_str(f"{step}-{aggregation.name}-LAST")
 
@@ -194,7 +242,10 @@ def test_bar_spec_max_interval_converts_without_panic(step, aggregation, expecte
         (sys.maxsize, BarAggregation.WEEK),
     ],
 )
-def test_bar_spec_rejects_unrepresentable_interval(step, aggregation):
+def test_bar_spec_rejects_unrepresentable_interval(step: object, aggregation: object) -> None:
+    """
+    Test bar spec rejects unrepresentable interval.
+    """
     with pytest.raises(ValueError, match=r"Invalid step in bar_type\.spec\.step"):
         BarSpecification(step, aggregation, PriceType.LAST)
 
@@ -212,13 +263,19 @@ def test_bar_spec_rejects_unrepresentable_interval(step, aggregation):
         (1, BarAggregation.DAY, timedelta(days=1)),
     ],
 )
-def test_bar_spec_timedelta(step, aggregation, expected):
+def test_bar_spec_timedelta(step: object, aggregation: object, expected: object) -> None:
+    """
+    Test bar spec timedelta.
+    """
     spec = BarSpecification(step, aggregation, PriceType.LAST)
 
     assert spec.timedelta == expected
 
 
-def test_bar_type_equality(audusd_id, one_min_bid):
+def test_bar_type_equality(audusd_id: InstrumentId, one_min_bid: object) -> None:
+    """
+    Test bar type equality.
+    """
     bt1 = BarType(audusd_id, one_min_bid)
     bt2 = BarType(audusd_id, one_min_bid)
     bt3 = BarType(InstrumentId(Symbol("GBP/USD"), Venue("SIM")), one_min_bid)
@@ -227,18 +284,27 @@ def test_bar_type_equality(audusd_id, one_min_bid):
     assert bt1 != bt3
 
 
-def test_bar_type_hash(audusd_id, one_min_bid):
+def test_bar_type_hash(audusd_id: InstrumentId, one_min_bid: object) -> None:
+    """
+    Test bar type hash.
+    """
     bt = BarType(audusd_id, one_min_bid)
     assert isinstance(hash(bt), int)
 
 
-def test_bar_type_str(audusd_id, one_min_bid):
+def test_bar_type_str(audusd_id: InstrumentId, one_min_bid: object) -> None:
+    """
+    Test bar type str.
+    """
     bt = BarType(audusd_id, one_min_bid)
 
     assert str(bt) == "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL"
 
 
-def test_bar_type_from_str(audusd_id):
+def test_bar_type_from_str() -> None:
+    """
+    Test bar type from str.
+    """
     bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-BID-INTERNAL")
 
     assert bar_type.spec.step == 1
@@ -282,7 +348,10 @@ def test_bar_type_from_str(audusd_id):
         ),
     ],
 )
-def test_bar_type_from_str_valid(value, expected):
+def test_bar_type_from_str_valid(value: object, expected: object) -> None:
+    """
+    Test bar type from str valid.
+    """
     assert BarType.from_str(value) == expected
 
 
@@ -290,26 +359,38 @@ def test_bar_type_from_str_valid(value, expected):
     "value",
     ["", "AUD/USD", "AUD/USD.IDEALPRO-1-MILLISECOND-BID", "AUD/USD.SIM-60-MINUTE-LAST-INTERNAL"],
 )
-def test_bar_type_from_str_invalid(value):
+def test_bar_type_from_str_invalid(value: object) -> None:
+    """
+    Test bar type from str invalid.
+    """
     with pytest.raises(ValueError, match="Error parsing"):
         BarType.from_str(value)
 
 
-def test_bar_type_from_str_invalid_composite_spec_step():
+def test_bar_type_from_str_invalid_composite_spec_step() -> None:
+    """
+    Test bar type from str invalid composite spec step.
+    """
     input_str = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@60-MINUTE-EXTERNAL"
 
     with pytest.raises(ValueError, match="invalid token: '60' at position 5"):
         BarType.from_str(input_str)
 
 
-def test_bar_type_from_str_with_utf8():
+def test_bar_type_from_str_with_utf8() -> None:
+    """
+    Test bar type from str with utf8.
+    """
     bar_type = BarType.from_str("TËST-PÉRP.BINANCE-1-MINUTE-LAST-EXTERNAL")
 
     assert bar_type.spec == BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
     assert str(bar_type) == "TËST-PÉRP.BINANCE-1-MINUTE-LAST-EXTERNAL"
 
 
-def test_bar_type_composite():
+def test_bar_type_composite() -> None:
+    """
+    Test bar type composite.
+    """
     bt = BarType.from_str("BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
 
     assert bt.is_composite()
@@ -324,12 +405,18 @@ def test_bar_type_composite():
     assert str(comp) == "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"
 
 
-def test_bar_fully_qualified_name():
+def test_bar_fully_qualified_name() -> None:
+    """
+    Test bar fully qualified name.
+    """
     assert Bar.fully_qualified_name() == "nautilus_trader.model:Bar"
     assert Bar.__module__ == "nautilus_trader.model"
 
 
-def test_bar_construction(audusd_1_min_bid):
+def test_bar_construction(audusd_1_min_bid: object) -> None:
+    """
+    Test bar construction.
+    """
     bar = Bar(
         bar_type=audusd_1_min_bid,
         open=Price.from_str("1.00001"),
@@ -351,7 +438,10 @@ def test_bar_construction(audusd_1_min_bid):
     assert bar.ts_init == 2
 
 
-def test_bar_equality(audusd_1_min_bid):
+def test_bar_equality(audusd_1_min_bid: object) -> None:
+    """
+    Test bar equality.
+    """
     bar1 = Bar(
         audusd_1_min_bid,
         Price.from_str("1.00001"),
@@ -377,7 +467,10 @@ def test_bar_equality(audusd_1_min_bid):
     assert bar1 != bar2
 
 
-def test_bar_hash(audusd_1_min_bid):
+def test_bar_hash(audusd_1_min_bid: object) -> None:
+    """
+    Test bar hash.
+    """
     bar = Bar(
         audusd_1_min_bid,
         Price.from_str("1.00001"),
@@ -392,7 +485,10 @@ def test_bar_hash(audusd_1_min_bid):
     assert isinstance(hash(bar), int)
 
 
-def test_bar_str(audusd_1_min_bid):
+def test_bar_str(audusd_1_min_bid: object) -> None:
+    """
+    Test bar str.
+    """
     bar = Bar(
         audusd_1_min_bid,
         Price.from_str("1.00001"),
@@ -407,7 +503,10 @@ def test_bar_str(audusd_1_min_bid):
     assert str(bar) == "AUD/USD.SIM-1-MINUTE-BID-EXTERNAL,1.00001,1.00004,1.00000,1.00003,100000,0"
 
 
-def test_bar_validation_high_below_open(audusd_1_min_bid):
+def test_bar_validation_high_below_open(audusd_1_min_bid: object) -> None:
+    """
+    Test bar validation high below open.
+    """
     with pytest.raises(ValueError, match="high >= open"):
         Bar(
             audusd_1_min_bid,
@@ -421,7 +520,10 @@ def test_bar_validation_high_below_open(audusd_1_min_bid):
         )
 
 
-def test_bar_validation_high_below_low(audusd_1_min_bid):
+def test_bar_validation_high_below_low(audusd_1_min_bid: object) -> None:
+    """
+    Test bar validation high below low.
+    """
     with pytest.raises(ValueError, match="high >= open"):
         Bar(
             audusd_1_min_bid,
@@ -435,7 +537,10 @@ def test_bar_validation_high_below_low(audusd_1_min_bid):
         )
 
 
-def test_bar_validation_high_below_close(audusd_1_min_bid):
+def test_bar_validation_high_below_close(audusd_1_min_bid: object) -> None:
+    """
+    Test bar validation high below close.
+    """
     with pytest.raises(ValueError, match="high >= close"):
         Bar(
             audusd_1_min_bid,
@@ -449,7 +554,10 @@ def test_bar_validation_high_below_close(audusd_1_min_bid):
         )
 
 
-def test_bar_validation_low_above_open(audusd_1_min_bid):
+def test_bar_validation_low_above_open(audusd_1_min_bid: object) -> None:
+    """
+    Test bar validation low above open.
+    """
     with pytest.raises(ValueError, match="low <= open"):
         Bar(
             audusd_1_min_bid,
@@ -463,7 +571,10 @@ def test_bar_validation_low_above_open(audusd_1_min_bid):
         )
 
 
-def test_bar_validation_low_above_close(audusd_1_min_bid):
+def test_bar_validation_low_above_close(audusd_1_min_bid: object) -> None:
+    """
+    Test bar validation low above close.
+    """
     with pytest.raises(ValueError, match="low <= close"):
         Bar(
             audusd_1_min_bid,
@@ -477,7 +588,10 @@ def test_bar_validation_low_above_close(audusd_1_min_bid):
         )
 
 
-def test_bar_to_dict(audusd_1_min_bid):
+def test_bar_to_dict(audusd_1_min_bid: object) -> None:
+    """
+    Test bar to dict.
+    """
     bar = Bar(
         audusd_1_min_bid,
         Price.from_str("1.00001"),
@@ -502,7 +616,10 @@ def test_bar_to_dict(audusd_1_min_bid):
     }
 
 
-def test_bar_from_dict_roundtrip(audusd_1_min_bid):
+def test_bar_from_dict_roundtrip(audusd_1_min_bid: object) -> None:
+    """
+    Test bar from dict roundtrip.
+    """
     bar = Bar(
         audusd_1_min_bid,
         Price.from_str("1.00001"),
@@ -519,9 +636,12 @@ def test_bar_from_dict_roundtrip(audusd_1_min_bid):
     assert restored == bar
 
 
-def test_bar_spec_pickle_roundtrip():
+def test_bar_spec_pickle_roundtrip() -> None:
+    """
+    Test bar spec pickle roundtrip.
+    """
     spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.BID)
-    restored = pickle.loads(pickle.dumps(spec))  # noqa: S301
+    restored = pickle.loads(pickle.dumps(spec))
 
     assert restored == spec
     assert restored.step == 1
@@ -546,7 +666,10 @@ def test_bar_spec_pickle_roundtrip():
         (BarAggregation.TICK_RUNS, False),
     ],
 )
-def test_bar_spec_is_time_aggregated(aggregation, expected):
+def test_bar_spec_is_time_aggregated(aggregation: object, expected: object) -> None:
+    """
+    Test bar spec is time aggregated.
+    """
     spec = BarSpecification(1, aggregation, PriceType.LAST)
     assert spec.is_time_aggregated() == expected
 
@@ -564,7 +687,10 @@ def test_bar_spec_is_time_aggregated(aggregation, expected):
         (BarAggregation.TICK_RUNS, False),
     ],
 )
-def test_bar_spec_is_threshold_aggregated(aggregation, expected):
+def test_bar_spec_is_threshold_aggregated(aggregation: object, expected: object) -> None:
+    """
+    Test bar spec is threshold aggregated.
+    """
     spec = BarSpecification(1, aggregation, PriceType.LAST)
     assert spec.is_threshold_aggregated() == expected
 
@@ -581,7 +707,10 @@ def test_bar_spec_is_threshold_aggregated(aggregation, expected):
         (BarAggregation.TICK_IMBALANCE, False),
     ],
 )
-def test_bar_spec_is_information_aggregated(aggregation, expected):
+def test_bar_spec_is_information_aggregated(aggregation: object, expected: object) -> None:
+    """
+    Test bar spec is information aggregated.
+    """
     spec = BarSpecification(1, aggregation, PriceType.LAST)
     assert spec.is_information_aggregated() == expected
 
@@ -596,12 +725,18 @@ def test_bar_spec_is_information_aggregated(aggregation, expected):
         (1, BarAggregation.DAY, 86_400_000_000_000),
     ],
 )
-def test_bar_spec_get_interval_ns(step, aggregation, expected_ns):
+def test_bar_spec_get_interval_ns(step: object, aggregation: object, expected_ns: object) -> None:
+    """
+    Test bar spec get interval ns.
+    """
     spec = BarSpecification(step, aggregation, PriceType.LAST)
     assert spec.get_interval_ns() == expected_ns
 
 
-def test_bar_spec_from_timedelta():
+def test_bar_spec_from_timedelta() -> None:
+    """
+    Test bar spec from timedelta.
+    """
     spec = BarSpecification.from_timedelta(timedelta(minutes=5), PriceType.MID)
 
     assert spec.step == 5
@@ -618,7 +753,14 @@ def test_bar_spec_from_timedelta():
         (timedelta(days=1), 1, BarAggregation.DAY),
     ],
 )
-def test_bar_spec_from_timedelta_various(duration, expected_step, expected_agg):
+def test_bar_spec_from_timedelta_various(
+    duration: object,
+    expected_step: object,
+    expected_agg: object,
+) -> None:
+    """
+    Test bar spec from timedelta various.
+    """
     spec = BarSpecification.from_timedelta(duration, PriceType.LAST)
 
     assert spec.step == expected_step
@@ -634,7 +776,10 @@ def test_bar_spec_from_timedelta_various(duration, expected_step, expected_agg):
         (BarAggregation.VOLUME, False),
     ],
 )
-def test_bar_spec_check_time_aggregated(aggregation, expected):
+def test_bar_spec_check_time_aggregated(aggregation: object, expected: object) -> None:
+    """
+    Test bar spec check time aggregated.
+    """
     assert BarSpecification.check_time_aggregated(aggregation) == expected
 
 
@@ -647,7 +792,10 @@ def test_bar_spec_check_time_aggregated(aggregation, expected):
         (BarAggregation.MINUTE, False),
     ],
 )
-def test_bar_spec_check_threshold_aggregated(aggregation, expected):
+def test_bar_spec_check_threshold_aggregated(aggregation: object, expected: object) -> None:
+    """
+    Test bar spec check threshold aggregated.
+    """
     assert BarSpecification.check_threshold_aggregated(aggregation) == expected
 
 
@@ -661,13 +809,19 @@ def test_bar_spec_check_threshold_aggregated(aggregation, expected):
         (BarAggregation.MINUTE, False),
     ],
 )
-def test_bar_spec_check_information_aggregated(aggregation, expected):
+def test_bar_spec_check_information_aggregated(aggregation: object, expected: object) -> None:
+    """
+    Test bar spec check information aggregated.
+    """
     assert BarSpecification.check_information_aggregated(aggregation) == expected
 
 
-def test_bar_type_pickle_roundtrip(audusd_id, one_min_bid):
+def test_bar_type_pickle_roundtrip(audusd_id: InstrumentId, one_min_bid: object) -> None:
+    """
+    Test bar type pickle roundtrip.
+    """
     bar_type = BarType(audusd_id, one_min_bid)
-    restored = pickle.loads(pickle.dumps(bar_type))  # noqa: S301
+    restored = pickle.loads(pickle.dumps(bar_type))
 
     assert restored == bar_type
     assert str(restored) == str(bar_type)
@@ -675,24 +829,33 @@ def test_bar_type_pickle_roundtrip(audusd_id, one_min_bid):
     assert restored.spec == one_min_bid
 
 
-def test_bar_type_composite_pickle_roundtrip():
+def test_bar_type_composite_pickle_roundtrip() -> None:
+    """
+    Test bar type composite pickle roundtrip.
+    """
     bar_type = BarType.from_str(
         "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
     )
-    restored = pickle.loads(pickle.dumps(bar_type))  # noqa: S301
+    restored = pickle.loads(pickle.dumps(bar_type))
 
     assert restored == bar_type
     assert restored.is_composite()
     assert str(restored) == str(bar_type)
 
 
-def test_bar_type_is_standard(audusd_id, one_min_bid):
+def test_bar_type_is_standard(audusd_id: InstrumentId, one_min_bid: object) -> None:
+    """
+    Test bar type is standard.
+    """
     bar_type = BarType(audusd_id, one_min_bid)
     assert bar_type.is_standard() is True
     assert bar_type.is_composite() is False
 
 
-def test_bar_type_is_composite_from_str():
+def test_bar_type_is_composite_from_str() -> None:
+    """
+    Test bar type is composite from str.
+    """
     bar_type = BarType.from_str(
         "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
     )
@@ -700,7 +863,10 @@ def test_bar_type_is_composite_from_str():
     assert bar_type.is_standard() is False
 
 
-def test_bar_type_is_externally_aggregated(audusd_id, one_min_bid):
+def test_bar_type_is_externally_aggregated(audusd_id: InstrumentId, one_min_bid: object) -> None:
+    """
+    Test bar type is externally aggregated.
+    """
     external = BarType(audusd_id, one_min_bid, AggregationSource.EXTERNAL)
     internal = BarType(audusd_id, one_min_bid, AggregationSource.INTERNAL)
 
@@ -710,7 +876,10 @@ def test_bar_type_is_externally_aggregated(audusd_id, one_min_bid):
     assert internal.is_externally_aggregated() is False
 
 
-def test_bar_type_standard_and_composite_accessors():
+def test_bar_type_standard_and_composite_accessors() -> None:
+    """
+    Test bar type standard and composite accessors.
+    """
     bar_type = BarType.from_str(
         "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
     )
@@ -726,7 +895,10 @@ def test_bar_type_standard_and_composite_accessors():
     assert comp.aggregation_source == AggregationSource.EXTERNAL
 
 
-def test_bar_type_id_spec_key(audusd_id, one_min_bid):
+def test_bar_type_id_spec_key(audusd_id: InstrumentId, one_min_bid: object) -> None:
+    """
+    Test bar type id spec key.
+    """
     bt_ext = BarType(audusd_id, one_min_bid, AggregationSource.EXTERNAL)
     bt_int = BarType(audusd_id, one_min_bid, AggregationSource.INTERNAL)
 
@@ -737,7 +909,10 @@ def test_bar_type_id_spec_key(audusd_id, one_min_bid):
     assert key_ext == key_int
 
 
-def test_bar_type_new_composite(audusd_id):
+def test_bar_type_new_composite(audusd_id: InstrumentId) -> None:
+    """
+    Test bar type new composite.
+    """
     bar_type = BarType.new_composite(
         instrument_id=audusd_id,
         spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.BID),
@@ -752,7 +927,10 @@ def test_bar_type_new_composite(audusd_id):
     assert bar_type.composite().spec.step == 1
 
 
-def test_bar_pickle_roundtrip(audusd_1_min_bid):
+def test_bar_pickle_roundtrip(audusd_1_min_bid: object) -> None:
+    """
+    Test bar pickle roundtrip.
+    """
     bar = Bar(
         bar_type=audusd_1_min_bid,
         open=Price.from_str("1.00001"),
@@ -764,7 +942,7 @@ def test_bar_pickle_roundtrip(audusd_1_min_bid):
         ts_init=2,
     )
 
-    restored = pickle.loads(pickle.dumps(bar))  # noqa: S301
+    restored = pickle.loads(pickle.dumps(bar))
 
     assert restored == bar
     assert restored.bar_type == bar.bar_type
@@ -777,7 +955,10 @@ def test_bar_pickle_roundtrip(audusd_1_min_bid):
     assert restored.ts_init == 2
 
 
-def test_bar_pickle_composite_bar_type():
+def test_bar_pickle_composite_bar_type() -> None:
+    """
+    Test bar pickle composite bar type.
+    """
     bar_type = BarType.from_str(
         "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
     )
@@ -792,7 +973,7 @@ def test_bar_pickle_composite_bar_type():
         ts_init=1_000_000_001,
     )
 
-    restored = pickle.loads(pickle.dumps(bar))  # noqa: S301
+    restored = pickle.loads(pickle.dumps(bar))
 
     assert restored == bar
     assert restored.bar_type.is_composite()

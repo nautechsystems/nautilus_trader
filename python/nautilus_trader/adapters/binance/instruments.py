@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Instrument catalogue loading for the Binance adapter.
+"""
 
 import asyncio
 

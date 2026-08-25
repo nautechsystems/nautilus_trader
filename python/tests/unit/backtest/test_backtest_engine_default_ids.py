@@ -57,57 +57,88 @@ class RecordingActor(DataActor):
     Overrides lifecycle and data handlers, and records what it observed at runtime.
     """
 
-    def __init__(self, config=None):
+    def __init__(self, config: object = None) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self.started = 0
         self.stopped = 0
         self.quotes = 0
         self.actor_id_while_running = None
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.started += 1
         self.actor_id_while_running = str(self.actor_id)
         self.subscribe_quotes(ETHUSDT.id)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.stopped += 1
 
-    def on_quote(self, quote):
+    def on_quote(self, _quote: object) -> None:
+        """
+        On quote.
+        """
         self.quotes += 1
 
 
 class SecondRecordingActor(RecordingActor):
-    pass
+    """
+    Collect second recording actor tests.
+    """
 
 
 class NonForwardingActor(DataActor):
-    def __init__(self, config=None):
+    """
+    Collect non forwarding actor tests.
+    """
+
+    def __init__(self, _config: object = None) -> None:
+        """
+        Initialize the helper.
+        """
         # Deliberately does not forward to `super().__init__()`, so the ID and the Python self
         # reference are both established by registration rather than construction
         self.started = 0
         self.quotes = 0
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.started += 1
         self.subscribe_quotes(ETHUSDT.id)
 
-    def on_quote(self, quote):
+    def on_quote(self, _quote: object) -> None:
+        """
+        On quote.
+        """
         self.quotes += 1
 
 
 class SecondNonForwardingActor(NonForwardingActor):
-    pass
+    """
+    Collect second non forwarding actor tests.
+    """
 
 
 class RecordingStrategy(Strategy):
     """
-    Overrides lifecycle and data handlers, submits one order per quote up to
-    `order_limit`, and records the identities it observed at runtime.
+    Record identities and submit one order per quote up to ``order_limit``.
     """
 
     order_limit = 1
 
-    def __init__(self, config=None):
+    def __init__(self, config: object = None) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__(config)
         self.started = 0
         self.stopped = 0
@@ -116,15 +147,24 @@ class RecordingStrategy(Strategy):
         self.filled = []
         self.strategy_id_while_running = None
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.started += 1
         self.strategy_id_while_running = str(self.strategy_id)
         self.subscribe_quotes(ETHUSDT.id)
 
-    def on_stop(self):
+    def on_stop(self) -> None:
+        """
+        On stop.
+        """
         self.stopped += 1
 
-    def on_quote(self, quote):
+    def on_quote(self, _quote: object) -> None:
+        """
+        On quote.
+        """
         self.quotes += 1
 
         if len(self.submitted) >= type(self).order_limit:
@@ -138,24 +178,37 @@ class RecordingStrategy(Strategy):
         self.submitted.append(order.client_order_id)
         self.submit_order(order)
 
-    def on_order_filled(self, event):
+    def on_order_filled(self, event: object) -> None:
+        """
+        On order filled.
+        """
         self.filled.append(event.client_order_id)
 
 
 class SecondRecordingStrategy(RecordingStrategy):
-    pass
+    """
+    Collect second recording strategy tests.
+    """
 
 
 class CountingStrategy(RecordingStrategy):
+    """
+    Collect counting strategy tests.
+    """
+
     order_limit = 2
 
 
 class TaggedStrategy(RecordingStrategy):
-    pass
+    """
+    Collect tagged strategy tests.
+    """
 
 
 class ConfiguredStrategy(RecordingStrategy):
-    pass
+    """
+    Collect configured strategy tests.
+    """
 
 
 def _quotes(count: int = QUOTE_COUNT) -> list[QuoteTick]:
@@ -192,7 +245,10 @@ def _engine() -> BacktestEngine:
     return engine
 
 
-def test_overridden_actor_subclasses_receive_data_under_class_derived_ids():
+def test_overridden_actor_subclasses_receive_data_under_class_derived_ids() -> None:
+    """
+    Test overridden actor subclasses receive data under class derived ids.
+    """
     engine = _engine()
     first = RecordingActor()
     second = SecondRecordingActor()
@@ -217,7 +273,10 @@ def test_overridden_actor_subclasses_receive_data_under_class_derived_ids():
         engine.dispose()
 
 
-def test_actor_subclasses_that_skip_super_init_still_derive_distinct_ids():
+def test_actor_subclasses_that_skip_super_init_still_derive_distinct_ids() -> None:
+    """
+    Test actor subclasses that skip super init still derive distinct ids.
+    """
     engine = _engine()
     first = NonForwardingActor()
     second = SecondNonForwardingActor()
@@ -238,7 +297,10 @@ def test_actor_subclasses_that_skip_super_init_still_derive_distinct_ids():
         engine.dispose()
 
 
-def test_configured_actor_id_survives_a_run():
+def test_configured_actor_id_survives_a_run() -> None:
+    """
+    Test configured actor id survives a run.
+    """
     engine = _engine()
     actor = RecordingActor(DataActorConfig(actor_id=ActorId("MY-ACTOR-001")))
 
@@ -254,7 +316,10 @@ def test_configured_actor_id_survives_a_run():
         engine.dispose()
 
 
-def test_overridden_strategy_trades_under_a_class_derived_id():
+def test_overridden_strategy_trades_under_a_class_derived_id() -> None:
+    """
+    Test overridden strategy trades under a class derived id.
+    """
     engine = _engine()
     strategy = CountingStrategy()
 
@@ -285,7 +350,10 @@ def test_overridden_strategy_trades_under_a_class_derived_id():
         engine.dispose()
 
 
-def test_strategy_order_id_tag_alone_names_the_strategy_in_a_run():
+def test_strategy_order_id_tag_alone_names_the_strategy_in_a_run() -> None:
+    """
+    Test strategy order id tag alone names the strategy in a run.
+    """
     engine = _engine()
     strategy = TaggedStrategy(StrategyConfig(order_id_tag="007"))
 
@@ -302,7 +370,10 @@ def test_strategy_order_id_tag_alone_names_the_strategy_in_a_run():
         engine.dispose()
 
 
-def test_configured_strategy_id_survives_a_run():
+def test_configured_strategy_id_survives_a_run() -> None:
+    """
+    Test configured strategy id survives a run.
+    """
     engine = _engine()
     strategy = ConfiguredStrategy(StrategyConfig(strategy_id=StrategyId("MINE-042")))
 
@@ -319,7 +390,10 @@ def test_configured_strategy_id_survives_a_run():
         engine.dispose()
 
 
-def test_instances_of_one_strategy_class_keep_separate_order_ids_and_events():
+def test_instances_of_one_strategy_class_keep_separate_order_ids_and_events() -> None:
+    """
+    Test instances of one strategy class keep separate order ids and events.
+    """
     engine = _engine()
     first = RecordingStrategy()
     second = SecondRecordingStrategy()
@@ -357,7 +431,10 @@ def test_instances_of_one_strategy_class_keep_separate_order_ids_and_events():
         engine.dispose()
 
 
-def test_actors_and_strategies_coexist_under_derived_ids():
+def test_actors_and_strategies_coexist_under_derived_ids() -> None:
+    """
+    Test actors and strategies coexist under derived ids.
+    """
     engine = _engine()
     actor = RecordingActor()
     strategy = RecordingStrategy()

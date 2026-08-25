@@ -31,7 +31,7 @@ class OrderBookImbalanceConfig(StrategyConfig):
         "book_type",
     )
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -44,7 +44,7 @@ class OrderBookImbalanceConfig(StrategyConfig):
         trigger_imbalance_ratio: float = 0.20,
         min_seconds_between_triggers: float = 1.0,
         book_type: str = "L2_MBP",
-        **kwargs,
+        **_kwargs: object,
     ) -> None:
         super().__init__()
         self.instrument_id = instrument_id
@@ -75,13 +75,14 @@ class OrderBookImbalance(Strategy):
     def on_start(self) -> None:
         self._instrument = self.cache.instrument(self._instrument_id)
         if self._instrument is None:
-            self.log.error(f"Could not find instrument for {self._instrument_id}")
+            log_msg = f"Could not find instrument for {self._instrument_id}"
+            self.log.error(log_msg)
             self.stop()
             return
 
         self.subscribe_book_deltas(self._instrument_id, self._book_type, managed=True)
 
-    def on_book_deltas(self, deltas: OrderBookDeltas) -> None:
+    def on_book_deltas(self, _deltas: OrderBookDeltas) -> None:
         book = self.cache.order_book(self._instrument_id)
         if book is None or not book.spread():
             return

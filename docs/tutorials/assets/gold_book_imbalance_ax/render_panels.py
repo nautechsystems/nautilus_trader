@@ -80,7 +80,7 @@ MIN_TRIGGER_SIZE = 1.0
 class QuoteSamplerConfig(DataActorConfig):
     _CUSTOM_FIELDS = ("instrument_id", "sample_every_secs")
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> object:
         for key in cls._CUSTOM_FIELDS:
             kwargs.pop(key, None)
         return super().__new__(cls, *args, **kwargs)
@@ -89,7 +89,7 @@ class QuoteSamplerConfig(DataActorConfig):
         self,
         instrument_id: InstrumentId,
         sample_every_secs: int = 1,
-        **_kwargs,
+        **_kwargs: object,
     ) -> None:
         super().__init__()
         self.instrument_id = instrument_id
@@ -138,7 +138,7 @@ def apply_layout(fig: go.Figure, title: str, height: int = 480) -> None:
     fig.update_yaxes(gridcolor=GRID, zeroline=False)
 
 
-def run_backtest():
+def run_backtest() -> object:
     instrument_id = InstrumentId.from_str("XAU-PERP.AX")
     XAU_PERP = PerpetualContract(
         instrument_id=instrument_id,
@@ -228,7 +228,7 @@ def fills_to_records(fills: pd.DataFrame) -> list[dict]:
     ]
 
 
-def walk_fills_netting(fills: list[dict]):
+def walk_fills_netting(fills: list[dict]) -> object:
     entries: list[dict] = []
     closes: list[dict] = []
     pos = 0.0
@@ -251,7 +251,7 @@ def walk_fills_netting(fills: list[dict]):
 def panel_a_top_book(
     samples: pd.DataFrame,
     fills: pd.DataFrame,
-    positions: pd.DataFrame,
+    _positions: pd.DataFrame,
 ) -> go.Figure:
     fig = go.Figure()
     if samples.empty:

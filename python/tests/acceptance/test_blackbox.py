@@ -43,6 +43,9 @@ MACD_CONFIG = "strategies.acceptance:MACDStrategyConfig"
 
 
 def test_cash_account_trades_macd_event_sequencing() -> None:
+    """
+    Test cash account trades macd event sequencing.
+    """
     config = BacktestEngineConfig(bypass_logging=True, run_analysis=False)
     engine = BacktestEngine(config)
 

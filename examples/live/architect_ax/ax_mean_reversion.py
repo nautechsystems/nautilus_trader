@@ -58,6 +58,9 @@ RSI_SELL_THRESHOLD = 0.70
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     node = (
         LiveNode.builder("AX-MEAN-REVERSION-001", TRADER_ID, Environment.LIVE)
         .with_exec_engine_config(
@@ -65,7 +68,7 @@ def main() -> None:
                 reconciliation_instrument_ids=[str(INSTRUMENT_ID)],
             ),
         )
-        .with_reconciliation(True)
+        .with_reconciliation(reconciliation=True)
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .with_timeout_connection(20)
         .with_timeout_reconciliation(10)

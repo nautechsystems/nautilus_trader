@@ -43,6 +43,9 @@ BOOK_INTERVAL_MS = 10
 
 
 def main() -> None:
+    """
+    Run the example.
+    """
     builder = LiveNode.builder(
         "BINANCE-DATA-TESTER-001",
         TRADER_ID,

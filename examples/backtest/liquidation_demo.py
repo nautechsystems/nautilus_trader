@@ -53,21 +53,33 @@ class MarketBuyOnStart(Strategy):
     Submits a single market BUY on the first quote, then holds the position.
     """
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *_args: object, **_kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
         # `Strategy` is a pyo3 type whose `__new__` accepts only `config`, so the
         # subclass arguments must not reach it.
         return super().__new__(cls)
 
-    def __init__(self, instrument_id: InstrumentId, trade_size: Quantity):
+    def __init__(self, instrument_id: InstrumentId, trade_size: Quantity) -> None:
+        """
+        Initialize the helper.
+        """
         super().__init__()
         self._instrument_id = instrument_id
         self._trade_size = trade_size
         self._submitted = False
 
-    def on_start(self):
+    def on_start(self) -> None:
+        """
+        On start.
+        """
         self.subscribe_quotes(self._instrument_id)
 
-    def on_quote(self, quote: QuoteTick):
+    def on_quote(self, _quote: QuoteTick) -> None:
+        """
+        On quote.
+        """
         if self._submitted:
             return
 
@@ -104,6 +116,9 @@ def _make_quote(price: float, ts: int = 0) -> QuoteTick:
 
 
 def run_demo() -> dict:
+    """
+    Run demo.
+    """
     _STEPS.clear()
 
     _log("-" * 60)

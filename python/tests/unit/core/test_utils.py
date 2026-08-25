@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test utils behavior.
+"""
 
 import pytest
 
@@ -21,7 +24,10 @@ from nautilus_trader.core import convert_to_snake_case
 from nautilus_trader.core import mask_api_key
 
 
-def test_version_constants_are_consistent():
+def test_version_constants_are_consistent() -> None:
+    """
+    Test version constants are consistent.
+    """
     assert NAUTILUS_VERSION
     assert f"NautilusTrader/{NAUTILUS_VERSION}" == NAUTILUS_USER_AGENT
 
@@ -46,17 +52,26 @@ def test_version_constants_are_consistent():
         ("TradeTick", "trade_tick"),
     ],
 )
-def test_convert_to_snake_case(value, expected):
+def test_convert_to_snake_case(value: object, expected: object) -> None:
+    """
+    Test convert to snake case.
+    """
     assert convert_to_snake_case(value) == expected
 
 
-def test_mask_api_key_masks_middle():
+def test_mask_api_key_masks_middle() -> None:
+    """
+    Test mask api key masks middle.
+    """
     result = mask_api_key("sk-abc123xyz789")
     assert result.startswith("sk")
     assert result.endswith("789")
     assert "..." in result
 
 
-def test_mask_api_key_short_key():
+def test_mask_api_key_short_key() -> None:
+    """
+    Test mask api key short key.
+    """
     result = mask_api_key("abc")
     assert isinstance(result, str)

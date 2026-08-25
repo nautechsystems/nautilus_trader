@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test backtest engine surface behavior.
+"""
 
 from __future__ import annotations
 
@@ -95,7 +98,10 @@ USD = Currency.from_str("USD")
 USDT = Currency.from_str("USDT")
 
 
-def test_native_grid_market_maker_requotes_from_python_surface():
+def test_native_grid_market_maker_requotes_from_python_surface() -> None:
+    """
+    Test native grid market maker requotes from python surface.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
     engine.add_venue(
@@ -131,7 +137,10 @@ def test_native_grid_market_maker_requotes_from_python_surface():
     engine.dispose()
 
 
-def test_native_composite_market_maker_reacts_to_signal_instrument():
+def test_native_composite_market_maker_reacts_to_signal_instrument() -> None:
+    """
+    Test native composite market maker reacts to signal instrument.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     traded = TestInstrumentProvider.ethusdt_binance()
     signal = TestInstrumentProvider.btcusdt_binance()
@@ -176,7 +185,10 @@ def test_native_composite_market_maker_reacts_to_signal_instrument():
     engine.dispose()
 
 
-def test_native_ema_cross_trades_whipsaw_quote_data():
+def test_native_ema_cross_trades_whipsaw_quote_data() -> None:
+    """
+    Test native ema cross trades whipsaw quote data.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
     engine.add_venue(
@@ -209,7 +221,10 @@ def test_native_ema_cross_trades_whipsaw_quote_data():
     engine.dispose()
 
 
-def test_builtin_book_imbalance_actor_consumes_l2_book_deltas(capfd):
+def test_builtin_book_imbalance_actor_consumes_l2_book_deltas(capfd: object) -> None:
+    """
+    Test builtin book imbalance actor consumes l2 book deltas.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
     engine.add_venue(
@@ -244,7 +259,10 @@ def test_builtin_book_imbalance_actor_consumes_l2_book_deltas(capfd):
     engine.dispose()
 
 
-def test_importable_actor_receives_quotes_and_depth_snapshot_books():
+def test_importable_actor_receives_quotes_and_depth_snapshot_books() -> None:
+    """
+    Test importable actor receives quotes and depth snapshot books.
+    """
     MarketDataAuditActor.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
@@ -285,7 +303,10 @@ def test_importable_actor_receives_quotes_and_depth_snapshot_books():
     engine.dispose()
 
 
-def test_importable_controller_creates_strategy_on_start():
+def test_importable_controller_creates_strategy_on_start() -> None:
+    """
+    Test importable controller creates strategy on start.
+    """
     StrategyCreatingController.reset()
     ControllerCreatedStrategy.reset()
     engine = BacktestEngine(
@@ -308,7 +329,10 @@ def test_importable_controller_creates_strategy_on_start():
     engine.dispose()
 
 
-def test_importable_controller_preserves_strategy_start_flag_on_start():
+def test_importable_controller_preserves_strategy_start_flag_on_start() -> None:
+    """
+    Test importable controller preserves strategy start flag on start.
+    """
     NonStartingStrategyCreatingController.reset()
     ControllerCreatedStrategy.reset()
     engine = BacktestEngine(
@@ -334,7 +358,10 @@ def test_importable_controller_preserves_strategy_start_flag_on_start():
     engine.dispose()
 
 
-def test_importable_controller_drives_actor_lifecycle_through_id_aliases():
+def test_importable_controller_drives_actor_lifecycle_through_id_aliases() -> None:
+    """
+    Test importable controller drives actor lifecycle through id aliases.
+    """
     ActorLifecycleController.reset()
     ControllerCreatedActor.reset()
     engine = BacktestEngine(
@@ -365,7 +392,10 @@ def test_importable_controller_drives_actor_lifecycle_through_id_aliases():
     engine.dispose()
 
 
-def test_importable_controller_drives_strategy_lifecycle():
+def test_importable_controller_drives_strategy_lifecycle() -> None:
+    """
+    Test importable controller drives strategy lifecycle.
+    """
     StrategyLifecycleController.reset()
     ControllerCreatedStrategy.reset()
     engine = BacktestEngine(
@@ -389,7 +419,10 @@ def test_importable_controller_drives_strategy_lifecycle():
     engine.dispose()
 
 
-def test_importable_controller_rejects_non_controller_class():
+def test_importable_controller_rejects_non_controller_class() -> None:
+    """
+    Test importable controller rejects non controller class.
+    """
     with pytest.raises(RuntimeError, match="must inherit from"):
         BacktestEngine(
             BacktestEngineConfig(
@@ -439,14 +472,20 @@ def test_importable_controller_rejects_non_controller_class():
         ),
     ],
 )
-def test_controller_control_methods_require_registration(method_name, target):
+def test_controller_control_methods_require_registration(method_name: str, target: object) -> None:
+    """
+    Test controller control methods require registration.
+    """
     controller = Controller(TestControllerConfig(actor_id=ActorId("Controller-001")))
 
     with pytest.raises(RuntimeError, match="Controller is not registered with a trader"):
         getattr(controller, method_name)(target)
 
 
-def test_importable_strategy_routes_synthetic_bars_through_native_twap():
+def test_importable_strategy_routes_synthetic_bars_through_native_twap() -> None:
+    """
+    Test importable strategy routes synthetic bars through native twap.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.btcusdt_binance()
     bar_type = BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL")
@@ -524,7 +563,10 @@ def test_importable_strategy_routes_synthetic_bars_through_native_twap():
     engine.dispose()
 
 
-def test_importable_strategy_routes_orders_through_importable_exec_algorithm():
+def test_importable_strategy_routes_orders_through_importable_exec_algorithm() -> None:
+    """
+    Test importable strategy routes orders through importable exec algorithm.
+    """
     RoutedOrderDataActorExecutionAlgorithm.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
@@ -577,7 +619,10 @@ def test_importable_strategy_routes_orders_through_importable_exec_algorithm():
     engine.dispose()
 
 
-def test_importable_strategy_routes_orders_through_importable_execution_algorithm():
+def test_importable_strategy_routes_orders_through_importable_execution_algorithm() -> None:
+    """
+    Test importable strategy routes orders through importable execution algorithm.
+    """
     RoutedOrderExecutionAlgorithm.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
@@ -635,7 +680,10 @@ def test_importable_strategy_routes_orders_through_importable_execution_algorith
     engine.dispose()
 
 
-def test_execution_algorithm_spawn_reuses_cached_primary_order_state():
+def test_execution_algorithm_spawn_reuses_cached_primary_order_state() -> None:
+    """
+    Test execution algorithm spawn reuses cached primary order state.
+    """
     DoubleSpawnExecutionAlgorithm.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
@@ -679,7 +727,10 @@ def test_execution_algorithm_spawn_reuses_cached_primary_order_state():
     engine.dispose()
 
 
-def test_execution_algorithm_spawn_rejects_quantity_above_primary_leaves_qty():
+def test_execution_algorithm_spawn_rejects_quantity_above_primary_leaves_qty() -> None:
+    """
+    Test execution algorithm spawn rejects quantity above primary leaves qty.
+    """
     OversizedSpawnExecutionAlgorithm.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
@@ -724,7 +775,10 @@ def test_execution_algorithm_spawn_rejects_quantity_above_primary_leaves_qty():
     engine.dispose()
 
 
-def test_run_window_uses_inclusive_bounds_after_clear_data():
+def test_run_window_uses_inclusive_bounds_after_clear_data() -> None:
+    """
+    Test run window uses inclusive bounds after clear data.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
     engine.add_venue(
@@ -756,7 +810,10 @@ def test_run_window_uses_inclusive_bounds_after_clear_data():
     engine.dispose()
 
 
-def test_importable_strategy_processes_bars_trades_and_reference_data():
+def test_importable_strategy_processes_bars_trades_and_reference_data() -> None:
+    """
+    Test importable strategy processes bars trades and reference data.
+    """
     instrument = TestInstrumentProvider.audusd_sim()
     bar_type = BarType(
         instrument.id,
@@ -778,7 +835,10 @@ def test_importable_strategy_processes_bars_trades_and_reference_data():
     engine.dispose()
 
 
-def test_importable_strategy_reruns_after_reset_and_report_generation():
+def test_importable_strategy_reruns_after_reset_and_report_generation() -> None:
+    """
+    Test importable strategy reruns after reset and report generation.
+    """
     instrument = TestInstrumentProvider.audusd_sim()
     bar_type = BarType(
         instrument.id,
@@ -819,7 +879,10 @@ def test_importable_strategy_reruns_after_reset_and_report_generation():
     engine.dispose()
 
 
-def test_importable_strategy_runs_from_l2_book_deltas():
+def test_importable_strategy_runs_from_l2_book_deltas() -> None:
+    """
+    Test importable strategy runs from l2 book deltas.
+    """
     engine = BacktestEngine(
         BacktestEngineConfig(
             bypass_logging=True,
@@ -860,7 +923,10 @@ def test_importable_strategy_runs_from_l2_book_deltas():
     engine.dispose()
 
 
-def test_streaming_run_keeps_strategy_state_across_batches():
+def test_streaming_run_keeps_strategy_state_across_batches() -> None:
+    """
+    Test streaming run keeps strategy state across batches.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.audusd_sim()
     engine.add_venue(
@@ -898,7 +964,10 @@ def test_streaming_run_keeps_strategy_state_across_batches():
     engine.dispose()
 
 
-def test_strategy_instance_retains_config_object():
+def test_strategy_instance_retains_config_object() -> None:
+    """
+    Test strategy instance retains config object.
+    """
     instrument = TestInstrumentProvider.audusd_sim()
     config = StreamingWhipsawConfig(instrument_id=str(instrument.id), trade_size="100000")
 
@@ -909,7 +978,10 @@ def test_strategy_instance_retains_config_object():
     assert strategy.config.trade_size == "100000"
 
 
-def test_actor_instance_retains_config_object():
+def test_actor_instance_retains_config_object() -> None:
+    """
+    Test actor instance retains config object.
+    """
     instrument = TestInstrumentProvider.ethusdt_binance()
     config = MarketDataAuditActorConfig(instrument_id=str(instrument.id), log_events=False)
 
@@ -919,7 +991,10 @@ def test_actor_instance_retains_config_object():
     assert actor.config.instrument_id == str(instrument.id)
 
 
-def test_add_actor_with_constructed_instance_consumes_quotes():
+def test_add_actor_with_constructed_instance_consumes_quotes() -> None:
+    """
+    Test add actor with constructed instance consumes quotes.
+    """
     MarketDataAuditActor.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
@@ -951,7 +1026,10 @@ def test_add_actor_with_constructed_instance_consumes_quotes():
     engine.dispose()
 
 
-def test_add_strategy_with_constructed_instance_submits_orders():
+def test_add_strategy_with_constructed_instance_submits_orders() -> None:
+    """
+    Test add strategy with constructed instance submits orders.
+    """
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.audusd_sim()
     engine.add_venue(
@@ -978,7 +1056,10 @@ def test_add_strategy_with_constructed_instance_submits_orders():
     engine.dispose()
 
 
-def test_add_exec_algorithm_and_strategy_instances_route_orders():
+def test_add_exec_algorithm_and_strategy_instances_route_orders() -> None:
+    """
+    Test add exec algorithm and strategy instances route orders.
+    """
     RoutedOrderDataActorExecutionAlgorithm.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
@@ -1022,7 +1103,10 @@ def test_add_exec_algorithm_and_strategy_instances_route_orders():
     engine.dispose()
 
 
-def test_add_actors_registers_multiple_constructed_instances():
+def test_add_actors_registers_multiple_constructed_instances() -> None:
+    """
+    Test add actors registers multiple constructed instances.
+    """
     MarketDataAuditActor.reset_observations()
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     instrument = TestInstrumentProvider.ethusdt_binance()
@@ -1068,7 +1152,7 @@ def test_add_actors_registers_multiple_constructed_instances():
     engine.dispose()
 
 
-def _signal_harvest_engine(instrument, bar_type: BarType) -> BacktestEngine:
+def _signal_harvest_engine(instrument: object, bar_type: BarType) -> BacktestEngine:
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     engine.add_venue(
         venue=Venue("SIM"),
@@ -1094,7 +1178,7 @@ def _signal_harvest_engine(instrument, bar_type: BarType) -> BacktestEngine:
 
 
 def _crypto_quotes(
-    instrument,
+    instrument: object,
     count: int,
     mid_start: Decimal,
     mid_step: Decimal = Decimal("1.00"),
@@ -1118,7 +1202,7 @@ def _crypto_quotes(
     return quotes
 
 
-def _audusd_quotes(instrument, count: int) -> list[QuoteTick]:
+def _audusd_quotes(instrument: object, count: int) -> list[QuoteTick]:
     base_ns = 1_600_000_100_000_000_000
     quotes = []
 
@@ -1141,7 +1225,7 @@ def _audusd_quotes(instrument, count: int) -> list[QuoteTick]:
     return quotes
 
 
-def _crypto_whipsaw_quotes(instrument, count: int) -> list[QuoteTick]:
+def _crypto_whipsaw_quotes(instrument: object, count: int) -> list[QuoteTick]:
     base_ns = 1_600_000_200_000_000_000
     quotes = []
 
@@ -1161,7 +1245,7 @@ def _crypto_whipsaw_quotes(instrument, count: int) -> list[QuoteTick]:
     return quotes
 
 
-def _audusd_bars(instrument, bar_type: BarType, count: int) -> list[Bar]:
+def _audusd_bars(instrument: object, bar_type: BarType, count: int) -> list[Bar]:
     base_ns = 1_600_000_010_000_000_000
     bars = []
 
@@ -1182,7 +1266,7 @@ def _audusd_bars(instrument, bar_type: BarType, count: int) -> list[Bar]:
     return bars
 
 
-def _btc_bars(instrument, bar_type: BarType, closes: list[Decimal]) -> list[Bar]:
+def _btc_bars(instrument: object, bar_type: BarType, closes: list[Decimal]) -> list[Bar]:
     base_ns = 1_600_000_020_000_000_000
     bars = []
 
@@ -1202,7 +1286,7 @@ def _btc_bars(instrument, bar_type: BarType, closes: list[Decimal]) -> list[Bar]
     return bars
 
 
-def _audusd_trades(instrument, count: int) -> list[TradeTick]:
+def _audusd_trades(instrument: object, count: int) -> list[TradeTick]:
     base_ns = 1_600_000_005_000_000_000
     trades = []
 
@@ -1222,7 +1306,7 @@ def _audusd_trades(instrument, count: int) -> list[TradeTick]:
     return trades
 
 
-def _reference_data(instrument) -> list:
+def _reference_data(instrument: object) -> list:
     base_ns = 1_600_000_000_000_000_000
     price = Price.from_str("0.70000")
     return [
@@ -1240,7 +1324,7 @@ def _reference_data(instrument) -> list:
     ]
 
 
-def _book_deltas(instrument) -> list[OrderBookDeltas]:
+def _book_deltas(instrument: object) -> list[OrderBookDeltas]:
     base_ns = 1_600_000_000_000_000_000
     batches = []
 
@@ -1286,7 +1370,7 @@ def _book_deltas(instrument) -> list[OrderBookDeltas]:
     return batches
 
 
-def _book_depths(instrument, count: int) -> list[OrderBookDepth10]:
+def _book_depths(instrument: object, count: int) -> list[OrderBookDepth10]:
     base_ns = 1_600_000_150_000_000_000
     depths = []
 

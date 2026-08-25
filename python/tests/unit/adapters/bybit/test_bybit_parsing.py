@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test bybit parsing behavior.
+"""
 
 import pytest
 
@@ -35,15 +38,24 @@ def test_bybit_bar_spec_to_interval_accepts_bar_aggregation(
     step: int,
     expected: str,
 ) -> None:
+    """
+    Test bybit bar spec to interval accepts bar aggregation.
+    """
     assert bybit_bar_spec_to_interval(aggregation, step) == expected
 
 
 def test_bybit_bar_spec_to_interval_rejects_int_aggregation() -> None:
+    """
+    Test bybit bar spec to interval rejects int aggregation.
+    """
     # The raw discriminant is the shape the Cython-era signature accepted
     with pytest.raises(TypeError, match="BarAggregation"):
         bybit_bar_spec_to_interval(BarAggregation.MINUTE.value, 1)
 
 
 def test_bybit_bar_spec_to_interval_rejects_unsupported_step() -> None:
+    """
+    Test bybit bar spec to interval rejects unsupported step.
+    """
     with pytest.raises(ValueError, match="interval"):
         bybit_bar_spec_to_interval(BarAggregation.MINUTE, 2)

@@ -91,7 +91,7 @@ def apply_layout(fig: go.Figure, title: str, height: int = 480) -> None:
     fig.update_yaxes(gridcolor=GRID, zeroline=False)
 
 
-def run_backtest():
+def run_backtest() -> object:
     instrument_id = InstrumentId.from_str("EURUSD-PERP.AX")
     EURUSD_PERP = PerpetualContract(
         instrument_id=instrument_id,

@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test providers behavior.
+"""
 
 from decimal import Decimal
 
@@ -24,6 +27,9 @@ from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 
 def test_xbtusd_bitmex_matches_rust_fixture() -> None:
+    """
+    Test xbtusd bitmex matches rust fixture.
+    """
     # Mirrors the `xbtusd_bitmex` fixture in `crates/model/src/instruments/stubs.rs`
     instrument = TestInstrumentProvider.xbtusd_bitmex()
 

@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Test stubs behavior.
+"""
 
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import Bar
@@ -28,16 +31,23 @@ from nautilus_trader.model import TradeTick
 
 
 class TestDataProviderPyo3:
+    """
+    Collect data provider pyo3 tests.
+    """
+
     @staticmethod
     def quote_tick(
-        instrument_id=None,
-        bid_price=1987.0,
-        ask_price=1988.0,
-        ask_size=100_000.0,
-        bid_size=100_000.0,
-        ts_event=0,
-        ts_init=0,
-    ):
+        instrument_id: InstrumentId = None,
+        bid_price: object = 1987.0,
+        ask_price: object = 1988.0,
+        ask_size: object = 100_000.0,
+        bid_size: object = 100_000.0,
+        ts_event: object = 0,
+        ts_init: object = 0,
+    ) -> object:
+        """
+        Quote tick.
+        """
         return QuoteTick(
             instrument_id=instrument_id or InstrumentId.from_str("ETHUSDT.BINANCE"),
             bid_price=Price.from_str(str(bid_price)),
@@ -50,12 +60,15 @@ class TestDataProviderPyo3:
 
     @staticmethod
     def trade_tick(
-        instrument_id=None,
-        price=1987.0,
-        size=0.1,
-        ts_event=0,
-        ts_init=0,
-    ):
+        instrument_id: InstrumentId = None,
+        price: object = 1987.0,
+        size: object = 0.1,
+        ts_event: object = 0,
+        ts_init: object = 0,
+    ) -> object:
+        """
+        Trade tick.
+        """
         return TradeTick(
             instrument_id=instrument_id or InstrumentId.from_str("ETHUSDT.BINANCE"),
             price=Price.from_str(str(price)),
@@ -67,7 +80,10 @@ class TestDataProviderPyo3:
         )
 
     @staticmethod
-    def bar_5decimal():
+    def bar_5decimal() -> object:
+        """
+        Bar 5decimal.
+        """
         bar_type = BarType(
             InstrumentId.from_str("ETHUSDT.BINANCE"),
             BarSpecification(1, BarAggregation.MINUTE, PriceType.BID),
