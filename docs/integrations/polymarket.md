@@ -1512,8 +1512,21 @@ token_id = loader.token_id
 condition_id = loader.condition_id
 ```
 
-`instrument` is a normalized `BinaryOption`. Resolution-bearing fields never enter
-`instrument.info`. Read them separately after a backtest or simulation:
+`instrument` is a normalized `BinaryOption`. When the source fields are available, resolution data
+is retained as follows:
+
+| Data                       | `instrument.info`      | `resolution_metadata`                |
+| -------------------------- | ---------------------- | ------------------------------------ |
+| Event start                | `event_start_time`     | -                                    |
+| Market end                 | `end_date`             | -                                    |
+| Resolution source          | `resolution_source`    | `resolutionSource`                   |
+| Crypto resolution config   | `crypto_market_config` | -                                    |
+| Closed state               | -                      | `closed`                             |
+| Closure time               | -                      | `closedTime`                         |
+| UMA resolution status      | -                      | `umaResolutionStatus`                |
+| Token outcome/winner state | -                      | `tokens` with `outcome` and `winner` |
+
+Read `resolution_metadata` after a backtest or simulation to inspect the lifecycle snapshot:
 
 ```python
 metadata = loader.resolution_metadata
