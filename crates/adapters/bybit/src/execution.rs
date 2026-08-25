@@ -31,9 +31,8 @@ use nautilus_common::{
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-        SubmitOrderList,
+        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports, ModifyOrder,
+        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -1075,6 +1074,14 @@ impl ExecutionClient for BybitExecutionClient {
                 .await?;
             reports.append(&mut fetched);
         } else {
+            if self.http_client.use_spot_position_reports()
+                && self.product_types().contains(&BybitProductType::Spot)
+            {
+                anyhow::bail!(
+                    "SPOT wallet balances carry no pair identity and cannot be attributed for a bulk position report request"
+                );
+            }
+
             for product_type in self.product_types() {
                 let mut fetched = self
                     .http_client
@@ -1113,16 +1120,37 @@ impl ExecutionClient for BybitExecutionClient {
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let position_cmd = GeneratePositionStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let position_reports_fut = async {
+            let mut reports = Vec::new();
+            let product_types = self.product_types();
+            let skip_spot = self.http_client.use_spot_position_reports()
+                && product_types.contains(&BybitProductType::Spot);
+
+            if skip_spot {
+                log::warn!(
+                    "SPOT mass-status position coverage is unavailable because wallet balances cannot be attributed to pairs"
+                );
+            }
+
+            for product_type in product_types {
+                if skip_spot && product_type == BybitProductType::Spot {
+                    continue;
+                }
+
+                let mut fetched = self
+                    .http_client
+                    .request_position_status_reports(self.core.account_id, product_type, None)
+                    .await?;
+                reports.append(&mut fetched);
+            }
+
+            anyhow::Ok(reports)
+        };
 
         let (order_reports, fill_reports, position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),
             self.generate_fill_reports(fill_cmd),
-            self.generate_position_status_reports(&position_cmd),
+            position_reports_fut,
         )?;
 
         log::info!("Received {} OrderStatusReports", order_reports.len());

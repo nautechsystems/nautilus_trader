@@ -2731,7 +2731,7 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
 
 #[rstest]
 #[tokio::test]
-async fn test_unscoped_spot_position_reports_are_empty_without_wallet_request() {
+async fn test_unscoped_spot_position_reports_fail_without_wallet_request() {
     let (addr, state) = start_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
@@ -2782,16 +2782,16 @@ async fn test_unscoped_spot_position_reports_are_empty_without_wallet_request() 
         client.cache_instrument(InstrumentAny::CurrencyPair(instrument));
     }
 
-    let reports = client
+    let error = client
         .request_position_status_reports(
             AccountId::new("BYBIT-UNIFIED"),
             BybitProductType::Spot,
             None,
         )
         .await
-        .unwrap();
+        .expect_err("unscoped SPOT reports cannot be attributed to a pair");
 
-    assert!(reports.is_empty());
+    assert!(error.to_string().contains("pair identity"));
     assert_eq!(*state.wallet_balance_requests.lock().await, 0);
 }
 

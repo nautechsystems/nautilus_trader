@@ -1773,6 +1773,11 @@ impl BybitHttpClient {
             .store(use_spot_position_reports, Ordering::Relaxed);
     }
 
+    #[must_use]
+    pub(crate) fn use_spot_position_reports(&self) -> bool {
+        self.use_spot_position_reports.load(Ordering::Relaxed)
+    }
+
     pub fn cancel_all_requests(&self) {
         self.inner.cancel_all_requests();
     }
@@ -4707,7 +4712,9 @@ impl BybitHttpClient {
         if product_type == BybitProductType::Spot {
             if self.use_spot_position_reports.load(Ordering::Relaxed) {
                 let Some(instrument_id) = instrument_id else {
-                    return Ok(Vec::new());
+                    anyhow::bail!(
+                        "SPOT wallet balances carry no pair identity and cannot be attributed for a bulk position report request"
+                    );
                 };
                 return self
                     .generate_spot_position_reports_from_wallet(account_id, instrument_id)

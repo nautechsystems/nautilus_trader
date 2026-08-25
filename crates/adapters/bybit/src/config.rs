@@ -224,7 +224,9 @@ pub struct BybitExecutionClientConfig {
     pub recv_window_ms: u64,
     /// Optional account identifier to associate with the execution client.
     pub account_id: Option<AccountId>,
-    /// Whether to generate position reports from wallet balances for SPOT positions.
+    /// Whether scoped SPOT position requests derive positions from the wallet balance for the
+    /// requested pair. Bulk requests fail because wallet coin balances cannot be attributed to a
+    /// pair and therefore cannot establish that no position exists.
     #[builder(default)]
     pub use_spot_position_reports: bool,
     /// Whether to automatically repay SPOT margin borrows after BUY orders tracked by

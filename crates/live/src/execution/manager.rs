@@ -4808,9 +4808,9 @@ mod tests {
         accounts::AccountAny,
         enums::{LiquiditySide, OmsType, PositionSideSpecified},
         events::order::spec::{OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderUpdatedSpec},
-        identifiers::Venue,
+        identifiers::{Symbol, Venue},
         instruments::{
-            Instrument,
+            CurrencyPair, Instrument,
             stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -6126,6 +6126,79 @@ mod tests {
         assert_eq!(check.client_coverage.len(), 1);
         assert!(check.client_coverage.contains_key(&key));
         assert_eq!(check.activity_revisions.get(&key), Some(&0));
+    }
+
+    #[rstest]
+    fn test_position_reconciliation_preserves_spot_position_when_client_query_fails() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager =
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
+        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
+            InstrumentId::from("ETHUSDT-SPOT.BYBIT"),
+            Symbol::from("ETHUSDT"),
+            Currency::from("ETH"),
+            Currency::from("USDT"),
+            2,
+            5,
+            Price::from("0.01"),
+            Quantity::from("0.00001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ));
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let position = insert_open_position(
+            &cache,
+            &instrument,
+            PositionId::from("P-SPOT-QUERY-FAILED"),
+            OrderSide::Buy,
+            "5.0",
+            "3000.00",
+        );
+        let key = (position.instrument_id, position.account_id);
+        let client_id = ClientId::from("BYBIT");
+        let mut check = manager.prepare_position_report_check(UUID4::new(), &[]);
+        check.client_coverage.insert(
+            key,
+            ReportClientCoverage::Resolved(IndexSet::from([client_id])),
+        );
+        let queried_clients = IndexSet::from([client_id]);
+        let failed_clients = IndexSet::from([client_id]);
+
+        let events = manager.reconcile_position_reports(
+            &check,
+            Vec::new(),
+            &queried_clients,
+            &failed_clients,
+        );
+
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Filled(_))),
+            "a failed bulk query must not generate a synthetic closing fill",
+        );
+        let cached_position = cache.borrow().position(&position.id).unwrap().clone();
+        assert!(cached_position.is_open());
+        assert_eq!(cached_position.quantity, Quantity::from("5.0"));
     }
 
     #[rstest]

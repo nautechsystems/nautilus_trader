@@ -94,6 +94,8 @@ struct TestServerState {
     empty_orders_realtime: Arc<AtomicBool>,
     rejected_orders_realtime: Arc<AtomicBool>,
     orders_realtime_requests: Arc<AtomicUsize>,
+    position_requests: Arc<AtomicUsize>,
+    wallet_balance_requests: Arc<AtomicUsize>,
     ping_count: Arc<AtomicUsize>,
     switch_mode_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     set_leverage_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -115,6 +117,8 @@ impl Default for TestServerState {
             empty_orders_realtime: Arc::new(AtomicBool::new(false)),
             rejected_orders_realtime: Arc::new(AtomicBool::new(false)),
             orders_realtime_requests: Arc::new(AtomicUsize::new(0)),
+            position_requests: Arc::new(AtomicUsize::new(0)),
+            wallet_balance_requests: Arc::new(AtomicUsize::new(0)),
             ping_count: Arc::new(AtomicUsize::new(0)),
             switch_mode_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             set_leverage_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -177,7 +181,10 @@ async fn handle_get_fee_rate(headers: HeaderMap) -> impl IntoResponse {
     Json(fee_rate).into_response()
 }
 
-async fn handle_get_wallet_balance(headers: HeaderMap) -> impl IntoResponse {
+async fn handle_get_wallet_balance(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !has_auth_headers(&headers) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -190,11 +197,17 @@ async fn handle_get_wallet_balance(headers: HeaderMap) -> impl IntoResponse {
         )
             .into_response();
     }
+    state
+        .wallet_balance_requests
+        .fetch_add(1, Ordering::Relaxed);
     let wallet = load_test_data("http_get_wallet_balance.json");
     Json(wallet).into_response()
 }
 
-async fn handle_get_positions(headers: HeaderMap) -> impl IntoResponse {
+async fn handle_get_positions(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+) -> impl IntoResponse {
     if !has_auth_headers(&headers) {
         return (
             StatusCode::UNAUTHORIZED,
@@ -207,8 +220,36 @@ async fn handle_get_positions(headers: HeaderMap) -> impl IntoResponse {
         )
             .into_response();
     }
+    state.position_requests.fetch_add(1, Ordering::Relaxed);
     let positions = load_test_data("http_get_positions.json");
     Json(positions).into_response()
+}
+
+async fn handle_get_empty_report_list(headers: HeaderMap) -> impl IntoResponse {
+    if !has_auth_headers(&headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "retCode": 10003,
+                "retMsg": "Invalid API key",
+                "result": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "list": [],
+            "nextPageCursor": ""
+        },
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+    .into_response()
 }
 
 async fn handle_get_orders_realtime(
@@ -629,6 +670,8 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/account/wallet-balance", get(handle_get_wallet_balance))
         .route("/v5/position/list", get(handle_get_positions))
         .route("/v5/order/realtime", get(handle_get_orders_realtime))
+        .route("/v5/order/history", get(handle_get_empty_report_list))
+        .route("/v5/execution/list", get(handle_get_empty_report_list))
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
         .route("/v5/position/switch-mode", post(handle_switch_mode))
@@ -775,6 +818,63 @@ async fn test_exec_client_scoped_spot_position_reports_follow_config(
     if use_spot_position_reports {
         assert_eq!(reports[0].instrument_id, "ETHUSDT-SPOT.BYBIT".into());
     }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_mixed_unscoped_spot_reports_fail_before_derivative_request() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![BybitProductType::Linear, BybitProductType::Spot];
+    config.use_spot_position_reports = true;
+    let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+
+    client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .expect_err("unscoped SPOT reports cannot be attributed to a pair");
+
+    assert_eq!(state.position_requests.load(Ordering::Relaxed), 0);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_mass_status_omits_spot_and_preserves_derivative_positions() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let mut config = create_test_exec_config(addr);
+    config.product_types = vec![BybitProductType::Linear, BybitProductType::Spot];
+    config.use_spot_position_reports = true;
+    let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    state.wallet_balance_requests.store(0, Ordering::Relaxed);
+
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .expect("mass status must not fail when SPOT coverage is unavailable")
+        .expect("mass status must be populated");
+
+    assert!(
+        mass_status
+            .position_reports()
+            .contains_key(&InstrumentId::from("BTCUSDT-LINEAR.BYBIT"))
+    );
+    assert_eq!(state.wallet_balance_requests.load(Ordering::Relaxed), 0);
 
     client.disconnect().await.unwrap();
 }

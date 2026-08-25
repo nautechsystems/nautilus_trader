@@ -800,7 +800,7 @@ The product types for each client must be specified in the configurations.
 | `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                            |
 | `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                     |
 | `account_id`                | `None`     | Optional account ID associated with this client.                                                                |
-| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions when `True`.                                                           |
+| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions for scoped requests; bulk requests fail (no pair attribution).         |
 | `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill.                                    |
 | `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                    |
 | `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                    |
