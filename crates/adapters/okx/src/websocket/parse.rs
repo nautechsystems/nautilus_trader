@@ -7918,19 +7918,38 @@ mod tests {
 
     #[rstest]
     fn test_parse_event_contract_markets_returns_raw_message() {
-        let data = serde_json::json!([{
-            "seriesId": "BTC-ABOVE-DAILY",
-            "eventId": "BTC-ABOVE-DAILY-260224-1600",
-            "instId": "BTC-ABOVE-DAILY-260224-1600-65000",
-            "listTime": "1769697132335",
-            "fixTime": "",
-            "expTime": "1769697132335",
-            "state": "live",
-            "outcome": "0",
-            "floorStrike": "120000",
-            "settleValue": "",
-            "disputed": false
-        }]);
+        let data = serde_json::json!([
+            {
+                "seriesId": "BTC-ABOVE-DAILY",
+                "eventId": "BTC-ABOVE-DAILY-260224-1600",
+                "instId": "BTC-ABOVE-DAILY-260224-1600-65000",
+                "listTime": "1769697132335",
+                "fixTime": "",
+                "expTime": "1769697132335",
+                "state": "live",
+                "outcome": "0",
+                "floorStrike": "120000",
+                "capStrike": "",
+                "settleValue": "",
+                "disputed": false,
+                "hitDir": ""
+            },
+            {
+                "seriesId": "BTC-HIT-MONTHLY",
+                "eventId": "BTC-HIT-MONTHLY-260831-1600",
+                "instId": "BTC-HIT-MONTHLY-260831-1600-37500",
+                "listTime": "1785513600000",
+                "fixTime": "",
+                "expTime": "1788192000000",
+                "state": "live",
+                "outcome": "0",
+                "floorStrike": "37500",
+                "capStrike": "",
+                "settleValue": "",
+                "disputed": false,
+                "hitDir": "dn"
+            }
+        ]);
         let instrument_id = InstrumentId::from("BTC-ABOVE-DAILY-260224-1600-65000.OKX");
         let mut funding_cache = AHashMap::new();
         let instruments_cache = AHashMap::new();

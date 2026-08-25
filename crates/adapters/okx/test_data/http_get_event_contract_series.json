@@ -1,0 +1,30 @@
+{
+  "code": "0",
+  "msg": "",
+  "data": [
+    {
+      "seriesId": "BTC-HIT-MONTHLY",
+      "freq": "monthly",
+      "title": "BTC hit monthly",
+      "category": "1",
+      "settlement": {
+        "method": "hit",
+        "closeEarly": true,
+        "srcName": "OKX BTC/USD Index",
+        "underlying": "BTC-USD"
+      }
+    },
+    {
+      "seriesId": "BTC-BETWEEN-DAILY",
+      "freq": "daily",
+      "title": "BTC between daily",
+      "category": "1",
+      "settlement": {
+        "method": "between",
+        "closeEarly": false,
+        "srcName": "OKX BTC/USD Index",
+        "underlying": "BTC-USD"
+      }
+    }
+  ]
+}

@@ -417,8 +417,14 @@ pub struct OKXEventContractMarket {
     pub outcome: String,
     /// Minimum expiration value for a yes outcome.
     pub floor_strike: String,
+    /// Maximum expiration value for a yes outcome, INF when unbounded.
+    #[serde(default)]
+    pub cap_strike: String,
     /// Settlement value when expired.
     pub settle_value: String,
+    /// Hit direction: up or dn, empty when not applicable.
+    #[serde(default)]
+    pub hit_dir: String,
 }
 
 /// Represents an index price from the GET /api/v5/public/index-tickers endpoint.
@@ -2362,7 +2368,9 @@ mod tests {
             "disputed": false,
             "outcome": "0",
             "floorStrike": "120000",
-            "settleValue": ""
+            "capStrike": "INF",
+            "settleValue": "",
+            "hitDir": ""
         }))
         .unwrap();
 
@@ -2377,6 +2385,12 @@ mod tests {
         assert_eq!(market.list_time, Some(1_769_697_132_335));
         assert_eq!(market.exp_time, Some(1_769_697_132_335));
         assert_eq!(market.outcome, "0");
+        assert_eq!(market.cap_strike, "INF");
+        assert_eq!(market.hit_dir, "");
+
+        let serialized = serde_json::to_value(&market).unwrap();
+        assert_eq!(serialized["capStrike"], "INF");
+        assert_eq!(serialized["hitDir"], "");
     }
 
     #[rstest]
@@ -2413,6 +2427,8 @@ mod tests {
         assert_eq!(event.exp_time, None);
         assert_eq!(market.list_time, None);
         assert_eq!(market.exp_time, None);
+        assert_eq!(market.cap_strike, "");
+        assert_eq!(market.hit_dir, "");
     }
 
     #[rstest]
