@@ -2444,7 +2444,7 @@ mod tests {
             create_cache_test_schema(&admin_pool, &schema_name).await?;
         }
 
-        let database = BlockchainCacheDatabase::connect(
+        let database = crate::cache::database::connect_test_database(
             connect_options.options([("search_path", format!("{schema_name},public"))]),
         )
         .await?;

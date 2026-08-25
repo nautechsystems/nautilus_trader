@@ -35,12 +35,11 @@ use nautilus_model::{
     defi::{Block, Blockchain, DexType, SharedChain},
     identifiers::InstrumentId,
 };
-use nautilus_network::http::Url;
 
 use crate::{
     exchanges::{extended::DexExtended, get_dex_extended},
     hypersync::transform::transform_hypersync_block,
-    rpc::types::BlockchainMessage,
+    rpc::{http::validate_execution_endpoint, types::BlockchainMessage},
 };
 
 /// An item yielded by the contract-events stream.
@@ -210,8 +209,8 @@ impl HyperSyncClient {
         cancellation_token: tokio_util::sync::CancellationToken,
     ) -> Self {
         let mut config = hypersync_client::ClientConfig::default();
-        let hypersync_url =
-            Url::parse(chain.hypersync_url.as_str()).expect("Invalid HyperSync URL");
+        let hypersync_url = validate_execution_endpoint(chain.hypersync_url.as_str(), "HyperSync")
+            .expect("Invalid HyperSync URL");
         config.url = hypersync_url.to_string();
         config.api_token = std::env::var("ENVIO_API_TOKEN")
             .expect("ENVIO_API_TOKEN environment variable must be set");
@@ -937,6 +936,19 @@ mod tests {
             timestamp: Some(Quantity::from(timestamp_secs)),
             ..Default::default()
         }
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Invalid HyperSync URL")]
+    fn hypersync_rejects_remote_cleartext_before_loading_token() {
+        let mut chain = Chain::new(Blockchain::Arbitrum, 42_161);
+        chain.hypersync_url = "http://localhost:8080".to_string();
+
+        let _ = HyperSyncClient::new(
+            Arc::new(chain),
+            None,
+            tokio_util::sync::CancellationToken::new(),
+        );
     }
 
     #[rstest]

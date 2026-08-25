@@ -293,17 +293,6 @@ impl Erc20Contract {
             .await
     }
 
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn balance_of_at(
-        &self,
-        token_address: &Address,
-        account: &Address,
-        block: u64,
-    ) -> Result<U256, BlockchainRpcClientError> {
-        self.balance_of_with_block(token_address, account, Some(block))
-            .await
-    }
-
     async fn balance_of_with_block(
         &self,
         token_address: &Address,
@@ -327,15 +316,6 @@ impl Erc20Contract {
     /// Returns an error if the contract call fails or its result cannot be decoded.
     pub async fn decimals(&self, token_address: &Address) -> Result<u8, BlockchainRpcClientError> {
         self.decimals_with_block(token_address, None).await
-    }
-
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn decimals_at(
-        &self,
-        token_address: &Address,
-        block: u64,
-    ) -> Result<u8, BlockchainRpcClientError> {
-        self.decimals_with_block(token_address, Some(block)).await
     }
 
     async fn decimals_with_block(
@@ -370,18 +350,6 @@ impl Erc20Contract {
             .await
     }
 
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn allowance_at(
-        &self,
-        token_address: &Address,
-        owner: &Address,
-        spender: &Address,
-        block: u64,
-    ) -> Result<U256, BlockchainRpcClientError> {
-        self.allowance_with_block(token_address, owner, spender, Some(block))
-            .await
-    }
-
     async fn allowance_with_block(
         &self,
         token_address: &Address,
@@ -400,33 +368,6 @@ impl Erc20Contract {
             .await?;
 
         ERC20::allowanceCall::abi_decode_returns(&result)
-            .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
-    }
-
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn simulate_approve(
-        &self,
-        token_address: &Address,
-        owner: &Address,
-        spender: &Address,
-        amount: U256,
-    ) -> Result<bool, BlockchainRpcClientError> {
-        let call_data = ERC20::approveCall {
-            spender: *spender,
-            amount,
-        }
-        .abi_encode();
-        let result = self
-            .base
-            .execute_call_from(owner, token_address, &call_data, None)
-            .await?;
-
-        // Empty return data is the supported legacy ERC-20 success convention
-        if result.is_empty() {
-            return Ok(true);
-        }
-
-        ERC20::approveCall::abi_decode_returns_validate(&result)
             .map_err(|e| BlockchainRpcClientError::AbiDecodingError(e.to_string()))
     }
 }
@@ -571,9 +512,6 @@ mod tests {
     const CALL_BALANCE: &str = include_str!("../../test_data/execution/rpc_eth_call_balance.json");
     const CALL_ALLOWANCE: &str =
         include_str!("../../test_data/execution/rpc_eth_call_allowance.json");
-    #[cfg(feature = "hypersync")]
-    const CALL_MAX: &str = include_str!("../../test_data/execution/rpc_eth_call_max.json");
-
     #[fixture]
     fn token_address() -> Address {
         address!("25b76A90E389bD644a29db919b136Dc63B174Ec7")
@@ -898,27 +836,6 @@ mod tests {
         assert_eq!(requests[0]["params"][1], "latest");
     }
 
-    #[cfg(feature = "hypersync")]
-    #[tokio::test]
-    async fn test_balance_of_at_against_mock_rpc() {
-        let state = MockRpcState::default().with_call_response("0x70a08231", CALL_BALANCE);
-        let (contract, state) = erc20_contract_against(state).await;
-
-        let balance = contract
-            .balance_of_at(
-                &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                &address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
-                30_346_561,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(balance, U256::from(500_000_000_000_000_000u64));
-        let requests = state.recorded_requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0]["params"][1], "0x1cf0d41");
-    }
-
     #[tokio::test]
     async fn test_allowance_against_mock_rpc() {
         let state = MockRpcState::default().with_call_response("0xdd62ed3e", CALL_ALLOWANCE);
@@ -936,55 +853,6 @@ mod tests {
         assert_eq!(allowance, U256::from(1_000_000_000_000_000_000u64));
         let requests = state.recorded_requests();
         assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0]["params"][1], "latest");
-    }
-
-    #[cfg(feature = "hypersync")]
-    #[tokio::test]
-    async fn test_allowance_at_against_mock_rpc() {
-        let state = MockRpcState::default().with_call_response("0xdd62ed3e", CALL_ALLOWANCE);
-        let (contract, state) = erc20_contract_against(state).await;
-
-        let allowance = contract
-            .allowance_at(
-                &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                &address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266"),
-                &address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-                30_346_561,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(allowance, U256::from(1_000_000_000_000_000_000u64));
-        let requests = state.recorded_requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0]["params"][1], "0x1cf0d41");
-    }
-
-    #[cfg(feature = "hypersync")]
-    #[tokio::test]
-    async fn test_simulate_approve_rejects_malformed_bool() {
-        let state = MockRpcState::default().with_response("eth_call", CALL_MAX);
-        let (contract, state) = erc20_contract_against(state).await;
-        let owner = address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
-
-        let error = contract
-            .simulate_approve(
-                &address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
-                &owner,
-                &address!("E592427A0AEce92De3Edee1F18E0157C05861564"),
-                U256::MAX,
-            )
-            .await
-            .unwrap_err();
-
-        assert!(
-            matches!(error, BlockchainRpcClientError::AbiDecodingError(_)),
-            "was: {error}"
-        );
-        let requests = state.recorded_requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0]["params"][0]["from"], owner.to_string());
         assert_eq!(requests[0]["params"][1], "latest");
     }
 }

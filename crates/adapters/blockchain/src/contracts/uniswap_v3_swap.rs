@@ -88,15 +88,6 @@ impl UniswapV3Deployment {
         self.router_factory_with_block(router, None).await
     }
 
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn router_factory_at(
-        &self,
-        router: &Address,
-        block: u64,
-    ) -> Result<Address, BlockchainRpcClientError> {
-        self.router_factory_with_block(router, Some(block)).await
-    }
-
     async fn router_factory_with_block(
         &self,
         router: &Address,
@@ -124,15 +115,6 @@ impl UniswapV3Deployment {
         router: &Address,
     ) -> Result<Address, BlockchainRpcClientError> {
         self.router_weth9_with_block(router, None).await
-    }
-
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn router_weth9_at(
-        &self,
-        router: &Address,
-        block: u64,
-    ) -> Result<Address, BlockchainRpcClientError> {
-        self.router_weth9_with_block(router, Some(block)).await
     }
 
     async fn router_weth9_with_block(
@@ -165,19 +147,6 @@ impl UniswapV3Deployment {
         fee: U24,
     ) -> Result<Address, BlockchainRpcClientError> {
         self.pool_with_block(factory, token_a, token_b, fee, None)
-            .await
-    }
-
-    #[cfg(feature = "hypersync")]
-    pub(crate) async fn pool_at(
-        &self,
-        factory: &Address,
-        token_a: Address,
-        token_b: Address,
-        fee: U24,
-        block: u64,
-    ) -> Result<Address, BlockchainRpcClientError> {
-        self.pool_with_block(factory, token_a, token_b, fee, Some(block))
             .await
     }
 

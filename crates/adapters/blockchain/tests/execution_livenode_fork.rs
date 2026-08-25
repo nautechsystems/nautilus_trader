@@ -41,10 +41,10 @@ use harness::{
     CHAIN_ID, PAYLOAD_DEPLOYMENT_ID, PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX, ROUTER, SIGNER_ENV,
     SLIPPAGE_BPS, SWAP_AMOUNT, USDC, WETH, WRAP_AMOUNT_WEI, build_full_range_snapshot,
     ensure_execution_schema, fund_anvil_wallet, git_diff_sha256, quote_buy_amount_in, start_anvil,
-    weth_usdc_pool,
+    start_execution_rpc_topology, weth_usdc_pool,
 };
 use nautilus_blockchain::{
-    config::{BlockchainExecutionClientConfig, QuoteSpendLimit},
+    config::{BlockchainExecutionClientConfig, BlockchainVerificationConfig, QuoteSpendLimit},
     constants::BLOCKCHAIN_VENUE,
     contracts::{erc20::Erc20Contract, uniswap_v3_pool::UniswapV3PoolContract},
     execution::client::BlockchainExecutionClient,
@@ -326,7 +326,8 @@ nautilus_strategy!(ReconnectProbeStrategy);
 fn build_fork_node(
     name: &str,
     wallet: alloy::primitives::Address,
-    anvil_url: String,
+    execution_rpc_url: String,
+    verification: BlockchainVerificationConfig,
     pg_config: PostgresConnectOptions,
     pool: Pool,
     snapshot: PoolSnapshot,
@@ -364,7 +365,12 @@ fn build_fork_node(
         .add_exec_client_with_routing(
             Some(EXEC_CLIENT_NAME.to_string()),
             Box::new(BlockchainExecutionClientFactory::new()),
-            Box::new(execution_config(wallet, anvil_url, pg_config)),
+            Box::new(execution_config(
+                wallet,
+                execution_rpc_url,
+                verification,
+                pg_config,
+            )),
             routing,
         )?
         .build()
@@ -372,14 +378,16 @@ fn build_fork_node(
 
 fn execution_config(
     wallet: alloy::primitives::Address,
-    anvil_url: String,
+    execution_rpc_url: String,
+    verification: BlockchainVerificationConfig,
     pg_config: PostgresConnectOptions,
 ) -> BlockchainExecutionClientConfig {
     BlockchainExecutionClientConfig::builder()
         .client_id(AccountId::from(EXEC_CLIENT_NAME))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())
-        .http_rpc_url(anvil_url)
+        .http_rpc_url(execution_rpc_url)
+        .verification(verification)
         .signer_private_key_env(SIGNER_ENV.to_string())
         .tokens(vec![WETH.to_string(), USDC.to_string()])
         .router_addresses(vec![ROUTER.to_string()])
@@ -480,6 +488,7 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
         .await
         .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
     let anvil_url = format!("http://127.0.0.1:{}", startup.port);
+    let rpc_topology = start_execution_rpc_topology(&anvil_url).await;
     let signer = PrivateKeySigner::random();
     let wallet = signer.address();
     let signer_private_key = nautilus_core::hex::encode_prefixed(signer.to_bytes());
@@ -517,7 +526,12 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
     );
     let mut operator = BlockchainExecutionClient::new(
         operator_core,
-        execution_config(wallet, anvil_url.clone(), pg_config.clone()),
+        execution_config(
+            wallet,
+            rpc_topology.authoritative_url(),
+            rpc_topology.verification(),
+            pg_config.clone(),
+        ),
     )
     .unwrap();
     // The operator setup runs before any node runner exists on this thread, so it needs its
@@ -569,7 +583,8 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
     let mut node = build_fork_node(
         "BlockchainForkLiveNode",
         wallet,
-        anvil_url.clone(),
+        rpc_topology.authoritative_url(),
+        rpc_topology.verification(),
         pg_config.clone(),
         pool.clone(),
         snapshot.clone(),
@@ -672,15 +687,9 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
     .fetch_all(&admin_pool)
     .await
     .unwrap();
-    assert!(
-        finality_transitions
-            .iter()
-            .any(|status| status == "included")
-    );
-    assert!(
-        finality_transitions
-            .iter()
-            .any(|status| status == "finalized")
+    assert_eq!(
+        finality_transitions,
+        ["prepared", "signed", "broadcast", "finalized"]
     );
 
     // Refreshed wallet account state: the connect snapshot plus the post-fill republication
@@ -713,7 +722,8 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
 
     // Node two: reconnect on a separate thread with isolated thread-local message bus and
     // event senders, mirroring a process restart
-    let reconnect_url = anvil_url.clone();
+    let reconnect_url = rpc_topology.authoritative_url();
+    let reconnect_verification = rpc_topology.verification();
     let reconnect_pg = pg_config.clone();
     let reconnect_pool = pool.clone();
     let reconnect_snapshot = snapshot.clone();
@@ -732,6 +742,7 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
                         "BlockchainForkReconnectNode",
                         wallet,
                         reconnect_url,
+                        reconnect_verification,
                         reconnect_pg,
                         reconnect_pool,
                         reconnect_snapshot,
@@ -887,6 +898,7 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
         evidence_dir.display()
     );
 
+    rpc_topology.assert_broadcast_isolation();
     unsafe {
         std::env::remove_var(SIGNER_ENV);
         std::env::remove_var(PAYLOAD_KEY_ENV);
@@ -914,6 +926,7 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
         .await
         .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
     let anvil_url = format!("http://127.0.0.1:{}", _startup.port);
+    let rpc_topology = start_execution_rpc_topology(&anvil_url).await;
     let signer = PrivateKeySigner::random();
     let wallet = signer.address();
     let signer_private_key = nautilus_core::hex::encode_prefixed(signer.to_bytes());
@@ -945,7 +958,12 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
     );
     let mut operator = BlockchainExecutionClient::new(
         operator_core,
-        execution_config(wallet, anvil_url.clone(), pg_config.clone()),
+        execution_config(
+            wallet,
+            rpc_topology.authoritative_url(),
+            rpc_topology.verification(),
+            pg_config.clone(),
+        ),
     )
     .unwrap();
     let (operator_event_sender, _operator_event_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -1069,7 +1087,8 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
     let mut node = build_fork_node(
         "BlockchainForkLiveNodeBuy",
         wallet,
-        anvil_url.clone(),
+        rpc_topology.authoritative_url(),
+        rpc_topology.verification(),
         pg_config.clone(),
         pool.clone(),
         snapshot.clone(),
@@ -1145,7 +1164,8 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
     let mut probe = build_fork_node(
         "BlockchainForkLiveNodeBuyReconnect",
         wallet,
-        anvil_url,
+        rpc_topology.authoritative_url(),
+        rpc_topology.verification(),
         pg_config,
         pool,
         snapshot,
@@ -1172,6 +1192,7 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
     assert_eq!(nonce_after_reconnect, nonce_before_reconnect);
     assert_eq!(intents_after_reconnect, intents_before_reconnect);
 
+    rpc_topology.assert_broadcast_isolation();
     unsafe {
         std::env::remove_var(SIGNER_ENV);
         std::env::remove_var(PAYLOAD_KEY_ENV);

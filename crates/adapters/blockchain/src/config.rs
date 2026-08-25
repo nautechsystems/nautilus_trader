@@ -136,6 +136,260 @@ const fn default_multicall_calls_per_rpc_request() -> u32 {
     200
 }
 
+/// Stable local identity for one RPC provider and its failure domains.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
+pub struct BlockchainProviderIdentity {
+    /// Stable local provider identifier.
+    pub provider_id: String,
+    /// Stable local operator identifier.
+    pub operator_id: String,
+    /// Opaque identifiers for every known shared infrastructure failure domain.
+    pub failure_domain_ids: Vec<String>,
+}
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BlockchainProviderIdentity {
+    failure_domain_ids: Vec<String>,
+    operator_id: String,
+    provider_id: String,
+});
+
+/// Configuration for one read-only verification RPC provider.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
+pub struct BlockchainVerificationProviderConfig {
+    /// Stable provider and failure-domain identity.
+    pub identity: BlockchainProviderIdentity,
+    /// The read-only JSON-RPC endpoint.
+    pub http_rpc_url: String,
+}
+
+impl Debug for BlockchainVerificationProviderConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BlockchainVerificationProviderConfig))
+            .field("identity", &self.identity)
+            .field("http_rpc_url", &REDACTED)
+            .finish()
+    }
+}
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BlockchainVerificationProviderConfig {
+    identity: BlockchainProviderIdentity,
+});
+
+/// Locally trusted finalized chain checkpoint and freshness policy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
+pub struct BlockchainChainAnchorConfig {
+    /// Chain ID obtained independently from the configured providers.
+    pub chain_id: u32,
+    /// Chain name obtained independently from the configured providers.
+    pub chain_name: String,
+    /// Finalized checkpoint height.
+    pub checkpoint_height: u64,
+    /// Finalized checkpoint hash as a 32-byte hexadecimal string.
+    pub checkpoint_hash: String,
+    /// Finalized checkpoint timestamp in Unix seconds.
+    pub checkpoint_timestamp: u64,
+    /// Maximum permitted height difference among provider heads.
+    pub max_head_skew_blocks: u64,
+    /// Maximum permitted age of a decision head in seconds.
+    pub max_head_age_secs: u64,
+    /// Maximum permitted future drift of a decision head in seconds.
+    pub max_future_drift_secs: u64,
+}
+
+/// A role assigned to one reviewed deployment contract.
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BlockchainContractRole {
+    Router,
+    Factory,
+    WrappedNative,
+    Quote,
+    Token,
+    Pool,
+    Implementation,
+}
+
+/// A reviewed explicit-height call used to prove a contract relationship.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockchainContractProbe {
+    /// ABI-encoded call data.
+    pub call_data: String,
+    /// Exact expected ABI-encoded output.
+    pub expected_output: String,
+}
+
+/// A reviewed proxy implementation binding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockchainProxyManifest {
+    /// Reviewed proxy kind: EIP-1967 implementation or Zeppelinos implementation.
+    pub kind: String,
+    /// Storage slot containing the implementation address.
+    pub storage_slot: String,
+    /// Exact expected 32-byte storage value.
+    pub storage_value: String,
+    /// Selected implementation address.
+    pub target_address: String,
+    /// Runtime code hash of the selected target.
+    pub target_code_hash: String,
+}
+
+/// One code-bearing contract pinned by the deployment manifest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockchainContractManifest {
+    /// Contract address.
+    pub address: String,
+    /// Contract role.
+    pub role: BlockchainContractRole,
+    /// Keccak-256 runtime code hash.
+    pub runtime_code_hash: String,
+    /// Proxy implementation binding when the contract is upgradeable.
+    pub proxy: Option<BlockchainProxyManifest>,
+    /// Role-specific identity probes.
+    #[serde(default)]
+    pub probes: Vec<BlockchainContractProbe>,
+}
+
+/// Locally reviewed token identity and asset orientation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockchainTokenManifest {
+    pub address: String,
+    pub name: String,
+    pub symbol: String,
+    pub decimals: u8,
+    /// `base`, `quote`, or `both` for the supported pool set.
+    pub asset_role: String,
+}
+
+/// One supported pool definition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockchainPoolManifest {
+    pub address: String,
+    pub token0: String,
+    pub token1: String,
+    pub fee: u32,
+    pub factory: String,
+    pub quote_contract: String,
+}
+
+/// One permitted internal call edge for a transaction purpose.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockchainCallEdgeManifest {
+    /// `wrap`, `approve`, `swap_sell`, or `swap_buy`.
+    pub purpose: String,
+    pub caller: String,
+    pub target: String,
+    /// `call`, `staticcall`, `delegatecall`, or `callcode`.
+    pub call_type: String,
+}
+
+/// Reviewed deployment and call-graph manifest for one chain.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BlockchainDeploymentManifest {
+    pub version: String,
+    pub chain_id: u32,
+    pub chain_name: String,
+    pub contracts: Vec<BlockchainContractManifest>,
+    pub tokens: Vec<BlockchainTokenManifest>,
+    pub pools: Vec<BlockchainPoolManifest>,
+    pub call_edges: Vec<BlockchainCallEdgeManifest>,
+}
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BlockchainChainAnchorConfig {
+    chain_id: u32,
+    chain_name: String,
+    checkpoint_hash: String,
+    checkpoint_height: u64,
+    checkpoint_timestamp: u64,
+    max_future_drift_secs: u64,
+    max_head_age_secs: u64,
+    max_head_skew_blocks: u64,
+});
+
+/// Independent verification topology and reviewed local deployment identity.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.adapters.blockchain", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.blockchain")
+)]
+pub struct BlockchainVerificationConfig {
+    /// Identity of the authoritative provider in `http_rpc_url`.
+    pub authoritative: BlockchainProviderIdentity,
+    /// Exactly two read-only providers.
+    pub verifiers: Vec<BlockchainVerificationProviderConfig>,
+    /// Locally trusted chain checkpoint and freshness policy.
+    pub chain_anchor: BlockchainChainAnchorConfig,
+    /// Reviewed deployment manifest version.
+    pub manifest_version: String,
+    /// Digest of the canonical reviewed deployment manifest.
+    pub manifest_digest: String,
+    /// Reviewed deployment identities and permitted call graph.
+    pub deployment_manifest: BlockchainDeploymentManifest,
+}
+
+impl Debug for BlockchainVerificationConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(BlockchainVerificationConfig))
+            .field("authoritative", &self.authoritative)
+            .field("verifiers", &self.verifiers)
+            .field("chain_anchor", &self.chain_anchor)
+            .field("manifest_version", &self.manifest_version)
+            .field("manifest_digest", &self.manifest_digest)
+            .field("deployment_manifest", &REDACTED)
+            .finish()
+    }
+}
+
+#[cfg(feature = "python")]
+nautilus_core::impl_pyo3_config_getters!(BlockchainVerificationConfig {
+    authoritative: BlockchainProviderIdentity,
+    chain_anchor: BlockchainChainAnchorConfig,
+    manifest_digest: String,
+    manifest_version: String,
+    verifiers: Vec<BlockchainVerificationProviderConfig>,
+});
+
 /// Defines the maximum quote-token spend for a directed BUY swap pair.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
 #[serde(deny_unknown_fields)]
@@ -190,6 +444,9 @@ pub struct BlockchainExecutionClientConfig {
     pub tokens: Option<Vec<String>>,
     /// The HTTP URL for the blockchain RPC endpoint.
     pub http_rpc_url: String,
+    /// Independent provider topology, chain checkpoint, and deployment manifest identity.
+    #[serde(default)]
+    pub verification: Option<BlockchainVerificationConfig>,
     /// The maximum number of RPC requests allowed per second.
     pub rpc_requests_per_second: Option<u32>,
     /// Name of the environment variable holding the signer private key.
@@ -255,6 +512,7 @@ impl Debug for BlockchainExecutionClientConfig {
             .field("wallet_address", &self.wallet_address)
             .field("tokens", &self.tokens)
             .field("http_rpc_url", &REDACTED)
+            .field("verification", &self.verification)
             .field("rpc_requests_per_second", &self.rpc_requests_per_second)
             .field("signer_private_key_env", &self.signer_private_key_env)
             .field("payload_key_env", &self.payload_key_env)
@@ -297,6 +555,7 @@ nautilus_core::impl_pyo3_config_getters!(BlockchainExecutionClientConfig {
     gas_buffer_bps: u32,
     gas_limit: u64,
     http_rpc_url: String,
+    verification: Option<BlockchainVerificationConfig>,
     max_fee_per_gas_wei: u64,
     max_order_amount: Option<u64>,
     max_quote_age_blocks: Option<u64>,

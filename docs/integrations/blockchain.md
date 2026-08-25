@@ -445,22 +445,67 @@ end-to-end fork tests. Other order operations fail closed with no on-chain or du
 
 ### Connection and account state
 
-Connect performs these checks before enabling transaction submission:
+Client construction requires one authoritative RPC endpoint and exactly two read-only verification
+providers. Each source needs a distinct endpoint, provider ID, operator ID, and pairwise-disjoint
+set of failure-domain IDs.
 
-1. When Postgres is configured, require ready protected storage and authenticate every retained
-   payload before reconciling the signer's active intent.
-1. Verify that the RPC chain ID matches the configured chain.
-1. Load the private key from `signer_private_key_env` and verify that its address matches
-   `wallet_address`.
-1. Read the native balance and every ERC-20 balance configured in `tokens`.
-1. Install the complete wallet snapshot and publish one `AccountState` under the configured account
-   ID.
+#### Enforced operating conditions
+
+- The authoritative execution endpoint and both verifier endpoints must use HTTPS. Cleartext HTTP
+  is accepted only for a canonical IPv4 loopback literal in `127.0.0.0/8` or exactly `[::1]`.
+  Hostnames, IPv4-mapped IPv6, private and link-local addresses, and noncanonical numeric forms do
+  not qualify.
+- HyperSync uses the same HTTPS rule. This validation runs before the HyperSync token is loaded or
+  its client is created.
+- Blockchain HTTP clients reject redirects. A canonical loopback RPC connection also bypasses
+  configured and ambient proxies. Remote HTTPS execution RPC clients continue to honor ambient
+  proxy environment variables.
+- A Postgres-backed execution connection requires an active payload key, a stable deployment ID,
+  ready protected storage, and every key referenced by stored envelopes. It authenticates every
+  retained payload before loading the signer or making an execution RPC call.
+- An attached Postgres database can be unprotected only while the client is disconnected for
+  checks, protection, or rollback work. Rewrap requires protected storage. An unprotected database
+  cannot provide execution capability.
+
+#### Operator assumptions
+
+A failure domain represents any shared upstream, reseller, gateway, proxy, account, network path,
+or hosting control plane. Distinct URLs and distinct configured identities do not prove operational
+independence. The operator must verify that the three providers do not share a control or failure
+domain. The operator must also keep the signing key exclusive to one live client and control access
+to the host environment, database, replicas, backups, and exports.
+
+Connect completes these checks before it loads the signer:
+
+1. Open the durable execution store. When Postgres is configured, require ready protected storage
+   and authenticate every retained payload before loading any existing verification ledger.
+1. Require all three sources to match the local chain ID and reviewed finalized checkpoint.
+1. Extend or recheck the durable finalized-header ancestry in windows of at most 4,096 blocks.
+1. Require an exact finalized-height signer nonce from all three sources.
+1. Verify the reviewed deployment manifest at the finalized height. This includes runtime code,
+   proxy slots, implementations, router and factory relationships, pool identity, token decimals,
+   and the pinned quote contract.
+1. Probe archive, finalized-tag, explicit-height state and call, gas, storage, quote, and call-trace
+   capabilities on every source.
+1. Atomically install the verification ledger or migrate retained execution history with the
+   evidence that authorized each classification.
+1. Load the private key from `signer_private_key_env`, require its address to equal
+   `wallet_address`, and reconcile any active intent.
+1. Read the native balance and configured ERC-20 balances, install the complete wallet snapshot,
+   and publish one `AccountState` under the configured account ID.
 
 Without Postgres, the client can connect and publish balances, but all transaction operations are
-refused. If reconciliation, a balance read, or an exact amount conversion fails, the client stays
-disconnected. Any loaded signer is removed, the previous complete snapshot remains installed, and
-no partial wallet state is published. Duplicate token symbols also reject the snapshot because
-symbols define currency identity.
+refused. A verification, migration, reconciliation, balance, or exact amount conversion failure
+keeps the client disconnected. Any loaded signer is removed, the previous complete snapshot stays
+installed, and no partial wallet state is published. Duplicate token symbols also reject the
+snapshot because symbols define currency identity.
+
+The verification providers never receive signed transaction bytes and have no broadcast method.
+The authoritative endpoint alone receives `eth_sendRawTransaction`. Security-critical unsigned
+reads that authorize a signature, rebroadcast, or durable transition go to all three sources.
+Diagnostic preflight and connect-time balance publication use the authoritative endpoint and cannot
+authorize execution. This protects integrity, not order confidentiality. Operators who need route
+or amount confidentiality need a separate execution design.
 
 Published balances use `total = free` and `locked = 0`. The wallet account applies local
 reservations when it derives effective free and locked balances, as described in
@@ -531,9 +576,9 @@ quote-to-base pair. Listing only one direction does not admit the other.
 | `tokenOut`          | SELL: pool quote token. BUY: pool base token.                                              |
 | `fee`               | Pool fee tier.                                                                             |
 | `recipient`         | Execution wallet address.                                                                  |
-| `deadline`          | Initial swap-anchor timestamp plus configured `deadline_seconds`.                          |
-| `amountIn`          | SELL: `Quantity` as raw base units. BUY: quote input derived from a local exact-out quote. |
-| `amountOutMinimum`  | Derived from a current quote (see below).                                                  |
+| `deadline`          | Verified decision-header timestamp plus configured `deadline_seconds`.                     |
+| `amountIn`          | SELL: `Quantity` as raw base units. BUY: quote input from the verified exact-output quote. |
+| `amountOutMinimum`  | Derived from the verified quote at the decision height (see below).                        |
 | `sqrtPriceLimitX96` | `0` (slippage is bounded by `amountOutMinimum`).                                           |
 
 ### BUY quote-spend limits
@@ -546,36 +591,41 @@ pairs outside `allowed_token_pairs`. Order preparation also checks the configure
 against the selected pool (see [Execution configuration](#execution-configuration) for an example
 entry).
 
-The client compares the local exact-out quote's `amountIn` with this limit before transaction
-readiness, durable intent creation, or signing. Equality is accepted; a quote one raw unit above the
-limit is denied. `max_order_amount` remains a separate ceiling on the submitted base quantity, and
-SELL orders do not use `quote_spend_limits`.
+The client compares the independently verified exact-output quote's `amountIn` with this limit
+before signing. Equality is accepted; a quote one raw unit above the limit is denied.
+`max_order_amount` remains a separate ceiling on the submitted base quantity, and SELL orders do
+not use `quote_spend_limits`.
 
 ### Slippage protection
 
 `amountOutMinimum` is always derived, never caller-supplied:
 
 1. Require an initialized `PoolProfiler` with a processed event watermark in the shared engine cache
-   (`Cache::pool_profiler`). Without that state, no quote exists and the order is rejected. A live
-   data-side subscription normally maintains it.
-1. Simulate the swap locally on that profiler. A SELL uses `swap_exact_in` on the base quantity and
-   requires the simulation to consume the full input. A BUY uses `swap_exact_out` on the base
-   quantity to derive the quote input, then submits that input as `exactInputSingle`. A BUY quote
-   that returns a zero input is rejected; an on-chain BUY may still deliver less base than the
-   order quantity, down to `amountOutMinimum`.
-1. Read the latest block once as the swap anchor. Require the pool state to remain within
-   `max_quote_age_blocks` of that anchor.
-1. Require the profiler watermark to include the block hash observed during ingestion. The same
-   numbered block must still have that hash on the execution RPC endpoint. A block-scoped snapshot
-   must also carry that hash as its snapshot identifier.
+   (`Cache::pool_profiler`). Its local simulation must consume the full SELL input or produce a
+   nonzero BUY input, but its amount does not set a signed field. A live data-side subscription
+   normally maintains this state.
+1. Choose a decision height from the minimum fresh head reported by the three sources. The head
+   skew must remain within `verification.chain_anchor.max_head_skew_blocks`.
+1. Require the profiler watermark to include the block hash observed during ingestion. All three
+   sources must return that exact explicit-height header. A block-scoped snapshot must also carry
+   the header hash as its snapshot identifier.
 1. For an event watermark, require a successful canonical receipt whose transaction, block, and
    index metadata match the profiler position. The selected log must come from the expected pool
    and use a supported pool-event signature.
-1. Immediately before signing, reread the watermark block and swap anchor by number. An unavailable
-   historical read or changed hash rejects the order.
-1. Compute `amountOutMinimum = quoted_amount_out * (10_000 - slippage_bps) / 10_000` in integer
-   arithmetic and reject the order when the result is zero. For a BUY, `quoted_amount_out` is the
-   submitted base quantity, so slippage protects the base output.
+1. Verify one unanimous parent-linked ancestry from the profiler height through the decision
+   height. The distance must not exceed `max_quote_age_blocks`, which must be in `1..=4095`.
+1. Call the manifest-pinned `IQuoterV2` contract at the decision height through all three sources.
+   SELL uses `quoteExactInputSingle`; BUY uses `quoteExactOutputSingle`. The full decoded result
+   must agree, including amount, resulting square-root price, initialized ticks crossed, and gas
+   estimate.
+1. Immediately before signing, reread the checkpoint, profiler header, decision header, ancestry,
+   and quote. An unavailable or changed result blocks signing.
+1. For SELL, compute `amountOutMinimum` from the verified exact-input output. For BUY, use the
+   verified exact-output input as `amountIn` and derive `amountOutMinimum` from the requested base
+   output. Integer arithmetic rejects a zero minimum.
+
+Profiler divergence can request a data refresh, but it cannot override a verified quote or weaken
+the signed limits.
 
 The slippage comes from the `slippage_bps` configuration field, overridable per order through a
 `slippage_bps` entry in the submit command's `params`; an override above the `max_slippage_bps`
@@ -590,11 +640,11 @@ data subscription, or resync its events and rebuild its snapshot, before submitt
 Preflight, WETH wrapping, and router approval are explicit operations on the client, separate from
 `submit_order`:
 
-| Operation | State change                       | Pre-broadcast checks                                                                                                                                              | Completion check                                    |
-| --------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Preflight | None.                              | Chain ID, deployed contracts, balances, allowance, and current fee policy.                                                                                        | Returns a structured, sanitized report.             |
-| Wrap      | Calls WETH `deposit()` with value. | WETH bytecode and a readable ERC-20 balance.                                                                                                                      | WETH balance increased by the exact wrapped amount. |
-| Approve   | Calls `approve(router, amount)`.   | Router allowlist; for nonzero targets, router deployment, factory and WETH identity, input-token membership, a zero current allowance, and successful simulation. | Allowance at the inclusion block equals the target. |
+| Operation | State change                       | Pre-broadcast checks                                                                                                        | Completion check                                    |
+| --------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Preflight | None.                              | Authoritative chain, deployed-code, balance, allowance, and current-fee diagnostics.                                        | Returns a structured, sanitized report.             |
+| Wrap      | Calls WETH `deposit()` with value. | Verified decision ancestry, deployment, WETH balance, native balance, gas, fee, nonce, and explicit-height simulation.      | WETH balance increased by the exact wrapped amount. |
+| Approve   | Calls `approve(router, amount)`.   | Wrap checks plus router policy, factory and WETH identity, input-token membership, zero allowance, and approval simulation. | Allowance at the inclusion block equals the target. |
 
 Preflight resolves the pool from `Cache::pool`. Its report contains no RPC URL, private key, or raw
 signed transaction.
@@ -611,27 +661,27 @@ Wrap compares the WETH balance immediately before and at the inclusion block, wh
 pre-broadcast baseline. A failed postcondition returns an error after finality, so the transaction
 may still have changed on-chain state.
 
-Before signing a swap, order submission checks:
+Before signing a swap, order submission requires exact agreement from all three sources for:
 
-- Deployed bytecode at the pool, router, registered factory, WETH, and token addresses.
+- The decision header and parent-linked ancestry from the durable finalized ledger.
+- The deployment manifest at the decision height, including every configured code hash, proxy
+  binding, and role probe.
 - The router reports the registered factory and configured WETH, and the factory resolves the
   exact pool for the input token, output token, and fee tier.
-- Both tokens report the decimals stored in the pool definition.
+- Both tokens report the decimals stored in the reviewed manifest.
+- The manifest-pinned quote contract returns one exact quote.
 - Router allowance and input-token balance sufficient for the raw input amount.
 - Native balance sufficient for transaction value plus the maximum gas cost.
+- Canonical and pending nonce observations that agree with the durable nonce ledger.
+- The maximum gas estimate, median priority fee, and local gas and fee ceilings.
 
-The first latest block returned for the submission is the canonical swap state anchor. Its number,
-hash, timestamp, and base fee stay fixed through preparation. The anchor supplies the deadline,
-quote-age boundary, durable `created_block`, and EIP-1559 base fee. Contract code, router factory and
-WETH identity, factory pool resolution, token decimals, router allowance, input-token balance, gas
-estimation, and native balance all use the anchor number as an exact hexadecimal block parameter.
-
-The chain ID, `pending` nonce, and `eth_maxPriorityFeePerGas` reads have no equivalent historical
-value in this flow and remain unpinned. Immediately before local signing, the client rereads the
-quote watermark block and swap anchor by number and requires both exact hashes to match. Failure
-produces `OrderDenied` without persisting signed bytes, acknowledging the order, or calling
-`eth_sendRawTransaction`. The client releases its pre-sign slot only after the durable recoverable
-transition succeeds; a failed transition keeps ownership for reconciliation.
+The decision header supplies the deadline, quote-age boundary, durable `created_block`, and
+EIP-1559 base fee. State, call, code, storage, gas, balance, and allowance reads use its explicit
+block number. Immediately before local signing, the client repeats the chain, header, ancestry,
+deployment, quote, canonical nonce, and pending nonce checks. It persists this evidence atomically
+with nonce assignment. A failure before signing produces `OrderDenied` and no broadcast. The
+client releases its preparation slot only after the durable recoverable transition succeeds; a
+failed transition keeps ownership for reconciliation.
 
 The input token is the base token for a SELL and the quote token for a BUY. Preflight readiness
 still reports the base-token allowance used by SELL setup. A BUY needs a separate quote-token
@@ -662,8 +712,11 @@ address must match `wallet_address` at connect.
 
 At most one transaction can be in flight across wraps, approvals, and swaps:
 
-- The client claims the local slot before the first preparation RPC call, then reads the nonce with
-  `eth_getTransactionCount` and the `pending` tag.
+- The client claims the local slot before the first preparation RPC call.
+- The durable canonical nonce comes from unanimous explicit finalized-height reads. Pending nonce
+  is an additional mempool observation and never proves canonical consumption.
+- A new signature requires canonical nonce `N`, no unexplained pending use, and an intent that can
+  atomically own `N` with its verification evidence.
 - A preparation failure releases the slot only when no signature exists.
 - After signing, the slot stays claimed through persistence, broadcast, finality, and required
   order-event persistence.
@@ -674,11 +727,11 @@ At most one transaction can be in flight across wraps, approvals, and swaps:
 
 Fee and gas policy also runs before signing:
 
-- Swap fees use the state-anchor base fee; wrap, approve, and preflight use their latest block read.
-  All paths use `eth_maxPriorityFeePerGas` plus `base_fee_buffer_bps`. The client rejects a derived
-  fee above `max_fee_per_gas_wei`.
-- Swap gas estimation uses the state-anchor block number; wrap and approve keep the default latest
-  estimate. The client applies `gas_buffer_bps` and rejects a buffered estimate above `gas_limit`;
+- All paths use the unanimous decision header's base fee. Three priority-fee values select the
+  median before `base_fee_buffer_bps` is applied. The client rejects a derived fee above
+  `max_fee_per_gas_wei`.
+- All three sources estimate the exact unsigned transaction at the decision height. The client
+  selects the maximum estimate, applies `gas_buffer_bps`, and rejects a result above `gas_limit`;
   it does not clamp the estimate.
 
 #### Persist before broadcast
@@ -703,28 +756,32 @@ Broadcast and receipt handling follow these rules:
 - `already known` counts as acceptance.
 - A timeout, reset, node rejection, unreadable response, or returned hash that differs from the
   signed hash enters reconciliation under the persisted intent.
-- A `null` receipt is a valid pending response.
-- Receipt observation retries RPC errors within the configured finality poll window without
-  rebroadcasting.
+- Three null receipts are retryable. Partial propagation is retryable. Conflicting present
+  receipts are disagreement and cannot authorize a state change.
+- Receipt observation retries transient RPC errors within the configured finality poll window.
 - Poll exhaustion records `dropped` and leaves the signer slot occupied.
+- Exact-byte rebroadcast uses only the authenticated retained envelope. Before sending it again,
+  all three sources must verify the chain, ancestry, deployment, canonical and pending nonce,
+  receipt absence, and purpose-specific explicit-height simulation. Only the authoritative source
+  receives the bytes.
 
 ### Risk and validation boundaries
 
 Generic pre-trade risk stays in the engine. Venue-specific gates live in the adapter as a
 configuration-driven limiter:
 
-| Check                 | Boundary       | Enforcement                                                                                            |
-| --------------------- | -------------- | ------------------------------------------------------------------------------------------------------ |
-| Chain ID              | Adapter        | Preflight at connect and before every signature                                                        |
-| Router identity       | Adapter + risk | Allowlist and bytecode, reported factory and WETH addresses, and factory pool resolution for swaps     |
-| Token-pair allowlist  | Risk (adapter) | Directional pairs for swaps; input-token membership for nonzero approvals                              |
-| Order amount          | Risk (adapter) | `max_order_amount` on submitted base quantity; pair-specific `quote_spend_limits` on BUY quote input   |
-| Quote provenance      | Adapter        | Ingestion block hash, canonical receipt and log position, quote age, and a final pre-signature recheck |
-| Gas and fee           | Risk (adapter) | `gas_limit` and `max_fee_per_gas_wei` ceilings                                                         |
-| Balance sufficiency   | Adapter + risk | Account state plus checks for sufficient input-token and native gas balances                           |
-| Allowance sufficiency | Adapter        | Preflight and submission check against router allowance                                                |
-| Slippage              | Risk (adapter) | `max_slippage_bps` ceiling and profiler-derived minimum output                                         |
-| In-flight limit       | Adapter + DB   | Local slot plus persisted signer and nonce uniqueness                                                  |
+| Check                 | Boundary       | Enforcement                                                                                                      |
+| --------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Chain identity        | Adapter        | Reviewed checkpoint, three-source chain ID, fresh headers, and parent-linked ancestry                            |
+| Deployment identity   | Adapter + risk | Reviewed code hashes, proxy bindings, role probes, pool identity, and inclusion call graph                       |
+| Token-pair allowlist  | Risk (adapter) | Directional pairs for swaps; input-token membership for nonzero approvals                                        |
+| Order amount          | Risk (adapter) | `max_order_amount` on submitted base quantity; pair-specific `quote_spend_limits` on verified BUY quote input    |
+| Quote provenance      | Adapter        | Canonical profiler watermark, bounded ancestry, pinned QuoterV2 result, and final pre-signature recheck          |
+| Gas and fee           | Risk (adapter) | Maximum three-source gas estimate, median priority fee, and local `gas_limit` and `max_fee_per_gas_wei` ceilings |
+| Balance sufficiency   | Adapter + risk | Explicit-height three-source input-token and native balance checks                                               |
+| Allowance sufficiency | Adapter        | Explicit-height three-source router allowance checks                                                             |
+| Slippage              | Risk (adapter) | `max_slippage_bps` ceiling and verified quote-derived minimum output                                             |
+| In-flight limit       | Adapter + DB   | Local slot plus durable canonical nonce and signer ownership                                                     |
 
 Every limiter rejection refuses the order before signing and reports a structured reason.
 
@@ -736,10 +793,10 @@ Order submission emits only events justified by known transaction state:
 | ---------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Failure before the persisted broadcast transition.         | `OrderDenied`     | No transaction left the client.                                                                                                                                                                                                  |
 | Persisted broadcast attempt, including an ambiguous reply. | `OrderSubmitted`  | The signed intent remains the observation authority.                                                                                                                                                                             |
-| Stable finalized revert.                                   | `OrderRejected`   | The terminal marker releases signer ownership.                                                                                                                                                                                   |
-| Stable finalized transaction that mismatches the intent.   | `OrderRejected`   | The client refuses to derive a fill and keeps signer ownership quarantined.                                                                                                                                                      |
-| Stable finalized success with exact transaction and log.   | `OrderFilled`     | Wallet refresh and marker persistence then complete the intent. A BUY that executes below the order quantity also emits `OrderCanceled` for the remainder. A BUY that executes above the order quantity reports the full output. |
-| Timeout, disappearing receipt, or pre-finality reorg.      | No terminal event | The order stays submitted and signer ownership remains occupied.                                                                                                                                                                 |
+| Verified finalized revert.                                 | `OrderRejected`   | The stable event ID and terminal marker permit signer release.                                                                                                                                                                   |
+| Finalized transaction, trace, or deployment mismatch.      | No terminal event | The client refuses to derive a fill and keeps signer ownership quarantined.                                                                                                                                                      |
+| Verified finalized success with exact transaction and log. | `OrderFilled`     | Wallet refresh and marker persistence then complete the intent. A BUY that executes below the order quantity also emits `OrderCanceled` for the remainder. A BUY that executes above the order quantity reports the full output. |
+| Timeout, disagreement, unavailable read, or reorg.         | No terminal event | The order stays submitted and signer ownership remains occupied.                                                                                                                                                                 |
 
 A successful receipt at first inclusion does not emit a fill. The client waits for the stable
 finalized boundary described below.
@@ -749,13 +806,18 @@ finalized boundary described below.
 #### Durable record model
 
 Execution schema version 2 separates the logical wallet operation from its physical transaction
-hashes:
+hashes. Verification schema version 2 adds the canonical nonce, finalized header, decision
+evidence, and replacement-scan ledgers:
 
-| Record       | Represents                                          | Recovery use                                                    |
-| ------------ | --------------------------------------------------- | --------------------------------------------------------------- |
-| Intent       | One logical `wrap`, `approve`, or `swap` operation. | Owns signer, nonce, call fields, order identity, and markers.   |
-| Hash history | The signed hash and any same-nonce replacements.    | Selects the current hash and stores receipt observations.       |
-| Transition   | Append-only status history for an intent and hash.  | Records observations; recovery reads current intent/hash state. |
+| Record            | Represents                                              | Recovery use                                                        |
+| ----------------- | ------------------------------------------------------- | ------------------------------------------------------------------- |
+| Intent            | One logical `wrap`, `approve`, or `swap` operation.     | Owns signer, nonce, call fields, order identity, and markers.       |
+| Hash history      | Authenticated signed envelopes and their hashes.        | Selects the current hash and stores receipt observations.           |
+| Transition        | Append-only status history for an intent and hash.      | Records observations; recovery reads current intent and hash state. |
+| Canonical nonce   | Next signer nonce proven at a finalized height.         | Prevents pending mempool state from releasing or skipping a nonce.  |
+| Finalized headers | Parent-linked headers from the reviewed checkpoint.     | Resumes ancestry and bounded replacement scans.                     |
+| Decision evidence | Sanitized results for each authorizing verification.    | Proves which read class authorized a durable transition.            |
+| Scan cursor       | Last fully scanned finalized replacement-search height. | Resumes multi-window scans and rescans the unfinalized tail.        |
 
 `purpose` is an adapter-local execution field with the values `wrap`, `approve`, and `swap`. It
 tells reconciliation whether the intent also owns a Nautilus order lifecycle. It is not a field in
@@ -767,6 +829,15 @@ The schema keeps the legacy execution transaction table. Its connect-time migrat
 - Refuses unresolved legacy rows that cannot be mapped safely.
 - Fences legacy writes after schema version 2 activates.
 - Preserves existing data.
+
+The first connection after enabling independent verification also classifies every retained
+execution intent. It authenticates every retained payload before remote reconstruction. An
+unsigned active `prepared` intent becomes inactive `recoverable`. A signed active intent at the
+canonical nonce remains active for reconciliation. A consumed nonce requires archive proof of its
+receipt, finalized ancestry, full transaction identity, call trace, deployment identity, and
+terminal status. Released history must already have a consistent marker and must not retain signed
+ownership. Duplicate nonce ownership, missing archive state, a payload mismatch, or changed history
+blocks migration before the signer loads.
 
 Partial unique indexes enforce one active intent per signer, one active owner per signer and nonce,
 and one intent per client order. An intent also stores separate acknowledgement, fill, and terminal
@@ -795,8 +866,9 @@ On connect, the client reloads the active signer intent before enabling new sign
 - An unsigned `prepared` intent becomes `recoverable` and inactive.
 - A `signed` intent remains active and keeps its nonce reserved. Connect fails until an explicit
   recovery decision is available.
-- A durable `broadcast` intent may resend the exact stored bytes before restoring observation.
-  Later states restore the local in-flight slot and observe the current hash without another send.
+- A durable `broadcast` intent may resend only the exact authenticated stored bytes, and only after
+  the three-source rebroadcast checks pass. Later states restore the local in-flight slot and
+  observe the current hash without another send.
 - A legacy `recoverable` intent that still has signed bytes also fails connect rather than releasing
   its nonce.
 - A restored wrap or approve revalidates destination, calldata, and value, including a same-nonce
@@ -804,14 +876,15 @@ On connect, the client reloads the active signer intent before enabling new sign
 - A swap also requires its order, instrument, and pool to be restored in the engine cache. Missing
   or inconsistent state fails connect.
 
-When no receipt exists and the latest signer nonce has advanced, the client scans canonical full
-blocks from the intent's creation block for a transaction from the same signer with the same nonce.
-If that range exceeds 4,096 blocks, the client refuses to scan and requires an explicit recovery
-decision. A discovered replacement hash joins the original intent immediately. The client reports
-completion only after the replacement's destination, calldata, and value match the persisted
-operation. A mismatch rejects a swap order and keeps every affected intent quarantined. A
-disappearing receipt or changed canonical block records `reorged` and resumes observation. Poll
-timeout records `dropped` and keeps the signer slot occupied for the next connect attempt.
+When no receipt exists and the verified canonical signer nonce has advanced, the client scans
+unanimous canonical full blocks from the intent's creation height. Each attempt covers at most
+4,096 blocks. A finalized cursor commits with its verification evidence; the next attempt resumes
+there and rescans the unfinalized tail. A same-nonce transaction can attach only when its hash and
+full decoded identity match an authenticated retained envelope for that intent. An unknown or
+mismatched replacement remains quarantined, emits no order rejection, and does not release signer
+ownership. A disappearing receipt or changed canonical block records `reorged` and resumes
+observation. Poll timeout records `dropped` and keeps the signer slot occupied for the next connect
+attempt.
 
 :::warning
 Keep the signing key exclusive to this client while an intent is active. On restart, a restored wrap
@@ -819,21 +892,27 @@ or approve must match the persisted destination, calldata, and value, including 
 replacement. The wrap then rereads WETH balances at the inclusion block and the previous block; the
 approve rereads router allowance at the inclusion block. A call-identity mismatch or a failed
 postcondition keeps the intent active, occupies the in-flight signer slot, and fails connect,
-including on a later process. A mismatched swap also emits `OrderRejected` without releasing the
-intent.
+including on a later process. A mismatched swap emits no terminal event and remains active.
 :::
 
 #### Finality and fills
 
-Finality uses the chain's `finalized` block tag through `eth_getBlockByNumber`, not a confirmation
+Finality uses each source's `finalized` block tag through `eth_getBlockByNumber`, not a confirmation
 count. The client:
 
-1. Matches the receipt block hash to the canonical numbered block.
-1. Waits until the finalized height reaches the inclusion height.
-1. Reads the inclusion and finalized blocks again.
-1. Requires both hashes to remain unchanged before recording a terminal state.
+1. Requires three identical non-null normalized receipts.
+1. Matches the receipt block hash to one unanimous explicit inclusion header.
+1. Waits until the minimum verified finalized height reaches the inclusion height.
+1. Extends the unanimous parent-linked finalized ancestry.
+1. Requires the full transaction to match the authenticated signed envelope.
+1. Requires three identical `debug_traceTransaction` call trees and admits each internal call only
+   when its purpose, caller, target, and call type match one manifest edge exactly. Contract
+   creation and self-destruction are denied.
+1. Rechecks the deployment manifest at inclusion, then commits finality evidence, receipt state,
+   header ancestry, and canonical nonce advancement in one database transaction.
 
-The RPC endpoint must support the `finalized` tag. An unsupported tag fails reconciliation closed.
+All three RPC sources must support the `finalized` tag. An unsupported tag fails reconciliation
+closed.
 
 For a successful swap, the full finalized transaction must match the persisted signer, nonce,
 destination, calldata, and value. The receipt must contain exactly one `Swap` log from the selected
@@ -852,16 +931,18 @@ The fill contains:
 - A deterministic trade ID derived from the transaction hash and log index.
 - `effectiveGasPrice * gasUsed` as native-currency commission.
 
-After emitting the fill, the client adds both pool tokens to the tracked balance set, refreshes
-native and tracked token balances, publishes wallet account state, stores the fill marker, and
-releases signer ownership. A wallet refresh failure keeps the finalized intent active for
-reconciliation.
+Before emitting the fill, the client verifies native and tracked-token state at the finalized
+inclusion height through all three sources. It then publishes the stable-ID order event and wallet
+account state, stores the fill marker, and releases signer ownership. A wallet refresh or event
+dispatch failure keeps the finalized intent active for reconciliation.
 
 #### Event delivery across restarts
 
-Reconciliation checks persisted event markers, restored order state, and deterministic trade IDs
-before it emits a repeated order event. These checks suppress duplicates once the corresponding
-state is durable.
+Reconciliation checks persisted event markers and restored order state before it emits a repeated
+order event. Terminal event IDs are deterministic from the transaction hash and event kind, and
+trade IDs are deterministic from the transaction hash and log index. These identities suppress
+duplicates once the corresponding state is durable and let downstream consumers deduplicate a
+retry after a crash.
 
 Event publication and marker persistence are separate operations. A process crash between them can
 therefore cause an event to be delivered again after restart. Consumers must handle order events
@@ -943,14 +1024,15 @@ these fields to Python:
 | `client_id`                      | Required  | Account ID for the client.                                               |
 | `chain`                          | Required  | Blockchain chain configuration.                                          |
 | `wallet_address`                 | Required  | Wallet address for the execution client.                                 |
-| `http_rpc_url`                   | Required  | HTTP URL for the blockchain RPC endpoint.                                |
+| `http_rpc_url`                   | Required  | Sole authoritative RPC endpoint and broadcast destination.               |
+| `verification`                   | Required  | Two read-only providers, local chain anchor, and deployment manifest.    |
 | `signer_private_key_env`         | Required  | Environment variable that holds the signer key.                          |
 | `payload_key_env`                | `None`    | Active 32-byte key variable; required with Postgres execution.           |
 | `payload_key_retired_env`        | `[]`      | Environment variables for old keys that may only open envelopes.         |
 | `payload_deployment_id`          | `None`    | Stable database identity; required with Postgres execution.              |
 | `router_addresses`               | Required  | SwapRouter allowlist; at least one address is required.                  |
 | `max_fee_per_gas_wei`            | Required  | Maximum derived fee per gas in wei.                                      |
-| `base_fee_buffer_bps`            | Required  | Buffer over the swap-anchor or operator-path latest base fee.            |
+| `base_fee_buffer_bps`            | Required  | Buffer over the unanimous decision-header base fee.                      |
 | `gas_limit`                      | Required  | Gas ceiling; a higher buffered estimate is rejected.                     |
 | `gas_buffer_bps`                 | Required  | Buffer applied over `eth_estimateGas`.                                   |
 | `unlimited_approval`             | `false`   | Request unlimited approval instead of the exact amount.                  |
@@ -960,17 +1042,41 @@ these fields to Python:
 | `slippage_bps`                   | Required  | Default slippage used to derive the minimum output.                      |
 | `max_slippage_bps`               | Required  | Ceiling for a per-order slippage override.                               |
 | `max_order_amount`               | Required  | `u64` ceiling on submitted base quantity, in raw base-token units.       |
-| `deadline_seconds`               | Required  | Swap deadline offset from the initial anchor timestamp.                  |
-| `max_quote_age_blocks`           | Required  | Maximum age of the local quote in blocks.                                |
+| `deadline_seconds`               | Required  | Swap deadline offset from the verified decision-header timestamp.        |
+| `max_quote_age_blocks`           | Required  | Maximum profiler-to-decision ancestry distance, in blocks.               |
 | `receipt_timeout_secs`           | Required  | Deadline for the receipt and finality polling loop.                      |
 | `tokens`                         | `None`    | ERC-20 addresses read and published when the client connects.            |
-| `rpc_requests_per_second`        | `None`    | HTTP RPC rate limit.                                                     |
+| `rpc_requests_per_second`        | `None`    | Per-client HTTP RPC rate limit used by all three sources.                |
 | `postgres_cache_database_config` | `None`    | Durable execution store; transaction submission requires it.             |
 | `transport_backend`              | `Sockudo` | Compatibility field; unused by the execution client.                     |
 
 The first allowlisted router executes swaps, so preflight readiness requires allowance on that
 router. `receipt_timeout_secs` controls the polling deadline for swaps, wraps, and approvals. It is
 not a strict upper bound on the full call because final RPC and persistence operations can add time.
+
+`BlockchainVerificationConfig` contains:
+
+| Field                 | Requirement                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------- |
+| `authoritative`       | Stable identity for `http_rpc_url`; it has no second URL in this object.                          |
+| `verifiers`           | Exactly two `BlockchainVerificationProviderConfig` values with read-only HTTP URLs.               |
+| `chain_anchor`        | Chain ID and name, finalized checkpoint height/hash/timestamp, and nonzero head freshness limits. |
+| `manifest_version`    | Reviewed deployment version, equal to `deployment_manifest.version`.                              |
+| `manifest_digest`     | Keccak-256 digest of the canonical JSON serialization of `deployment_manifest`.                   |
+| `deployment_manifest` | Reviewed contracts, tokens, pools, proxy bindings, identity probes, and exact call edges.         |
+
+Each `BlockchainProviderIdentity` has a stable `provider_id`, `operator_id`, and one or more opaque
+`failure_domain_ids`. All provider IDs and operator IDs must be distinct, every pair of failure
+domain sets must be disjoint, and the three normalized endpoint URIs must differ. Do not place RPC
+URLs, credentials, or provider response bodies in the manifest or retained evidence.
+
+Python constructs `BlockchainVerificationConfig` with `deployment_manifest_json`. The manifest is
+parsed locally and its configured digest is checked before the client is created. The RPC sources
+cannot create, update, or approve a manifest. A contract upgrade, new token, new pool, or changed
+call edge needs an independently reviewed manifest and checkpoint update before execution resumes.
+Proxy bindings support the EIP-1967 implementation slot and the Zeppelinos unstructured
+implementation slot used by Circle FiatToken deployments. Each binding pins the exact storage
+value, implementation address, and implementation runtime code hash.
 
 The following entry admits a USDC-to-WETH BUY only when the derived USDC input is at most 1,000 USDC.
 Pass the list as `quote_spend_limits` when constructing `BlockchainExecutionClientConfig`:
@@ -993,62 +1099,69 @@ quote_spend_limits = [
 
 The execution tests have three layers:
 
-| Layer           | External state                            | Main coverage                                             |
-| --------------- | ----------------------------------------- | --------------------------------------------------------- |
-| Unit/mocked RPC | File-backed JSON-RPC responses.           | Encoding, signing, policy, events, and chain observation. |
-| Postgres        | Temporary schema when Postgres is active. | Schema, ordering, uniqueness, and terminal persistence.   |
-| Anvil fork      | Local chain plus read-only archive RPC.   | Real contract calls, swap flow, and restart recovery.     |
+| Layer           | External state                            | Main coverage                                                      |
+| --------------- | ----------------------------------------- | ------------------------------------------------------------------ |
+| Unit/mocked RPC | Scripted three-source JSON-RPC responses. | Typed outcomes, hostile disagreement, signing, and reconciliation. |
+| Postgres        | Temporary schema when Postgres is active. | Evidence ordering, migration, nonce ownership, and crash recovery. |
+| Anvil fork      | Local chain plus read-only archive RPC.   | Three-origin transport, contract calls, swaps, and restart paths.  |
 
 #### Default test coverage
 
 Default tests do not connect to a live chain. They cover:
 
 - Transaction primitives: `deposit`, `approve`, `allowance`, and `exactInputSingle` calldata;
-  EIP-1559 signing against a fixed-key vector; `pending` nonce selection; fee and gas derivation;
-  and ceiling rejection.
-- RPC observation: pending and reverted receipts, finalized-tag reads, canonical block changes,
-  wrong-height responses, disappearing receipts, exact-intent same-nonce replacements,
-  `already known`, node rejection, and timeout after send.
-- Safety checks: signer revocation, cancellation around persistence and dispatch, deployed bytecode,
-  router/factory/WETH/pool identity, approval transitions and return values, preflight readiness,
-  wrap and approval postconditions, exact wallet snapshots, atomic refresh, connect and repeated
-  account queries, order validation, limiter denials, hash-bound quote provenance, slippage, token
-  orientation, distinct quote-token decimals, exact quote-spend boundaries, final fill fields,
-  and commission.
+  EIP-1559 signing against a fixed-key vector; canonical nonce selection with pending-nonce
+  validation; fee and gas derivation; and ceiling rejection.
+- RPC verification: wrong chain or checkpoint, head skew and freshness, broken ancestry, deployment
+  and proxy changes, quote disagreement, pending and reverted receipts, partial receipt propagation,
+  disappearing receipts, divergent traces, unauthorized internal calls, exact-intent same-nonce
+  replacements, `already known`, node rejection, and timeout after send.
+- Safety checks: invalid provider independence, signer revocation, cancellation around persistence
+  and dispatch, router/factory/WETH/pool identity, approval transitions and return values, preflight
+  readiness, wrap and approval postconditions, exact wallet snapshots, connect and repeated account
+  queries, order validation, limiter denials, canonical quote provenance, slippage, token
+  orientation, exact quote-spend boundaries, stable event IDs, final fill fields, and commission.
 - Durability: submission ordering, one in-flight transaction, pre-broadcast signature quarantine,
-  authorized exact-byte rebroadcast, tested duplicate suppression paths, wallet refresh ownership,
-  schema migration, and initial and terminal status writes. Database tests skip when Postgres is
-  unavailable.
+  authorized exact-byte rebroadcast, authenticated replacement scans, durable ancestry resume,
+  retained-history migration, event retry identity, wallet refresh ownership, and atomic evidence
+  with authorizing transitions. Database tests skip when Postgres is unavailable.
 
 JSON-RPC fixtures live under `crates/adapters/blockchain/test_data/execution/`.
+The shared network HTTP unit suite covers redirect rejection.
 
 #### Anvil fork coverage
 
 The opt-in integration suites share this environment:
 
-| Property     | Value                                                                        |
-| ------------ | ---------------------------------------------------------------------------- |
-| Fork chain   | Arbitrum One, chain ID `42161`.                                              |
-| Fork block   | `489000000`.                                                                 |
-| Local mining | One-second blocks, mixed mining, and one slot per epoch for finality.        |
-| Fork source  | Archive-capable `BLOCKCHAIN_FORK_RPC_URL`; read-only access.                 |
-| Transactions | Signed by a fresh funded key and sent only to a random localhost Anvil port. |
-| Persistence  | A reachable Postgres instance.                                               |
+| Property     | Value                                                                       |
+| ------------ | --------------------------------------------------------------------------- |
+| Fork chain   | Arbitrum One, chain ID `42161`.                                             |
+| Fork block   | `489000000`.                                                                |
+| Local mining | One-second blocks, mixed mining, and one slot per epoch for finality.       |
+| Fork source  | Archive-capable `BLOCKCHAIN_FORK_RPC_URL`; read-only access.                |
+| RPC topology | Three distinct localhost proxy origins backed by the deterministic Anvil.   |
+| Transactions | Signed by a fresh funded key and sent only through the authoritative proxy. |
+| Persistence  | A reachable Postgres instance.                                              |
+
+The two verifier proxies reject `eth_sendRawTransaction`. Request counters assert that every proxy
+served reads, only the authoritative proxy received broadcasts, and neither verifier received a
+broadcast attempt. The three local origins test transport separation and read-only enforcement;
+one shared Anvil process does not model operational provider independence.
 
 The direct-client suite (`execution_fork`) runs these scenarios:
 
-| Scenario                                        | Expected result                                                        |
-| ----------------------------------------------- | ---------------------------------------------------------------------- |
-| PancakeSwap V3 market SELL.                     | `OrderDenied`; no nonce use or durable intent.                         |
-| Uniswap V3 limit SELL.                          | `OrderDenied`; no nonce use or durable intent.                         |
-| Uniswap V3 market BUY without the reverse pair. | `OrderDenied`; no nonce use or durable intent.                         |
-| Uniswap V3 market SELL before approval.         | `OrderDenied`; no nonce use or durable intent.                         |
-| WETH wrap and router approval.                  | Successful receipts, balance delta, allowance, and terminal records.   |
-| WETH to USDC Uniswap V3 market SELL.            | Exact submitted/fill events, asset deltas, gas, and final transitions. |
-| USDC to WETH Uniswap V3 market BUY.             | Exact submitted/fill events, asset deltas, gas, and reconnect.         |
-| Disconnect and reconnect after finality.        | No nonce use, rebroadcast, or repeated order event.                    |
-| Restart a dropped wrap or approve.              | Call identity and postcondition pass; the intent becomes inactive.     |
-| Restart after a mismatched replacement.         | Connect fails closed; the wrap is not treated as success.              |
+| Scenario                                             | Expected result                                                        |
+| ---------------------------------------------------- | ---------------------------------------------------------------------- |
+| PancakeSwap V3 market SELL.                          | `OrderDenied`; no nonce use or durable intent.                         |
+| Uniswap V3 limit SELL.                               | `OrderDenied`; no nonce use or durable intent.                         |
+| Uniswap V3 market BUY without the reverse pair.      | `OrderDenied`; no nonce use or durable intent.                         |
+| Uniswap V3 market SELL before approval.              | `OrderDenied`; no nonce use or durable intent.                         |
+| WETH wrap and router approval.                       | Successful receipts, balance delta, allowance, and terminal records.   |
+| WETH to USDC Uniswap V3 market SELL.                 | Exact submitted/fill events, asset deltas, gas, and final transitions. |
+| USDC to WETH Uniswap V3 market BUY.                  | Exact submitted/fill events, asset deltas, gas, and reconnect.         |
+| Disconnect and reconnect after finality.             | No nonce use, rebroadcast, or repeated order event.                    |
+| Restart a dropped wrap or approve.                   | Call identity and postcondition pass; the intent becomes inactive.     |
+| Restart after a multi-window mismatched replacement. | The first scan persists its bounded cursor; the next fails closed.     |
 
 Anvil does not reproduce Arbitrum ArbOS gas pricing. Mocked RPC tests cover gas estimation and fee
 policy.
@@ -1142,6 +1255,10 @@ BLOCKCHAIN_LIVE_READ_SMOKE=1 cargo nextest run -p nautilus-blockchain --features
 
 Expected result: the test reads one anchor and completes numbered code, contract, gas-estimate,
 balance, and exact-hash checks against that block.
+
+Do not use a funded public-network smoke test for execution validation. State-changing validation
+belongs in the three-origin Anvil fork suites above. Public-network checks must remain read-only and
+must not load a signer key or call `eth_sendRawTransaction`.
 
 ### Live fail-closed regression
 

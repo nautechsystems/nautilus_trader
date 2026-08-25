@@ -43,6 +43,9 @@ pub mod providers;
 pub mod types;
 pub mod utils;
 
+#[cfg(feature = "hypersync")]
+pub(crate) mod verification;
+
 #[enum_dispatch(BlockchainRpcClient)]
 #[derive(Debug)]
 pub enum BlockchainRpcClientAny {

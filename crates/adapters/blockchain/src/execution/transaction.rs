@@ -178,30 +178,31 @@ pub(super) struct SignedTransactionIntent {
     pub max_fee_per_gas: u64,
 }
 
-/// Authenticates one complete signed EIP-1559 call against its durable intent and policy.
-pub(super) fn validate_signed_transaction(
+/// Authenticated fields decoded from one complete signed EIP-1559 transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DecodedSignedTransaction {
+    pub hash: B256,
+    pub signer: Address,
+    pub chain_id: u64,
+    pub nonce: u64,
+    pub to: Address,
+    pub value: U256,
+    pub input: Bytes,
+    pub gas_limit: u64,
+    pub max_fee_per_gas: u128,
+    pub max_priority_fee_per_gas: u128,
+}
+
+/// Decodes and authenticates one complete signed EIP-1559 transaction.
+pub(super) fn decode_signed_transaction(
     raw_transaction: &[u8],
-    intent: &SignedTransactionIntent,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<DecodedSignedTransaction> {
     let envelope = TxEnvelope::decode_2718_exact(raw_transaction).map_err(|_| {
         anyhow::anyhow!("Persisted signed transaction is not a complete EIP-2718 envelope")
     })?;
     let TxEnvelope::Eip1559(signed) = envelope else {
         anyhow::bail!("Persisted signed transaction is not EIP-1559");
     };
-
-    anyhow::ensure!(
-        *signed.hash() == intent.hash,
-        "Persisted transaction hash {} does not match signed transaction hash {}",
-        intent.hash,
-        signed.hash()
-    );
-    anyhow::ensure!(
-        intent.durable_signer == intent.signer,
-        "Persisted transaction signer {} does not match configured wallet {}",
-        intent.durable_signer,
-        intent.signer
-    );
     anyhow::ensure!(
         signed.signature().normalize_s().is_none(),
         "Persisted transaction signature is not EIP-2 normalized"
@@ -210,9 +211,53 @@ pub(super) fn validate_signed_transaction(
         .signature()
         .recover_address_from_prehash(&signed.signature_hash())
         .context("failed to recover persisted transaction signer")?;
+    let hash = *signed.hash();
+    let tx = signed.tx();
+    let TxKind::Call(to) = tx.to else {
+        anyhow::bail!("Signed transaction creates a contract instead of calling a destination");
+    };
     anyhow::ensure!(
-        signer == intent.signer,
-        "Signed transaction signer {signer} does not match configured wallet {}",
+        tx.access_list.is_empty(),
+        "Signed transaction access list is not empty"
+    );
+
+    Ok(DecodedSignedTransaction {
+        hash,
+        signer,
+        chain_id: tx.chain_id,
+        nonce: tx.nonce,
+        to,
+        value: tx.value,
+        input: tx.input.clone(),
+        gas_limit: tx.gas_limit,
+        max_fee_per_gas: tx.max_fee_per_gas,
+        max_priority_fee_per_gas: tx.max_priority_fee_per_gas,
+    })
+}
+
+/// Authenticates one complete signed EIP-1559 call against its durable intent and policy.
+pub(super) fn validate_signed_transaction(
+    raw_transaction: &[u8],
+    intent: &SignedTransactionIntent,
+) -> anyhow::Result<()> {
+    let tx = decode_signed_transaction(raw_transaction)?;
+
+    anyhow::ensure!(
+        tx.hash == intent.hash,
+        "Persisted transaction hash {} does not match signed transaction hash {}",
+        intent.hash,
+        tx.hash
+    );
+    anyhow::ensure!(
+        intent.durable_signer == intent.signer,
+        "Persisted transaction signer {} does not match configured wallet {}",
+        intent.durable_signer,
+        intent.signer
+    );
+    anyhow::ensure!(
+        tx.signer == intent.signer,
+        "Signed transaction signer {} does not match configured wallet {}",
+        tx.signer,
         intent.signer
     );
     anyhow::ensure!(
@@ -228,7 +273,6 @@ pub(super) fn validate_signed_transaction(
         intent.chain_id
     );
 
-    let tx = signed.tx();
     anyhow::ensure!(
         tx.chain_id == u64::from(intent.chain_id),
         "Signed transaction chain ID {} does not match configured chain ID {}",
@@ -241,14 +285,10 @@ pub(super) fn validate_signed_transaction(
         tx.nonce,
         intent.nonce
     );
-    let TxKind::Call(to) = tx.to else {
-        anyhow::bail!(
-            "Signed transaction creates a contract instead of calling the persisted destination"
-        );
-    };
     anyhow::ensure!(
-        to == intent.to,
-        "Signed transaction destination {to} does not match persisted destination {}",
+        tx.to == intent.to,
+        "Signed transaction destination {} does not match persisted destination {}",
+        tx.to,
         intent.to
     );
     anyhow::ensure!(
@@ -258,10 +298,6 @@ pub(super) fn validate_signed_transaction(
     anyhow::ensure!(
         tx.input == intent.input,
         "Signed transaction calldata does not match persisted calldata"
-    );
-    anyhow::ensure!(
-        tx.access_list.is_empty(),
-        "Signed transaction access list is not empty"
     );
     anyhow::ensure!(
         tx.gas_limit <= intent.gas_limit,

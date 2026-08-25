@@ -32,11 +32,12 @@ use alloy::{
     signers::local::PrivateKeySigner,
 };
 use harness::{
-    CHAIN_ID, FORK_BLOCK, FUND_AMOUNT_WEI, PAYLOAD_DEPLOYMENT_ID, PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX,
-    ROUTER, SIGNER_ENV, SLIPPAGE_BPS, SWAP_AMOUNT, USDC, WETH, WRAP_AMOUNT_WEI, anvil_mine,
-    anvil_set_automine, anvil_set_interval_mining, build_full_range_snapshot,
-    ensure_execution_schema, fund_anvil_wallet, git_diff_sha256, quote_buy_amount_in, start_anvil,
-    start_anvil_at, weth_usdc_pool,
+    CHAIN_ID, ExecutionRpcTopology, FORK_BLOCK, FUND_AMOUNT_WEI, PAYLOAD_DEPLOYMENT_ID,
+    PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX, ROUTER, SIGNER_ENV, SLIPPAGE_BPS, SWAP_AMOUNT, USDC, WETH,
+    WRAP_AMOUNT_WEI, anvil_drop_transaction, anvil_mine, anvil_set_automine,
+    anvil_set_interval_mining, build_full_range_snapshot, ensure_execution_schema,
+    fund_anvil_wallet, git_diff_sha256, quote_buy_amount_in, start_anvil, start_anvil_at,
+    start_execution_rpc_topology, weth_usdc_pool,
 };
 use nautilus_blockchain::{
     config::{BlockchainExecutionClientConfig, QuoteSpendLimit},
@@ -72,6 +73,7 @@ use sqlx::{
 
 const PANCAKE_WETH_USDC_POOL: Address = address!("d9e2a1a61b6e61b275cec326465d417e52c1b95c");
 const RECOVERY_SIGNER_ENV: &str = "BLOCKCHAIN_FORK_TEST_PRIVATE_KEY_RECOVERY";
+const REPLACEMENT_SCAN_BLOCKS: u64 = 4_096;
 
 #[tokio::test]
 async fn anvil_fork_wrap_approve_preflight_and_swap() {
@@ -109,6 +111,7 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         .await
         .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
     let anvil_url = format!("http://127.0.0.1:{}", startup.port);
+    let rpc_topology = start_execution_rpc_topology(&anvil_url).await;
     let signer = PrivateKeySigner::random();
     let wallet = signer.address();
     let signer_private_key = nautilus_core::hex::encode_prefixed(signer.to_bytes());
@@ -145,7 +148,8 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         .client_id(AccountId::from("BLOCKCHAIN-FORK-001"))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())
-        .http_rpc_url(anvil_url.clone())
+        .http_rpc_url(rpc_topology.authoritative_url())
+        .verification(rpc_topology.verification())
         .signer_private_key_env(SIGNER_ENV.to_string())
         .router_addresses(vec![ROUTER.to_string()])
         .weth_address(WETH.to_string())
@@ -467,15 +471,9 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
     .fetch_all(&admin_pool)
     .await
     .unwrap();
-    assert!(
-        finality_transitions
-            .iter()
-            .any(|status| status == "included")
-    );
-    assert!(
-        finality_transitions
-            .iter()
-            .any(|status| status == "finalized")
+    assert_eq!(
+        finality_transitions,
+        ["prepared", "signed", "broadcast", "finalized"]
     );
 
     // Reconnect after the terminal marker. Reconciliation must emit no duplicate order event
@@ -612,6 +610,7 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         evidence_dir.display()
     );
 
+    rpc_topology.assert_broadcast_isolation();
     unsafe {
         std::env::remove_var(SIGNER_ENV);
         std::env::remove_var(PAYLOAD_KEY_ENV);
@@ -639,6 +638,7 @@ async fn anvil_fork_usdc_to_weth_market_buy() {
         .await
         .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
     let anvil_url = format!("http://127.0.0.1:{}", startup.port);
+    let rpc_topology = start_execution_rpc_topology(&anvil_url).await;
     let signer = PrivateKeySigner::random();
     let wallet = signer.address();
     let signer_private_key = nautilus_core::hex::encode_prefixed(signer.to_bytes());
@@ -670,7 +670,8 @@ async fn anvil_fork_usdc_to_weth_market_buy() {
         .client_id(AccountId::from("BLOCKCHAIN-FORK-001"))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())
-        .http_rpc_url(anvil_url.clone())
+        .http_rpc_url(rpc_topology.authoritative_url())
+        .verification(rpc_topology.verification())
         .signer_private_key_env(SIGNER_ENV.to_string())
         .router_addresses(vec![ROUTER.to_string()])
         .weth_address(WETH.to_string())
@@ -869,6 +870,7 @@ async fn anvil_fork_usdc_to_weth_market_buy() {
         "BUY fork proof: hash={swap_hash_string} usdc_spent={usdc_spent} weth_received={weth_received} anvil={}",
         startup.version
     );
+    rpc_topology.assert_broadcast_isolation();
     unsafe {
         std::env::remove_var(SIGNER_ENV);
         std::env::remove_var(PAYLOAD_KEY_ENV);
@@ -1008,6 +1010,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
         .await
         .expect("Anvil must start when BLOCKCHAIN_FORK_TESTS=1");
     let anvil_url = format!("http://127.0.0.1:{}", startup.port);
+    let rpc_topology = start_execution_rpc_topology(&anvil_url).await;
     let signer = PrivateKeySigner::random();
     let wallet = signer.address();
     let signer_private_key = nautilus_core::hex::encode_prefixed(signer.to_bytes());
@@ -1027,7 +1030,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     pause_mining(&anvil_url).await;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             3,
@@ -1046,7 +1049,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     let recovered_wrap;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             30,
@@ -1065,7 +1068,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     pause_mining(&anvil_url).await;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             3,
@@ -1090,7 +1093,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     let recovered_approve;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             30,
@@ -1111,9 +1114,11 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
 
     pause_mining(&anvil_url).await;
     let wrap_nonce;
+    let original_hash;
+    let created_block;
     {
         let mut client = connected_fork_client(
-            &anvil_url,
+            &rpc_topology,
             wallet,
             pg_config.clone(),
             3,
@@ -1129,8 +1134,12 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
             error.to_string().contains("Timed out awaiting finality"),
             "was: {error}"
         );
+        (original_hash, created_block) =
+            intent_hash_and_creation_block(&admin_pool, wallet, "wrap").await;
         client.disconnect().await.unwrap();
     }
+    anvil_drop_transaction(&anvil_url, &original_hash).await;
+    anvil_mine(&anvil_url, REPLACEMENT_SCAN_BLOCKS).await;
     let replacement = build_eip1559_transaction(
         CHAIN_ID,
         wrap_nonce,
@@ -1149,7 +1158,25 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
         .await
         .unwrap();
     anvil_mine(&anvil_url, 4).await;
-    let mut mismatch_client = fork_client(&anvil_url, wallet, pg_config, 30, RECOVERY_SIGNER_ENV);
+
+    {
+        let mut first_window_client = connected_fork_client(
+            &rpc_topology,
+            wallet,
+            pg_config.clone(),
+            30,
+            RECOVERY_SIGNER_ENV,
+        )
+        .await;
+        assert_eq!(
+            replacement_cursor(&admin_pool, wallet).await,
+            created_block + REPLACEMENT_SCAN_BLOCKS - 1
+        );
+        first_window_client.disconnect().await.unwrap();
+    }
+
+    let mut mismatch_client =
+        fork_client(&rpc_topology, wallet, pg_config, 30, RECOVERY_SIGNER_ENV);
     let (event_sender, _event_receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(event_sender);
     mismatch_client.start().unwrap();
@@ -1157,7 +1184,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     assert!(
         error
             .to_string()
-            .contains("does not match the persisted wrap intent"),
+            .contains("has no authenticated retained payload"),
         "was: {error}"
     );
 
@@ -1179,6 +1206,7 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     )
     .unwrap();
 
+    rpc_topology.assert_broadcast_isolation();
     unsafe {
         std::env::remove_var(RECOVERY_SIGNER_ENV);
         std::env::remove_var(PAYLOAD_KEY_ENV);
@@ -1191,14 +1219,14 @@ async fn pause_mining(anvil_url: &str) {
 }
 
 async fn connected_fork_client(
-    anvil_url: &str,
+    rpc_topology: &ExecutionRpcTopology,
     wallet: Address,
     pg_config: PostgresConnectOptions,
     receipt_timeout_secs: u64,
     signer_env: &str,
 ) -> BlockchainExecutionClient {
     let mut client = fork_client(
-        anvil_url,
+        rpc_topology,
         wallet,
         pg_config,
         receipt_timeout_secs,
@@ -1213,7 +1241,7 @@ async fn connected_fork_client(
 }
 
 fn fork_client(
-    anvil_url: &str,
+    rpc_topology: &ExecutionRpcTopology,
     wallet: Address,
     pg_config: PostgresConnectOptions,
     receipt_timeout_secs: u64,
@@ -1235,7 +1263,8 @@ fn fork_client(
         .client_id(AccountId::from("BLOCKCHAIN-FORK-001"))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())
-        .http_rpc_url(anvil_url.to_string())
+        .http_rpc_url(rpc_topology.authoritative_url())
+        .verification(rpc_topology.verification())
         .signer_private_key_env(signer_env.to_string())
         .router_addresses(vec![ROUTER.to_string()])
         .weth_address(WETH.to_string())
@@ -1269,4 +1298,39 @@ async fn intent_status(admin_pool: &PgPool, wallet: Address, purpose: &str) -> S
     .fetch_one(admin_pool)
     .await
     .unwrap()
+}
+
+async fn intent_hash_and_creation_block(
+    admin_pool: &PgPool,
+    wallet: Address,
+    purpose: &str,
+) -> (String, u64) {
+    let (transaction_hash, created_block): (String, i64) = sqlx::query_as(
+        "SELECT h.transaction_hash, i.created_block \
+         FROM execution_intent AS i \
+         JOIN execution_transaction_hash AS h ON h.intent_id = i.id AND h.current \
+         WHERE i.chain_id = 42161 AND i.wallet_address = $1 AND i.purpose = $2 \
+         ORDER BY i.id DESC LIMIT 1",
+    )
+    .bind(wallet.to_string())
+    .bind(purpose)
+    .fetch_one(admin_pool)
+    .await
+    .unwrap();
+    (transaction_hash, u64::try_from(created_block).unwrap())
+}
+
+async fn replacement_cursor(admin_pool: &PgPool, wallet: Address) -> u64 {
+    let cursor: i64 = sqlx::query_scalar(
+        "SELECT s.finalized_cursor_number \
+         FROM execution_replacement_scan AS s \
+         JOIN execution_intent AS i ON i.id = s.intent_id \
+         WHERE i.chain_id = 42161 AND i.wallet_address = $1 \
+         ORDER BY i.id DESC LIMIT 1",
+    )
+    .bind(wallet.to_string())
+    .fetch_one(admin_pool)
+    .await
+    .unwrap();
+    u64::try_from(cursor).unwrap()
 }

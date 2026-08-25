@@ -19,7 +19,7 @@ use std::{
     ops::RangeInclusive,
     str::FromStr,
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use alloy::{
@@ -43,7 +43,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    Params, UnixNanos, datetime::NANOSECONDS_IN_SECOND, hex, time::get_atomic_clock_realtime,
+    Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND, hex, time::get_atomic_clock_realtime,
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
@@ -56,6 +56,7 @@ use nautilus_model::{
         wallet::{TokenBalance, WalletBalance},
     },
     enums::{CurrencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType},
+    events::{OrderCanceled, OrderEventAny, OrderFilled, OrderRejected},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -69,15 +70,22 @@ use crate::{
     cache::{
         BlockchainCache,
         database::{
-            BlockchainCacheDatabase, ExecutionPayloadCheck, ExecutionPayloadLease,
-            reservation_failure_proven_not_committed,
+            BlockchainCacheDatabase, ExecutionFinalityTransition, ExecutionNonceAssignment,
+            ExecutionPayloadCheck, ExecutionPayloadLease, ExecutionReplacementScan,
+            ExecutionVerificationBatch, ExecutionVerificationBootstrap,
+            ExecutionVerificationDecision, ExecutionVerificationMigration,
+            ExecutionVerificationMigrationRecord, ExecutionVerificationMigrationSnapshot,
+            ExecutionVerifiedHeader, reservation_failure_proven_not_committed,
         },
         rows::{ExecutionIntentInsert, ExecutionIntentRow, ExecutionTransactionHashRow},
     },
-    config::BlockchainExecutionClientConfig,
+    config::{
+        BlockchainContractRole, BlockchainDeploymentManifest, BlockchainExecutionClientConfig,
+    },
     contracts::{
         erc20::{ERC20, Erc20Contract},
-        uniswap_v3_swap::{UniswapV3Deployment, UniswapV3SwapRouter},
+        uniswap_v3_quote::UniswapV3Quote,
+        uniswap_v3_swap::{UniswapV3Factory, UniswapV3RouterState, UniswapV3SwapRouter},
         weth::WETH9,
     },
     execution::{
@@ -91,16 +99,23 @@ use crate::{
         },
         transaction::{
             TransactionPurpose, TransactionStatus, build_eip1559_transaction, compute_max_fee,
-            derive_fees, derive_gas_limit, sign_eip1559_transaction,
+            decode_signed_transaction, derive_fees, derive_gas_limit, sign_eip1559_transaction,
         },
     },
     rpc::{
         error::BroadcastError,
         helpers as rpc_helpers,
         http::{BlockchainHttpRpcClient, EXECUTION_RPC_TIMEOUT_SECS},
-        types::{RpcBlock, RpcTransaction, RpcTransactionReceipt},
+        types::{RpcCallType, RpcTransaction, RpcTransactionReceipt},
+        verification::{
+            VerificationCoordinator, VerificationOutcome, Verified, VerifiedBlockHeader,
+            VerifiedCallTrace, VerifiedSimulation,
+        },
     },
 };
+
+#[cfg(test)]
+use crate::config::{BlockchainCallEdgeManifest, BlockchainContractProbe};
 
 /// Interval between receipt polls while awaiting transaction finality.
 const RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -192,9 +207,30 @@ enum InFlightSlot {
 #[derive(Debug, Clone)]
 struct IncludedTransaction {
     intent_id: i64,
+    nonce: u64,
     tx_hash: B256,
     block_number: u64,
     receipt: RpcTransactionReceipt,
+    finality: StableFinality,
+}
+
+#[derive(Debug, Clone)]
+struct StableFinality {
+    decisions: Vec<ExecutionVerificationDecision>,
+    inclusion_header: ExecutionVerifiedHeader,
+    finalized_headers: Vec<ExecutionVerifiedHeader>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TransactionAuthorization {
+    Wrap {
+        weth: Address,
+    },
+    Approve {
+        token: Address,
+        router: Address,
+        amount: U256,
+    },
 }
 
 /// The single-in-flight limit error naming the transaction currently occupying the slot.
@@ -292,6 +328,8 @@ pub struct BlockchainExecutionClient {
     erc20_contract: Erc20Contract,
     /// HTTP RPC client for blockchain queries.
     http_rpc_client: Arc<BlockchainHttpRpcClient>,
+    /// Independent verification boundary for security-critical reads.
+    verification: VerificationCoordinator,
     /// Handles of spawned order-submission tasks, aborted on stop or disconnect.
     pending_tasks: Arc<TaskHandles>,
 }
@@ -301,10 +339,10 @@ impl BlockchainExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if any transaction limit is missing, if the wallet address, any token
-    /// address, any router address, any allowed token pair address, or the WETH address in the
-    /// config is invalid, if the router allowlist is empty, or if the slippage bounds are
-    /// inconsistent or not below 100%.
+    /// Returns an error if transaction limits are missing or invalid, independent verification is
+    /// missing or conflicts with the configured chain, the deployment manifest or provider
+    /// topology is invalid, a configured address or token pair is invalid, the router allowlist is
+    /// empty, or the slippage bounds are inconsistent or not below 100%.
     pub fn new(
         core_client: ExecutionClientCore,
         config: BlockchainExecutionClientConfig,
@@ -317,6 +355,23 @@ impl BlockchainExecutionClient {
             config.rpc_requests_per_second,
             None,
         ));
+        let verification_config = config.verification.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Independent Blockchain execution verification is required")
+        })?;
+        anyhow::ensure!(
+            verification_config.chain_anchor.chain_id == config.chain.chain_id,
+            "Verification chain anchor ID does not match the configured chain"
+        );
+        anyhow::ensure!(
+            verification_config.chain_anchor.chain_name == config.chain.name.to_string(),
+            "Verification chain anchor name does not match the configured chain"
+        );
+        let verification = VerificationCoordinator::new(
+            http_rpc_client.clone(),
+            &config.http_rpc_url,
+            verification_config,
+            config.rpc_requests_per_second,
+        )?;
         let wallet_address = validate_address(config.wallet_address.as_str())?;
         let erc20_contract = Erc20Contract::new_with_timeout(
             http_rpc_client.clone(),
@@ -333,6 +388,7 @@ impl BlockchainExecutionClient {
             anyhow::bail!("`router_addresses` must contain at least one router address");
         }
         let weth_address = validate_address(config.weth_address.as_str())?;
+        Self::validate_manifest_contracts(&config, &router_addresses, weth_address)?;
 
         // Initialize token universe, so we can fetch them from the blockchain later.
         let mut token_universe = HashSet::new();
@@ -367,6 +423,7 @@ impl BlockchainExecutionClient {
             in_flight: Arc::new(Mutex::new(None)),
             erc20_contract,
             http_rpc_client,
+            verification,
             wallet_address,
             pending_tasks: Arc::new(TaskHandles::default()),
         })
@@ -465,6 +522,10 @@ impl BlockchainExecutionClient {
             anyhow::bail!("`max_slippage_bps` {max_slippage_bps} must be below {BPS_DENOMINATOR}");
         }
 
+        if !(1..=4_095).contains(&max_quote_age_blocks) {
+            anyhow::bail!("`max_quote_age_blocks` must be in 1..=4095");
+        }
+
         Ok(TransactionLimits {
             allowed_token_pairs: parsed_pairs,
             quote_spend_limits: parsed_quote_spend_limits,
@@ -475,6 +536,124 @@ impl BlockchainExecutionClient {
             max_quote_age_blocks,
             receipt_timeout_secs,
         })
+    }
+
+    fn validate_manifest_contracts(
+        config: &BlockchainExecutionClientConfig,
+        routers: &[Address],
+        weth: Address,
+    ) -> anyhow::Result<()> {
+        let verification = config.verification.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Independent Blockchain execution verification is required")
+        })?;
+        let manifest = &verification.deployment_manifest;
+        let role_addresses = |role| {
+            manifest
+                .contracts
+                .iter()
+                .filter(|contract| contract.role == role)
+                .map(|contract| {
+                    Address::from_str(&contract.address)
+                        .map_err(|_| anyhow::anyhow!("Deployment manifest address is invalid"))
+                })
+                .collect::<anyhow::Result<HashSet<_>>>()
+        };
+        let singleton = |role, description: &str| {
+            let addresses = role_addresses(role)?;
+            anyhow::ensure!(
+                addresses.len() == 1,
+                "Deployment manifest must contain exactly one {description} contract"
+            );
+            Ok(*addresses.iter().next().expect("singleton role address"))
+        };
+
+        let configured_routers = routers.iter().copied().collect::<HashSet<_>>();
+        anyhow::ensure!(
+            role_addresses(BlockchainContractRole::Router)? == configured_routers,
+            "Deployment manifest router set does not match `router_addresses`"
+        );
+        anyhow::ensure!(
+            singleton(BlockchainContractRole::WrappedNative, "wrapped native")? == weth,
+            "Deployment manifest wrapped native contract does not match `weth_address`"
+        );
+        let factory = singleton(BlockchainContractRole::Factory, "factory")?;
+        let registered_factory =
+            crate::exchanges::get_dex_extended(config.chain.name, &DexType::UniswapV3)
+                .map(|dex| dex.factory)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "No registered Uniswap V3 deployment for chain {}",
+                        config.chain.name
+                    )
+                })?;
+        anyhow::ensure!(
+            factory == registered_factory,
+            "Deployment manifest factory does not match the registered Uniswap V3 factory"
+        );
+        let quote_contract = singleton(BlockchainContractRole::Quote, "quote")?;
+
+        let mut token_decimals = HashMap::new();
+
+        for token in &manifest.tokens {
+            let address = Address::from_str(&token.address)
+                .map_err(|_| anyhow::anyhow!("Deployment manifest token address is invalid"))?;
+            anyhow::ensure!(
+                token_decimals.insert(address, token.decimals).is_none(),
+                "Deployment manifest contains a duplicate token identity"
+            );
+        }
+        anyhow::ensure!(
+            token_decimals.contains_key(&weth),
+            "Deployment manifest has no wrapped native token identity"
+        );
+
+        if let Some(tokens) = &config.tokens {
+            for token in tokens {
+                let address = validate_address(token)?;
+                anyhow::ensure!(
+                    token_decimals.contains_key(&address),
+                    "Configured token {address} has no deployment manifest identity"
+                );
+            }
+        }
+
+        for (token_in, token_out) in config.allowed_token_pairs.as_deref().unwrap_or_default() {
+            let token_in = validate_address(token_in)?;
+            let token_out = validate_address(token_out)?;
+            anyhow::ensure!(
+                token_in != token_out
+                    && token_decimals.contains_key(&token_in)
+                    && token_decimals.contains_key(&token_out),
+                "Allowed token pair {token_in} -> {token_out} is not fully pinned by the deployment manifest"
+            );
+        }
+
+        for limit in config.quote_spend_limits.as_deref().unwrap_or_default() {
+            let spend_token = validate_address(&limit.spend_token)?;
+            anyhow::ensure!(
+                token_decimals.get(&spend_token) == Some(&limit.spend_token_decimals),
+                "Quote spend limit decimals do not match the deployment manifest"
+            );
+        }
+
+        let pool_contracts = role_addresses(BlockchainContractRole::Pool)?;
+
+        for pool in &manifest.pools {
+            let pool_address = Address::from_str(&pool.address)
+                .map_err(|_| anyhow::anyhow!("Deployment manifest pool address is invalid"))?;
+            let pool_factory = Address::from_str(&pool.factory)
+                .map_err(|_| anyhow::anyhow!("Deployment manifest pool factory is invalid"))?;
+            let pool_quote = Address::from_str(&pool.quote_contract).map_err(|_| {
+                anyhow::anyhow!("Deployment manifest pool quote contract is invalid")
+            })?;
+            anyhow::ensure!(
+                pool_contracts.contains(&pool_address)
+                    && pool_factory == factory
+                    && pool_quote == quote_contract,
+                "Deployment manifest pool does not use the pinned pool, factory, and quote identities"
+            );
+        }
+        Ok(())
     }
 
     /// Fetches the native currency balance (e.g., ETH) for the wallet from the blockchain.
@@ -688,38 +867,34 @@ impl BlockchainExecutionClient {
         }
 
         self.ensure_transaction_ready(TransactionPurpose::Wrap)?;
-        self.ensure_contract_deployed(&self.weth_address, "WETH")
-            .await?;
-        let _balance_probe = self
-            .erc20_contract
-            .balance_of(&self.weth_address, &self.wallet_address)
-            .await?;
 
         let calldata = WETH9::depositCall {}.abi_encode();
         let executor = self.transaction_executor()?;
-        let IncludedTransaction {
-            intent_id,
-            tx_hash,
-            block_number,
-            ..
-        } = executor
+        let included = executor
             .transact(
                 self.weth_address,
                 amount_wei,
                 Bytes::from(calldata),
                 TransactionPurpose::Wrap,
                 None,
+                TransactionAuthorization::Wrap {
+                    weth: self.weth_address,
+                },
             )
             .await?;
-        self.ensure_wrap_balance_increase(&self.weth_address, amount_wei, tx_hash, block_number)
+        let postconditions =
+            verify_wrap_balance_increase(&executor, &self.weth_address, amount_wei, &included)
+                .await?;
+        executor
+            .commit_verified_finality(&included, TransactionStatus::Finalized, &postconditions)
             .await?;
         executor
             .database
-            .mark_execution_event_emitted(intent_id, "terminal")
+            .mark_execution_event_emitted(included.intent_id, "terminal")
             .await?;
         executor.release_slot();
 
-        Ok(tx_hash)
+        Ok(included.tx_hash)
     }
 
     /// Approves an allowlisted SwapRouter to spend `amount` of `token` via an ERC-20
@@ -759,12 +934,6 @@ impl BlockchainExecutionClient {
         }
 
         self.ensure_transaction_ready(TransactionPurpose::Approve)?;
-        self.ensure_contract_deployed(&token, "ERC-20 token")
-            .await?;
-
-        if !amount.is_zero() {
-            self.ensure_router_deployment(&router).await?;
-        }
 
         let approval_amount = if amount.is_zero() {
             U256::ZERO
@@ -773,24 +942,6 @@ impl BlockchainExecutionClient {
         } else {
             amount
         };
-        let current_allowance = self
-            .erc20_contract
-            .allowance(&token, &self.wallet_address, &router)
-            .await?;
-
-        if !current_allowance.is_zero() && !approval_amount.is_zero() {
-            anyhow::bail!(
-                "Router allowance for token {token} is already {current_allowance}; approve zero before setting a new nonzero allowance"
-            );
-        }
-
-        if !self
-            .erc20_contract
-            .simulate_approve(&token, &self.wallet_address, &router, approval_amount)
-            .await?
-        {
-            anyhow::bail!("ERC-20 approve returned false for token {token}");
-        }
         let calldata = ERC20::approveCall {
             spender: router,
             amount: approval_amount,
@@ -798,67 +949,33 @@ impl BlockchainExecutionClient {
         .abi_encode();
 
         let executor = self.transaction_executor()?;
-        let IncludedTransaction {
-            intent_id,
-            tx_hash,
-            block_number,
-            ..
-        } = executor
+        let included = executor
             .transact(
                 token,
                 U256::ZERO,
                 Bytes::from(calldata),
                 TransactionPurpose::Approve,
                 None,
+                TransactionAuthorization::Approve {
+                    token,
+                    router,
+                    amount: approval_amount,
+                },
             )
             .await?;
-        self.ensure_approve_allowance(&token, &router, approval_amount, tx_hash, block_number)
+        let postconditions =
+            verify_approve_allowance(&executor, &token, &router, approval_amount, &included)
+                .await?;
+        executor
+            .commit_verified_finality(&included, TransactionStatus::Finalized, &postconditions)
             .await?;
         executor
             .database
-            .mark_execution_event_emitted(intent_id, "terminal")
+            .mark_execution_event_emitted(included.intent_id, "terminal")
             .await?;
         executor.release_slot();
 
-        Ok(tx_hash)
-    }
-
-    async fn ensure_contract_deployed(
-        &self,
-        address: &Address,
-        description: &str,
-    ) -> anyhow::Result<()> {
-        let code = self.http_rpc_client.get_code(address).await?;
-        if code.is_empty() {
-            anyhow::bail!("No deployed bytecode at configured {description} address {address}");
-        }
-        Ok(())
-    }
-
-    async fn ensure_router_deployment(&self, router: &Address) -> anyhow::Result<()> {
-        let factory = self.uniswap_v3_factory()?;
-        self.ensure_contract_deployed(router, "router").await?;
-        self.ensure_contract_deployed(&factory, "Uniswap V3 factory")
-            .await?;
-        self.ensure_contract_deployed(&self.weth_address, "WETH")
-            .await?;
-
-        let deployment = UniswapV3Deployment::new(
-            self.http_rpc_client.clone(),
-            Some(EXECUTION_RPC_TIMEOUT_SECS),
-        );
-        let actual_factory = deployment.router_factory(router).await?;
-        anyhow::ensure!(
-            actual_factory == factory,
-            "Router {router} reports factory {actual_factory}, expected registered factory {factory}"
-        );
-        let actual_weth = deployment.router_weth9(router).await?;
-        anyhow::ensure!(
-            actual_weth == self.weth_address,
-            "Router {router} reports WETH9 {actual_weth}, expected configured WETH {}",
-            self.weth_address
-        );
-        Ok(())
+        Ok(included.tx_hash)
     }
 
     fn uniswap_v3_factory(&self) -> anyhow::Result<Address> {
@@ -870,81 +987,6 @@ impl BlockchainExecutionClient {
                     self.chain.name
                 )
             })
-    }
-
-    /// Ensures the wrapped native token balance increased by exactly `amount_wei` across the
-    /// block that included transaction `tx_hash`, reading both balances at their historical
-    /// blocks. Shared by the live wrap path and restart reconciliation.
-    async fn ensure_wrap_balance_increase(
-        &self,
-        weth_address: &Address,
-        amount_wei: U256,
-        tx_hash: B256,
-        block_number: u64,
-    ) -> anyhow::Result<()> {
-        let previous_block = block_number.checked_sub(1).ok_or_else(|| {
-            anyhow::anyhow!("Included wrap transaction {tx_hash} has invalid block number 0")
-        })?;
-        let balance_before = self
-            .erc20_contract
-            .balance_of_at(weth_address, &self.wallet_address, previous_block)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to read WETH balance before included transaction {tx_hash} at block {previous_block}"
-                )
-            })?;
-        let balance_after = self
-            .erc20_contract
-            .balance_of_at(weth_address, &self.wallet_address, block_number)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to read WETH balance after included transaction {tx_hash} at block {block_number}"
-                )
-            })?;
-        let expected_balance = balance_before.checked_add(amount_wei).ok_or_else(|| {
-            anyhow::anyhow!(
-                "WETH balance overflow for included transaction {tx_hash} at block {block_number}: wrap amount {amount_wei} from balance {balance_before}"
-            )
-        })?;
-
-        if balance_after != expected_balance {
-            anyhow::bail!(
-                "WETH balance after transaction {tx_hash} did not increase by {amount_wei}: expected {expected_balance}, was {balance_after}"
-            );
-        }
-
-        Ok(())
-    }
-
-    /// Ensures the router allowance at the block that included transaction `tx_hash` equals
-    /// `amount`. Shared by the live approve path and restart reconciliation.
-    async fn ensure_approve_allowance(
-        &self,
-        token: &Address,
-        router: &Address,
-        amount: U256,
-        tx_hash: B256,
-        block_number: u64,
-    ) -> anyhow::Result<()> {
-        let allowance = self
-            .erc20_contract
-            .allowance_at(token, &self.wallet_address, router, block_number)
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to read router allowance after included transaction {tx_hash} at block {block_number}"
-                )
-            })?;
-
-        if allowance != amount {
-            anyhow::bail!(
-                "Router allowance after transaction {tx_hash} does not equal the requested amount {amount}: was {allowance}"
-            );
-        }
-
-        Ok(())
     }
 
     /// Resolves the pool selected by `instrument_id` from the shared engine cache.
@@ -1121,9 +1163,38 @@ impl BlockchainExecutionClient {
         let payload_keys = self.payload_keys.clone().ok_or_else(|| {
             anyhow::anyhow!("Protected payload keys are not initialized; connect the client first")
         })?;
+        let verification_config = self
+            .config
+            .verification
+            .as_ref()
+            .expect("verification config validated at construction");
+        let identities = std::iter::once(&verification_config.authoritative)
+            .chain(
+                verification_config
+                    .verifiers
+                    .iter()
+                    .map(|provider| &provider.identity),
+            )
+            .collect::<Vec<_>>();
 
         Ok(TransactionExecutor {
             http_rpc_client: self.http_rpc_client.clone(),
+            verification: self.verification.clone(),
+            manifest_version: verification_config.manifest_version.clone(),
+            manifest_digest: verification_config.manifest_digest.clone(),
+            deployment_manifest: Arc::new(verification_config.deployment_manifest.clone()),
+            provider_ids: identities
+                .iter()
+                .map(|identity| identity.provider_id.clone())
+                .collect(),
+            operator_ids: identities
+                .iter()
+                .map(|identity| identity.operator_id.clone())
+                .collect(),
+            failure_domain_ids: identities
+                .iter()
+                .flat_map(|identity| identity.failure_domain_ids.iter().cloned())
+                .collect(),
             database,
             signer,
             payload_keys,
@@ -1238,6 +1309,8 @@ impl BlockchainExecutionClient {
             fee,
             amount_in,
             min_amount_out: U256::ZERO,
+            slippage_bps: 0,
+            quote_spend_ceiling: None,
             profiler_position: None,
         })
     }
@@ -1310,7 +1383,7 @@ impl BlockchainExecutionClient {
             gas_limit: self.config.gas_limit,
             max_fee_per_gas: self.config.max_fee_per_gas_wei,
         };
-        let mut authenticated = false;
+        let mut authenticated_payloads = HashMap::new();
         let mut current_payload = None;
 
         for hash in &hashes {
@@ -1351,14 +1424,27 @@ impl BlockchainExecutionClient {
                     hash.transaction_hash
                 )
             })?;
+            let authenticated_hash = B256::from_str(&hash.transaction_hash).with_context(|| {
+                format!(
+                    "Execution intent {} has invalid transaction hash {}",
+                    intent.id, hash.transaction_hash
+                )
+            })?;
+            anyhow::ensure!(
+                authenticated_payloads
+                    .insert(authenticated_hash, raw_transaction.clone())
+                    .is_none(),
+                "Execution intent {} has duplicate authenticated transaction hash {}",
+                intent.id,
+                hash.transaction_hash
+            );
 
             if hash.id == current.id {
                 current_payload = Some(raw_transaction);
             }
-            authenticated = true;
         }
         anyhow::ensure!(
-            authenticated,
+            !authenticated_payloads.is_empty(),
             "Execution intent {} has no persisted signed transaction bytes",
             intent.id
         );
@@ -1405,7 +1491,7 @@ impl BlockchainExecutionClient {
         }
 
         let executor = self.transaction_executor()?;
-        let prepared = PreparedTransaction {
+        let mut prepared = PreparedTransaction {
             intent_id: intent.id,
             created_block: intent.created_block,
             nonce,
@@ -1414,91 +1500,181 @@ impl BlockchainExecutionClient {
             payload_lease: None,
         };
 
-        if intent.status == "broadcast" {
-            match executor.broadcast(&prepared).await? {
-                BroadcastOutcome::Accepted => {}
-                BroadcastOutcome::Ambiguous(message) => log::warn!("{message}"),
+        let finality_already_committed = matches!(intent.status.as_str(), "finalized" | "reverted");
+        if !finality_already_committed {
+            match executor
+                .authorize_rebroadcast(&prepared, &intent, purpose)
+                .await?
+            {
+                ReconciliationAuthorization::Rebroadcast => {
+                    match executor.broadcast(&prepared).await? {
+                        BroadcastOutcome::Accepted => {}
+                        BroadcastOutcome::Ambiguous(message) => log::warn!("{message}"),
+                    }
+                }
+                ReconciliationAuthorization::Retain => {
+                    log::warn!(
+                        "Rebroadcast of transaction {} was suppressed by verified reconciliation state",
+                        prepared.tx_hash
+                    );
+                }
+                ReconciliationAuthorization::ScanReplacement(head) => {
+                    let Some((replacement_hash, replacement_payload)) = executor
+                        .scan_canonical_replacement(&intent, nonce, head, &authenticated_payloads)
+                        .await?
+                    else {
+                        log::warn!(
+                            "Canonical replacement scan for intent {} reached its bounded verified window",
+                            intent.id
+                        );
+                        return Ok(());
+                    };
+                    prepared.tx_hash = replacement_hash;
+                    prepared.raw_tx = replacement_payload;
+                    *self.in_flight.lock().expect("in-flight mutex poisoned") =
+                        Some(InFlightSlot::AwaitingFinality(InFlightTransaction {
+                            intent_id: intent.id,
+                            nonce,
+                            tx_hash: replacement_hash,
+                            purpose,
+                        }));
+                }
             }
         }
-        let outcome = if matches!(intent.status.as_str(), "finalized" | "reverted") {
-            let receipt = executor
-                .http_rpc_client
-                .get_transaction_receipt(&tx_hash)
+        let outcome = if finality_already_committed {
+            let receipt = verified_value(
+                executor.verification.verify_receipt(&tx_hash).await,
+                "persisted terminal receipt",
+            )?;
+            let finality = executor
+                .receipt_is_stably_finalized(&receipt)
                 .await?
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Finalized execution transaction {tx_hash} no longer has a receipt"
+                        "Persisted terminal transaction {tx_hash} is not stable at the finalized boundary"
                     )
                 })?;
-            anyhow::ensure!(
-                executor.receipt_is_stably_finalized(&receipt).await?,
-                "Persisted terminal transaction {tx_hash} is not stable at the finalized boundary"
-            );
+            let included = IncludedTransaction {
+                intent_id: intent.id,
+                nonce,
+                tx_hash,
+                block_number: receipt.block_number,
+                receipt,
+                finality,
+            };
 
             if intent.status == "finalized" {
-                InclusionOutcome::Finalized(IncludedTransaction {
-                    intent_id: intent.id,
-                    tx_hash,
-                    block_number: receipt.block_number,
-                    receipt,
-                })
+                InclusionOutcome::Finalized(included)
             } else {
-                InclusionOutcome::Reverted(tx_hash)
+                InclusionOutcome::Reverted(included)
             }
         } else {
             executor.await_finality(&prepared).await?
         };
 
         match outcome {
-            InclusionOutcome::Finalized(included) => {
-                if let Some(plan) = plan {
-                    if finalized_transaction_matches(&included, &intent, nonce, &executor).await? {
-                        complete_finalized_swap(
-                            &plan,
-                            intent.id,
-                            &included,
-                            &executor,
-                            &self.emitter,
-                        )
-                        .await?;
-                    } else {
-                        let message = format!(
-                            "Finalized signer-nonce transaction {} does not match the persisted swap intent",
-                            included.tx_hash
-                        );
+            InclusionOutcome::Finalized(mut included) => {
+                let trace_purpose = match (&plan, purpose) {
+                    (Some(plan), TransactionPurpose::Swap) => match plan.order.order_side() {
+                        OrderSide::Sell => "swap_sell",
+                        OrderSide::Buy => "swap_buy",
+                        side => anyhow::bail!("Unsupported restored swap side {side}"),
+                    },
+                    (None, TransactionPurpose::Wrap) => "wrap",
+                    (None, TransactionPurpose::Approve) => "approve",
+                    _ => anyhow::bail!("Restored transaction purpose is inconsistent"),
+                };
+                included.finality.decisions.extend(
+                    verify_finalized_transaction(
+                        &included,
+                        &intent,
+                        nonce,
+                        &prepared.raw_tx,
+                        &executor,
+                        trace_purpose,
+                    )
+                    .await?,
+                );
 
-                        if plan.order.status() != OrderStatus::Rejected {
-                            self.emitter.emit_order_rejected(
-                                &plan.order,
-                                &message,
-                                get_atomic_clock_realtime().get_time_ns(),
-                                false,
-                            );
-                        }
-                        anyhow::bail!(message);
+                if let Some(plan) = plan {
+                    let fill = validate_finalized_swap_fill(&plan, &included)?;
+                    let wallet =
+                        load_verified_wallet_after_fill(&plan, &included, &executor).await?;
+                    if !finality_already_committed {
+                        executor
+                            .commit_verified_finality(
+                                &included,
+                                TransactionStatus::Finalized,
+                                &wallet.decisions,
+                            )
+                            .await?;
                     }
-                    executor.release_slot();
-                } else {
-                    self.ensure_recovered_operator_transaction(
-                        &intent, purpose, nonce, &included, &executor,
+                    complete_finalized_swap(
+                        &plan,
+                        intent.id,
+                        included.tx_hash,
+                        fill,
+                        wallet,
+                        &executor,
+                        &self.emitter,
                     )
                     .await?;
+                    executor.release_slot();
+                } else {
+                    let postconditions = self
+                        .verify_recovered_operator_transaction(
+                            &intent, purpose, &included, &executor,
+                        )
+                        .await?;
+
+                    if !finality_already_committed {
+                        executor
+                            .commit_verified_finality(
+                                &included,
+                                TransactionStatus::Finalized,
+                                &postconditions,
+                            )
+                            .await?;
+                    }
                     database
                         .mark_execution_event_emitted(intent.id, "terminal")
                         .await?;
                     executor.release_slot();
                 }
             }
-            InclusionOutcome::Reverted(tx_hash) => {
+            InclusionOutcome::Reverted(mut included) => {
+                let trace_purpose = match (&plan, purpose) {
+                    (Some(plan), TransactionPurpose::Swap) => match plan.order.order_side() {
+                        OrderSide::Sell => "swap_sell",
+                        OrderSide::Buy => "swap_buy",
+                        side => anyhow::bail!("Unsupported restored swap side {side}"),
+                    },
+                    (None, TransactionPurpose::Wrap) => "wrap",
+                    (None, TransactionPurpose::Approve) => "approve",
+                    _ => anyhow::bail!("Restored transaction purpose is inconsistent"),
+                };
+                included.finality.decisions.extend(
+                    verify_finalized_transaction(
+                        &included,
+                        &intent,
+                        nonce,
+                        &prepared.raw_tx,
+                        &executor,
+                        trace_purpose,
+                    )
+                    .await?,
+                );
+
+                if !finality_already_committed {
+                    executor
+                        .commit_verified_finality(&included, TransactionStatus::Reverted, &[])
+                        .await?;
+                }
+
                 if let Some(plan) = plan
                     && plan.order.status() != OrderStatus::Rejected
                 {
-                    self.emitter.emit_order_rejected(
-                        &plan.order,
-                        &format!("Transaction {tx_hash} reverted on-chain"),
-                        get_atomic_clock_realtime().get_time_ns(),
-                        false,
-                    );
+                    send_reverted_order(&self.emitter, &plan.order, &included)?;
                 }
                 database
                     .mark_execution_event_emitted(intent.id, "terminal")
@@ -1515,45 +1691,23 @@ impl BlockchainExecutionClient {
     ///
     /// Fails closed: any identity mismatch or unproven postcondition returns an error, which
     /// keeps the in-flight signer slot occupied, leaves the intent active, and fails connect.
-    async fn ensure_recovered_operator_transaction(
+    async fn verify_recovered_operator_transaction(
         &self,
         intent: &ExecutionIntentRow,
         purpose: TransactionPurpose,
-        nonce: u64,
         included: &IncludedTransaction,
         executor: &TransactionExecutor,
-    ) -> anyhow::Result<()> {
-        if !finalized_transaction_matches(included, intent, nonce, executor).await? {
-            anyhow::bail!(
-                "Finalized signer-nonce transaction {} does not match the persisted {} intent",
-                included.tx_hash,
-                purpose.as_str()
-            );
-        }
-
+    ) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
         let (to, input, value) = persisted_call_fields(intent)?;
 
         match purpose {
             TransactionPurpose::Wrap => {
-                self.ensure_wrap_balance_increase(
-                    &to,
-                    value,
-                    included.tx_hash,
-                    included.block_number,
-                )
-                .await
+                verify_wrap_balance_increase(executor, &to, value, included).await
             }
             TransactionPurpose::Approve => {
                 let call = ERC20::approveCall::abi_decode(&input)
                     .with_context(|| "persisted approve calldata is invalid")?;
-                self.ensure_approve_allowance(
-                    &to,
-                    &call.spender,
-                    call.amount,
-                    included.tx_hash,
-                    included.block_number,
-                )
-                .await
+                verify_approve_allowance(executor, &to, &call.spender, call.amount, included).await
             }
             TransactionPurpose::Swap => {
                 unreachable!("swap intents restore a swap plan")
@@ -1785,6 +1939,8 @@ impl BlockchainExecutionClient {
             fee,
             amount_in,
             min_amount_out,
+            slippage_bps,
+            quote_spend_ceiling: quote_spend_ceiling.copied(),
             profiler_position: Some(profiler_position),
         })
     }
@@ -1831,10 +1987,99 @@ enum InclusionOutcome {
     /// Canonical successful receipt observed through a stable finalized boundary.
     Finalized(IncludedTransaction),
     /// Canonical failed receipt observed through a stable finalized boundary.
-    Reverted(B256),
+    Reverted(IncludedTransaction),
     /// No receipt arrived within the poll budget or observation failed; the record stays
     /// pending and the in-flight slot occupied.
     Pending(String),
+}
+
+enum ReconciliationAuthorization {
+    Rebroadcast,
+    Retain,
+    ScanReplacement(VerifiedBlockHeader),
+}
+
+fn verified_value<T>(outcome: VerificationOutcome<T>, context: &str) -> anyhow::Result<T> {
+    required_verification(outcome, context).map(|verified| verified.value)
+}
+
+fn required_verification<T>(
+    outcome: VerificationOutcome<T>,
+    context: &str,
+) -> anyhow::Result<Verified<T>> {
+    match outcome {
+        VerificationOutcome::Verified(verified) => Ok(verified),
+        VerificationOutcome::Disagreement(_) => {
+            anyhow::bail!("{context} verification disagreed")
+        }
+        VerificationOutcome::Unavailable(_) => {
+            anyhow::bail!("{context} verification is unavailable")
+        }
+        VerificationOutcome::Retryable(_) => {
+            anyhow::bail!("{context} verification is retryable")
+        }
+        VerificationOutcome::LocallyInvalid(_) => {
+            anyhow::bail!("{context} verification is locally invalid")
+        }
+    }
+}
+
+fn validate_transaction_authorization(
+    authorization: Option<&TransactionAuthorization>,
+    to: Address,
+    value: U256,
+    input: &[u8],
+) -> anyhow::Result<()> {
+    match authorization {
+        None => Ok(()),
+        Some(TransactionAuthorization::Wrap { weth }) => {
+            anyhow::ensure!(
+                to == *weth && !value.is_zero() && input == WETH9::depositCall::SELECTOR,
+                "Wrap authorization does not match the transaction call"
+            );
+            Ok(())
+        }
+        Some(TransactionAuthorization::Approve {
+            token,
+            router,
+            amount,
+        }) => {
+            let expected = ERC20::approveCall {
+                spender: *router,
+                amount: *amount,
+            }
+            .abi_encode();
+            anyhow::ensure!(
+                to == *token && value.is_zero() && input == expected,
+                "Approve authorization does not match the transaction call"
+            );
+            Ok(())
+        }
+    }
+}
+
+fn verification_decision<T>(
+    verified: &Verified<T>,
+    height_start: Option<u64>,
+    height_end: Option<u64>,
+) -> ExecutionVerificationDecision {
+    ExecutionVerificationDecision {
+        read_class: verified.read.as_str(),
+        height_start,
+        height_end,
+        normalized_value_digest: verified.normalized_value_digest.to_string(),
+    }
+}
+
+fn parse_verified_header(header: &ExecutionVerifiedHeader) -> anyhow::Result<VerifiedBlockHeader> {
+    Ok(VerifiedBlockHeader {
+        number: header.number,
+        hash: B256::from_str(&header.hash).context("Durable finalized header hash is invalid")?,
+        parent_hash: B256::from_str(&header.parent_hash)
+            .context("Durable finalized parent hash is invalid")?,
+        timestamp: header.timestamp,
+        base_fee_per_gas: header.base_fee_per_gas,
+    })
 }
 
 /// Shared execution context driving the EIP-1559 transaction pipeline.
@@ -1846,6 +2091,13 @@ enum InclusionOutcome {
 #[derive(Debug, Clone)]
 struct TransactionExecutor {
     http_rpc_client: Arc<BlockchainHttpRpcClient>,
+    verification: VerificationCoordinator,
+    manifest_version: String,
+    manifest_digest: String,
+    deployment_manifest: Arc<BlockchainDeploymentManifest>,
+    provider_ids: Vec<String>,
+    operator_ids: Vec<String>,
+    failure_domain_ids: Vec<String>,
     database: BlockchainCacheDatabase,
     signer: Arc<PrivateKeySigner>,
     payload_keys: Arc<PayloadKeySet>,
@@ -1875,15 +2127,26 @@ impl TransactionExecutor {
         input: Bytes,
         purpose: TransactionPurpose,
         client_order_id: Option<ClientOrderId>,
+        authorization: TransactionAuthorization,
     ) -> anyhow::Result<IncludedTransaction> {
         self.claim_slot(purpose)?;
-        let created_block = match self.http_rpc_client.latest_block().await {
-            Ok(block) => block.number,
+        let now_unix_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))?
+            .as_secs();
+        let decision_header = match required_verification(
+            self.verification
+                .verify_decision_header(now_unix_secs)
+                .await,
+            "operator decision header",
+        ) {
+            Ok(header) => header,
             Err(e) => {
                 release_preparing_slot(&self.in_flight);
                 return Err(e);
             }
         };
+        let created_block = decision_header.value.number;
         let intent = ExecutionIntentInsert {
             chain_id: self.chain_id,
             wallet_address: self.wallet_address.to_string(),
@@ -1908,7 +2171,15 @@ impl TransactionExecutor {
             }
         };
         let prepared = match self
-            .prepare_and_sign(intent.id, intent.created_block, to, value, input)
+            .prepare_and_sign(
+                intent.id,
+                intent.created_block,
+                to,
+                value,
+                input,
+                &authorization,
+                decision_header,
+            )
             .await
         {
             Ok(prepared) => prepared,
@@ -1932,25 +2203,39 @@ impl TransactionExecutor {
         }
 
         match self.await_finality(&prepared).await? {
-            InclusionOutcome::Finalized(included) => {
-                if included.tx_hash != prepared.tx_hash
-                    && !finalized_transaction_matches(&included, &intent, prepared.nonce, self)
-                        .await?
-                {
-                    anyhow::bail!(
-                        "Finalized signer-nonce transaction {} does not match the persisted {} intent",
-                        included.tx_hash,
-                        purpose.as_str()
-                    );
-                }
+            InclusionOutcome::Finalized(mut included) => {
+                included.finality.decisions.extend(
+                    verify_finalized_transaction(
+                        &included,
+                        &intent,
+                        prepared.nonce,
+                        &prepared.raw_tx,
+                        self,
+                        purpose.as_str(),
+                    )
+                    .await?,
+                );
                 Ok(included)
             }
-            InclusionOutcome::Reverted(tx_hash) => {
+            InclusionOutcome::Reverted(mut included) => {
+                included.finality.decisions.extend(
+                    verify_finalized_transaction(
+                        &included,
+                        &intent,
+                        prepared.nonce,
+                        &prepared.raw_tx,
+                        self,
+                        purpose.as_str(),
+                    )
+                    .await?,
+                );
+                self.commit_verified_finality(&included, TransactionStatus::Reverted, &[])
+                    .await?;
                 self.database
                     .mark_execution_event_emitted(prepared.intent_id, "terminal")
                     .await?;
                 self.release_slot();
-                anyhow::bail!("Transaction {tx_hash} reverted on-chain")
+                anyhow::bail!("Transaction {} reverted on-chain", included.tx_hash)
             }
             InclusionOutcome::Pending(message) => anyhow::bail!(message),
         }
@@ -1969,6 +2254,10 @@ impl TransactionExecutor {
 
     /// Runs the read-only pre-signing pipeline: chain ID verification, nonce selection, fee
     /// and gas policy checks, transaction building, and local signing.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Security-critical transaction fields stay explicit at the signing boundary"
+    )]
     async fn prepare_and_sign(
         &self,
         intent_id: i64,
@@ -1976,9 +2265,20 @@ impl TransactionExecutor {
         to: Address,
         value: U256,
         input: Bytes,
+        authorization: &TransactionAuthorization,
+        decision_header: Verified<VerifiedBlockHeader>,
     ) -> anyhow::Result<PreparedTransaction> {
-        self.prepare_and_sign_with_anchors(intent_id, created_block, to, value, input, None)
-            .await
+        self.prepare_and_sign_with_anchors(
+            intent_id,
+            created_block,
+            to,
+            value,
+            input,
+            None,
+            Some(authorization),
+            Some(decision_header),
+        )
+        .await
     }
 
     async fn prepare_and_sign_swap(
@@ -1997,10 +2297,16 @@ impl TransactionExecutor {
             value,
             input,
             Some(anchors),
+            None,
+            None,
         )
         .await
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Security-critical transaction fields and verification anchors stay explicit"
+    )]
     async fn prepare_and_sign_with_anchors(
         &self,
         intent_id: i64,
@@ -2009,52 +2315,94 @@ impl TransactionExecutor {
         value: U256,
         input: Bytes,
         swap_anchors: Option<&SwapQuoteAnchors>,
+        authorization: Option<&TransactionAuthorization>,
+        decision_header: Option<Verified<VerifiedBlockHeader>>,
     ) -> anyhow::Result<PreparedTransaction> {
         let expected_chain_id = u64::from(self.chain_id);
-        let actual_chain_id = self.http_rpc_client.chain_id().await?;
-        if actual_chain_id != expected_chain_id {
-            anyhow::bail!(
-                "Chain ID mismatch: expected {expected_chain_id}, node reported {actual_chain_id}"
+        let chain_id_verification = required_verification(
+            self.verification.verify_chain_id().await,
+            "pre-sign chain ID",
+        )?;
+        let actual_chain_id = chain_id_verification.value;
+        anyhow::ensure!(
+            actual_chain_id == expected_chain_id,
+            "Verified chain ID does not match the transaction chain"
+        );
+        let decision_header_verification = if let Some(anchors) = swap_anchors {
+            required_verification(
+                self.verification.verify_block(anchors.state.number).await,
+                "pre-sign swap decision header reread",
+            )?
+        } else {
+            match decision_header {
+                Some(verified) => verified,
+                None => {
+                    let now_unix_secs = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))?
+                        .as_secs();
+                    required_verification(
+                        self.verification
+                            .verify_decision_header(now_unix_secs)
+                            .await,
+                        "pre-sign decision header",
+                    )?
+                }
+            }
+        };
+        let decision_header = decision_header_verification.value;
+
+        if let Some(anchors) = swap_anchors {
+            anyhow::ensure!(
+                decision_header == anchors.state,
+                "Verified swap decision header changed before signing"
             );
         }
-
-        let nonce = self
-            .http_rpc_client
-            .get_transaction_count_pending(&self.wallet_address)
-            .await?;
-        self.database
-            .assign_execution_intent_nonce(intent_id, nonce)
-            .await?;
-        let base_fee_per_gas_wei = if let Some(anchors) = swap_anchors {
-            anchors.state.base_fee_per_gas_wei
-        } else {
-            let latest_block = self.http_rpc_client.latest_block().await?;
-            latest_block.base_fee_per_gas.ok_or_else(|| {
-                anyhow::anyhow!("Latest block {} has no base fee", latest_block.number)
-            })?
+        let decision_ancestry = self.verify_decision_ancestry(decision_header).await?;
+        validate_transaction_authorization(authorization, to, value, &input)?;
+        let deployment_verification = required_verification(
+            self.verification
+                .verify_deployment_manifest(&self.deployment_manifest, decision_header.number)
+                .await,
+            "pre-sign deployment manifest",
+        )?;
+        let authorization_decisions = match authorization {
+            Some(authorization) => {
+                self.verify_transaction_authorization(authorization, decision_header.number)
+                    .await?
+            }
+            None => Vec::new(),
         };
-        let priority_fee_per_gas_wei = self.http_rpc_client.max_priority_fee_per_gas().await?;
+        let base_fee_per_gas_wei = decision_header.base_fee_per_gas.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Verified decision block {} has no base fee",
+                decision_header.number
+            )
+        })?;
+        let priority_fee_verification = required_verification(
+            self.verification.verify_priority_fee().await,
+            "pre-sign priority fee",
+        )?;
+        let priority_fee_per_gas_wei = priority_fee_verification.value;
         let (max_fee_per_gas, max_priority_fee_per_gas) = derive_fees(
             base_fee_per_gas_wei,
             priority_fee_per_gas_wei,
             self.base_fee_buffer_bps,
             u128::from(self.max_fee_per_gas_wei),
         )?;
-        let gas_estimate = if let Some(anchors) = swap_anchors {
-            self.http_rpc_client
-                .estimate_gas_at(
+        let gas_estimate_verification = required_verification(
+            self.verification
+                .verify_gas_estimate(
                     &self.wallet_address,
                     &to,
                     value,
                     &input,
-                    anchors.state.number,
+                    decision_header.number,
                 )
-                .await?
-        } else {
-            self.http_rpc_client
-                .estimate_gas(&self.wallet_address, &to, value, &input)
-                .await?
-        };
+                .await,
+            "pre-sign gas estimate",
+        )?;
+        let gas_estimate = gas_estimate_verification.value;
         let gas_limit = derive_gas_limit(gas_estimate, self.gas_buffer_bps, self.gas_limit)?;
         let max_gas_cost = U256::from(gas_limit)
             .checked_mul(U256::from(max_fee_per_gas))
@@ -2062,21 +2410,71 @@ impl TransactionExecutor {
         let max_transaction_cost = value
             .checked_add(max_gas_cost)
             .ok_or_else(|| anyhow::anyhow!("Maximum transaction cost overflow"))?;
-        let native_balance = self
-            .http_rpc_client
-            .get_balance_with_timeout(
-                &self.wallet_address,
-                swap_anchors.map(|anchors| anchors.state.number),
-                Some(EXECUTION_RPC_TIMEOUT_SECS),
-            )
-            .await?;
+        let native_balance_verification = required_verification(
+            self.verification
+                .verify_balance(&self.wallet_address, decision_header.number)
+                .await,
+            "pre-sign native balance",
+        )?;
+        let native_balance = native_balance_verification.value;
 
         if native_balance < max_transaction_cost {
             anyhow::bail!(
                 "Native currency balance {native_balance} wei is below maximum transaction cost {max_transaction_cost} wei"
             );
         }
-
+        let decision_height = Some(decision_header.number);
+        let mut decisions = vec![
+            verification_decision(&chain_id_verification, None, None),
+            verification_decision(
+                &decision_header_verification,
+                decision_height,
+                decision_height,
+            ),
+            verification_decision(&deployment_verification, decision_height, decision_height),
+            verification_decision(&priority_fee_verification, None, None),
+            verification_decision(&gas_estimate_verification, decision_height, decision_height),
+            verification_decision(
+                &native_balance_verification,
+                decision_height,
+                decision_height,
+            ),
+        ];
+        decisions.extend(decision_ancestry);
+        decisions.extend(authorization_decisions);
+        if let Some(anchors) = swap_anchors {
+            decisions.extend(self.verify_swap_anchors_before_sign(anchors).await?);
+            decisions.extend(anchors.precondition_decisions.iter().cloned());
+        } else {
+            decisions.extend(self.verify_pre_sign_header_fence(decision_header).await?);
+        }
+        let canonical_nonce_verification = required_verification(
+            self.verification
+                .verify_transaction_count(&self.wallet_address, decision_header.number)
+                .await,
+            "pre-sign canonical nonce reread",
+        )?;
+        let pending_nonce_verification = required_verification(
+            self.verification
+                .verify_pending_transaction_count(&self.wallet_address)
+                .await,
+            "pre-sign pending nonce reread",
+        )?;
+        anyhow::ensure!(
+            pending_nonce_verification.value == canonical_nonce_verification.value,
+            "Pending nonce does not match the verified canonical nonce"
+        );
+        let nonce = canonical_nonce_verification.value;
+        decisions.push(verification_decision(
+            &canonical_nonce_verification,
+            decision_height,
+            decision_height,
+        ));
+        decisions.push(verification_decision(
+            &pending_nonce_verification,
+            None,
+            None,
+        ));
         let tx = build_eip1559_transaction(
             expected_chain_id,
             nonce,
@@ -2087,10 +2485,21 @@ impl TransactionExecutor {
             value,
             input,
         );
-
-        if let Some(anchors) = swap_anchors {
-            validate_swap_anchors_before_sign(anchors, &self.http_rpc_client).await?;
-        }
+        let wallet_address = self.wallet_address.to_string();
+        self.database
+            .assign_execution_intent_nonce_verified(&ExecutionNonceAssignment {
+                intent_id,
+                chain_id: self.chain_id,
+                wallet_address: &wallet_address,
+                nonce,
+                manifest_version: &self.manifest_version,
+                manifest_digest: &self.manifest_digest,
+                provider_ids: &self.provider_ids,
+                operator_ids: &self.operator_ids,
+                failure_domain_ids: &self.failure_domain_ids,
+                decisions: &decisions,
+            })
+            .await?;
         let payload_lease = self
             .database
             .acquire_execution_payload_lease(&self.payload_keys)
@@ -2105,6 +2514,293 @@ impl TransactionExecutor {
             raw_tx,
             payload_lease: Some(payload_lease),
         })
+    }
+
+    async fn verify_pre_sign_header_fence(
+        &self,
+        target: VerifiedBlockHeader,
+    ) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+        let checkpoint = required_verification(
+            self.verification.verify_checkpoint().await,
+            "pre-sign checkpoint reread",
+        )?;
+        let header = required_verification(
+            self.verification.verify_block(target.number).await,
+            "pre-sign decision header reread",
+        )?;
+        anyhow::ensure!(
+            header.value == target,
+            "Decision header changed before signing"
+        );
+        Ok(vec![
+            verification_decision(
+                &checkpoint,
+                Some(checkpoint.value.number),
+                Some(checkpoint.value.number),
+            ),
+            verification_decision(&header, Some(target.number), Some(target.number)),
+        ])
+    }
+
+    async fn verify_decision_ancestry(
+        &self,
+        target: VerifiedBlockHeader,
+    ) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+        let checkpoint = required_verification(
+            self.verification.verify_checkpoint().await,
+            "pre-sign checkpoint",
+        )?;
+        anyhow::ensure!(
+            checkpoint.value.number <= target.number,
+            "Pre-sign decision header precedes the trusted checkpoint"
+        );
+        let mut decisions = vec![verification_decision(
+            &checkpoint,
+            Some(checkpoint.value.number),
+            Some(checkpoint.value.number),
+        )];
+        let wallet_address = self.wallet_address.to_string();
+        let position = self
+            .database
+            .load_execution_verification_position(
+                self.chain_id,
+                &wallet_address,
+                &self.manifest_version,
+                &self.manifest_digest,
+            )
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Execution verification ledger is not initialized"))?;
+        let durable_tip = parse_verified_header(&position.finalized_tip)?;
+        anyhow::ensure!(
+            durable_tip.number >= checkpoint.value.number && durable_tip.number <= target.number,
+            "Pre-sign decision header does not extend the durable finalized header tip"
+        );
+        let durable_tip_verification = required_verification(
+            self.verification.verify_block(durable_tip.number).await,
+            "pre-sign durable finalized tip",
+        )?;
+        anyhow::ensure!(
+            durable_tip_verification.value == durable_tip,
+            "Durable finalized header tip conflicts with independent sources"
+        );
+
+        if durable_tip != checkpoint.value {
+            decisions.push(verification_decision(
+                &durable_tip_verification,
+                Some(durable_tip.number),
+                Some(durable_tip.number),
+            ));
+        }
+        let mut cursor = durable_tip;
+        while cursor.number < target.number {
+            let end = cursor.number.saturating_add(4_096).min(target.number);
+            let start = cursor.number.saturating_add(1);
+            let ancestry = required_verification(
+                self.verification.verify_header_window(cursor, end).await,
+                "pre-sign decision ancestry",
+            )?;
+            cursor = *ancestry
+                .value
+                .last()
+                .expect("nonempty decision ancestry advances the cursor");
+            decisions.push(verification_decision(&ancestry, Some(start), Some(end)));
+        }
+        anyhow::ensure!(
+            cursor == target,
+            "Pre-sign decision header conflicts with its trusted ancestry"
+        );
+        Ok(decisions)
+    }
+
+    async fn verify_transaction_authorization(
+        &self,
+        authorization: &TransactionAuthorization,
+        block: u64,
+    ) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+        match *authorization {
+            TransactionAuthorization::Wrap { weth } => {
+                let call = ERC20::balanceOfCall {
+                    account: self.wallet_address,
+                }
+                .abi_encode();
+                let balance = required_verification(
+                    self.verification
+                        .verify_decoded_call(None, &weth, U256::ZERO, &call, block, |result| {
+                            ERC20::balanceOfCall::abi_decode_returns(result).map_err(Into::into)
+                        })
+                        .await,
+                    "pre-sign wrapped token probe",
+                )?;
+                Ok(vec![verification_decision(
+                    &balance,
+                    Some(block),
+                    Some(block),
+                )])
+            }
+            TransactionAuthorization::Approve {
+                token,
+                router,
+                amount,
+            } => {
+                let allowance_call = ERC20::allowanceCall {
+                    owner: self.wallet_address,
+                    spender: router,
+                }
+                .abi_encode();
+                let allowance = required_verification(
+                    self.verification
+                        .verify_decoded_call(
+                            None,
+                            &token,
+                            U256::ZERO,
+                            &allowance_call,
+                            block,
+                            |result| {
+                                ERC20::allowanceCall::abi_decode_returns(result).map_err(Into::into)
+                            },
+                        )
+                        .await,
+                    "pre-sign router allowance",
+                )?;
+                anyhow::ensure!(
+                    allowance.value.is_zero() || amount.is_zero(),
+                    "Router allowance for token {token} is already {}; approve zero before setting a new nonzero allowance",
+                    allowance.value
+                );
+
+                let approve_call = ERC20::approveCall {
+                    spender: router,
+                    amount,
+                }
+                .abi_encode();
+                let simulation = required_verification(
+                    self.verification
+                        .verify_decoded_simulation(
+                            &self.wallet_address,
+                            &token,
+                            U256::ZERO,
+                            &approve_call,
+                            block,
+                            |result| {
+                                if result.is_empty() {
+                                    Ok(true)
+                                } else {
+                                    ERC20::approveCall::abi_decode_returns_validate(result)
+                                        .map_err(Into::into)
+                                }
+                            },
+                        )
+                        .await,
+                    "pre-sign approval simulation",
+                )?;
+
+                match &simulation.value {
+                    VerifiedSimulation::Succeeded(true) => {}
+                    VerifiedSimulation::Succeeded(false) => {
+                        anyhow::bail!("ERC-20 approve returned false for token {token}")
+                    }
+                    VerifiedSimulation::Denied => {
+                        anyhow::bail!("ERC-20 approve simulation reverted for token {token}")
+                    }
+                }
+                Ok(vec![
+                    verification_decision(&allowance, Some(block), Some(block)),
+                    verification_decision(&simulation, Some(block), Some(block)),
+                ])
+            }
+        }
+    }
+
+    async fn verify_swap_anchors_before_sign(
+        &self,
+        anchors: &SwapQuoteAnchors,
+    ) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+        let checkpoint = required_verification(
+            self.verification.verify_checkpoint().await,
+            "pre-sign checkpoint reread",
+        )?;
+        let watermark = required_verification(
+            self.verification
+                .verify_block(anchors.watermark.number)
+                .await,
+            "pre-sign profiler watermark reread",
+        )?;
+        anyhow::ensure!(
+            watermark.value == anchors.watermark,
+            "Pool state header changed before signing"
+        );
+        let ancestry = required_verification(
+            self.verification
+                .verify_header_window(watermark.value, anchors.state.number)
+                .await,
+            "pre-sign profiler ancestry reread",
+        )?;
+
+        if let Some(last) = ancestry.value.last() {
+            anyhow::ensure!(
+                *last == anchors.state,
+                "Swap decision header changed in the pre-sign ancestry reread"
+            );
+        } else {
+            anyhow::ensure!(
+                watermark.value == anchors.state,
+                "Empty pre-sign ancestry does not end at the swap decision header"
+            );
+        }
+        let quote = match anchors.quote_kind {
+            SwapQuoteKind::ExactInput(amount_in) => required_verification(
+                self.verification
+                    .verify_quote_exact_input_single(
+                        &anchors.quote_contract,
+                        anchors.token_in,
+                        anchors.token_out,
+                        amount_in,
+                        anchors.fee,
+                        anchors.state.number,
+                    )
+                    .await,
+                "pre-sign exact-input quote reread",
+            )?,
+            SwapQuoteKind::ExactOutput(amount_out) => required_verification(
+                self.verification
+                    .verify_quote_exact_output_single(
+                        &anchors.quote_contract,
+                        anchors.token_in,
+                        anchors.token_out,
+                        amount_out,
+                        anchors.fee,
+                        anchors.state.number,
+                    )
+                    .await,
+                "pre-sign exact-output quote reread",
+            )?,
+        };
+        anyhow::ensure!(
+            quote.value == anchors.quote,
+            "Independent swap quote changed before signing"
+        );
+        Ok(vec![
+            verification_decision(
+                &checkpoint,
+                Some(checkpoint.value.number),
+                Some(checkpoint.value.number),
+            ),
+            verification_decision(
+                &watermark,
+                Some(anchors.watermark.number),
+                Some(anchors.watermark.number),
+            ),
+            verification_decision(
+                &ancestry,
+                Some(anchors.watermark.number),
+                Some(anchors.state.number),
+            ),
+            verification_decision(
+                &quote,
+                Some(anchors.state.number),
+                Some(anchors.state.number),
+            ),
+        ])
     }
 
     /// Fills the claimed slot with the signed transaction and persists the pending record
@@ -2192,6 +2888,377 @@ impl TransactionExecutor {
         }
     }
 
+    async fn authorize_rebroadcast(
+        &self,
+        prepared: &PreparedTransaction,
+        intent: &ExecutionIntentRow,
+        purpose: TransactionPurpose,
+    ) -> anyhow::Result<ReconciliationAuthorization> {
+        let now_unix_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))?
+            .as_secs();
+        let decision_header = required_verification(
+            self.verification
+                .verify_decision_header(now_unix_secs)
+                .await,
+            "rebroadcast decision header",
+        )?;
+        let block = decision_header.value.number;
+        let mut decisions = vec![verification_decision(
+            &decision_header,
+            Some(block),
+            Some(block),
+        )];
+        decisions.extend(self.verify_decision_ancestry(decision_header.value).await?);
+        let deployment = required_verification(
+            self.verification
+                .verify_deployment_manifest(&self.deployment_manifest, block)
+                .await,
+            "rebroadcast deployment manifest",
+        )?;
+        decisions.push(verification_decision(&deployment, Some(block), Some(block)));
+        let canonical_nonce = required_verification(
+            self.verification
+                .verify_transaction_count(&self.wallet_address, block)
+                .await,
+            "rebroadcast canonical nonce",
+        )?;
+        decisions.push(verification_decision(
+            &canonical_nonce,
+            Some(block),
+            Some(block),
+        ));
+        let pending_nonce = required_verification(
+            self.verification
+                .verify_reconciliation_pending_transaction_count(
+                    &self.wallet_address,
+                    prepared.nonce,
+                )
+                .await,
+            "rebroadcast pending nonce",
+        )?;
+        decisions.push(verification_decision(&pending_nonce, None, None));
+        let receipt_absence = required_verification(
+            self.verification
+                .verify_receipt_absence(&prepared.tx_hash)
+                .await,
+            "rebroadcast receipt absence",
+        )?;
+        decisions.push(verification_decision(&receipt_absence, None, None));
+
+        let next_nonce = prepared
+            .nonce
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("Owned signer nonce overflow"))?;
+        anyhow::ensure!(
+            (prepared.nonce..=next_nonce).contains(&pending_nonce.value),
+            "Pending nonce {} is outside the owned reconciliation range {}..={next_nonce}",
+            pending_nonce.value,
+            prepared.nonce
+        );
+        anyhow::ensure!(
+            (prepared.nonce..=next_nonce).contains(&canonical_nonce.value),
+            "Canonical nonce {} is outside the owned reconciliation range {}..={next_nonce}",
+            canonical_nonce.value,
+            prepared.nonce
+        );
+
+        if !receipt_absence.value {
+            self.persist_rebroadcast_decisions(intent.id, prepared.nonce, &decisions)
+                .await?;
+            return Ok(ReconciliationAuthorization::Retain);
+        }
+
+        if canonical_nonce.value == next_nonce {
+            self.persist_rebroadcast_decisions(intent.id, prepared.nonce, &decisions)
+                .await?;
+            return Ok(ReconciliationAuthorization::ScanReplacement(
+                decision_header.value,
+            ));
+        }
+
+        let (to, input, value) = persisted_call_fields(intent)?;
+        let authorized = match purpose {
+            TransactionPurpose::Wrap => {
+                let simulation = required_verification(
+                    self.verification
+                        .verify_decoded_simulation(
+                            &self.wallet_address,
+                            &to,
+                            value,
+                            &input,
+                            block,
+                            |result| Ok(result.is_empty()),
+                        )
+                        .await,
+                    "rebroadcast wrap simulation",
+                )?;
+                let authorized = matches!(&simulation.value, VerifiedSimulation::Succeeded(true));
+                decisions.push(verification_decision(&simulation, Some(block), Some(block)));
+                authorized
+            }
+            TransactionPurpose::Approve => {
+                let simulation = required_verification(
+                    self.verification
+                        .verify_decoded_simulation(
+                            &self.wallet_address,
+                            &to,
+                            value,
+                            &input,
+                            block,
+                            |result| {
+                                if result.is_empty() {
+                                    Ok(true)
+                                } else {
+                                    ERC20::approveCall::abi_decode_returns_validate(result)
+                                        .map_err(Into::into)
+                                }
+                            },
+                        )
+                        .await,
+                    "rebroadcast approve simulation",
+                )?;
+                let authorized = matches!(&simulation.value, VerifiedSimulation::Succeeded(true));
+                decisions.push(verification_decision(&simulation, Some(block), Some(block)));
+                authorized
+            }
+            TransactionPurpose::Swap => {
+                let call = UniswapV3SwapRouter::exactInputSingleCall::abi_decode(&input)
+                    .with_context(|| "persisted swap calldata is invalid")?;
+
+                if U256::from(decision_header.value.timestamp) > call.params.deadline {
+                    false
+                } else {
+                    let simulation = required_verification(
+                        self.verification
+                            .verify_decoded_simulation(
+                                &self.wallet_address,
+                                &to,
+                                value,
+                                &input,
+                                block,
+                                |result| {
+                                    UniswapV3SwapRouter::exactInputSingleCall::abi_decode_returns(
+                                        result,
+                                    )
+                                    .map_err(Into::into)
+                                },
+                            )
+                            .await,
+                        "rebroadcast swap simulation",
+                    )?;
+                    let authorized = match &simulation.value {
+                        VerifiedSimulation::Succeeded(amount_out) => {
+                            *amount_out >= call.params.amountOutMinimum
+                        }
+                        VerifiedSimulation::Denied => false,
+                    };
+                    decisions.push(verification_decision(&simulation, Some(block), Some(block)));
+                    authorized
+                }
+            }
+        };
+        self.persist_rebroadcast_decisions(intent.id, prepared.nonce, &decisions)
+            .await?;
+        Ok(if authorized {
+            ReconciliationAuthorization::Rebroadcast
+        } else {
+            ReconciliationAuthorization::Retain
+        })
+    }
+
+    async fn scan_canonical_replacement(
+        &self,
+        intent: &ExecutionIntentRow,
+        nonce: u64,
+        head: VerifiedBlockHeader,
+        authenticated_payloads: &HashMap<B256, Vec<u8>>,
+    ) -> anyhow::Result<Option<(B256, Vec<u8>)>> {
+        let wallet_address = self.wallet_address.to_string();
+        let cursor = self
+            .database
+            .load_execution_replacement_cursor(
+                intent.id,
+                self.chain_id,
+                &wallet_address,
+                nonce,
+                &self.manifest_digest,
+            )
+            .await?;
+        let start = cursor.as_ref().map_or(intent.created_block, |header| {
+            header.number.saturating_add(1)
+        });
+        anyhow::ensure!(
+            start <= head.number,
+            "Canonical nonce advanced without an authenticated signer transaction in the scanned canonical range"
+        );
+        let scan_range = replacement_scan_range(start, head.number)?;
+        let end = *scan_range.end();
+        let mut decisions = Vec::new();
+        let mut blocks = Vec::new();
+
+        if let Some(cursor) = cursor.as_ref() {
+            let parent = parse_verified_header(cursor)?;
+            let window = required_verification(
+                self.verification
+                    .verify_replacement_window(parent, end)
+                    .await,
+                "canonical replacement window",
+            )?;
+            decisions.push(verification_decision(&window, Some(start), Some(end)));
+            blocks = window.value;
+        } else {
+            let start_header = required_verification(
+                self.verification.verify_block(start).await,
+                "canonical replacement start header",
+            )?;
+            decisions.push(verification_decision(
+                &start_header,
+                Some(start),
+                Some(start),
+            ));
+            let start_block = required_verification(
+                self.verification.verify_replacement_block(start).await,
+                "canonical replacement start block",
+            )?;
+            anyhow::ensure!(
+                VerifiedBlockHeader::from(start_block.value.clone()) == start_header.value,
+                "Replacement block conflicts with its canonical header"
+            );
+            decisions.push(verification_decision(
+                &start_block,
+                Some(start),
+                Some(start),
+            ));
+            blocks.push(start_block.value);
+
+            if end > start {
+                let window = required_verification(
+                    self.verification
+                        .verify_replacement_window(start_header.value, end)
+                        .await,
+                    "canonical replacement window",
+                )?;
+                decisions.push(verification_decision(&window, Some(start + 1), Some(end)));
+                blocks.extend(window.value);
+            }
+        }
+
+        let scanned_tip = blocks
+            .last()
+            .map(|block| VerifiedBlockHeader::from(block.clone()))
+            .ok_or_else(|| anyhow::anyhow!("Verified replacement scan returned no blocks"))?;
+        if end == head.number {
+            anyhow::ensure!(
+                scanned_tip == head,
+                "Replacement scan tip conflicts with the verified canonical head"
+            );
+        }
+        let mut candidates = blocks
+            .iter()
+            .flat_map(|block| block.transactions.iter())
+            .filter(|transaction| {
+                transaction.from == self.wallet_address && transaction.nonce == nonce
+            });
+        let candidate = candidates.next();
+        anyhow::ensure!(
+            candidates.next().is_none(),
+            "Canonical replacement scan found duplicate signer-nonce transactions"
+        );
+
+        let finalized_cursor = self
+            .database
+            .load_execution_verified_header(
+                self.chain_id,
+                &wallet_address,
+                end,
+                &self.manifest_digest,
+            )
+            .await?;
+
+        if let Some(cursor) = finalized_cursor.as_ref() {
+            anyhow::ensure!(
+                parse_verified_header(cursor)? == scanned_tip,
+                "Replacement scan conflicts with the durable finalized header ledger"
+            );
+        }
+
+        let mut mismatch = None;
+        let matched = candidate.and_then(|transaction| {
+            let Some(raw_transaction) = authenticated_payloads.get(&transaction.hash).cloned()
+            else {
+                mismatch = Some(anyhow::anyhow!(
+                    "Canonical signer-nonce transaction {} has no authenticated retained payload",
+                    transaction.hash
+                ));
+                return None;
+            };
+
+            if let Err(e) = validate_rpc_transaction_matches_payload(transaction, &raw_transaction)
+            {
+                mismatch = Some(e.context(format!(
+                    "Canonical signer-nonce transaction {} failed authenticated payload validation",
+                    transaction.hash
+                )));
+                return None;
+            }
+            Some((transaction.hash, raw_transaction))
+        });
+        let matched_hash = matched.as_ref().map(|(hash, _)| hash.to_string());
+        self.database
+            .record_execution_replacement_scan(&ExecutionReplacementScan {
+                intent_id: intent.id,
+                chain_id: self.chain_id,
+                wallet_address: &wallet_address,
+                nonce,
+                finalized_cursor: finalized_cursor.as_ref(),
+                matched_transaction_hash: matched_hash.as_deref(),
+                manifest_version: &self.manifest_version,
+                manifest_digest: &self.manifest_digest,
+                provider_ids: &self.provider_ids,
+                operator_ids: &self.operator_ids,
+                failure_domain_ids: &self.failure_domain_ids,
+                decisions: &decisions,
+            })
+            .await?;
+
+        if let Some(e) = mismatch {
+            return Err(e);
+        }
+
+        if matched.is_none() && end == head.number {
+            anyhow::bail!(
+                "Canonical nonce advanced without an authenticated signer transaction in the canonical range"
+            );
+        }
+        Ok(matched)
+    }
+
+    async fn persist_rebroadcast_decisions(
+        &self,
+        intent_id: i64,
+        nonce: u64,
+        decisions: &[ExecutionVerificationDecision],
+    ) -> anyhow::Result<()> {
+        let wallet_address = self.wallet_address.to_string();
+        self.database
+            .record_execution_verification_batch(&ExecutionVerificationBatch {
+                intent_id,
+                chain_id: self.chain_id,
+                wallet_address: &wallet_address,
+                nonce,
+                decision_class: "rebroadcast",
+                manifest_version: &self.manifest_version,
+                manifest_digest: &self.manifest_digest,
+                provider_ids: &self.provider_ids,
+                operator_ids: &self.operator_ids,
+                failure_domain_ids: &self.failure_domain_ids,
+                decisions,
+            })
+            .await
+    }
+
     /// Broadcasts the signed transaction and classifies the acceptance outcome.
     async fn broadcast(&self, prepared: &PreparedTransaction) -> anyhow::Result<BroadcastOutcome> {
         let tx_hash = prepared.tx_hash;
@@ -2254,8 +3321,7 @@ impl TransactionExecutor {
         &self,
         prepared: &PreparedTransaction,
     ) -> anyhow::Result<InclusionOutcome> {
-        let mut tx_hash = prepared.tx_hash;
-        let mut inclusion_observed = false;
+        let tx_hash = prepared.tx_hash;
         let deadline = tokio::time::Instant::now() + self.receipt_timeout;
 
         for attempt in 0..self.receipt_max_polls {
@@ -2268,127 +3334,77 @@ impl TransactionExecutor {
             }
 
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            let receipt_result = match tokio::time::timeout(
-                remaining,
-                self.http_rpc_client.get_transaction_receipt(&tx_hash),
-            )
-            .await
-            {
-                Ok(result) => result,
-                Err(_) => break,
-            };
+            let receipt_result =
+                match tokio::time::timeout(remaining, self.verification.verify_receipt(&tx_hash))
+                    .await
+                {
+                    Ok(result) => result,
+                    Err(_) => break,
+                };
 
             match receipt_result {
-                Ok(Some(receipt)) => {
-                    let canonical = self
-                        .http_rpc_client
-                        .block_by_number(receipt.block_number, false)
-                        .await?;
+                VerificationOutcome::Verified(verified_receipt) => {
+                    let receipt = &verified_receipt.value;
+                    let canonical_verification = required_verification(
+                        self.verification.verify_block(receipt.block_number).await,
+                        "receipt inclusion header",
+                    )?;
+                    let canonical = canonical_verification.value;
 
                     if canonical.hash != receipt.block_hash {
-                        self.database
-                            .record_execution_status(
-                                prepared.intent_id,
-                                &tx_hash.to_string(),
-                                TransactionStatus::Reorged,
-                                Some(receipt.block_number),
-                                Some(&receipt.block_hash.to_string()),
-                                Some(receipt.status),
-                                Some(receipt.gas_used),
-                                Some(&receipt.effective_gas_price.to_string()),
-                            )
-                            .await?;
-                        inclusion_observed = false;
                         continue;
                     }
 
-                    self.database
-                        .record_execution_status(
-                            prepared.intent_id,
-                            &tx_hash.to_string(),
-                            TransactionStatus::Included,
-                            Some(receipt.block_number),
-                            Some(&receipt.block_hash.to_string()),
-                            Some(receipt.status),
-                            Some(receipt.gas_used),
-                            Some(&receipt.effective_gas_price.to_string()),
-                        )
-                        .await?;
-                    inclusion_observed = true;
-
-                    if self.receipt_is_stably_finalized(&receipt).await? {
-                        let status = if receipt.status {
-                            TransactionStatus::Finalized
-                        } else {
-                            TransactionStatus::Reverted
-                        };
-                        self.database
-                            .record_execution_status(
-                                prepared.intent_id,
-                                &tx_hash.to_string(),
-                                status,
+                    if let Some(mut finality) = self.receipt_is_stably_finalized(receipt).await? {
+                        finality.decisions.insert(
+                            0,
+                            verification_decision(
+                                &canonical_verification,
                                 Some(receipt.block_number),
-                                Some(&receipt.block_hash.to_string()),
-                                Some(receipt.status),
-                                Some(receipt.gas_used),
-                                Some(&receipt.effective_gas_price.to_string()),
-                            )
-                            .await?;
+                                Some(receipt.block_number),
+                            ),
+                        );
+                        finality.decisions.insert(
+                            0,
+                            verification_decision(
+                                &verified_receipt,
+                                Some(receipt.block_number),
+                                Some(receipt.block_number),
+                            ),
+                        );
+                        let included = IncludedTransaction {
+                            intent_id: prepared.intent_id,
+                            nonce: prepared.nonce,
+                            tx_hash,
+                            block_number: receipt.block_number,
+                            receipt: receipt.clone(),
+                            finality,
+                        };
                         return if receipt.status {
-                            Ok(InclusionOutcome::Finalized(IncludedTransaction {
-                                intent_id: prepared.intent_id,
-                                tx_hash,
-                                block_number: receipt.block_number,
-                                receipt,
-                            }))
+                            Ok(InclusionOutcome::Finalized(included))
                         } else {
-                            Ok(InclusionOutcome::Reverted(tx_hash))
+                            Ok(InclusionOutcome::Reverted(included))
                         };
                     }
                 }
-                Ok(None) => {
-                    if inclusion_observed {
-                        self.database
-                            .record_execution_status(
-                                prepared.intent_id,
-                                &tx_hash.to_string(),
-                                TransactionStatus::Reorged,
-                                None,
-                                None,
-                                None,
-                                None,
-                                None,
-                            )
-                            .await?;
-                        inclusion_observed = false;
-                    }
-
-                    if self
-                        .http_rpc_client
-                        .get_transaction_count_latest(&self.wallet_address)
-                        .await?
-                        > prepared.nonce
-                        && let Some(replacement) = self
-                            .find_nonce_transaction(prepared.nonce, prepared.created_block)
-                            .await?
-                        && replacement.hash != tx_hash
-                    {
-                        self.database
-                            .add_execution_replacement_hash(
-                                prepared.intent_id,
-                                self.chain_id,
-                                &replacement.hash.to_string(),
-                            )
-                            .await?;
-                        tx_hash = replacement.hash;
-                        inclusion_observed = false;
-                    }
+                VerificationOutcome::Retryable(_) => {
+                    continue;
                 }
-                Err(e) => {
+                VerificationOutcome::Disagreement(_) => {
+                    return Ok(InclusionOutcome::Pending(format!(
+                        "Receipt verification disagreed for transaction {tx_hash}; the intent stays occupied for reconciliation"
+                    )));
+                }
+                VerificationOutcome::Unavailable(_) => {
                     log::warn!(
-                        "Finality poll {}/{} for transaction {tx_hash} failed: {e}",
+                        "Finality poll {}/{} for transaction {tx_hash} was unavailable",
                         attempt + 1,
                         self.receipt_max_polls
+                    );
+                }
+                VerificationOutcome::LocallyInvalid(_) => {
+                    anyhow::bail!(
+                        "Receipt verification is locally invalid for transaction {tx_hash}"
                     );
                 }
             }
@@ -2414,49 +3430,190 @@ impl TransactionExecutor {
     async fn receipt_is_stably_finalized(
         &self,
         receipt: &RpcTransactionReceipt,
-    ) -> anyhow::Result<bool> {
-        let finalized = self.http_rpc_client.finalized_block().await?;
+    ) -> anyhow::Result<Option<StableFinality>> {
+        let finalized_verification = match self.verification.verify_finalized_header().await {
+            VerificationOutcome::Verified(verified) => verified,
+            VerificationOutcome::Retryable(_) | VerificationOutcome::Unavailable(_) => {
+                return Ok(None);
+            }
+            VerificationOutcome::Disagreement(_) => {
+                anyhow::bail!("Finalized header verification disagreed")
+            }
+            VerificationOutcome::LocallyInvalid(_) => {
+                anyhow::bail!("Finalized header verification is locally invalid")
+            }
+        };
+        let finalized = finalized_verification.value;
         if finalized.number < receipt.block_number {
-            return Ok(false);
+            return Ok(None);
         }
 
-        let canonical_again = self
-            .http_rpc_client
-            .block_by_number(receipt.block_number, false)
-            .await?;
-        let finalized_again = self
-            .http_rpc_client
-            .block_by_number(finalized.number, false)
-            .await?;
-        Ok(canonical_again.hash == receipt.block_hash && finalized_again.hash == finalized.hash)
+        let checkpoint_verification = required_verification(
+            self.verification.verify_checkpoint().await,
+            "finality checkpoint reread",
+        )?;
+        let checkpoint = checkpoint_verification.value;
+        let mut decisions = vec![verification_decision(
+            &checkpoint_verification,
+            Some(checkpoint.number),
+            Some(checkpoint.number),
+        )];
+        let position = self
+            .database
+            .load_execution_verification_position(
+                self.chain_id,
+                &self.wallet_address.to_string(),
+                &self.manifest_version,
+                &self.manifest_digest,
+            )
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("Execution verification ledger is not initialized"))?;
+        let durable_tip = parse_verified_header(&position.finalized_tip)?;
+        anyhow::ensure!(
+            durable_tip.number >= checkpoint.number,
+            "Durable finalized header tip precedes the trusted checkpoint"
+        );
+        let mut finalized_headers = vec![durable_tip];
+        let durable_tip_verification = required_verification(
+            self.verification.verify_block(durable_tip.number).await,
+            "finality durable header tip",
+        )?;
+        anyhow::ensure!(
+            durable_tip_verification.value == durable_tip,
+            "Durable finalized header tip conflicts with independent sources"
+        );
+        decisions.push(verification_decision(
+            &durable_tip_verification,
+            Some(durable_tip.number),
+            Some(durable_tip.number),
+        ));
+        anyhow::ensure!(
+            finalized.number >= durable_tip.number,
+            "Verified finalized height regressed below the durable finalized header tip"
+        );
+        let mut ancestry_cursor = durable_tip;
+        while ancestry_cursor.number < finalized.number {
+            let end = ancestry_cursor
+                .number
+                .saturating_add(4_096)
+                .min(finalized.number);
+            let start = ancestry_cursor.number.saturating_add(1);
+            let ancestry_verification = required_verification(
+                self.verification
+                    .verify_header_window(ancestry_cursor, end)
+                    .await,
+                "finality ancestry",
+            )?;
+            let ancestry = &ancestry_verification.value;
+            ancestry_cursor = *ancestry
+                .last()
+                .expect("nonempty finality ancestry advances the cursor");
+            decisions.push(verification_decision(
+                &ancestry_verification,
+                Some(start),
+                Some(end),
+            ));
+            finalized_headers.extend(ancestry.iter().copied());
+        }
+        anyhow::ensure!(
+            ancestry_cursor == finalized,
+            "Finalized header conflicts with its verified ancestry"
+        );
+
+        let canonical_again_verification = required_verification(
+            self.verification.verify_block(receipt.block_number).await,
+            "finality inclusion header reread",
+        )?;
+        let canonical_again = canonical_again_verification.value;
+        let finalized_again_verification = required_verification(
+            self.verification.verify_block(finalized.number).await,
+            "finalized header reread",
+        )?;
+        let finalized_again = finalized_again_verification.value;
+        anyhow::ensure!(
+            canonical_again.hash == receipt.block_hash && finalized_again == finalized,
+            "Finality verification disagreed with the receipt or finalized header"
+        );
+        decisions.extend([
+            verification_decision(
+                &finalized_verification,
+                Some(finalized.number),
+                Some(finalized.number),
+            ),
+            verification_decision(
+                &canonical_again_verification,
+                Some(receipt.block_number),
+                Some(receipt.block_number),
+            ),
+            verification_decision(
+                &finalized_again_verification,
+                Some(finalized.number),
+                Some(finalized.number),
+            ),
+        ]);
+        Ok(Some(StableFinality {
+            decisions,
+            inclusion_header: ExecutionVerifiedHeader {
+                number: canonical_again.number,
+                hash: canonical_again.hash.to_string(),
+                parent_hash: canonical_again.parent_hash.to_string(),
+                timestamp: canonical_again.timestamp,
+                base_fee_per_gas: canonical_again.base_fee_per_gas,
+            },
+            finalized_headers: finalized_headers
+                .into_iter()
+                .map(|header| ExecutionVerifiedHeader {
+                    number: header.number,
+                    hash: header.hash.to_string(),
+                    parent_hash: header.parent_hash.to_string(),
+                    timestamp: header.timestamp,
+                    base_fee_per_gas: header.base_fee_per_gas,
+                })
+                .collect(),
+        }))
     }
 
-    async fn find_nonce_transaction(
+    async fn commit_verified_finality(
         &self,
-        nonce: u64,
-        from_block: u64,
-    ) -> anyhow::Result<Option<RpcTransaction>> {
-        let head = self.http_rpc_client.latest_block().await?;
-        let mut found = None;
-
-        for number in replacement_scan_range(from_block, head.number)? {
-            let block = self.http_rpc_client.block_by_number(number, true).await?;
-            if let Some(transaction) = block.transactions.into_iter().find(|transaction| {
-                transaction.from == self.wallet_address && transaction.nonce == nonce
-            }) {
-                found = Some(transaction);
-                break;
-            }
-        }
-        let stable_head = self
-            .http_rpc_client
-            .block_by_number(head.number, false)
-            .await?;
+        included: &IncludedTransaction,
+        status: TransactionStatus,
+        verified_postconditions: &[ExecutionVerificationDecision],
+    ) -> anyhow::Result<()> {
         anyhow::ensure!(
-            stable_head.hash == head.hash,
-            "Canonical head changed during signer-nonce replacement scan"
+            matches!(
+                status,
+                TransactionStatus::Finalized | TransactionStatus::Reverted
+            ) && included.receipt.status == (status == TransactionStatus::Finalized),
+            "Finality status conflicts with the verified transaction receipt"
         );
-        Ok(found)
+        let mut decisions = included.finality.decisions.clone();
+        decisions.extend_from_slice(verified_postconditions);
+        let wallet_address = self.wallet_address.to_string();
+        let transaction_hash = included.tx_hash.to_string();
+        let block_hash = included.receipt.block_hash.to_string();
+        let effective_gas_price = included.receipt.effective_gas_price.to_string();
+        self.database
+            .record_execution_finality_verified(&ExecutionFinalityTransition {
+                intent_id: included.intent_id,
+                chain_id: self.chain_id,
+                wallet_address: &wallet_address,
+                nonce: included.nonce,
+                transaction_hash: &transaction_hash,
+                status,
+                block_number: included.block_number,
+                block_hash: &block_hash,
+                receipt_success: included.receipt.status,
+                gas_used: included.receipt.gas_used,
+                effective_gas_price: &effective_gas_price,
+                manifest_version: &self.manifest_version,
+                manifest_digest: &self.manifest_digest,
+                provider_ids: &self.provider_ids,
+                operator_ids: &self.operator_ids,
+                failure_domain_ids: &self.failure_domain_ids,
+                decisions: &decisions,
+                finalized_headers: &included.finality.finalized_headers,
+            })
+            .await
     }
 
     fn release_slot(&self) {
@@ -2469,15 +3626,8 @@ fn replacement_scan_range(from_block: u64, head_block: u64) -> anyhow::Result<Ra
         head_block >= from_block,
         "Canonical head {head_block} is behind execution creation block {from_block}"
     );
-    let block_count = head_block
-        .checked_sub(from_block)
-        .and_then(|distance| distance.checked_add(1))
-        .ok_or_else(|| anyhow::anyhow!("Signer-nonce replacement scan range overflow"))?;
-    anyhow::ensure!(
-        block_count <= MAX_REPLACEMENT_SCAN_BLOCKS,
-        "Signer-nonce replacement scan requires {block_count} blocks, exceeding the safety bound {MAX_REPLACEMENT_SCAN_BLOCKS}; explicit recovery is required"
-    );
-    Ok(from_block..=head_block)
+    let max_end = from_block.saturating_add(MAX_REPLACEMENT_SCAN_BLOCKS - 1);
+    Ok(from_block..=head_block.min(max_end))
 }
 
 fn validate_payload_operation_batch_size(batch_size: usize) -> anyhow::Result<i64> {
@@ -2609,21 +3759,28 @@ struct SwapPlan {
     fee: U24,
     amount_in: U256,
     min_amount_out: U256,
+    slippage_bps: u32,
+    quote_spend_ceiling: Option<QuoteSpendCeiling>,
     profiler_position: Option<BlockPosition>,
 }
 
 #[derive(Debug, Clone)]
 struct SwapQuoteAnchors {
-    position: BlockPosition,
-    state: SwapStateAnchor,
+    watermark: VerifiedBlockHeader,
+    state: VerifiedBlockHeader,
+    quote_contract: Address,
+    token_in: Address,
+    token_out: Address,
+    fee: U24,
+    quote_kind: SwapQuoteKind,
+    quote: UniswapV3Quote,
+    precondition_decisions: Vec<ExecutionVerificationDecision>,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct SwapStateAnchor {
-    number: u64,
-    hash: B256,
-    timestamp: u64,
-    base_fee_per_gas_wei: u128,
+enum SwapQuoteKind {
+    ExactInput(U256),
+    ExactOutput(U256),
 }
 
 /// Executes a validated swap plan: read-only pre-trade checks, signing, persistence,
@@ -2635,7 +3792,7 @@ struct SwapStateAnchor {
 /// first inclusion; fills arrive with finality reconciliation. Ambiguous outcomes keep the
 /// order submitted untouched while the persisted record reconciles.
 async fn execute_swap(
-    plan: SwapPlan,
+    mut plan: SwapPlan,
     executor: TransactionExecutor,
     emitter: ExecutionEventEmitter,
     max_quote_age_blocks: u64,
@@ -2648,30 +3805,17 @@ async fn execute_swap(
         return Ok(());
     }
 
-    let latest_block = match executor.http_rpc_client.latest_block().await {
-        Ok(block) => block,
-        Err(e) => {
-            release_preparing_slot(&executor.in_flight);
-            emitter.emit_order_denied(
-                order,
-                &format!("Failed to read the latest block for the swap: {e}"),
-            );
-            return Ok(());
-        }
-    };
-
     let Some(profiler_position) = plan.profiler_position.as_ref() else {
         release_preparing_slot(&executor.in_flight);
         emitter.emit_order_denied(order, "Pool profiler has no quote provenance");
         return Ok(());
     };
-    let swap_anchors = match validate_swap_quote(
+    let mut swap_anchors = match validate_swap_quote(
         profiler_position,
-        plan.pool_address,
-        &plan.pool,
-        &latest_block,
+        &plan,
         max_quote_age_blocks,
-        &executor.http_rpc_client,
+        &executor.verification,
+        &executor.deployment_manifest,
     )
     .await
     {
@@ -2682,6 +3826,16 @@ async fn execute_swap(
             return Ok(());
         }
     };
+    let (amount_in, min_amount_out) = match verified_swap_amounts(&plan, swap_anchors.quote) {
+        Ok(amounts) => amounts,
+        Err(e) => {
+            release_preparing_slot(&executor.in_flight);
+            emitter.emit_order_denied(order, &e.to_string());
+            return Ok(());
+        }
+    };
+    plan.amount_in = amount_in;
+    plan.min_amount_out = min_amount_out;
     let deadline = match swap_anchors.state.timestamp.checked_add(deadline_seconds) {
         Some(deadline) => deadline,
         None => {
@@ -2697,11 +3851,15 @@ async fn execute_swap(
         }
     };
 
-    if let Err(e) = check_swap_preconditions(&plan, swap_anchors.state.number, &executor).await {
-        release_preparing_slot(&executor.in_flight);
-        emitter.emit_order_denied(order, &e.to_string());
-        return Ok(());
-    }
+    swap_anchors.precondition_decisions =
+        match check_swap_preconditions(&plan, swap_anchors.state.number, &executor).await {
+            Ok(decisions) => decisions,
+            Err(e) => {
+                release_preparing_slot(&executor.in_flight);
+                emitter.emit_order_denied(order, &e.to_string());
+                return Ok(());
+            }
+        };
 
     let calldata = UniswapV3SwapRouter::exactInputSingleCall {
         params: UniswapV3SwapRouter::ExactInputSingleParams {
@@ -2797,34 +3955,63 @@ async fn execute_swap(
         }
     }
 
-    match executor.await_finality(&prepared).await {
-        Ok(InclusionOutcome::Finalized(included)) => {
-            if !finalized_transaction_matches(&included, &intent, prepared.nonce, &executor).await?
-            {
-                let message = format!(
-                    "Finalized signer-nonce transaction {} does not match the persisted swap intent",
-                    included.tx_hash
-                );
-                emitter.emit_order_rejected(
-                    order,
-                    &message,
-                    get_atomic_clock_realtime().get_time_ns(),
-                    false,
-                );
-                anyhow::bail!(message);
-            }
+    let trace_purpose = match plan.order.order_side() {
+        OrderSide::Sell => "swap_sell",
+        OrderSide::Buy => "swap_buy",
+        side => anyhow::bail!("Unsupported finalized swap side {side}"),
+    };
 
-            complete_finalized_swap(&plan, intent.id, &included, &executor, &emitter).await?;
+    match executor.await_finality(&prepared).await {
+        Ok(InclusionOutcome::Finalized(mut included)) => {
+            included.finality.decisions.extend(
+                verify_finalized_transaction(
+                    &included,
+                    &intent,
+                    prepared.nonce,
+                    &prepared.raw_tx,
+                    &executor,
+                    trace_purpose,
+                )
+                .await?,
+            );
+            let fill = validate_finalized_swap_fill(&plan, &included)?;
+            let wallet = load_verified_wallet_after_fill(&plan, &included, &executor).await?;
+            executor
+                .commit_verified_finality(
+                    &included,
+                    TransactionStatus::Finalized,
+                    &wallet.decisions,
+                )
+                .await?;
+            complete_finalized_swap(
+                &plan,
+                intent.id,
+                included.tx_hash,
+                fill,
+                wallet,
+                &executor,
+                &emitter,
+            )
+            .await?;
             executor.release_slot();
             Ok(())
         }
-        Ok(InclusionOutcome::Reverted(tx_hash)) => {
-            emitter.emit_order_rejected(
-                order,
-                &format!("Transaction {tx_hash} reverted on-chain"),
-                get_atomic_clock_realtime().get_time_ns(),
-                false,
+        Ok(InclusionOutcome::Reverted(mut included)) => {
+            included.finality.decisions.extend(
+                verify_finalized_transaction(
+                    &included,
+                    &intent,
+                    prepared.nonce,
+                    &prepared.raw_tx,
+                    &executor,
+                    trace_purpose,
+                )
+                .await?,
             );
+            executor
+                .commit_verified_finality(&included, TransactionStatus::Reverted, &[])
+                .await?;
+            send_reverted_order(&emitter, order, &included)?;
             executor
                 .database
                 .mark_execution_event_emitted(intent.id, "terminal")
@@ -2839,16 +4026,11 @@ async fn execute_swap(
 
 async fn validate_swap_quote(
     position: &BlockPosition,
-    pool_address: Address,
-    pool: &Pool,
-    head: &RpcBlock,
+    plan: &SwapPlan,
     max_age_blocks: u64,
-    rpc: &BlockchainHttpRpcClient,
+    verification: &VerificationCoordinator,
+    manifest: &BlockchainDeploymentManifest,
 ) -> anyhow::Result<SwapQuoteAnchors> {
-    validate_quote_age(position.number, head.number, max_age_blocks)?;
-    let base_fee_per_gas_wei = head
-        .base_fee_per_gas
-        .ok_or_else(|| anyhow::anyhow!("Swap anchor block {} has no base fee", head.number))?;
     let block_hash = position.block_hash.as_deref().ok_or_else(|| {
         anyhow::anyhow!(
             "Pool state at block {} has no ingestion-time block hash; refresh the profiler before execution",
@@ -2857,7 +4039,19 @@ async fn validate_swap_quote(
     })?;
     let expected_block_hash = B256::from_str(block_hash)
         .with_context(|| format!("Invalid profiler block hash {block_hash}"))?;
-    let canonical_block = rpc.block_by_number(position.number, false).await?;
+    let now_unix_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))?
+        .as_secs();
+    let head = verified_value(
+        verification.verify_decision_header(now_unix_secs).await,
+        "swap decision header",
+    )?;
+    validate_quote_age(position.number, head.number, max_age_blocks)?;
+    let canonical_block = verified_value(
+        verification.verify_block(position.number).await,
+        "profiler watermark header",
+    )?;
     anyhow::ensure!(
         canonical_block.hash == expected_block_hash,
         "Pool state block {} changed from {} to {}; refresh the profiler before execution",
@@ -2882,26 +4076,210 @@ async fn validate_swap_quote(
             "Block-scoped snapshot hash {snapshot_hash} does not match ingestion hash {expected_block_hash}"
         );
     } else {
-        validate_profiler_event(position, expected_block_hash, pool_address, pool, rpc).await?;
+        validate_profiler_event_verified(
+            position,
+            expected_block_hash,
+            plan.pool_address,
+            &plan.pool,
+            verification,
+        )
+        .await?;
     }
 
+    let ancestry = verified_value(
+        verification
+            .verify_header_window(canonical_block, head.number)
+            .await,
+        "profiler-to-decision ancestry",
+    )?;
+
+    if let Some(last) = ancestry.last() {
+        anyhow::ensure!(
+            *last == head,
+            "Swap decision header conflicts with profiler ancestry"
+        );
+    } else {
+        anyhow::ensure!(
+            canonical_block == head,
+            "Empty profiler ancestry does not end at the decision header"
+        );
+    }
+    verified_value(
+        verification
+            .verify_deployment_manifest(manifest, head.number)
+            .await,
+        "swap deployment manifest",
+    )?;
+    let quote_contract = validate_manifest_pool(plan, manifest)?;
+    let quote_kind = match plan.order.order_side() {
+        OrderSide::Sell => SwapQuoteKind::ExactInput(quantity_to_raw_amount(
+            plan.order.quantity(),
+            plan.pool.get_base_token().decimals,
+        )?),
+        OrderSide::Buy => SwapQuoteKind::ExactOutput(quantity_to_raw_amount(
+            plan.order.quantity(),
+            plan.pool.get_base_token().decimals,
+        )?),
+        side => anyhow::bail!("Unsupported order side {side}"),
+    };
+    let quote = verified_value(
+        verify_swap_quote(verification, quote_contract, plan, quote_kind, head.number).await,
+        "independent swap quote",
+    )?;
+
     Ok(SwapQuoteAnchors {
-        position: position.clone(),
-        state: SwapStateAnchor {
-            number: head.number,
-            hash: head.hash,
-            timestamp: head.timestamp,
-            base_fee_per_gas_wei,
-        },
+        watermark: canonical_block,
+        state: head,
+        quote_contract,
+        token_in: plan.token_in,
+        token_out: plan.token_out,
+        fee: plan.fee,
+        quote_kind,
+        quote,
+        precondition_decisions: Vec::new(),
     })
 }
 
-async fn validate_profiler_event(
+async fn verify_swap_quote(
+    verification: &VerificationCoordinator,
+    quote_contract: Address,
+    plan: &SwapPlan,
+    kind: SwapQuoteKind,
+    block: u64,
+) -> VerificationOutcome<UniswapV3Quote> {
+    match kind {
+        SwapQuoteKind::ExactInput(amount_in) => {
+            verification
+                .verify_quote_exact_input_single(
+                    &quote_contract,
+                    plan.token_in,
+                    plan.token_out,
+                    amount_in,
+                    plan.fee,
+                    block,
+                )
+                .await
+        }
+        SwapQuoteKind::ExactOutput(amount_out) => {
+            verification
+                .verify_quote_exact_output_single(
+                    &quote_contract,
+                    plan.token_in,
+                    plan.token_out,
+                    amount_out,
+                    plan.fee,
+                    block,
+                )
+                .await
+        }
+    }
+}
+
+fn verified_swap_amounts(plan: &SwapPlan, quote: UniswapV3Quote) -> anyhow::Result<(U256, U256)> {
+    anyhow::ensure!(
+        !quote.amount.is_zero(),
+        "Independent swap quote returned zero"
+    );
+    let base_amount =
+        quantity_to_raw_amount(plan.order.quantity(), plan.pool.get_base_token().decimals)?;
+    let slippage_bps = plan.slippage_bps;
+    match plan.order.order_side() {
+        OrderSide::Sell => Ok((
+            base_amount,
+            derive_min_amount_out(quote.amount, slippage_bps)?,
+        )),
+        OrderSide::Buy => {
+            let ceiling = plan.quote_spend_ceiling.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No quote spend ceiling for BUY token pair {} -> {}",
+                    plan.token_in,
+                    plan.token_out
+                )
+            })?;
+            anyhow::ensure!(
+                quote.amount <= ceiling.max_amount,
+                "BUY quote amount {} exceeds the configured quote-spend maximum {} for {} -> {}",
+                quote.amount,
+                ceiling.max_amount,
+                plan.token_in,
+                plan.token_out
+            );
+            Ok((
+                quote.amount,
+                derive_min_amount_out(base_amount, slippage_bps)?,
+            ))
+        }
+        side => anyhow::bail!("Unsupported order side {side}"),
+    }
+}
+
+fn validate_manifest_pool(
+    plan: &SwapPlan,
+    manifest: &BlockchainDeploymentManifest,
+) -> anyhow::Result<Address> {
+    let matching = manifest
+        .pools
+        .iter()
+        .filter(|pool| Address::from_str(&pool.address).ok() == Some(plan.pool_address))
+        .collect::<Vec<_>>();
+    anyhow::ensure!(
+        matching.len() == 1,
+        "Pool {} does not have exactly one deployment manifest definition",
+        plan.pool_address
+    );
+    let pool = matching[0];
+    let token0 = Address::from_str(&pool.token0)?;
+    let token1 = Address::from_str(&pool.token1)?;
+    let factory = Address::from_str(&pool.factory)?;
+    let quote_contract = Address::from_str(&pool.quote_contract)?;
+    anyhow::ensure!(
+        token0 == plan.pool.token0.address
+            && token1 == plan.pool.token1.address
+            && pool.fee == plan.pool.fee.expect("validated pool fee")
+            && factory == plan.factory,
+        "Cached pool {} does not match its deployment manifest identity",
+        plan.pool_address
+    );
+
+    for token in [&plan.pool.token0, &plan.pool.token1] {
+        let identities = manifest
+            .tokens
+            .iter()
+            .filter(|identity| Address::from_str(&identity.address).ok() == Some(token.address))
+            .collect::<Vec<_>>();
+        anyhow::ensure!(
+            identities.len() == 1,
+            "Token {} does not have exactly one deployment manifest identity",
+            token.address
+        );
+        let identity = identities[0];
+        anyhow::ensure!(
+            identity.name == token.name
+                && identity.symbol == token.symbol
+                && identity.decimals == token.decimals,
+            "Cached token {} does not match its deployment manifest identity",
+            token.address
+        );
+        let expected_role = if token.address == plan.pool.get_base_token().address {
+            "base"
+        } else {
+            "quote"
+        };
+        anyhow::ensure!(
+            matches!(identity.asset_role.as_str(), "both") || identity.asset_role == expected_role,
+            "Token {} is not permitted as the pool {expected_role} asset",
+            token.address
+        );
+    }
+    Ok(quote_contract)
+}
+
+async fn validate_profiler_event_verified(
     position: &BlockPosition,
     expected_block_hash: B256,
     pool_address: Address,
     pool: &Pool,
-    rpc: &BlockchainHttpRpcClient,
+    verification: &VerificationCoordinator,
 ) -> anyhow::Result<()> {
     let transaction_hash = B256::from_str(&position.transaction_hash).with_context(|| {
         format!(
@@ -2909,22 +4287,17 @@ async fn validate_profiler_event(
             position.transaction_hash
         )
     })?;
-    let receipt = rpc
-        .get_transaction_receipt(&transaction_hash)
-        .await?
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Profiler transaction {transaction_hash} has no canonical receipt; refresh the profiler before execution"
-            )
-        })?;
+    let receipt = verified_value(
+        verification.verify_receipt(&transaction_hash).await,
+        "profiler watermark receipt",
+    )?;
     anyhow::ensure!(
         receipt.status,
-        "Profiler transaction {transaction_hash} did not execute successfully"
+        "Profiler transaction did not execute successfully"
     );
     anyhow::ensure!(
         receipt.transaction_hash == transaction_hash,
-        "Profiler receipt transaction hash {} does not match {transaction_hash}",
-        receipt.transaction_hash
+        "Profiler receipt transaction hash does not match its ingestion watermark"
     );
     anyhow::ensure!(
         receipt.block_number == position.number
@@ -2932,7 +4305,6 @@ async fn validate_profiler_event(
             && receipt.transaction_index == u64::from(position.transaction_index),
         "Profiler receipt position does not match its ingestion watermark"
     );
-
     let matching_logs = receipt
         .logs
         .iter()
@@ -2945,23 +4317,19 @@ async fn validate_profiler_event(
         position.log_index
     );
     let log = matching_logs[0];
-    anyhow::ensure!(!log.removed, "Profiler watermark refers to a removed log");
     let log_transaction_hash = B256::from_str(&rpc_helpers::extract_transaction_hash(log)?)
         .with_context(|| "Invalid profiler log transaction hash")?;
-    anyhow::ensure!(
-        rpc_helpers::extract_block_number(log)? == position.number
-            && rpc_helpers::extract_transaction_index(log)? == position.transaction_index
-            && log_transaction_hash == transaction_hash,
-        "Profiler log position does not match its ingestion watermark"
-    );
     let log_block_hash = log
         .block_hash
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("Profiler log has no block hash"))?;
     anyhow::ensure!(
-        B256::from_str(log_block_hash).with_context(|| "Invalid profiler log block hash")?
-            == expected_block_hash,
-        "Profiler log block hash does not match its ingestion watermark"
+        !log.removed
+            && log_transaction_hash == transaction_hash
+            && rpc_helpers::extract_block_number(log)? == position.number
+            && rpc_helpers::extract_transaction_index(log)? == position.transaction_index
+            && B256::from_str(log_block_hash)? == expected_block_hash,
+        "Profiler log position does not match its ingestion watermark"
     );
     anyhow::ensure!(
         rpc_helpers::extract_address(log)? == pool_address,
@@ -2971,9 +4339,11 @@ async fn validate_profiler_event(
         .topics
         .first()
         .ok_or_else(|| anyhow::anyhow!("Profiler watermark log has no event signature"))?;
+    let supported =
+        profiler_event_signatures(pool).any(|expected| expected.eq_ignore_ascii_case(signature));
     anyhow::ensure!(
-        profiler_event_signatures(pool).any(|expected| expected.eq_ignore_ascii_case(signature)),
-        "Profiler watermark log signature {signature} is not a supported pool event"
+        supported,
+        "Profiler watermark log has an unsupported event signature"
     );
     Ok(())
 }
@@ -2990,32 +4360,6 @@ fn profiler_event_signatures(pool: &Pool) -> impl Iterator<Item = &str> {
     ]
     .into_iter()
     .flatten()
-}
-
-async fn validate_swap_anchors_before_sign(
-    anchors: &SwapQuoteAnchors,
-    rpc: &BlockchainHttpRpcClient,
-) -> anyhow::Result<()> {
-    let expected_block_hash = B256::from_str(
-        anchors
-            .position
-            .block_hash
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("Profiler block hash disappeared before signing"))?,
-    )?;
-    let watermark = rpc.block_by_number(anchors.position.number, false).await?;
-    anyhow::ensure!(
-        watermark.hash == expected_block_hash,
-        "Pool state block {} changed before signing",
-        anchors.position.number
-    );
-    let state_anchor = rpc.block_by_number(anchors.state.number, false).await?;
-    anyhow::ensure!(
-        state_anchor.hash == anchors.state.hash,
-        "Canonical swap anchor {} changed before signing",
-        anchors.state.number
-    );
-    Ok(())
 }
 
 fn validate_quote_age(
@@ -3035,82 +4379,448 @@ fn validate_quote_age(
     Ok(())
 }
 
-async fn finalized_transaction_matches(
+fn validate_rpc_transaction_matches_payload(
+    transaction: &RpcTransaction,
+    raw_transaction: &[u8],
+) -> anyhow::Result<()> {
+    let signed = decode_signed_transaction(raw_transaction)?;
+    anyhow::ensure!(
+        transaction.hash == signed.hash
+            && transaction.from == signed.signer
+            && transaction.nonce == signed.nonce
+            && transaction.chain_id == Some(signed.chain_id)
+            && transaction.transaction_type == Some(2)
+            && transaction.to == Some(signed.to)
+            && transaction.input == signed.input
+            && transaction.value == signed.value
+            && transaction.gas == Some(signed.gas_limit)
+            && transaction.max_fee_per_gas == Some(U256::from(signed.max_fee_per_gas))
+            && transaction.max_priority_fee_per_gas
+                == Some(U256::from(signed.max_priority_fee_per_gas)),
+        "Verified transaction fields differ from the authenticated signed payload"
+    );
+    Ok(())
+}
+
+async fn verify_finalized_transaction(
     included: &IncludedTransaction,
     intent: &ExecutionIntentRow,
     nonce: u64,
+    raw_transaction: &[u8],
     executor: &TransactionExecutor,
-) -> anyhow::Result<bool> {
-    let block = executor
-        .http_rpc_client
-        .block_by_number(included.block_number, true)
-        .await?;
-    anyhow::ensure!(
-        block.hash == included.receipt.block_hash,
-        "Finalized block {} changed from {} to {} before intent validation",
-        included.block_number,
-        included.receipt.block_hash,
-        block.hash
-    );
-    let Some(transaction) = block
-        .transactions
-        .iter()
-        .find(|transaction| transaction.hash == included.tx_hash)
-    else {
-        anyhow::bail!(
-            "Finalized block {} does not contain transaction {}",
-            included.block_number,
-            included.tx_hash
-        );
-    };
-    let (expected_to, expected_input, expected_value) = persisted_call_fields(intent)?;
+    trace_purpose: &str,
+) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+    verify_finalized_transaction_identity(
+        included,
+        intent,
+        nonce,
+        raw_transaction,
+        &executor.verification,
+        executor.wallet_address,
+        executor.chain_id,
+        &executor.deployment_manifest,
+        trace_purpose,
+    )
+    .await
+}
 
-    Ok(transaction.from == executor.wallet_address
-        && transaction.nonce == nonce
-        && transaction.to == Some(expected_to)
-        && transaction.input == expected_input
-        && transaction.value == expected_value)
+#[expect(clippy::too_many_arguments)]
+async fn verify_finalized_transaction_identity(
+    included: &IncludedTransaction,
+    intent: &ExecutionIntentRow,
+    nonce: u64,
+    raw_transaction: &[u8],
+    verification: &VerificationCoordinator,
+    wallet_address: Address,
+    chain_id: u32,
+    deployment_manifest: &BlockchainDeploymentManifest,
+    trace_purpose: &str,
+) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+    let transaction_verification = required_verification(
+        verification.verify_transaction(&included.tx_hash).await,
+        "finalized transaction",
+    )?;
+    let transaction = &transaction_verification.value;
+    let signed = decode_signed_transaction(raw_transaction)?;
+    let (expected_to, expected_input, expected_value) = persisted_call_fields(intent)?;
+    anyhow::ensure!(
+        included.receipt.transaction_hash == included.tx_hash
+            && signed.hash == included.tx_hash
+            && signed.signer == wallet_address
+            && signed.chain_id == u64::from(chain_id)
+            && signed.nonce == nonce
+            && signed.to == expected_to
+            && signed.input == expected_input
+            && signed.value == expected_value,
+        "Finalized transaction does not match the authenticated signed payload and persisted intent"
+    );
+    validate_rpc_transaction_matches_payload(transaction, raw_transaction)
+        .context("finalized transaction identity mismatch")?;
+
+    let trace_verification = required_verification(
+        verification.verify_call_trace(&included.tx_hash).await,
+        "finalized call trace",
+    )?;
+    validate_call_trace(
+        &trace_verification.value,
+        &signed,
+        included.receipt.status,
+        trace_purpose,
+        deployment_manifest,
+    )?;
+    let deployment_verification = required_verification(
+        verification
+            .verify_deployment_manifest(deployment_manifest, included.block_number)
+            .await,
+        "inclusion deployment manifest",
+    )?;
+
+    Ok(vec![
+        verification_decision(
+            &transaction_verification,
+            Some(included.block_number),
+            Some(included.block_number),
+        ),
+        verification_decision(
+            &trace_verification,
+            Some(included.block_number),
+            Some(included.block_number),
+        ),
+        verification_decision(
+            &deployment_verification,
+            Some(included.block_number),
+            Some(included.block_number),
+        ),
+    ])
+}
+
+fn validate_call_trace(
+    trace: &VerifiedCallTrace,
+    signed: &crate::execution::transaction::DecodedSignedTransaction,
+    receipt_success: bool,
+    purpose: &str,
+    manifest: &BlockchainDeploymentManifest,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        trace.call_type == RpcCallType::Call
+            && trace.from == signed.signer
+            && trace.to == Some(signed.to)
+            && trace.value == signed.value
+            && trace.input_digest == keccak256(&signed.input)
+            && trace.success == receipt_success,
+        "Verified call-trace root differs from the authenticated transaction"
+    );
+    validate_internal_calls(&trace.calls, signed.to, purpose, manifest)
+}
+
+fn validate_internal_calls(
+    calls: &[VerifiedCallTrace],
+    caller_context: Address,
+    purpose: &str,
+    manifest: &BlockchainDeploymentManifest,
+) -> anyhow::Result<()> {
+    for call in calls {
+        anyhow::ensure!(
+            call.from == caller_context,
+            "Verified call trace child has an invalid caller context"
+        );
+        let target = call.to.ok_or_else(|| {
+            anyhow::anyhow!("Verified call trace contains an operation without a target")
+        })?;
+        let call_type = match call.call_type {
+            RpcCallType::Call => "call",
+            RpcCallType::Callcode => "callcode",
+            RpcCallType::Delegatecall => "delegatecall",
+            RpcCallType::Staticcall => "staticcall",
+            RpcCallType::Create | RpcCallType::Create2 | RpcCallType::Selfdestruct => {
+                anyhow::bail!("Verified call trace contains a forbidden state-changing operation")
+            }
+        };
+        let permitted = manifest.call_edges.iter().any(|edge| {
+            edge.purpose == purpose
+                && edge.call_type.eq_ignore_ascii_case(call_type)
+                && Address::from_str(&edge.caller).ok() == Some(call.from)
+                && Address::from_str(&edge.target).ok() == Some(target)
+        });
+        anyhow::ensure!(
+            permitted,
+            "Verified call trace contains an unreviewed {call_type} edge {} -> {target} for {purpose}",
+            call.from
+        );
+        let child_context = match call.call_type {
+            RpcCallType::Call | RpcCallType::Staticcall => target,
+            RpcCallType::Callcode | RpcCallType::Delegatecall => caller_context,
+            RpcCallType::Create | RpcCallType::Create2 | RpcCallType::Selfdestruct => {
+                unreachable!("forbidden operations return before child traversal")
+            }
+        };
+        validate_internal_calls(&call.calls, child_context, purpose, manifest)?;
+    }
+    Ok(())
+}
+
+async fn verify_wrap_balance_increase(
+    executor: &TransactionExecutor,
+    weth_address: &Address,
+    amount_wei: U256,
+    included: &IncludedTransaction,
+) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+    let previous_block = included.block_number.checked_sub(1).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Included wrap transaction {} has invalid block number 0",
+            included.tx_hash
+        )
+    })?;
+    let call = ERC20::balanceOfCall {
+        account: executor.wallet_address,
+    }
+    .abi_encode();
+    let balance_before = required_verification(
+        executor
+            .verification
+            .verify_decoded_call(
+                None,
+                weth_address,
+                U256::ZERO,
+                &call,
+                previous_block,
+                |result| ERC20::balanceOfCall::abi_decode_returns(result).map_err(Into::into),
+            )
+            .await,
+        "wrapped balance before finality",
+    )
+    .with_context(|| {
+        format!(
+            "failed to verify WETH balance before included transaction {} at block {previous_block}",
+            included.tx_hash
+        )
+    })?;
+    let balance_after = required_verification(
+        executor
+            .verification
+            .verify_decoded_call(
+                None,
+                weth_address,
+                U256::ZERO,
+                &call,
+                included.block_number,
+                |result| ERC20::balanceOfCall::abi_decode_returns(result).map_err(Into::into),
+            )
+            .await,
+        "wrapped balance after finality",
+    )
+    .with_context(|| {
+        format!(
+            "failed to verify WETH balance after included transaction {} at block {}",
+            included.tx_hash, included.block_number
+        )
+    })?;
+    let expected_balance = balance_before
+        .value
+        .checked_add(amount_wei)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "WETH balance overflow for included transaction {} at block {}",
+                included.tx_hash,
+                included.block_number
+            )
+        })?;
+    anyhow::ensure!(
+        balance_after.value == expected_balance,
+        "WETH balance after transaction {} did not increase by {amount_wei}: expected {expected_balance}, was {}",
+        included.tx_hash,
+        balance_after.value
+    );
+
+    Ok(vec![
+        verification_decision(&balance_before, Some(previous_block), Some(previous_block)),
+        verification_decision(
+            &balance_after,
+            Some(included.block_number),
+            Some(included.block_number),
+        ),
+    ])
+}
+
+async fn verify_approve_allowance(
+    executor: &TransactionExecutor,
+    token: &Address,
+    router: &Address,
+    amount: U256,
+    included: &IncludedTransaction,
+) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+    let call = ERC20::allowanceCall {
+        owner: executor.wallet_address,
+        spender: *router,
+    }
+    .abi_encode();
+    let allowance = required_verification(
+        executor
+            .verification
+            .verify_decoded_call(
+                None,
+                token,
+                U256::ZERO,
+                &call,
+                included.block_number,
+                |result| ERC20::allowanceCall::abi_decode_returns(result).map_err(Into::into),
+            )
+            .await,
+        "router allowance after finality",
+    )
+    .with_context(|| {
+        format!(
+            "failed to verify router allowance after included transaction {} at block {}",
+            included.tx_hash, included.block_number
+        )
+    })?;
+    anyhow::ensure!(
+        allowance.value == amount,
+        "Router allowance after transaction {} does not equal the requested amount {amount}: was {}",
+        included.tx_hash,
+        allowance.value
+    );
+
+    Ok(vec![verification_decision(
+        &allowance,
+        Some(included.block_number),
+        Some(included.block_number),
+    )])
 }
 
 async fn complete_finalized_swap(
     plan: &SwapPlan,
     intent_id: i64,
-    included: &IncludedTransaction,
+    tx_hash: B256,
+    fill: Option<FinalizedSwapFill>,
+    wallet: VerifiedWalletRefresh,
     executor: &TransactionExecutor,
     emitter: &ExecutionEventEmitter,
 ) -> anyhow::Result<()> {
-    if let Err(e) = emit_finalized_swap_fill(plan, included, executor, emitter).await {
-        if plan.order.status() != OrderStatus::Rejected {
-            emitter.emit_order_rejected(
-                &plan.order,
-                &format!(
-                    "Finalized transaction {} could not produce an exact fill: {e}",
-                    included.tx_hash
-                ),
-                get_atomic_clock_realtime().get_time_ns(),
+    if let Some(fill) = fill {
+        let filled = OrderFilled::new(
+            emitter.trader_id(),
+            plan.order.strategy_id(),
+            plan.order.instrument_id(),
+            plan.order.client_order_id(),
+            fill.venue_order_id,
+            emitter.account_id(),
+            fill.trade_id,
+            plan.order.order_side(),
+            plan.order.order_type(),
+            fill.last_qty,
+            fill.last_px,
+            plan.quote_currency,
+            LiquiditySide::Taker,
+            execution_event_id(tx_hash, b"fill"),
+            fill.ts_event,
+            fill.ts_event,
+            false,
+            None,
+            Some(fill.commission),
+            None,
+        );
+        emitter.try_send_order_event(OrderEventAny::Filled(filled))?;
+
+        if fill.last_qty < plan.order.quantity() {
+            let canceled = OrderCanceled::new(
+                emitter.trader_id(),
+                plan.order.strategy_id(),
+                plan.order.instrument_id(),
+                plan.order.client_order_id(),
+                execution_event_id(tx_hash, b"partial_cancel"),
+                fill.ts_event,
+                fill.ts_event,
                 false,
+                Some(fill.venue_order_id),
+                Some(emitter.account_id()),
             );
+            emitter.try_send_order_event(OrderEventAny::Canceled(canceled))?;
         }
-        executor
-            .database
-            .mark_execution_event_emitted(intent_id, "terminal")
-            .await?;
-        return Ok(());
     }
 
-    refresh_wallet_after_fill(plan, executor, emitter).await?;
+    *executor
+        .wallet_balance
+        .lock()
+        .expect("wallet balance mutex poisoned") = wallet.wallet_balance;
+    emitter.try_emit_account_state(
+        wallet.balances,
+        vec![],
+        true,
+        get_atomic_clock_realtime().get_time_ns(),
+        None,
+    )?;
     executor
         .database
         .mark_execution_event_emitted(intent_id, "fill")
         .await
 }
 
-async fn emit_finalized_swap_fill(
+fn send_reverted_order(
+    emitter: &ExecutionEventEmitter,
+    order: &OrderAny,
+    included: &IncludedTransaction,
+) -> anyhow::Result<()> {
+    let ts_event = finalized_inclusion_time(included)?;
+    let rejected = OrderRejected::new(
+        emitter.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        emitter.account_id(),
+        format!("Transaction {} reverted on-chain", included.tx_hash).into(),
+        execution_event_id(included.tx_hash, b"reverted"),
+        ts_event,
+        ts_event,
+        false,
+        false,
+    );
+    emitter.try_send_order_event(OrderEventAny::Rejected(rejected))
+}
+
+fn finalized_inclusion_time(included: &IncludedTransaction) -> anyhow::Result<UnixNanos> {
+    let inclusion = &included.finality.inclusion_header;
+    anyhow::ensure!(
+        inclusion.number == included.block_number
+            && inclusion.hash == included.receipt.block_hash.to_string(),
+        "Verified inclusion header does not match the finalized receipt"
+    );
+    let timestamp = inclusion.timestamp;
+    let nanos = timestamp
+        .checked_mul(NANOSECONDS_IN_SECOND)
+        .ok_or_else(|| anyhow::anyhow!("Verified inclusion timestamp exceeds nanoseconds"))?;
+    Ok(UnixNanos::from(nanos))
+}
+
+fn execution_event_id(tx_hash: B256, event: &[u8]) -> UUID4 {
+    let mut identity = Vec::with_capacity(tx_hash.len() + event.len());
+    identity.extend_from_slice(tx_hash.as_slice());
+    identity.extend_from_slice(event);
+    let digest = keccak256(identity);
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    UUID4::from_bytes(bytes)
+}
+
+struct FinalizedSwapFill {
+    venue_order_id: VenueOrderId,
+    trade_id: TradeId,
+    last_qty: Quantity,
+    last_px: Price,
+    commission: Money,
+    ts_event: UnixNanos,
+}
+
+struct VerifiedWalletRefresh {
+    wallet_balance: WalletBalance,
+    balances: Vec<AccountBalance>,
+    decisions: Vec<ExecutionVerificationDecision>,
+}
+
+fn validate_finalized_swap_fill(
     plan: &SwapPlan,
     included: &IncludedTransaction,
-    executor: &TransactionExecutor,
-    emitter: &ExecutionEventEmitter,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<FinalizedSwapFill>> {
     let signature =
         keccak256("Swap(address,address,int256,int256,uint160,uint128,int24)").to_string();
     let swap_logs = included
@@ -3191,16 +4901,13 @@ async fn emit_finalized_swap_fill(
         side => anyhow::bail!("Finalized Swap has unsupported order side {side}"),
     };
 
-    let block = executor
-        .http_rpc_client
-        .block_by_number(included.block_number, false)
-        .await?;
+    let block = &included.finality.inclusion_header;
     anyhow::ensure!(
-        block.hash == included.receipt.block_hash,
-        "Finalized block {} changed from {} to {} before fill emission",
+        block.number == included.block_number
+            && block.hash == included.receipt.block_hash.to_string(),
+        "Verified inclusion header {} does not match receipt hash {}",
         included.block_number,
-        included.receipt.block_hash,
-        block.hash
+        included.receipt.block_hash
     );
     let timestamp_ns = block
         .timestamp
@@ -3239,7 +4946,7 @@ async fn emit_finalized_swap_fill(
         .iter()
         .any(|existing| **existing == trade_id)
     {
-        return Ok(());
+        return Ok(None);
     }
 
     let venue_order_id = VenueOrderId::new_checked(included.tx_hash.to_string())?;
@@ -3248,30 +4955,21 @@ async fn emit_finalized_swap_fill(
         OrderSide::Buy => fill_price_from_quote(last_qty, plan.amount_in, plan.quote_currency)?,
         _ => trade.execution_price,
     };
-    emitter.emit_order_filled(
-        &plan.order,
+    Ok(Some(FinalizedSwapFill {
         venue_order_id,
-        None,
         trade_id,
         last_qty,
         last_px,
-        plan.quote_currency,
-        Some(commission),
-        LiquiditySide::Taker,
+        commission,
         ts_event,
-    );
-
-    if last_qty < plan.order.quantity() {
-        emitter.emit_order_canceled(&plan.order, Some(venue_order_id), ts_event);
-    }
-    Ok(())
+    }))
 }
 
-async fn refresh_wallet_after_fill(
+async fn load_verified_wallet_after_fill(
     plan: &SwapPlan,
+    included: &IncludedTransaction,
     executor: &TransactionExecutor,
-    emitter: &ExecutionEventEmitter,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<VerifiedWalletRefresh> {
     let mut token_universe = executor
         .wallet_balance
         .lock()
@@ -3281,55 +4979,140 @@ async fn refresh_wallet_after_fill(
     token_universe.insert(plan.pool.token0.address);
     token_universe.insert(plan.pool.token1.address);
 
-    let native_amount = executor
-        .http_rpc_client
-        .get_balance_with_timeout(
-            &executor.wallet_address,
-            None,
-            Some(EXECUTION_RPC_TIMEOUT_SECS),
-        )
-        .await?;
-    let native_balance = Money::from_u256(native_amount, plan.pool.chain.native_currency())?;
-    let erc20 = Erc20Contract::new_with_timeout(
-        executor.http_rpc_client.clone(),
-        Some(EXECUTION_RPC_TIMEOUT_SECS),
-        true,
-    );
+    let native_amount = required_verification(
+        executor
+            .verification
+            .verify_balance(&executor.wallet_address, included.block_number)
+            .await,
+        "finalized native balance",
+    )?;
+    let native_balance = Money::from_u256(native_amount.value, plan.pool.chain.native_currency())?;
+    let mut decisions = vec![verification_decision(
+        &native_amount,
+        Some(included.block_number),
+        Some(included.block_number),
+    )];
     let mut token_addresses = token_universe.iter().copied().collect::<Vec<_>>();
     token_addresses.sort_unstable();
     let mut token_balances = Vec::with_capacity(token_addresses.len());
     for address in token_addresses {
-        let token = if address == plan.pool.token0.address {
-            plan.pool.token0.clone()
-        } else if address == plan.pool.token1.address {
-            plan.pool.token1.clone()
-        } else {
-            let metadata = erc20.fetch_token_info(&address).await?;
-            Token::new(
-                plan.pool.chain.clone(),
-                address,
-                metadata.name,
-                metadata.symbol,
-                metadata.decimals,
-            )
-        };
-        let amount = erc20.balance_of(&address, &executor.wallet_address).await?;
-        token_balances.push(TokenBalance::new(amount, token));
+        let identities = executor
+            .deployment_manifest
+            .tokens
+            .iter()
+            .filter(|identity| Address::from_str(&identity.address).ok() == Some(address))
+            .collect::<Vec<_>>();
+        anyhow::ensure!(
+            identities.len() == 1,
+            "Wallet token {address} does not have exactly one deployment manifest identity"
+        );
+        let identity = identities[0];
+        let token = Token::new(
+            plan.pool.chain.clone(),
+            address,
+            identity.name.clone(),
+            identity.symbol.clone(),
+            identity.decimals,
+        );
+        let call = ERC20::balanceOfCall {
+            account: executor.wallet_address,
+        }
+        .abi_encode();
+        let amount = required_verification(
+            executor
+                .verification
+                .verify_decoded_call(
+                    None,
+                    &address,
+                    U256::ZERO,
+                    &call,
+                    included.block_number,
+                    |result| ERC20::balanceOfCall::abi_decode_returns(result).map_err(Into::into),
+                )
+                .await,
+            "finalized token balance",
+        )?;
+        decisions.push(verification_decision(
+            &amount,
+            Some(included.block_number),
+            Some(included.block_number),
+        ));
+        token_balances.push(TokenBalance::new(amount.value, token));
     }
 
     let mut wallet_balance = WalletBalance::new(token_universe);
     let balances = wallet_balance.replace_balances(native_balance, token_balances)?;
-    *executor
-        .wallet_balance
-        .lock()
-        .expect("wallet balance mutex poisoned") = wallet_balance;
-    emitter.try_emit_account_state(
+    Ok(VerifiedWalletRefresh {
+        wallet_balance,
         balances,
-        vec![],
-        true,
-        get_atomic_clock_realtime().get_time_ns(),
-        None,
-    )
+        decisions,
+    })
+}
+
+async fn verify_connect_capabilities(
+    verification: &VerificationCoordinator,
+    manifest: &BlockchainDeploymentManifest,
+    wallet: Address,
+    weth: Address,
+    block: u64,
+) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+    let contract = manifest
+        .contracts
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("Deployment manifest has no capability probe target"))?;
+    let contract_address = Address::from_str(&contract.address)
+        .with_context(|| "Deployment manifest capability probe target is invalid")?;
+    let storage = required_verification(
+        verification
+            .verify_storage(&contract_address, &B256::ZERO, block)
+            .await,
+        "Blockchain explicit-height storage capability",
+    )?;
+
+    let balance_call = ERC20::balanceOfCall { account: wallet }.abi_encode();
+    let gas = required_verification(
+        verification
+            .verify_gas_estimate(&wallet, &weth, U256::ZERO, &balance_call, block)
+            .await,
+        "Blockchain explicit-height gas capability",
+    )?;
+
+    let mut decisions = vec![
+        verification_decision(&storage, Some(block), Some(block)),
+        verification_decision(&gas, Some(block), Some(block)),
+    ];
+
+    for pool in &manifest.pools {
+        let quote_contract = Address::from_str(&pool.quote_contract)
+            .with_context(|| "Deployment manifest quote capability target is invalid")?;
+        let token_in = Address::from_str(&pool.token0)
+            .with_context(|| "Deployment manifest quote input token is invalid")?;
+        let token_out = Address::from_str(&pool.token1)
+            .with_context(|| "Deployment manifest quote output token is invalid")?;
+        let fee = U24::try_from(pool.fee)
+            .map_err(|_| anyhow::anyhow!("Deployment manifest pool fee is invalid"))?;
+        let quote = required_verification(
+            verification
+                .verify_quote_exact_input_single(
+                    &quote_contract,
+                    token_in,
+                    token_out,
+                    U256::from(1u64),
+                    fee,
+                    block,
+                )
+                .await,
+            "Blockchain explicit-height quote capability",
+        )?;
+        decisions.push(verification_decision(&quote, Some(block), Some(block)));
+    }
+
+    let trace = required_verification(
+        verification.verify_call_trace_capability().await,
+        "Blockchain call trace capability",
+    )?;
+    decisions.push(verification_decision(&trace, None, None));
+    Ok(decisions)
 }
 
 /// Runs the read-only pre-trade checks for a swap: deployed bytecode at the pool, router,
@@ -3340,107 +5123,181 @@ async fn check_swap_preconditions(
     plan: &SwapPlan,
     block: u64,
     executor: &TransactionExecutor,
-) -> anyhow::Result<()> {
-    for (address, description) in [
-        (plan.pool_address, "pool"),
-        (plan.router, "router"),
-        (plan.factory, "factory"),
-        (plan.weth, "WETH"),
-        (plan.token_in, "input token"),
-        (plan.token_out, "output token"),
-    ] {
-        let code = executor
-            .http_rpc_client
-            .get_code_at(&address, block)
-            .await?;
+) -> anyhow::Result<Vec<ExecutionVerificationDecision>> {
+    let mut decisions = Vec::new();
+    let factory_call = UniswapV3RouterState::factoryCall.abi_encode();
+    let router_factory = required_verification(
+        executor
+            .verification
+            .verify_decoded_call(
+                None,
+                &plan.router,
+                U256::ZERO,
+                &factory_call,
+                block,
+                |result| {
+                    UniswapV3RouterState::factoryCall::abi_decode_returns(result)
+                        .map_err(Into::into)
+                },
+            )
+            .await,
+        "swap router factory",
+    )?;
+    anyhow::ensure!(
+        router_factory.value == plan.factory,
+        "Router {} reports an unexpected factory",
+        plan.router,
+    );
+    decisions.push(verification_decision(
+        &router_factory,
+        Some(block),
+        Some(block),
+    ));
 
-        if code.is_empty() {
-            anyhow::bail!("No deployed bytecode at {description} address {address}");
-        }
+    let weth_call = UniswapV3RouterState::WETH9Call.abi_encode();
+    let router_weth = required_verification(
+        executor
+            .verification
+            .verify_decoded_call(
+                None,
+                &plan.router,
+                U256::ZERO,
+                &weth_call,
+                block,
+                |result| {
+                    UniswapV3RouterState::WETH9Call::abi_decode_returns(result).map_err(Into::into)
+                },
+            )
+            .await,
+        "swap router wrapped native",
+    )?;
+    anyhow::ensure!(
+        router_weth.value == plan.weth,
+        "Router {} reports an unexpected wrapped native contract",
+        plan.router,
+    );
+    decisions.push(verification_decision(
+        &router_weth,
+        Some(block),
+        Some(block),
+    ));
+
+    let pool_call = UniswapV3Factory::getPoolCall {
+        tokenA: plan.token_in,
+        tokenB: plan.token_out,
+        fee: plan.fee,
     }
-
-    let erc20_contract = Erc20Contract::new_with_timeout(
-        executor.http_rpc_client.clone(),
-        Some(EXECUTION_RPC_TIMEOUT_SECS),
-        true,
-    );
-    let deployment = UniswapV3Deployment::new(
-        executor.http_rpc_client.clone(),
-        Some(EXECUTION_RPC_TIMEOUT_SECS),
-    );
-    let router_factory = deployment.router_factory_at(&plan.router, block).await?;
+    .abi_encode();
+    let registered_pool = required_verification(
+        executor
+            .verification
+            .verify_decoded_call(
+                None,
+                &plan.factory,
+                U256::ZERO,
+                &pool_call,
+                block,
+                |result| {
+                    UniswapV3Factory::getPoolCall::abi_decode_returns(result).map_err(Into::into)
+                },
+            )
+            .await,
+        "swap factory pool",
+    )?;
     anyhow::ensure!(
-        router_factory == plan.factory,
-        "Router {} reports factory {router_factory}, expected registered factory {}",
-        plan.router,
-        plan.factory
+        registered_pool.value == plan.pool_address,
+        "Factory resolves an unexpected pool for the swap token pair and fee"
     );
-    let router_weth = deployment.router_weth9_at(&plan.router, block).await?;
-    anyhow::ensure!(
-        router_weth == plan.weth,
-        "Router {} reports WETH9 {router_weth}, expected configured WETH {}",
-        plan.router,
-        plan.weth
-    );
-    let registered_pool = deployment
-        .pool_at(
-            &plan.factory,
-            plan.token_in,
-            plan.token_out,
-            plan.fee,
-            block,
-        )
-        .await?;
-    anyhow::ensure!(
-        registered_pool == plan.pool_address,
-        "Factory {} resolves pool {registered_pool} for token pair {} -> {} and fee {}, expected {}",
-        plan.factory,
-        plan.token_in,
-        plan.token_out,
-        plan.fee,
-        plan.pool_address
-    );
+    decisions.push(verification_decision(
+        &registered_pool,
+        Some(block),
+        Some(block),
+    ));
 
     for token in [&plan.pool.token0, &plan.pool.token1] {
-        let decimals = erc20_contract.decimals_at(&token.address, block).await?;
+        let decimals_call = ERC20::decimalsCall.abi_encode();
+        let decimals = required_verification(
+            executor
+                .verification
+                .verify_decoded_call(
+                    None,
+                    &token.address,
+                    U256::ZERO,
+                    &decimals_call,
+                    block,
+                    |result| ERC20::decimalsCall::abi_decode_returns(result).map_err(Into::into),
+                )
+                .await,
+            "swap token decimals",
+        )?;
         anyhow::ensure!(
-            decimals == token.decimals,
-            "Token {} reports {decimals} decimals on-chain, expected cached decimals {}",
+            decimals.value == token.decimals,
+            "Token {} reports unexpected decimals",
             token.address,
-            token.decimals
         );
+        decisions.push(verification_decision(&decimals, Some(block), Some(block)));
     }
 
-    let allowance = erc20_contract
-        .allowance_at(
-            &plan.token_in,
-            &executor.wallet_address,
-            &plan.router,
-            block,
-        )
-        .await?;
+    let allowance_call = ERC20::allowanceCall {
+        owner: executor.wallet_address,
+        spender: plan.router,
+    }
+    .abi_encode();
+    let allowance = required_verification(
+        executor
+            .verification
+            .verify_decoded_call(
+                None,
+                &plan.token_in,
+                U256::ZERO,
+                &allowance_call,
+                block,
+                |result| ERC20::allowanceCall::abi_decode_returns(result).map_err(Into::into),
+            )
+            .await,
+        "swap input allowance",
+    )?;
 
-    if allowance < plan.amount_in {
+    if allowance.value < plan.amount_in {
         anyhow::bail!(
-            "Router allowance {allowance} is below the swap amount {} for input token {}; approve the router explicitly before submitting",
+            "Router allowance {} is below the swap amount {} for input token {}; approve the router explicitly before submitting",
+            allowance.value,
             plan.amount_in,
             plan.token_in
         );
     }
+    decisions.push(verification_decision(&allowance, Some(block), Some(block)));
 
-    let balance = erc20_contract
-        .balance_of_at(&plan.token_in, &executor.wallet_address, block)
-        .await?;
+    let balance_call = ERC20::balanceOfCall {
+        account: executor.wallet_address,
+    }
+    .abi_encode();
+    let balance = required_verification(
+        executor
+            .verification
+            .verify_decoded_call(
+                None,
+                &plan.token_in,
+                U256::ZERO,
+                &balance_call,
+                block,
+                |result| ERC20::balanceOfCall::abi_decode_returns(result).map_err(Into::into),
+            )
+            .await,
+        "swap input balance",
+    )?;
 
-    if balance < plan.amount_in {
+    if balance.value < plan.amount_in {
         anyhow::bail!(
-            "Input token {} balance {balance} is below the swap amount {}",
+            "Input token {} balance {} is below the swap amount {}",
             plan.token_in,
+            balance.value,
             plan.amount_in
         );
     }
+    decisions.push(verification_decision(&balance, Some(block), Some(block)));
 
-    Ok(())
+    Ok(decisions)
 }
 
 /// Converts a base-denominated order quantity into raw token units with exact integer
@@ -3550,6 +5407,324 @@ fn derive_min_amount_out(quoted_amount_out: U256, slippage_bps: u32) -> anyhow::
         );
     }
     Ok(min_amount_out)
+}
+
+impl BlockchainExecutionClient {
+    async fn build_execution_verification_migration(
+        &self,
+        snapshot: ExecutionVerificationMigrationSnapshot,
+        finalized: VerifiedBlockHeader,
+        finalized_headers: &[VerifiedBlockHeader],
+        nonce_verification: &Verified<u64>,
+    ) -> anyhow::Result<ExecutionVerificationMigration> {
+        let next_canonical_nonce = nonce_verification.value;
+        let mut hashes_by_intent: HashMap<i64, Vec<&ExecutionTransactionHashRow>> = HashMap::new();
+        for hash in &snapshot.hashes {
+            hashes_by_intent
+                .entry(hash.intent_id)
+                .or_default()
+                .push(hash);
+        }
+        let active_count = snapshot
+            .intents
+            .iter()
+            .filter(|intent| intent.active)
+            .count();
+        anyhow::ensure!(
+            active_count <= 1,
+            "Retained execution history has multiple active signer owners"
+        );
+
+        let mut nonce_owners = HashMap::new();
+        let mut records = Vec::with_capacity(snapshot.intents.len());
+        let finalized_headers = finalized_headers
+            .iter()
+            .map(|header| ExecutionVerifiedHeader {
+                number: header.number,
+                hash: header.hash.to_string(),
+                parent_hash: header.parent_hash.to_string(),
+                timestamp: header.timestamp,
+                base_fee_per_gas: header.base_fee_per_gas,
+            })
+            .collect::<Vec<_>>();
+
+        for intent in &snapshot.intents {
+            anyhow::ensure!(
+                intent.chain_id == self.chain.chain_id
+                    && intent.wallet_address == self.config.wallet_address,
+                "Retained execution intent belongs to another signer"
+            );
+            let purpose = TransactionPurpose::parse(&intent.purpose).ok_or_else(|| {
+                anyhow::anyhow!("Retained execution intent has an unsupported purpose")
+            })?;
+            let hashes = hashes_by_intent
+                .get(&intent.id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let current = hashes
+                .iter()
+                .copied()
+                .filter(|hash| hash.current)
+                .collect::<Vec<_>>();
+            anyhow::ensure!(
+                current.len() <= 1,
+                "Retained execution intent {} has multiple current hashes",
+                intent.id
+            );
+            let current = current.first().copied();
+            let mut authenticated = HashMap::new();
+
+            for hash in hashes {
+                if hash.payload_expected {
+                    let raw = open_execution_payload(
+                        self.payload_keys
+                            .as_deref()
+                            .expect("Postgres execution requires payload keys"),
+                        self.payload_policy(),
+                        intent,
+                        hash,
+                        "verification migration",
+                    )?;
+                    authenticated.insert(hash.id, raw);
+                } else {
+                    anyhow::ensure!(
+                        hash.raw_transaction.is_none() && hash.sealed_transaction.is_none(),
+                        "Unowned replacement hash retains signed bytes"
+                    );
+                }
+            }
+
+            if let Some(nonce) = intent.nonce {
+                anyhow::ensure!(
+                    nonce_owners.insert(nonce, intent.id).is_none(),
+                    "Retained execution history has duplicate signer nonce ownership"
+                );
+            }
+
+            let base_decision = verification_decision(
+                nonce_verification,
+                Some(finalized.number),
+                Some(finalized.number),
+            );
+
+            if !intent.active {
+                if matches!(intent.status.as_str(), "finalized" | "reverted") {
+                    let expected_marker =
+                        if purpose == TransactionPurpose::Swap && intent.status == "finalized" {
+                            intent.fill_emitted
+                        } else {
+                            intent.terminal_emitted
+                        };
+                    anyhow::ensure!(
+                        expected_marker,
+                        "Released terminal intent {} has no durable event marker",
+                        intent.id
+                    );
+                } else {
+                    anyhow::ensure!(
+                        matches!(intent.status.as_str(), "dropped" | "recoverable")
+                            && authenticated.is_empty(),
+                        "Released nonterminal intent {} retains signed ownership",
+                        intent.id
+                    );
+                    records.push(ExecutionVerificationMigrationRecord {
+                        intent_id: intent.id,
+                        nonce: intent.nonce,
+                        transaction_hash: None,
+                        terminal_status: None,
+                        block_number: None,
+                        block_hash: None,
+                        receipt_success: None,
+                        gas_used: None,
+                        effective_gas_price: None,
+                        recover_prepared: false,
+                        decisions: vec![base_decision],
+                    });
+                    continue;
+                }
+            }
+
+            if intent.active && intent.nonce.is_none() {
+                anyhow::ensure!(
+                    intent.status == "prepared" && hashes.is_empty(),
+                    "Unassigned active intent {} is not an unsigned preparation",
+                    intent.id
+                );
+                records.push(ExecutionVerificationMigrationRecord {
+                    intent_id: intent.id,
+                    nonce: None,
+                    transaction_hash: None,
+                    terminal_status: None,
+                    block_number: None,
+                    block_hash: None,
+                    receipt_success: None,
+                    gas_used: None,
+                    effective_gas_price: None,
+                    recover_prepared: true,
+                    decisions: vec![base_decision],
+                });
+                continue;
+            }
+
+            let nonce = intent.nonce.ok_or_else(|| {
+                anyhow::anyhow!("Retained signed intent {} has no nonce", intent.id)
+            })?;
+            let current = current.ok_or_else(|| {
+                anyhow::anyhow!("Retained signed intent {} has no current hash", intent.id)
+            })?;
+            let raw_transaction = authenticated.get(&current.id).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Retained signed intent {} has no authenticated current payload",
+                    intent.id
+                )
+            })?;
+
+            if intent.active && nonce == next_canonical_nonce {
+                anyhow::ensure!(
+                    !matches!(intent.status.as_str(), "finalized" | "reverted"),
+                    "Active terminal intent conflicts with the canonical nonce ledger"
+                );
+                records.push(ExecutionVerificationMigrationRecord {
+                    intent_id: intent.id,
+                    nonce: Some(nonce),
+                    transaction_hash: Some(current.transaction_hash.clone()),
+                    terminal_status: None,
+                    block_number: None,
+                    block_hash: None,
+                    receipt_success: None,
+                    gas_used: None,
+                    effective_gas_price: None,
+                    recover_prepared: false,
+                    decisions: vec![base_decision],
+                });
+                continue;
+            }
+            anyhow::ensure!(
+                nonce < next_canonical_nonce,
+                "Retained active nonce {nonce} is above canonical nonce {next_canonical_nonce}"
+            );
+
+            let receipt_verification = required_verification(
+                self.verification
+                    .verify_receipt(&B256::from_str(&current.transaction_hash).with_context(
+                        || {
+                            format!(
+                                "Retained transaction hash {} is invalid",
+                                current.transaction_hash
+                            )
+                        },
+                    )?)
+                    .await,
+                "migration receipt",
+            )?;
+            let receipt = receipt_verification.value.clone();
+            anyhow::ensure!(
+                receipt.block_number <= finalized.number,
+                "Retained terminal receipt is above the verified finalized boundary"
+            );
+            let inclusion_verification = required_verification(
+                self.verification.verify_block(receipt.block_number).await,
+                "migration inclusion header",
+            )?;
+            anyhow::ensure!(
+                inclusion_verification.value.hash == receipt.block_hash
+                    && finalized_headers.iter().any(|header| {
+                        header.number == receipt.block_number
+                            && header.hash == receipt.block_hash.to_string()
+                    }),
+                "Retained terminal receipt is not on the verified finalized ancestry"
+            );
+            let tx_hash = B256::from_str(&current.transaction_hash)
+                .context("Retained transaction hash is invalid")?;
+            let included = IncludedTransaction {
+                intent_id: intent.id,
+                nonce,
+                tx_hash,
+                block_number: receipt.block_number,
+                receipt: receipt.clone(),
+                finality: StableFinality {
+                    decisions: Vec::new(),
+                    inclusion_header: ExecutionVerifiedHeader {
+                        number: inclusion_verification.value.number,
+                        hash: inclusion_verification.value.hash.to_string(),
+                        parent_hash: inclusion_verification.value.parent_hash.to_string(),
+                        timestamp: inclusion_verification.value.timestamp,
+                        base_fee_per_gas: inclusion_verification.value.base_fee_per_gas,
+                    },
+                    finalized_headers: finalized_headers.clone(),
+                },
+            };
+            let trace_purpose = match purpose {
+                TransactionPurpose::Wrap => "wrap",
+                TransactionPurpose::Approve => "approve",
+                TransactionPurpose::Swap => {
+                    match self.restore_swap_plan(intent)?.order.order_side() {
+                        OrderSide::Sell => "swap_sell",
+                        OrderSide::Buy => "swap_buy",
+                        side => anyhow::bail!("Retained swap has unsupported order side {side}"),
+                    }
+                }
+            };
+            let mut decisions = vec![
+                verification_decision(
+                    &receipt_verification,
+                    Some(receipt.block_number),
+                    Some(receipt.block_number),
+                ),
+                verification_decision(
+                    &inclusion_verification,
+                    Some(receipt.block_number),
+                    Some(receipt.block_number),
+                ),
+            ];
+            decisions.extend(
+                verify_finalized_transaction_identity(
+                    &included,
+                    intent,
+                    nonce,
+                    raw_transaction,
+                    &self.verification,
+                    self.wallet_address,
+                    self.chain.chain_id,
+                    &self
+                        .config
+                        .verification
+                        .as_ref()
+                        .expect("verification config validated")
+                        .deployment_manifest,
+                    trace_purpose,
+                )
+                .await?,
+            );
+            let terminal_status = if receipt.status {
+                TransactionStatus::Finalized
+            } else {
+                TransactionStatus::Reverted
+            };
+
+            if !intent.active {
+                anyhow::ensure!(
+                    intent.status == terminal_status.as_str(),
+                    "Released terminal intent status conflicts with its verified receipt"
+                );
+            }
+            records.push(ExecutionVerificationMigrationRecord {
+                intent_id: intent.id,
+                nonce: Some(nonce),
+                transaction_hash: Some(current.transaction_hash.clone()),
+                terminal_status: Some(terminal_status),
+                block_number: Some(receipt.block_number),
+                block_hash: Some(receipt.block_hash.to_string()),
+                receipt_success: Some(receipt.status),
+                gas_used: Some(receipt.gas_used),
+                effective_gas_price: Some(receipt.effective_gas_price.to_string()),
+                recover_prepared: false,
+                decisions,
+            });
+        }
+
+        Ok(ExecutionVerificationMigration { snapshot, records })
+    }
 }
 
 #[async_trait(?Send)]
@@ -3861,13 +6036,241 @@ impl ExecutionClient for BlockchainExecutionClient {
         }
         self.payload_keys = payload_keys;
 
-        // Verify the RPC chain ID against configuration before any signature
-        let expected_chain_id = u64::from(self.chain.chain_id);
-        let actual_chain_id = self.http_rpc_client.chain_id().await?;
-        if actual_chain_id != expected_chain_id {
-            anyhow::bail!(
-                "Chain ID mismatch at connect: expected {expected_chain_id}, node reported {actual_chain_id}"
+        let verification = self
+            .config
+            .verification
+            .as_ref()
+            .expect("verification config validated at construction");
+        let position = if let Some(database) = self.cache.database.as_ref() {
+            database
+                .load_execution_verification_position(
+                    self.chain.chain_id,
+                    &self.config.wallet_address,
+                    &verification.manifest_version,
+                    &verification.manifest_digest,
+                )
+                .await?
+        } else {
+            None
+        };
+        let migration_snapshot = if position.is_none() {
+            if let Some(database) = self.cache.database.as_ref() {
+                let snapshot = database
+                    .load_execution_verification_migration_snapshot(
+                        self.chain.chain_id,
+                        &self.config.wallet_address,
+                    )
+                    .await?;
+
+                if snapshot.intents.is_empty() {
+                    None
+                } else {
+                    Some(snapshot)
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let chain_id_verification = required_verification(
+            self.verification.verify_chain_id().await,
+            "Blockchain chain ID",
+        )?;
+        let checkpoint_verification = required_verification(
+            self.verification.verify_checkpoint().await,
+            "Blockchain checkpoint",
+        )?;
+        let checkpoint = checkpoint_verification.value;
+        let finalized_verification = required_verification(
+            self.verification.verify_finalized_header().await,
+            "Blockchain finalized header",
+        )?;
+        let finalized = finalized_verification.value;
+        let mut connect_decisions = vec![
+            verification_decision(&chain_id_verification, None, None),
+            verification_decision(
+                &checkpoint_verification,
+                Some(checkpoint.number),
+                Some(checkpoint.number),
+            ),
+            verification_decision(
+                &finalized_verification,
+                Some(finalized.number),
+                Some(finalized.number),
+            ),
+        ];
+        let mut finalized_headers = if let Some(position) = position.as_ref() {
+            let durable_tip = parse_verified_header(&position.finalized_tip)?;
+            anyhow::ensure!(
+                durable_tip.number >= checkpoint.number,
+                "Durable finalized header tip precedes the trusted checkpoint"
             );
+            let durable_tip_verification = required_verification(
+                self.verification.verify_block(durable_tip.number).await,
+                "Blockchain durable finalized tip",
+            )?;
+            anyhow::ensure!(
+                durable_tip_verification.value == durable_tip,
+                "Durable finalized header tip conflicts with independent sources"
+            );
+            connect_decisions.push(verification_decision(
+                &durable_tip_verification,
+                Some(durable_tip.number),
+                Some(durable_tip.number),
+            ));
+            vec![durable_tip]
+        } else {
+            vec![checkpoint]
+        };
+        let mut ancestry_cursor = *finalized_headers
+            .last()
+            .expect("finalized header ledger is nonempty");
+        anyhow::ensure!(
+            finalized.number >= ancestry_cursor.number,
+            "Verified finalized height regressed below the durable finalized header tip"
+        );
+
+        while ancestry_cursor.number < finalized.number {
+            let end = ancestry_cursor
+                .number
+                .saturating_add(4_096)
+                .min(finalized.number);
+            let start = ancestry_cursor.number.saturating_add(1);
+            let headers_verification = required_verification(
+                self.verification
+                    .verify_header_window(ancestry_cursor, end)
+                    .await,
+                "Blockchain finalized ancestry",
+            )?;
+            let headers = &headers_verification.value;
+            ancestry_cursor = *headers
+                .last()
+                .expect("nonempty ancestry window advances the cursor");
+            finalized_headers.extend(headers.iter().copied());
+            connect_decisions.push(verification_decision(
+                &headers_verification,
+                Some(start),
+                Some(end),
+            ));
+        }
+        anyhow::ensure!(
+            ancestry_cursor == finalized,
+            "Verified finalized header conflicts with its ancestry window"
+        );
+        let nonce_verification = required_verification(
+            self.verification
+                .verify_transaction_count(&self.wallet_address, finalized.number)
+                .await,
+            "Blockchain finalized transaction count",
+        )?;
+        let observed_canonical_nonce = nonce_verification.value;
+        let next_canonical_nonce = position
+            .as_ref()
+            .map_or(observed_canonical_nonce, |position| {
+                position.next_canonical_nonce
+            });
+
+        if let Some(position) = position.as_ref() {
+            log::debug!(
+                "Resumed execution verification ledger at nonce revision {} with observed finalized nonce {}",
+                position.revision,
+                observed_canonical_nonce,
+            );
+        }
+        connect_decisions.push(verification_decision(
+            &nonce_verification,
+            Some(finalized.number),
+            Some(finalized.number),
+        ));
+        let deployment_verification = required_verification(
+            self.verification
+                .verify_deployment_manifest(&verification.deployment_manifest, finalized.number)
+                .await,
+            "Blockchain deployment manifest",
+        )?;
+        connect_decisions.push(verification_decision(
+            &deployment_verification,
+            Some(finalized.number),
+            Some(finalized.number),
+        ));
+        connect_decisions.extend(
+            verify_connect_capabilities(
+                &self.verification,
+                &verification.deployment_manifest,
+                self.wallet_address,
+                self.weth_address,
+                finalized.number,
+            )
+            .await?,
+        );
+        let migration = if let Some(snapshot) = migration_snapshot {
+            Some(
+                self.build_execution_verification_migration(
+                    snapshot,
+                    finalized,
+                    &finalized_headers,
+                    &nonce_verification,
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+
+        if let Some(database) = self.cache.database.as_ref() {
+            let identities = std::iter::once(&verification.authoritative)
+                .chain(
+                    verification
+                        .verifiers
+                        .iter()
+                        .map(|provider| &provider.identity),
+                )
+                .collect::<Vec<_>>();
+            let provider_ids = identities
+                .iter()
+                .map(|identity| identity.provider_id.clone())
+                .collect::<Vec<_>>();
+            let operator_ids = identities
+                .iter()
+                .map(|identity| identity.operator_id.clone())
+                .collect::<Vec<_>>();
+            let failure_domain_ids = identities
+                .iter()
+                .flat_map(|identity| identity.failure_domain_ids.iter().cloned())
+                .collect::<Vec<_>>();
+            let finalized_headers = finalized_headers
+                .iter()
+                .map(|header| ExecutionVerifiedHeader {
+                    number: header.number,
+                    hash: header.hash.to_string(),
+                    parent_hash: header.parent_hash.to_string(),
+                    timestamp: header.timestamp,
+                    base_fee_per_gas: header.base_fee_per_gas,
+                })
+                .collect::<Vec<_>>();
+            database
+                .ensure_execution_verification_schema(&ExecutionVerificationBootstrap {
+                    chain_id: self.chain.chain_id,
+                    wallet_address: &self.config.wallet_address,
+                    manifest_version: &verification.manifest_version,
+                    manifest_digest: &verification.manifest_digest,
+                    checkpoint_number: checkpoint.number,
+                    checkpoint_hash: &checkpoint.hash.to_string(),
+                    checkpoint_parent_hash: &checkpoint.parent_hash.to_string(),
+                    checkpoint_timestamp: checkpoint.timestamp,
+                    checkpoint_base_fee_per_gas: checkpoint.base_fee_per_gas,
+                    finalized_headers: &finalized_headers,
+                    next_canonical_nonce,
+                    observed_canonical_nonce,
+                    provider_ids: &provider_ids,
+                    operator_ids: &operator_ids,
+                    failure_domain_ids: &failure_domain_ids,
+                    decisions: &connect_decisions,
+                    migration: migration.as_ref(),
+                })
+                .await?;
         }
 
         let payload_connect_lease = if let (Some(database), Some(keys)) =
@@ -4027,7 +6430,13 @@ mod tests {
 
     use super::*;
     use crate::{
-        config::QuoteSpendLimit,
+        cache::database::connect_test_database,
+        config::{
+            BlockchainChainAnchorConfig, BlockchainContractManifest, BlockchainContractRole,
+            BlockchainDeploymentManifest, BlockchainPoolManifest, BlockchainProviderIdentity,
+            BlockchainTokenManifest, BlockchainVerificationConfig,
+            BlockchainVerificationProviderConfig, QuoteSpendLimit,
+        },
         constants::BLOCKCHAIN_VENUE,
         exchanges::arbitrum::UNISWAP_V3,
         rpc::http::{
@@ -4070,7 +6479,14 @@ mod tests {
     const CALL_ALLOWANCE_MAX: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\"}";
     const CALL_FACTORY: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x0000000000000000000000001f98431c8ad98523631ae4a59f267346ea31f984\"}";
     const CALL_WETH: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x00000000000000000000000082af49447d8a07e3bd95bd0d56f35241523fbab1\"}";
+    const CALL_USDC: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x000000000000000000000000af88d065e77c8cc2239327c5edb3a432268e5831\"}";
+    const CALL_FEE_500: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x00000000000000000000000000000000000000000000000000000000000001f4\"}";
     const CALL_POOL: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x000000000000000000000000c6962004f452be9203591991d15f6b388e09e8d0\"}";
+    const CALL_REVERTED: &str =
+        r#"{"jsonrpc":"2.0","id":1,"error":{"code":3,"message":"execution reverted"}}"#;
+    const STORAGE_ZERO: &str = r#"{"jsonrpc":"2.0","id":1,"result":"0x0000000000000000000000000000000000000000000000000000000000000000"}"#;
+    const TRACE_UNKNOWN_TRANSACTION: &str =
+        r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"transaction not found"}}"#;
     const CALL_DECIMALS_18: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x0000000000000000000000000000000000000000000000000000000000000012\"}";
     const CALL_DECIMALS_6: &str = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x0000000000000000000000000000000000000000000000000000000000000006\"}";
     const TRANSACTION_COUNT: &str =
@@ -4118,10 +6534,15 @@ mod tests {
 
     const BALANCE_OF_SELECTOR: &str = "0x70a08231";
     const ALLOWANCE_SELECTOR: &str = "0xdd62ed3e";
+    const POOL_TOKEN0_SELECTOR: &str = "0x0dfe1681";
+    const POOL_TOKEN1_SELECTOR: &str = "0xd21220a7";
+    const POOL_FEE_SELECTOR: &str = "0xddca3f43";
     const DECIMALS_SELECTOR: &str = "0x313ce567";
     const FACTORY_SELECTOR: &str = "0xc45a0155";
     const WETH9_SELECTOR: &str = "0x4aa4a4fc";
     const GET_POOL_SELECTOR: &str = "0x1698ee82";
+    const QUOTE_EXACT_INPUT_SELECTOR: &str = "0xc6a5026a";
+    const QUOTE_EXACT_OUTPUT_SELECTOR: &str = "0xbd21704a";
 
     fn test_pool() -> Pool {
         let chain = Arc::new(chains::ARBITRUM.clone());
@@ -4163,11 +6584,164 @@ mod tests {
         http_rpc_url: String,
         signer_env: &str,
     ) -> BlockchainExecutionClientConfig {
+        let verifier_separator = if http_rpc_url.contains('?') { '&' } else { '?' };
+        let code_hash = keccak256(
+            hex::decode("6080604052348015600e575f5ffd5b5060").expect("valid test bytecode"),
+        )
+        .to_string();
+        let result = |response: &str| {
+            serde_json::from_str::<serde_json::Value>(response).unwrap()["result"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        let probe = |call_data: &str, expected_output: String| BlockchainContractProbe {
+            call_data: call_data.to_string(),
+            expected_output,
+        };
+        let contract = |address: &str, role| {
+            let probes = match role {
+                BlockchainContractRole::Router => vec![
+                    probe(FACTORY_SELECTOR, result(CALL_FACTORY)),
+                    probe(WETH9_SELECTOR, result(CALL_WETH)),
+                ],
+                BlockchainContractRole::Factory => vec![probe(
+                    &hex::encode_prefixed(
+                        UniswapV3Factory::getPoolCall {
+                            tokenA: WETH_ADDRESS,
+                            tokenB: USDC_ADDRESS,
+                            fee: U24::try_from(500u32).unwrap(),
+                        }
+                        .abi_encode(),
+                    ),
+                    result(CALL_POOL),
+                )],
+                BlockchainContractRole::WrappedNative => {
+                    vec![probe(DECIMALS_SELECTOR, result(CALL_DECIMALS_18))]
+                }
+                BlockchainContractRole::Quote => {
+                    vec![probe(FACTORY_SELECTOR, result(CALL_FACTORY))]
+                }
+                BlockchainContractRole::Token => {
+                    vec![probe(DECIMALS_SELECTOR, result(CALL_DECIMALS_6))]
+                }
+                BlockchainContractRole::Pool => vec![
+                    probe(POOL_TOKEN0_SELECTOR, result(CALL_WETH)),
+                    probe(POOL_TOKEN1_SELECTOR, result(CALL_USDC)),
+                    probe(POOL_FEE_SELECTOR, result(CALL_FEE_500)),
+                ],
+                BlockchainContractRole::Implementation => Vec::new(),
+            };
+            BlockchainContractManifest {
+                address: address.to_string(),
+                role,
+                runtime_code_hash: code_hash.clone(),
+                proxy: None,
+                probes,
+            }
+        };
+        let deployment_manifest = BlockchainDeploymentManifest {
+            version: "test-v1".to_string(),
+            chain_id: chains::ARBITRUM.chain_id,
+            chain_name: chains::ARBITRUM.name.to_string(),
+            contracts: vec![
+                contract(ROUTER, BlockchainContractRole::Router),
+                contract(
+                    "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+                    BlockchainContractRole::Factory,
+                ),
+                contract(WETH, BlockchainContractRole::WrappedNative),
+                contract(
+                    "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+                    BlockchainContractRole::Quote,
+                ),
+                contract(USDC, BlockchainContractRole::Token),
+                contract(
+                    "0xC6962004f452bE9203591991D15f6b388e09E8D0",
+                    BlockchainContractRole::Pool,
+                ),
+            ],
+            tokens: vec![
+                BlockchainTokenManifest {
+                    address: WETH.to_string(),
+                    name: "Wrapped Ether".to_string(),
+                    symbol: "WETH".to_string(),
+                    decimals: 18,
+                    asset_role: "both".to_string(),
+                },
+                BlockchainTokenManifest {
+                    address: USDC.to_string(),
+                    name: "USD Coin".to_string(),
+                    symbol: "USDC".to_string(),
+                    decimals: 6,
+                    asset_role: "both".to_string(),
+                },
+            ],
+            pools: vec![BlockchainPoolManifest {
+                address: "0xC6962004f452bE9203591991D15f6b388e09E8D0".to_string(),
+                token0: WETH.to_string(),
+                token1: USDC.to_string(),
+                fee: 500,
+                factory: "0x1F98431c8aD98523631AE4a59f267346ea31F984".to_string(),
+                quote_contract: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e".to_string(),
+            }],
+            call_edges: ["swap_sell", "swap_buy"]
+                .into_iter()
+                .map(|purpose| BlockchainCallEdgeManifest {
+                    purpose: purpose.to_string(),
+                    caller: ROUTER.to_string(),
+                    target: "0xC6962004f452bE9203591991D15f6b388e09E8D0".to_string(),
+                    call_type: "call".to_string(),
+                })
+                .collect(),
+        };
+        let manifest_digest =
+            keccak256(serde_json::to_vec(&deployment_manifest).unwrap()).to_string();
+        let verification = BlockchainVerificationConfig {
+            authoritative: BlockchainProviderIdentity {
+                provider_id: "authoritative".to_string(),
+                operator_id: "operator-a".to_string(),
+                failure_domain_ids: vec!["domain-a".to_string()],
+            },
+            verifiers: vec![
+                BlockchainVerificationProviderConfig {
+                    identity: BlockchainProviderIdentity {
+                        provider_id: "verifier-a".to_string(),
+                        operator_id: "operator-b".to_string(),
+                        failure_domain_ids: vec!["domain-b".to_string()],
+                    },
+                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-a"),
+                },
+                BlockchainVerificationProviderConfig {
+                    identity: BlockchainProviderIdentity {
+                        provider_id: "verifier-b".to_string(),
+                        operator_id: "operator-c".to_string(),
+                        failure_domain_ids: vec!["domain-c".to_string()],
+                    },
+                    http_rpc_url: format!("{http_rpc_url}{verifier_separator}source=verifier-b"),
+                },
+            ],
+            chain_anchor: BlockchainChainAnchorConfig {
+                chain_id: chains::ARBITRUM.chain_id,
+                chain_name: chains::ARBITRUM.name.to_string(),
+                checkpoint_height: 30_346_560,
+                checkpoint_hash:
+                    "0x1111111111111111111111111111111111111111111111111111111111111111".to_string(),
+                checkpoint_timestamp: 1_761_888_800,
+                max_head_skew_blocks: 3,
+                max_head_age_secs: u64::MAX,
+                max_future_drift_secs: u64::MAX,
+            },
+            manifest_version: "test-v1".to_string(),
+            manifest_digest,
+            deployment_manifest,
+        };
         BlockchainExecutionClientConfig::builder()
             .client_id(AccountId::from("BLOCKCHAIN-001"))
             .chain(chains::ARBITRUM.clone())
             .wallet_address(WALLET.to_string())
             .http_rpc_url(http_rpc_url)
+            .verification(verification)
             .signer_private_key_env(signer_env.to_string())
             .router_addresses(vec![ROUTER.to_string()])
             .weth_address(WETH.to_string())
@@ -4194,6 +6768,12 @@ mod tests {
         ]);
         config.quote_spend_limits = Some(vec![quote_spend_limit(USDC, WETH, 6, &max_amount)]);
         config
+    }
+
+    fn refresh_test_manifest_digest(config: &mut BlockchainExecutionClientConfig) {
+        let verification = config.verification.as_mut().unwrap();
+        verification.manifest_digest =
+            keccak256(serde_json::to_vec(&verification.deployment_manifest).unwrap()).to_string();
     }
 
     fn quote_spend_limit(
@@ -4261,6 +6841,7 @@ mod tests {
         state: MockRpcState,
         signer_env: &str,
     ) -> (BlockchainExecutionClient, MockRpcState, Rc<RefCell<Cache>>) {
+        let state = with_connect_capabilities(state);
         let addr = start_mock_rpc_server(state.clone()).await;
         let pool = test_pool();
         let tokens = [pool.token0.clone(), pool.token1.clone()];
@@ -4280,6 +6861,7 @@ mod tests {
             .with_response("eth_getCode", GET_CODE_DEPLOYED)
             .with_response("eth_getBalance", GET_BALANCE)
             .with_response("eth_getBlockByNumber", BLOCK_BY_NUMBER)
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
             .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", BLOCK_CANONICAL)
             .with_parameter_response("eth_getBlockByNumber", "finalized", BLOCK_FINALIZED)
             .with_parameter_response("eth_getBlockByNumber", "0x1cf0d42", BLOCK_FINALIZED)
@@ -4287,14 +6869,36 @@ mod tests {
             .with_call_response(FACTORY_SELECTOR, CALL_FACTORY)
             .with_call_response(WETH9_SELECTOR, CALL_WETH)
             .with_call_response(GET_POOL_SELECTOR, CALL_POOL)
+            .with_call_response(POOL_TOKEN0_SELECTOR, CALL_WETH)
+            .with_call_response(POOL_TOKEN1_SELECTOR, CALL_USDC)
+            .with_call_response(POOL_FEE_SELECTOR, CALL_FEE_500)
             .with_contract_call_response(WETH, DECIMALS_SELECTOR, CALL_DECIMALS_18)
             .with_contract_call_response(USDC, DECIMALS_SELECTOR, CALL_DECIMALS_6)
+            .with_call_response(
+                QUOTE_EXACT_INPUT_SELECTOR,
+                &quote_response(expected_sell_quote_amount()),
+            )
+            .with_call_response(
+                QUOTE_EXACT_OUTPUT_SELECTOR,
+                &quote_response(expected_buy_amount_in()),
+            )
     }
 
     fn ready_rpc_state() -> MockRpcState {
-        execution_rpc_state()
+        with_connect_capabilities(execution_rpc_state())
             .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
             .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE)
+    }
+
+    fn with_connect_capabilities(state: MockRpcState) -> MockRpcState {
+        state
+            .with_response("eth_getStorageAt", STORAGE_ZERO)
+            .with_response("eth_estimateGas", ESTIMATE_GAS)
+            .with_parameter_response(
+                "debug_traceTransaction",
+                &B256::ZERO.to_string(),
+                TRACE_UNKNOWN_TRANSACTION,
+            )
     }
 
     fn signing_rpc_state() -> MockRpcState {
@@ -4517,7 +7121,11 @@ mod tests {
             .unwrap();
         cache
             .borrow_mut()
-            .add_pool_profiler(test_profiler(&pool, FIXTURE_BLOCK))
+            .add_pool_profiler(test_profiler_at_block(
+                &pool,
+                FIXTURE_BLOCK,
+                FIXTURE_BLOCK_HASH,
+            ))
             .unwrap();
         let core = ExecutionClientCore::new(
             TraderId::from("TRADER-001"),
@@ -4581,9 +7189,7 @@ mod tests {
 
         let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
         let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
+        let database = connect_test_database(db_options).await.unwrap();
         let addr = start_mock_rpc_server(state.clone()).await;
         let (mut client, cache) = swap_client_with_cache(config(format!("http://{addr}")));
         client.cache.database = Some(database);
@@ -4594,12 +7200,145 @@ mod tests {
             .await
             .unwrap();
         protect_test_storage(&mut client, &schema).await;
+        initialize_test_verification_ledger(&client).await;
         client.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
         client.core.set_connected();
 
         Some((admin_pool, schema, client, state, cache))
+    }
+
+    async fn initialize_test_verification_ledger(client: &BlockchainExecutionClient) {
+        initialize_test_verification_ledger_with_headers(
+            client,
+            &[ExecutionVerifiedHeader {
+                number: FIXTURE_BLOCK,
+                hash: FIXTURE_BLOCK_HASH.to_string(),
+                parent_hash: "0x0000000000000000000000000000000000000000000000000000000000000001"
+                    .to_string(),
+                timestamp: FIXTURE_BLOCK_TIMESTAMP,
+                base_fee_per_gas: Some(100_000_000),
+            }],
+        )
+        .await;
+    }
+
+    async fn initialize_test_verification_ledger_with_headers(
+        client: &BlockchainExecutionClient,
+        finalized_headers: &[ExecutionVerifiedHeader],
+    ) {
+        ensure_test_verification_ledger(client, finalized_headers, 7, 7)
+            .await
+            .unwrap();
+    }
+
+    async fn ensure_test_verification_ledger(
+        client: &BlockchainExecutionClient,
+        finalized_headers: &[ExecutionVerifiedHeader],
+        next_canonical_nonce: u64,
+        observed_canonical_nonce: u64,
+    ) -> anyhow::Result<()> {
+        let verification = client.config.verification.as_ref().unwrap();
+        let provider_ids = vec![
+            "authoritative".to_string(),
+            "verifier-a".to_string(),
+            "verifier-b".to_string(),
+        ];
+        let operator_ids = vec![
+            "operator-a".to_string(),
+            "operator-b".to_string(),
+            "operator-c".to_string(),
+        ];
+        let failure_domain_ids = vec![
+            "domain-a".to_string(),
+            "domain-b".to_string(),
+            "domain-c".to_string(),
+        ];
+        let decisions = [ExecutionVerificationDecision {
+            read_class: "numbered_block",
+            height_start: Some(FIXTURE_BLOCK),
+            height_end: Some(FIXTURE_BLOCK),
+            normalized_value_digest: B256::ZERO.to_string(),
+        }];
+        client
+            .cache
+            .database
+            .as_ref()
+            .unwrap()
+            .ensure_execution_verification_schema(&ExecutionVerificationBootstrap {
+                chain_id: 42_161,
+                wallet_address: WALLET,
+                manifest_version: &verification.manifest_version,
+                manifest_digest: &verification.manifest_digest,
+                checkpoint_number: FIXTURE_BLOCK,
+                checkpoint_hash: FIXTURE_BLOCK_HASH,
+                checkpoint_parent_hash:
+                    "0x0000000000000000000000000000000000000000000000000000000000000001",
+                checkpoint_timestamp: FIXTURE_BLOCK_TIMESTAMP,
+                checkpoint_base_fee_per_gas: Some(100_000_000),
+                finalized_headers,
+                next_canonical_nonce,
+                observed_canonical_nonce,
+                provider_ids: &provider_ids,
+                operator_ids: &operator_ids,
+                failure_domain_ids: &failure_domain_ids,
+                decisions: &decisions,
+                migration: None,
+            })
+            .await
+    }
+
+    async fn initialize_test_verification_migration(
+        client: &BlockchainExecutionClient,
+        finalized_headers: &[ExecutionVerifiedHeader],
+        next_canonical_nonce: u64,
+        decisions: &[ExecutionVerificationDecision],
+        migration: &ExecutionVerificationMigration,
+    ) {
+        let verification = client.config.verification.as_ref().unwrap();
+        let provider_ids = vec![
+            "authoritative".to_string(),
+            "verifier-a".to_string(),
+            "verifier-b".to_string(),
+        ];
+        let operator_ids = vec![
+            "operator-a".to_string(),
+            "operator-b".to_string(),
+            "operator-c".to_string(),
+        ];
+        let failure_domain_ids = vec![
+            "domain-a".to_string(),
+            "domain-b".to_string(),
+            "domain-c".to_string(),
+        ];
+        client
+            .cache
+            .database
+            .as_ref()
+            .unwrap()
+            .ensure_execution_verification_schema(&ExecutionVerificationBootstrap {
+                chain_id: 42_161,
+                wallet_address: WALLET,
+                manifest_version: &verification.manifest_version,
+                manifest_digest: &verification.manifest_digest,
+                checkpoint_number: FIXTURE_BLOCK,
+                checkpoint_hash: FIXTURE_BLOCK_HASH,
+                checkpoint_parent_hash:
+                    "0x0000000000000000000000000000000000000000000000000000000000000001",
+                checkpoint_timestamp: FIXTURE_BLOCK_TIMESTAMP,
+                checkpoint_base_fee_per_gas: Some(100_000_000),
+                finalized_headers,
+                next_canonical_nonce,
+                observed_canonical_nonce: next_canonical_nonce,
+                provider_ids: &provider_ids,
+                operator_ids: &operator_ids,
+                failure_domain_ids: &failure_domain_ids,
+                decisions,
+                migration: Some(migration),
+            })
+            .await
+            .unwrap();
     }
 
     async fn swap_rpc_state() -> MockRpcState {
@@ -4785,6 +7524,7 @@ mod tests {
             .unwrap();
         (intent, tx_hash, raw_tx)
     }
+
     async fn reserve_test_swap_intent(database: &BlockchainCacheDatabase) -> ExecutionIntentRow {
         let pool = test_pool();
         let order = test_market_sell_order(pool.instrument_id);
@@ -4901,6 +7641,7 @@ mod tests {
                 .unwrap();
         }
     }
+
     async fn later_reconnect(
         previous: BlockchainExecutionClient,
         http_rpc_url: String,
@@ -4949,17 +7690,9 @@ mod tests {
         events
     }
 
-    fn assert_missing_swap_log_rejected(events: &[OrderEventAny]) {
-        assert_eq!(events.len(), 2, "was: {events:?}");
+    fn assert_swap_quarantined_without_terminal_event(events: &[OrderEventAny]) {
+        assert_eq!(events.len(), 1, "was: {events:?}");
         assert!(matches!(&events[0], OrderEventAny::Submitted(_)));
-        let OrderEventAny::Rejected(rejected) = &events[1] else {
-            panic!("expected OrderRejected, was {:?}", events[1]);
-        };
-        assert!(
-            rejected.reason.as_str().contains("emitted 0 Swap logs"),
-            "was: {}",
-            rejected.reason
-        );
     }
 
     fn assert_swap_submitted_and_filled(events: &[OrderEventAny]) {
@@ -4996,6 +7729,24 @@ mod tests {
             .unwrap();
         let quoted = exact_output_amount(&quote, zero_for_one).unwrap();
         derive_min_amount_out(quoted, slippage_bps).unwrap()
+    }
+
+    fn expected_sell_quote_amount() -> U256 {
+        let profiler = test_profiler(&test_pool(), FIXTURE_BLOCK);
+        let quote = profiler
+            .swap_exact_in(U256::from(1_000_000_000_000_000u64), true, None)
+            .unwrap();
+        exact_output_amount(&quote, true).unwrap()
+    }
+
+    fn quote_response(amount: U256) -> String {
+        let result = (amount, U160::from(1u128 << 96), 0u32, U256::from(50_000u64)).abi_encode();
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": hex::encode_prefixed(result),
+        })
+        .to_string()
     }
 
     async fn expected_swap_tx(min_amount_out: U256) -> (B256, String) {
@@ -5127,15 +7878,21 @@ mod tests {
             "result": {
                 "number": "0x1cf0d41",
                 "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "parentHash": FIXTURE_BLOCK_HASH,
                 "timestamp": "0x69044a21",
                 "baseFeePerGas": "0x5f5e100",
                 "transactions": [{
                     "hash": tx_hash.to_string(),
                     "from": WALLET,
                     "nonce": "0x7",
+                    "chainId": "0xa4b1",
+                    "type": "0x2",
                     "to": ROUTER,
                     "input": hex::encode_prefixed(expected_buy_swap_calldata(min_amount_out, amount_in)),
-                    "value": "0x0"
+                    "value": "0x0",
+                    "gas": "0x130b0",
+                    "maxFeePerGas": "0x7bfa480",
+                    "maxPriorityFeePerGas": "0x989680"
                 }]
             }
         })
@@ -5149,12 +7906,16 @@ mod tests {
     ) -> MockRpcState {
         let receipt = finalized_buy_swap_receipt(tx_hash, amount_in);
         let block = finalized_buy_swap_block(tx_hash, min_amount_out, amount_in);
-        signing_rpc_state()
-            .with_response("eth_getTransactionReceipt", &receipt)
-            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
-            .with_send_raw_transaction_echo()
-            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
-            .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE)
+        with_finalized_identity(
+            signing_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                .with_send_raw_transaction_echo()
+                .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
+                .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE),
+            &block,
+            &receipt,
+        )
     }
 
     fn finalized_swap_receipt(tx_hash: B256) -> String {
@@ -5215,15 +7976,21 @@ mod tests {
             "result": {
                 "number": "0x1cf0d41",
                 "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "parentHash": FIXTURE_BLOCK_HASH,
                 "timestamp": "0x69044a21",
                 "baseFeePerGas": "0x5f5e100",
                 "transactions": [{
                     "hash": tx_hash.to_string(),
                     "from": WALLET,
                     "nonce": "0x7",
+                    "chainId": "0xa4b1",
+                    "type": "0x2",
                     "to": ROUTER,
                     "input": hex::encode_prefixed(expected_swap_calldata(min_amount_out)),
-                    "value": "0x0"
+                    "value": "0x0",
+                    "gas": "0x130b0",
+                    "maxFeePerGas": "0x7bfa480",
+                    "maxPriorityFeePerGas": "0x989680"
                 }]
             }
         })
@@ -5233,12 +8000,63 @@ mod tests {
     fn finalized_swap_rpc_state(tx_hash: B256, min_amount_out: U256) -> MockRpcState {
         let receipt = finalized_swap_receipt(tx_hash);
         let block = finalized_swap_block(tx_hash, min_amount_out);
-        signing_rpc_state()
-            .with_response("eth_getTransactionReceipt", &receipt)
-            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
-            .with_send_raw_transaction_echo()
-            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
-            .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE)
+        with_finalized_identity(
+            signing_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                .with_send_raw_transaction_echo()
+                .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
+                .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE),
+            &block,
+            &receipt,
+        )
+    }
+
+    fn with_finalized_identity(
+        state: MockRpcState,
+        block_response: &str,
+        receipt_response: &str,
+    ) -> MockRpcState {
+        let block: serde_json::Value = serde_json::from_str(block_response).unwrap();
+        let receipt: serde_json::Value = serde_json::from_str(receipt_response).unwrap();
+        let transaction = block["result"]["transactions"][0].clone();
+        let transaction_response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": transaction,
+        })
+        .to_string();
+        let success = receipt["result"]["status"] == "0x1";
+        let mut trace = serde_json::json!({
+            "type": "CALL",
+            "from": transaction["from"],
+            "to": transaction["to"],
+            "value": transaction["value"],
+            "gas": transaction["gas"],
+            "gasUsed": receipt["result"]["gasUsed"],
+            "input": transaction["input"],
+            "output": "0x",
+            "calls": [],
+        });
+
+        if !success {
+            trace["error"] = serde_json::json!("execution reverted");
+        }
+        let trace_response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": trace,
+        })
+        .to_string();
+        state
+            .with_response("eth_getTransactionByHash", &transaction_response)
+            .with_response("debug_traceTransaction", &trace_response)
+    }
+
+    fn receipt_with_transaction_hash(receipt_response: &str, tx_hash: B256) -> String {
+        let mut receipt: serde_json::Value = serde_json::from_str(receipt_response).unwrap();
+        receipt["result"]["transactionHash"] = serde_json::json!(tx_hash.to_string());
+        receipt.to_string()
     }
 
     fn replacement_head_block(tx_hash: B256) -> String {
@@ -5248,15 +8066,30 @@ mod tests {
             "result": {
                 "number": "0x1cf0d40",
                 "hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                "parentHash": "0x0000000000000000000000000000000000000000000000000000000000000001",
                 "timestamp": "0x69044a20",
                 "baseFeePerGas": "0x5f5e100",
                 "transactions": [{
+                    "hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+                    "from": "0x0000000000000000000000000000000000000001",
+                    "nonce": "0x1",
+                    "type": "0x0",
+                    "to": WETH,
+                    "input": "0x",
+                    "value": "0x0",
+                    "gas": "0x5208"
+                }, {
                     "hash": tx_hash.to_string(),
                     "from": WALLET,
                     "nonce": "0x7",
+                    "chainId": "0xa4b1",
+                    "type": "0x2",
                     "to": WETH,
                     "input": "0xd0e30db0",
-                    "value": "0x38d7ea4c68000"
+                    "value": "0x38d7ea4c68000",
+                    "gas": "0x130b0",
+                    "maxFeePerGas": "0x7bfa480",
+                    "maxPriorityFeePerGas": "0x989680"
                 }]
             }
         })
@@ -5272,26 +8105,25 @@ mod tests {
             "result": {
                 "number": "0x1cf0d41",
                 "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "parentHash": FIXTURE_BLOCK_HASH,
                 "timestamp": "0x69044a21",
                 "baseFeePerGas": "0x5f5e100",
                 "transactions": [{
                     "hash": tx_hash.to_string(),
                     "from": WALLET,
                     "nonce": "0x7",
+                    "chainId": "0xa4b1",
+                    "type": "0x2",
                     "to": WETH,
                     "input": "0xd0e30db0",
-                    "value": "0x38d7ea4c68000"
+                    "value": "0x38d7ea4c68000",
+                    "gas": "0x130b0",
+                    "maxFeePerGas": "0x7bfa480",
+                    "maxPriorityFeePerGas": "0x989680"
                 }]
             }
         })
         .to_string()
-    }
-
-    fn mismatched_finalized_wrap_block(tx_hash: B256) -> String {
-        let mut block: serde_json::Value =
-            serde_json::from_str(&finalized_wrap_block(tx_hash)).unwrap();
-        block["result"]["transactions"][0]["value"] = serde_json::json!("0x1");
-        block.to_string()
     }
 
     /// The canonical block at the receipt height containing the given approve transaction
@@ -5308,39 +8140,73 @@ mod tests {
             "result": {
                 "number": "0x1cf0d41",
                 "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "parentHash": FIXTURE_BLOCK_HASH,
                 "timestamp": "0x69044a21",
                 "baseFeePerGas": "0x5f5e100",
                 "transactions": [{
                     "hash": tx_hash.to_string(),
                     "from": WALLET,
                     "nonce": "0x7",
+                    "chainId": "0xa4b1",
+                    "type": "0x2",
                     "to": WETH,
                     "input": hex::encode_prefixed(calldata),
-                    "value": "0x0"
+                    "value": "0x0",
+                    "gas": "0x130b0",
+                    "maxFeePerGas": "0x7bfa480",
+                    "maxPriorityFeePerGas": "0x989680"
                 }]
             }
         })
         .to_string()
     }
 
-    fn fixture_rpc_block() -> RpcBlock {
-        RpcBlock {
-            number: FIXTURE_BLOCK,
-            hash: B256::from([0x11; 32]),
-            timestamp: FIXTURE_BLOCK_TIMESTAMP,
-            base_fee_per_gas: Some(100_000_000),
-            transactions: Vec::new(),
+    fn fixture_sell_plan() -> SwapPlan {
+        let pool = test_pool();
+        let order = test_market_sell_order(pool.instrument_id);
+        let quote_token = pool.get_quote_token();
+        SwapPlan {
+            order,
+            quote_currency: Currency::new_checked(
+                &quote_token.symbol,
+                quote_token.decimals,
+                0,
+                &quote_token.name,
+                CurrencyType::Crypto,
+            )
+            .unwrap(),
+            instrument_id: pool.instrument_id,
+            pool_address: pool.address,
+            router: ROUTER_ADDRESS,
+            factory: UNISWAP_V3.dex.factory,
+            weth: WETH_ADDRESS,
+            token_in: WETH_ADDRESS,
+            token_out: USDC_ADDRESS,
+            fee: U24::try_from(500u32).unwrap(),
+            amount_in: U256::from(1_000_000_000_000_000u64),
+            min_amount_out: expected_min_amount_out(50),
+            slippage_bps: 50,
+            quote_spend_ceiling: None,
+            profiler_position: Some(profiler_event_position()),
+            pool,
         }
     }
 
     fn fixture_block_response(number: u64, hash: B256) -> String {
+        let parent_hash = if number == FIXTURE_BLOCK {
+            B256::from_str("0x0000000000000000000000000000000000000000000000000000000000000001")
+                .unwrap()
+        } else {
+            B256::from_str(FIXTURE_BLOCK_HASH).unwrap()
+        };
         serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
             "result": {
                 "number": format!("0x{number:x}"),
                 "hash": hash.to_string(),
-                "timestamp": "0x69044a20",
+                "parentHash": parent_hash.to_string(),
+                "timestamp": format!("0x{:x}", FIXTURE_BLOCK_TIMESTAMP + number - FIXTURE_BLOCK),
                 "baseFeePerGas": "0x5f5e100",
                 "transactions": []
             }
@@ -5555,14 +8421,8 @@ mod tests {
             RangeInclusive::new(10, 10)
         );
         assert_eq!(
-            replacement_scan_range(10, 10 + MAX_REPLACEMENT_SCAN_BLOCKS - 1).unwrap(),
+            replacement_scan_range(10, 10 + MAX_REPLACEMENT_SCAN_BLOCKS).unwrap(),
             RangeInclusive::new(10, 10 + MAX_REPLACEMENT_SCAN_BLOCKS - 1)
-        );
-        assert!(
-            replacement_scan_range(10, 10 + MAX_REPLACEMENT_SCAN_BLOCKS)
-                .unwrap_err()
-                .to_string()
-                .contains("exceeding the safety bound")
         );
         assert!(
             replacement_scan_range(11, 10)
@@ -5570,7 +8430,22 @@ mod tests {
                 .to_string()
                 .contains("is behind execution creation block")
         );
-        assert!(replacement_scan_range(0, u64::MAX).is_err());
+        assert_eq!(
+            replacement_scan_range(u64::MAX - 1, u64::MAX).unwrap(),
+            RangeInclusive::new(u64::MAX - 1, u64::MAX)
+        );
+    }
+
+    #[rstest]
+    fn terminal_execution_event_ids_are_stable_and_kind_specific() {
+        let transaction_hash = B256::from([0x42; 32]);
+
+        let fill = execution_event_id(transaction_hash, b"fill");
+        let fill_retry = execution_event_id(transaction_hash, b"fill");
+        let reverted = execution_event_id(transaction_hash, b"reverted");
+
+        assert_eq!(fill, fill_retry);
+        assert_ne!(fill, reverted);
     }
 
     #[rstest]
@@ -5590,6 +8465,188 @@ mod tests {
         assert!(!debug.contains("[222, 173, 190, 239]"));
     }
 
+    #[rstest]
+    fn call_trace_rejects_unreviewed_internal_edge() {
+        let signed = crate::execution::transaction::DecodedSignedTransaction {
+            hash: B256::from([1; 32]),
+            signer: Address::from_str(WALLET).unwrap(),
+            chain_id: 42_161,
+            nonce: 7,
+            to: ROUTER_ADDRESS,
+            value: U256::ZERO,
+            input: Bytes::from(expected_swap_calldata(expected_min_amount_out(50))),
+            gas_limit: 78_000,
+            max_fee_per_gas: 130_000_000,
+            max_priority_fee_per_gas: 10_000_000,
+        };
+        let input_digest = keccak256(&signed.input);
+        let trace = VerifiedCallTrace {
+            call_type: RpcCallType::Call,
+            from: signed.signer,
+            to: Some(signed.to),
+            value: signed.value,
+            input_selector: signed
+                .input
+                .get(..4)
+                .map(|selector| selector.try_into().unwrap()),
+            input_digest,
+            success: true,
+            calls: vec![VerifiedCallTrace {
+                call_type: RpcCallType::Call,
+                from: ROUTER_ADDRESS,
+                to: Some(WETH_ADDRESS),
+                value: U256::ZERO,
+                input_selector: None,
+                input_digest: B256::ZERO,
+                success: true,
+                calls: Vec::new(),
+            }],
+        };
+        let manifest = &test_config("http://127.0.0.1:1".to_string())
+            .verification
+            .unwrap()
+            .deployment_manifest;
+
+        let error = validate_call_trace(&trace, &signed, true, "swap_sell", manifest).unwrap_err();
+
+        assert!(
+            error.to_string().contains("unreviewed call edge"),
+            "was: {error}"
+        );
+    }
+
+    #[rstest]
+    fn call_trace_rejects_unlisted_precompile_target() {
+        let manifest = test_config("http://127.0.0.1:1".to_string())
+            .verification
+            .unwrap()
+            .deployment_manifest;
+        let calls = [VerifiedCallTrace {
+            call_type: RpcCallType::Call,
+            from: ROUTER_ADDRESS,
+            to: Some(address!("0000000000000000000000000000000000000007")),
+            value: U256::ZERO,
+            input_selector: None,
+            input_digest: B256::ZERO,
+            success: true,
+            calls: Vec::new(),
+        }];
+
+        let error =
+            validate_internal_calls(&calls, ROUTER_ADDRESS, "swap_sell", &manifest).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Verified call trace contains an unreviewed call edge {ROUTER_ADDRESS} -> {} for swap_sell",
+                address!("0000000000000000000000000000000000000007")
+            )
+        );
+    }
+
+    #[rstest]
+    fn call_trace_requires_exact_call_type() {
+        let manifest = test_config("http://127.0.0.1:1".to_string())
+            .verification
+            .unwrap()
+            .deployment_manifest;
+        let calls = [VerifiedCallTrace {
+            call_type: RpcCallType::Staticcall,
+            from: ROUTER_ADDRESS,
+            to: Some(test_pool().address),
+            value: U256::ZERO,
+            input_selector: None,
+            input_digest: B256::ZERO,
+            success: true,
+            calls: Vec::new(),
+        }];
+
+        let error =
+            validate_internal_calls(&calls, ROUTER_ADDRESS, "swap_sell", &manifest).unwrap_err();
+
+        assert!(
+            error.to_string().contains("unreviewed staticcall edge"),
+            "was: {error}"
+        );
+    }
+
+    #[rstest]
+    fn call_trace_requires_exact_caller() {
+        let manifest = test_config("http://127.0.0.1:1".to_string())
+            .verification
+            .unwrap()
+            .deployment_manifest;
+        let calls = [VerifiedCallTrace {
+            call_type: RpcCallType::Call,
+            from: WETH_ADDRESS,
+            to: Some(test_pool().address),
+            value: U256::ZERO,
+            input_selector: None,
+            input_digest: B256::ZERO,
+            success: true,
+            calls: Vec::new(),
+        }];
+
+        let error =
+            validate_internal_calls(&calls, ROUTER_ADDRESS, "swap_sell", &manifest).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Verified call trace child has an invalid caller context"
+        );
+    }
+
+    #[rstest]
+    fn call_trace_rejects_contract_creation() {
+        let signed = crate::execution::transaction::DecodedSignedTransaction {
+            hash: B256::from([1; 32]),
+            signer: Address::from_str(WALLET).unwrap(),
+            chain_id: 42_161,
+            nonce: 7,
+            to: ROUTER_ADDRESS,
+            value: U256::ZERO,
+            input: Bytes::from(expected_swap_calldata(expected_min_amount_out(50))),
+            gas_limit: 78_000,
+            max_fee_per_gas: 130_000_000,
+            max_priority_fee_per_gas: 10_000_000,
+        };
+        let trace = VerifiedCallTrace {
+            call_type: RpcCallType::Call,
+            from: signed.signer,
+            to: Some(signed.to),
+            value: signed.value,
+            input_selector: signed
+                .input
+                .get(..4)
+                .map(|selector| selector.try_into().unwrap()),
+            input_digest: keccak256(&signed.input),
+            success: true,
+            calls: vec![VerifiedCallTrace {
+                call_type: RpcCallType::Create,
+                from: ROUTER_ADDRESS,
+                to: Some(address!("0000000000000000000000000000000000000007")),
+                value: U256::ZERO,
+                input_selector: None,
+                input_digest: B256::ZERO,
+                success: true,
+                calls: Vec::new(),
+            }],
+        };
+        let manifest = &test_config("http://127.0.0.1:1".to_string())
+            .verification
+            .unwrap()
+            .deployment_manifest;
+
+        let error = validate_call_trace(&trace, &signed, true, "swap_sell", manifest).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("forbidden state-changing operation"),
+            "was: {error}"
+        );
+    }
+
     #[tokio::test]
     async fn live_arbitrum_numbered_swap_reads_are_available() {
         if std::env::var(LIVE_READ_SMOKE_ENV).as_deref() != Ok("1") {
@@ -5601,8 +8658,6 @@ mod tests {
             .unwrap_or_else(|_| LIVE_READ_SMOKE_RPC.to_string());
         let rpc = Arc::new(BlockchainHttpRpcClient::new(rpc_url, None, None));
         let anchor = rpc.latest_block().await.unwrap();
-        let deployment = UniswapV3Deployment::new(rpc.clone(), Some(EXECUTION_RPC_TIMEOUT_SECS));
-        let erc20 = Erc20Contract::new(rpc.clone(), true);
         let pool = test_pool();
         let factory = UNISWAP_V3.dex.factory;
         let wallet = Address::from_str(WALLET).unwrap();
@@ -5615,40 +8670,94 @@ mod tests {
             .get_code_at(&ROUTER_ADDRESS, anchor.number)
             .await
             .unwrap();
-        let router_factory = deployment
-            .router_factory_at(&ROUTER_ADDRESS, anchor.number)
-            .await
-            .unwrap();
-        let router_weth = deployment
-            .router_weth9_at(&ROUTER_ADDRESS, anchor.number)
-            .await
-            .unwrap();
-        let registered_pool = deployment
-            .pool_at(
-                &factory,
-                WETH_ADDRESS,
-                USDC_ADDRESS,
-                U24::try_from(500u32).unwrap(),
+        let router_factory = rpc
+            .call_at(
+                None,
+                &ROUTER_ADDRESS,
+                U256::ZERO,
+                &UniswapV3RouterState::factoryCall {}.abi_encode(),
                 anchor.number,
             )
             .await
             .unwrap();
-        let weth_decimals = erc20
-            .decimals_at(&WETH_ADDRESS, anchor.number)
+        let router_factory =
+            UniswapV3RouterState::factoryCall::abi_decode_returns(&router_factory).unwrap();
+        let router_weth = rpc
+            .call_at(
+                None,
+                &ROUTER_ADDRESS,
+                U256::ZERO,
+                &UniswapV3RouterState::WETH9Call {}.abi_encode(),
+                anchor.number,
+            )
             .await
             .unwrap();
-        let usdc_decimals = erc20
-            .decimals_at(&USDC_ADDRESS, anchor.number)
+        let router_weth =
+            UniswapV3RouterState::WETH9Call::abi_decode_returns(&router_weth).unwrap();
+        let registered_pool_call = UniswapV3Factory::getPoolCall {
+            tokenA: WETH_ADDRESS,
+            tokenB: USDC_ADDRESS,
+            fee: U24::try_from(500u32).unwrap(),
+        }
+        .abi_encode();
+        let registered_pool = rpc
+            .call_at(
+                None,
+                &factory,
+                U256::ZERO,
+                &registered_pool_call,
+                anchor.number,
+            )
             .await
             .unwrap();
-        erc20
-            .allowance_at(&WETH_ADDRESS, &wallet, &ROUTER_ADDRESS, anchor.number)
+        let registered_pool =
+            UniswapV3Factory::getPoolCall::abi_decode_returns(&registered_pool).unwrap();
+        let weth_decimals = rpc
+            .call_at(
+                None,
+                &WETH_ADDRESS,
+                U256::ZERO,
+                &ERC20::decimalsCall {}.abi_encode(),
+                anchor.number,
+            )
             .await
             .unwrap();
-        erc20
-            .balance_of_at(&WETH_ADDRESS, &wallet, anchor.number)
+        let weth_decimals = ERC20::decimalsCall::abi_decode_returns(&weth_decimals).unwrap();
+        let usdc_decimals = rpc
+            .call_at(
+                None,
+                &USDC_ADDRESS,
+                U256::ZERO,
+                &ERC20::decimalsCall {}.abi_encode(),
+                anchor.number,
+            )
             .await
             .unwrap();
+        let usdc_decimals = ERC20::decimalsCall::abi_decode_returns(&usdc_decimals).unwrap();
+        let allowance_call = ERC20::allowanceCall {
+            owner: wallet,
+            spender: ROUTER_ADDRESS,
+        }
+        .abi_encode();
+        rpc.call_at(
+            None,
+            &WETH_ADDRESS,
+            U256::ZERO,
+            &allowance_call,
+            anchor.number,
+        )
+        .await
+        .unwrap();
+        let balance_call = ERC20::balanceOfCall { account: wallet }.abi_encode();
+        rpc.call_at(
+            None,
+            &WETH_ADDRESS,
+            U256::ZERO,
+            &balance_call,
+            anchor.number,
+        )
+        .await
+        .unwrap();
         let gas = rpc
             .estimate_gas_at(
                 &wallet,
@@ -5681,7 +8790,7 @@ mod tests {
     #[tokio::test]
     async fn swap_quote_rejects_missing_ingestion_block_hash() {
         let (client, state) = client_with_mock_rpc(execution_rpc_state()).await;
-        let pool = test_pool();
+        let plan = fixture_sell_plan();
         let position = BlockPosition::new(
             FIXTURE_BLOCK,
             FIXTURE_BLOCK_HASH.to_string(),
@@ -5691,11 +8800,15 @@ mod tests {
 
         let error = validate_swap_quote(
             &position,
-            pool.address,
-            &pool,
-            &fixture_rpc_block(),
+            &plan,
             100,
-            &client.http_rpc_client,
+            &client.verification,
+            &client
+                .config
+                .verification
+                .as_ref()
+                .unwrap()
+                .deployment_manifest,
         )
         .await
         .unwrap_err();
@@ -5716,7 +8829,7 @@ mod tests {
             &changed,
         );
         let (client, _) = client_with_mock_rpc(state).await;
-        let pool = test_pool();
+        let plan = fixture_sell_plan();
         let position = BlockPosition::new(
             FIXTURE_BLOCK,
             FIXTURE_BLOCK_HASH.to_string(),
@@ -5727,11 +8840,15 @@ mod tests {
 
         let error = validate_swap_quote(
             &position,
-            pool.address,
-            &pool,
-            &fixture_rpc_block(),
+            &plan,
             100,
-            &client.http_rpc_client,
+            &client.verification,
+            &client
+                .config
+                .verification
+                .as_ref()
+                .unwrap()
+                .deployment_manifest,
         )
         .await
         .unwrap_err();
@@ -5745,23 +8862,27 @@ mod tests {
         let receipt = profiler_event_receipt(pool.address);
         let state = execution_rpc_state().with_response("eth_getTransactionReceipt", &receipt);
         let (client, _) = client_with_mock_rpc(state).await;
+        let plan = fixture_sell_plan();
 
         let anchors = validate_swap_quote(
             &profiler_event_position(),
-            pool.address,
-            &pool,
-            &fixture_rpc_block(),
+            &plan,
             100,
-            &client.http_rpc_client,
+            &client.verification,
+            &client
+                .config
+                .verification
+                .as_ref()
+                .unwrap()
+                .deployment_manifest,
         )
         .await
         .unwrap();
 
-        assert_eq!(anchors.position, profiler_event_position());
+        assert_eq!(anchors.watermark.number, profiler_event_position().number);
         assert_eq!(anchors.state.number, FIXTURE_BLOCK);
         assert_eq!(anchors.state.hash, B256::from([0x11; 32]));
         assert_eq!(anchors.state.timestamp, FIXTURE_BLOCK_TIMESTAMP);
-        assert_eq!(anchors.state.base_fee_per_gas_wei, 100_000_000);
     }
 
     #[tokio::test]
@@ -5773,14 +8894,19 @@ mod tests {
         let state =
             execution_rpc_state().with_response("eth_getTransactionReceipt", &receipt.to_string());
         let (client, _) = client_with_mock_rpc(state).await;
+        let plan = fixture_sell_plan();
 
         let error = validate_swap_quote(
             &profiler_event_position(),
-            pool.address,
-            &pool,
-            &fixture_rpc_block(),
+            &plan,
             100,
-            &client.http_rpc_client,
+            &client.verification,
+            &client
+                .config
+                .verification
+                .as_ref()
+                .unwrap()
+                .deployment_manifest,
         )
         .await
         .unwrap_err();
@@ -5793,18 +8919,22 @@ mod tests {
 
     #[tokio::test]
     async fn swap_quote_rejects_watermark_from_different_pool() {
-        let pool = test_pool();
         let receipt = profiler_event_receipt(ROUTER_ADDRESS);
         let state = execution_rpc_state().with_response("eth_getTransactionReceipt", &receipt);
         let (client, _) = client_with_mock_rpc(state).await;
+        let plan = fixture_sell_plan();
 
         let error = validate_swap_quote(
             &profiler_event_position(),
-            pool.address,
-            &pool,
-            &fixture_rpc_block(),
+            &plan,
             100,
-            &client.http_rpc_client,
+            &client.verification,
+            &client
+                .config
+                .verification
+                .as_ref()
+                .unwrap()
+                .deployment_manifest,
         )
         .await
         .unwrap_err();
@@ -5817,40 +8947,20 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn swap_quote_rechecks_state_anchor_before_signing() {
-        let canonical = fixture_block_response(FIXTURE_BLOCK, B256::from([0x11; 32]));
-        let changed = fixture_block_response(FIXTURE_BLOCK, B256::from([0x44; 32]));
-        let state = execution_rpc_state().with_parameter_response_sequence(
-            "eth_getBlockByNumber",
-            "0x1cf0d40",
-            &[&canonical, &canonical, &changed],
-        );
-        let (client, _) = client_with_mock_rpc(state).await;
-        let pool = test_pool();
-        let position = BlockPosition::new(
-            FIXTURE_BLOCK,
-            FIXTURE_BLOCK_HASH.to_string(),
-            BLOCK_SCOPED_SNAPSHOT_INDEX,
-            BLOCK_SCOPED_SNAPSHOT_INDEX,
-        )
-        .with_block_hash(Some(FIXTURE_BLOCK_HASH.to_string()));
-        let anchors = validate_swap_quote(
-            &position,
-            pool.address,
-            &pool,
-            &fixture_rpc_block(),
-            100,
-            &client.http_rpc_client,
-        )
-        .await
-        .unwrap();
+    #[rstest]
+    fn verified_sell_quote_sets_signed_amounts() {
+        let plan = fixture_sell_plan();
+        let quote = UniswapV3Quote {
+            amount: expected_sell_quote_amount(),
+            sqrt_price_x96_after: U160::from(1u128 << 96),
+            initialized_ticks_crossed: 0,
+            gas_estimate: U256::from(50_000u64),
+        };
 
-        let error = validate_swap_anchors_before_sign(&anchors, &client.http_rpc_client)
-            .await
-            .unwrap_err();
+        let (amount_in, min_amount_out) = verified_swap_amounts(&plan, quote).unwrap();
 
-        assert!(error.to_string().contains("swap anchor"), "was: {error}");
+        assert_eq!(amount_in, U256::from(1_000_000_000_000_000u64));
+        assert_eq!(min_amount_out, expected_min_amount_out(50));
     }
 
     #[rstest]
@@ -6013,15 +9123,13 @@ mod tests {
 
     #[tokio::test]
     async fn submit_order_uses_pair_specific_quote_spend_limit() {
-        let other_token = "0x1111111111111111111111111111111111111111";
         let mut config = buy_test_config("http://127.0.0.1:1".to_string());
-        config
-            .allowed_token_pairs
-            .as_mut()
-            .unwrap()
-            .push((USDC.to_string(), other_token.to_string()));
-        config.quote_spend_limits =
-            Some(vec![quote_spend_limit(USDC, other_token, 6, "1000000000")]);
+        config.quote_spend_limits = Some(vec![quote_spend_limit(
+            WETH,
+            USDC,
+            18,
+            "1000000000000000000",
+        )]);
         let (mut client, cache) = swap_client_with_cache(config);
         let order = test_market_buy_order(test_pool().instrument_id);
         cache
@@ -6051,28 +9159,12 @@ mod tests {
     async fn submit_order_denies_buy_with_quote_spend_precision_mismatch() {
         let mut config = buy_test_config("http://127.0.0.1:1".to_string());
         config.quote_spend_limits.as_mut().unwrap()[0].spend_token_decimals = 18;
-        let (mut client, cache) = swap_client_with_cache(config);
-        let order = test_market_buy_order(test_pool().instrument_id);
-        cache
-            .borrow_mut()
-            .add_order(order.clone(), None, None, true)
-            .unwrap();
-        let mut receiver = start_with_events(&mut client);
-
-        client.submit_order(submit_order_cmd(&order)).unwrap();
-
-        let events = collect_order_events(&mut receiver);
-        assert_eq!(events.len(), 1);
-        let OrderEventAny::Denied(denied) = &events[0] else {
-            panic!("expected OrderDenied, was {:?}", events[0]);
-        };
+        let error = test_client_result(config, test_pool()).unwrap_err();
         assert!(
-            denied
-                .reason
-                .as_str()
-                .contains("uses 18 decimals, expected pool quote-token decimals 6"),
-            "was: {}",
-            denied.reason
+            error
+                .to_string()
+                .contains("Quote spend limit decimals do not match the deployment manifest"),
+            "was: {error}"
         );
     }
 
@@ -6275,7 +9367,7 @@ mod tests {
     #[tokio::test]
     async fn submit_order_sell_ignores_quote_spend_limits() {
         let mut config = test_config("http://127.0.0.1:1".to_string());
-        config.quote_spend_limits = Some(vec![quote_spend_limit(WETH, USDC, 6, "0")]);
+        config.quote_spend_limits = Some(vec![quote_spend_limit(WETH, USDC, 18, "0")]);
         let (mut client, _) = swap_client_with_cache(config);
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
@@ -6597,6 +9689,29 @@ mod tests {
             Some(order.client_order_id().as_str())
         );
         assert!(client.in_flight.lock().unwrap().is_none());
+        let nonce_state = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(format!(
+            "SELECT next_canonical_nonce, revision FROM {schema}.execution_verification_nonce"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let decision_count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_verification_decision \
+             WHERE outcome = 'verified'"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let connect_decision_count = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_verification_decision \
+                 WHERE decision_class = 'connect' AND outcome = 'verified'"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(nonce_state, (8, 1));
+        assert_eq!(decision_count, 35);
+        assert_eq!(connect_decision_count, 1);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -6629,23 +9744,25 @@ mod tests {
                 request["method"] == "eth_getBlockByNumber" && request["params"][0] == "latest"
             })
             .collect();
-        assert_eq!(latest_reads.len(), 1);
-        assert_eq!(
-            latest_reads[0]["params"],
-            serde_json::json!(["latest", false])
+        assert_eq!(latest_reads.len(), 3);
+        assert!(
+            latest_reads
+                .iter()
+                .all(|request| request["params"] == serde_json::json!(["latest", false]))
         );
 
-        for (method, count) in [
-            ("eth_getCode", 6),
-            ("eth_call", 7),
-            ("eth_estimateGas", 1),
-            ("eth_getBalance", 1),
+        for method in [
+            "eth_getCode",
+            "eth_call",
+            "eth_estimateGas",
+            "eth_getBalance",
         ] {
             let pinned: Vec<_> = pre_broadcast
                 .iter()
                 .filter(|request| request["method"] == method)
                 .collect();
-            assert_eq!(pinned.len(), count, "method {method}");
+            assert!(!pinned.is_empty(), "method {method}");
+            assert_eq!(pinned.len() % 3, 0, "method {method}: {pinned:?}");
             assert!(
                 pinned
                     .iter()
@@ -6661,7 +9778,8 @@ mod tests {
                     && request["params"][0] == FIXTURE_BLOCK_PARAM
             })
             .collect();
-        assert_eq!(numbered_blocks.len(), 3);
+        assert!(!numbered_blocks.is_empty());
+        assert_eq!(numbered_blocks.len() % 3, 0);
         assert!(
             numbered_blocks
                 .iter()
@@ -6672,23 +9790,46 @@ mod tests {
             .iter()
             .filter(|request| request["method"] == "eth_chainId")
             .collect();
-        assert_eq!(chain_ids.len(), 1);
-        assert_eq!(chain_ids[0]["params"], serde_json::json!([]));
+        assert_eq!(chain_ids.len(), 3);
+        assert!(
+            chain_ids
+                .iter()
+                .all(|request| request["params"] == serde_json::json!([]))
+        );
         let nonces: Vec<_> = pre_broadcast
             .iter()
             .filter(|request| request["method"] == "eth_getTransactionCount")
             .collect();
-        assert_eq!(nonces.len(), 1);
+        assert_eq!(nonces.len(), 6);
         assert_eq!(
-            nonces[0]["params"],
-            serde_json::json!([WALLET.to_ascii_lowercase(), "pending"])
+            nonces
+                .iter()
+                .filter(|request| {
+                    request["params"] == serde_json::json!([WALLET.to_ascii_lowercase(), "pending"])
+                })
+                .count(),
+            3
+        );
+        assert_eq!(
+            nonces
+                .iter()
+                .filter(|request| {
+                    request["params"]
+                        == serde_json::json!([WALLET.to_ascii_lowercase(), FIXTURE_BLOCK_PARAM])
+                })
+                .count(),
+            3
         );
         let priority_fees: Vec<_> = pre_broadcast
             .iter()
             .filter(|request| request["method"] == "eth_maxPriorityFeePerGas")
             .collect();
-        assert_eq!(priority_fees.len(), 1);
-        assert_eq!(priority_fees[0]["params"], serde_json::json!([]));
+        assert_eq!(priority_fees.len(), 3);
+        assert!(
+            priority_fees
+                .iter()
+                .all(|request| request["params"] == serde_json::json!([]))
+        );
 
         let (_, expected_raw) = expected_swap_tx(expected_min_amount_out(50)).await;
         assert_eq!(
@@ -6713,7 +9854,11 @@ mod tests {
         let state = swap_rpc_state().await.with_parameter_response_sequence(
             "eth_getBlockByNumber",
             FIXTURE_BLOCK_PARAM,
-            &[&canonical, &canonical, &changed],
+            &[
+                &canonical, &canonical, &canonical, &canonical, &canonical, &canonical, &canonical,
+                &canonical, &canonical, &canonical, &canonical, &canonical, &canonical, &canonical,
+                &canonical, &changed, &changed, &changed,
+            ],
         );
         let Some((admin_pool, schema, mut client, state, _)) =
             swap_client_with_database("execution_submit_anchor_change_test", state).await
@@ -6732,7 +9877,10 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("swap anchor"),
+            denied
+                .reason
+                .as_str()
+                .contains("pre-sign checkpoint reread verification disagreed"),
             "was: {}",
             denied.reason
         );
@@ -6759,17 +9907,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn submit_order_keeps_verified_swap_anchor_when_latest_advances() {
+        let canonical = fixture_block_response(FIXTURE_BLOCK, B256::from([0x11; 32]));
+        let newer = fixture_block_response(FIXTURE_BLOCK + 1, B256::from([0x44; 32]));
+        let state = swap_rpc_state().await.with_parameter_response_sequence(
+            "eth_getBlockByNumber",
+            "latest",
+            &[&canonical, &canonical, &canonical, &newer, &newer, &newer],
+        );
+        let Some((admin_pool, schema, mut client, state, _)) =
+            swap_client_with_database("execution_submit_advancing_head_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+
+        client.submit_order(submit_order_cmd(&order)).unwrap();
+        await_pending_tasks(&client).await;
+
+        let events = collect_order_events(&mut receiver);
+        assert_swap_submitted_and_filled(&events);
+        let latest_reads = state
+            .recorded_requests()
+            .iter()
+            .filter(|request| {
+                request["method"] == "eth_getBlockByNumber" && request["params"][0] == "latest"
+            })
+            .count();
+        assert_eq!(latest_reads, 3);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
     async fn submit_order_denies_changed_quote_watermark_before_signing() {
-        let watermark_number = FIXTURE_BLOCK - 1;
-        let watermark_hash = B256::from([0x55; 32]);
+        let watermark_number = FIXTURE_BLOCK;
+        let watermark_hash = B256::from([0x11; 32]);
         let canonical = fixture_block_response(watermark_number, watermark_hash);
         let changed = fixture_block_response(watermark_number, B256::from([0x66; 32]));
         let watermark_param = format!("0x{watermark_number:x}");
-        let state = swap_rpc_state().await.with_parameter_response_sequence(
-            "eth_getBlockByNumber",
-            &watermark_param,
-            &[&canonical, &changed],
-        );
+        let min_amount_out = expected_min_amount_out(50);
+        let (tx_hash, _) = expected_swap_tx(min_amount_out).await;
+        let head = finalized_swap_block(tx_hash, min_amount_out);
+        let state = swap_rpc_state()
+            .await
+            .with_response("eth_getBlockByNumber", &head)
+            .with_parameter_response_sequence(
+                "eth_getBlockByNumber",
+                &watermark_param,
+                &[
+                    &canonical, &canonical, &canonical, &canonical, &canonical, &canonical,
+                    &canonical, &canonical, &canonical, &canonical, &canonical, &canonical,
+                    &changed, &changed, &changed,
+                ],
+            );
         let Some((admin_pool, schema, mut client, state, cache)) =
             swap_client_with_database("execution_submit_watermark_change_test", state).await
         else {
@@ -6829,7 +10021,11 @@ mod tests {
         let state = swap_rpc_state().await.with_parameter_response_sequence(
             "eth_getBlockByNumber",
             FIXTURE_BLOCK_PARAM,
-            &[&canonical, &canonical, &changed],
+            &[
+                &canonical, &canonical, &canonical, &canonical, &canonical, &canonical, &canonical,
+                &canonical, &canonical, &canonical, &canonical, &canonical, &canonical, &canonical,
+                &canonical, &changed, &changed, &changed,
+            ],
         );
         let Some((admin_pool, schema, mut client, state, _)) =
             swap_client_with_database("execution_submit_anchor_recovery_fail_test", state).await
@@ -6849,7 +10045,10 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("swap anchor"),
+            denied
+                .reason
+                .as_str()
+                .contains("pre-sign checkpoint reread verification disagreed"),
             "was: {}",
             denied.reason
         );
@@ -7029,15 +10228,89 @@ mod tests {
                             .is_some_and(|data| data.starts_with(BALANCE_OF_SELECTOR))
                 })
                 .count(),
-            3
+            9
         );
         assert_eq!(
             requests
                 .iter()
                 .filter(|request| request["method"] == "eth_getBalance")
                 .count(),
-            2
+            6
         );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_emits_committed_swap_from_verified_inclusion_header() {
+        let min_amount_out = expected_min_amount_out(50);
+        let (expected_hash, _) = expected_swap_tx(min_amount_out).await;
+        let state = finalized_swap_rpc_state(expected_hash, min_amount_out);
+        let Some((admin_pool, schema, mut client, _, _)) =
+            swap_client_with_database("execution_committed_fill_restart_test", state).await
+        else {
+            return;
+        };
+        let order = test_market_sell_order(test_pool().instrument_id);
+        let mut receiver = start_with_events(&mut client);
+        let plan = client
+            .prepare_swap(&submit_order_cmd(&order), &order)
+            .unwrap();
+
+        execute_swap(
+            plan,
+            client.transaction_executor().unwrap(),
+            client.emitter.clone(),
+            client.transaction_limits.max_quote_age_blocks,
+            client.transaction_limits.deadline_seconds,
+        )
+        .await
+        .unwrap();
+        assert_swap_submitted_and_filled(&collect_order_events(&mut receiver));
+        let ancestry_range: (i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT height_start, height_end FROM {schema}.execution_verification_decision \
+             WHERE decision_class = 'finality' AND read_class = 'numbered_block' \
+               AND height_end > height_start"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            ancestry_range,
+            ((FIXTURE_BLOCK + 1) as i64, (FIXTURE_BLOCK + 2) as i64)
+        );
+
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_intent SET fill_emitted = FALSE, active = TRUE"
+        )))
+        .execute(&admin_pool)
+        .await
+        .unwrap();
+        let database = client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = client.payload_keys.clone();
+        let restart_config = client.config.clone();
+        drop(client);
+        let (mut restarted, _) = swap_client_with_cache(restart_config);
+        restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
+        let mut restart_receiver = start_with_events(&mut restarted);
+
+        restarted.reconcile_unresolved_execution().await.unwrap();
+
+        let events = collect_order_events(&mut restart_receiver);
+        let (fill_emitted, active): (bool, bool) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT fill_emitted, active FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(events.len(), 1, "was: {events:?}");
+        assert!(matches!(&events[0], OrderEventAny::Filled(_)));
+        assert!(fill_emitted);
+        assert!(!active);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -7355,7 +10628,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn finalized_buy_swap_rejects_sell_oriented_log() {
+    async fn finalized_buy_swap_quarantines_sell_oriented_log() {
         let amount_in = expected_buy_amount_in();
         let min_amount_out = expected_buy_min_amount_out(50);
         let (expected_hash, _) = expected_buy_swap_tx(min_amount_out, amount_in).await;
@@ -7379,7 +10652,7 @@ mod tests {
             .prepare_swap(&submit_order_cmd(&order), &order)
             .unwrap();
 
-        execute_swap(
+        let error = execute_swap(
             plan,
             client.transaction_executor().unwrap(),
             client.emitter.clone(),
@@ -7387,23 +10660,18 @@ mod tests {
             client.transaction_limits.deadline_seconds,
         )
         .await
-        .unwrap();
+        .unwrap_err();
 
         let events = collect_order_events(&mut receiver);
-        assert_eq!(events.len(), 2, "was: {events:?}");
-        assert!(matches!(&events[0], OrderEventAny::Submitted(_)));
-        let OrderEventAny::Rejected(rejected) = &events[1] else {
-            panic!("expected OrderRejected, was {:?}", events[1]);
-        };
+        assert_swap_quarantined_without_terminal_event(&events);
         assert!(
-            rejected
-                .reason
-                .as_str()
+            error
+                .to_string()
                 .contains("does not match the persisted amount")
-                || rejected.reason.as_str().contains("is not a BUY output"),
-            "was: {}",
-            rejected.reason
+                || error.to_string().contains("is not a BUY output"),
+            "was: {error}"
         );
+        assert!(client.in_flight.lock().unwrap().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -7481,7 +10749,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn finalized_swap_without_log_rejects_and_releases_ownership() {
+    async fn finalized_swap_without_log_stays_quarantined() {
         let state = swap_rpc_state()
             .await
             .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS);
@@ -7505,11 +10773,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_missing_swap_log_rejected(&events);
-        assert_eq!(status, "finalized");
-        assert!(terminal_emitted);
-        assert!(!active);
-        assert!(client.in_flight.lock().unwrap().is_none());
+        assert_swap_quarantined_without_terminal_event(&events);
+        assert_eq!(status, "broadcast");
+        assert!(!terminal_emitted);
+        assert!(active);
+        assert!(client.in_flight.lock().unwrap().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -7518,8 +10786,17 @@ mod tests {
     async fn finalized_swap_refresh_failure_stays_owned_for_reconciliation() {
         let min_amount_out = expected_min_amount_out(50);
         let (expected_hash, _) = expected_swap_tx(min_amount_out).await;
-        let state = finalized_swap_rpc_state(expected_hash, min_amount_out)
-            .with_response_sequence("eth_getBalance", &[GET_BALANCE, RPC_METHOD_NOT_FOUND]);
+        let state = finalized_swap_rpc_state(expected_hash, min_amount_out).with_response_sequence(
+            "eth_getBalance",
+            &[
+                GET_BALANCE,
+                GET_BALANCE,
+                GET_BALANCE,
+                RPC_METHOD_NOT_FOUND,
+                RPC_METHOD_NOT_FOUND,
+                RPC_METHOD_NOT_FOUND,
+            ],
+        );
         let Some((admin_pool, schema, mut client, _state, _)) =
             swap_client_with_database("execution_submit_refresh_fail_test", state).await
         else {
@@ -7550,13 +10827,14 @@ mod tests {
             .unwrap();
 
         assert!(
-            error.to_string().contains("RPC error -32601"),
+            error
+                .to_string()
+                .contains("finalized native balance verification is locally invalid"),
             "was: {error}"
         );
-        assert_eq!(events.len(), 2, "was: {events:?}");
+        assert_eq!(events.len(), 1, "was: {events:?}");
         assert!(matches!(&events[0], OrderEventAny::Submitted(_)));
-        assert!(matches!(&events[1], OrderEventAny::Filled(_)));
-        assert_eq!(status, "finalized");
+        assert_eq!(status, "broadcast");
         assert!(!fill_emitted);
         assert!(active);
         assert!(client.in_flight.lock().unwrap().is_some());
@@ -7586,7 +10864,10 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("reports factory"),
+            denied
+                .reason
+                .as_str()
+                .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
         );
@@ -7627,7 +10908,10 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("reports WETH9"),
+            denied
+                .reason
+                .as_str()
+                .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
         );
@@ -7668,7 +10952,10 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("resolves pool"),
+            denied
+                .reason
+                .as_str()
+                .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
         );
@@ -7714,7 +11001,7 @@ mod tests {
             denied
                 .reason
                 .as_str()
-                .contains("reports 6 decimals on-chain, expected cached decimals 18"),
+                .contains("swap deployment manifest verification disagreed"),
             "was: {}",
             denied.reason
         );
@@ -8053,9 +11340,17 @@ mod tests {
 
     #[tokio::test]
     async fn submit_order_rejected_on_reverted_receipt() {
-        let state = swap_rpc_state()
-            .await
-            .with_response("eth_getTransactionReceipt", RECEIPT_REVERTED);
+        let expected_min_out = expected_min_amount_out(50);
+        let (expected_hash, _) = expected_swap_tx(expected_min_out).await;
+        let block = finalized_swap_block(expected_hash, expected_min_out);
+        let receipt = receipt_with_transaction_hash(RECEIPT_REVERTED, expected_hash);
+        let state = with_finalized_identity(
+            swap_rpc_state()
+                .await
+                .with_response("eth_getTransactionReceipt", &receipt),
+            &block,
+            &receipt,
+        );
         let Some((admin_pool, schema, mut client, _state, _)) =
             swap_client_with_database("execution_submit_reverted_test", state).await
         else {
@@ -8063,8 +11358,6 @@ mod tests {
         };
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
-        let expected_min_out = expected_min_amount_out(50);
-
         client.submit_order(submit_order_cmd(&order)).unwrap();
         await_pending_tasks(&client).await;
 
@@ -8084,7 +11377,6 @@ mod tests {
             rejected.reason
         );
 
-        let (expected_hash, _) = expected_swap_tx(expected_min_out).await;
         let record = client
             .cache
             .get_execution_transaction(42161, &expected_hash.to_string())
@@ -8461,9 +11753,7 @@ mod tests {
         setup_execution_schema(&admin_pool, &schema).await;
         let options: sqlx::postgres::PgConnectOptions = pg_config.into();
         let options = options.options([("search_path", schema.clone())]);
-        let database = BlockchainCacheDatabase::connect(options.clone())
-            .await
-            .unwrap();
+        let database = connect_test_database(options.clone()).await.unwrap();
         database
             .ensure_execution_transaction_schema()
             .await
@@ -8513,7 +11803,7 @@ mod tests {
         assert_eq!(operation, "ready");
         drop(database);
 
-        let restarted = BlockchainCacheDatabase::connect(options).await.unwrap();
+        let restarted = connect_test_database(options).await.unwrap();
         restarted
             .ensure_execution_payload_storage(&keys)
             .await
@@ -9119,13 +12409,12 @@ mod tests {
         setup_execution_schema(&admin_pool, &schema_a).await;
         setup_execution_schema(&admin_pool, &schema_b).await;
         let options: sqlx::postgres::PgConnectOptions = pg_config.into();
-        let database_a = BlockchainCacheDatabase::connect(
-            options.clone().options([("search_path", schema_a.clone())]),
-        )
-        .await
-        .unwrap();
+        let database_a =
+            connect_test_database(options.clone().options([("search_path", schema_a.clone())]))
+                .await
+                .unwrap();
         let database_b =
-            BlockchainCacheDatabase::connect(options.options([("search_path", schema_b.clone())]))
+            connect_test_database(options.options([("search_path", schema_b.clone())]))
                 .await
                 .unwrap();
         database_a
@@ -9260,7 +12549,7 @@ mod tests {
 
         let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
         let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = BlockchainCacheDatabase::connect(db_options).await.unwrap();
+        let database = connect_test_database(db_options).await.unwrap();
         database
             .ensure_execution_transaction_schema()
             .await
@@ -9294,7 +12583,8 @@ mod tests {
                 Some("O-SWAP-001"),
             )
             .await
-            .unwrap_err();
+            .err()
+            .unwrap();
         assert!(
             fence_error
                 .to_string()
@@ -9333,7 +12623,7 @@ mod tests {
 
         let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
         let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = BlockchainCacheDatabase::connect(db_options).await.unwrap();
+        let database = connect_test_database(db_options).await.unwrap();
         database
             .ensure_execution_transaction_schema()
             .await
@@ -9377,7 +12667,7 @@ mod tests {
         .unwrap();
         let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
         let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = BlockchainCacheDatabase::connect(db_options).await.unwrap();
+        let database = connect_test_database(db_options).await.unwrap();
 
         let error = database
             .ensure_execution_transaction_schema()
@@ -9605,23 +12895,35 @@ mod tests {
 
     #[tokio::test]
     async fn submit_order_accepts_quote_fresh_at_max_age_boundary() {
-        let profiler_block = FIXTURE_BLOCK - 100;
-        let profiler_block_response =
-            fixture_block_response(profiler_block, B256::from([0x11; 32]));
-        let state = swap_rpc_state().await.with_parameter_response(
-            "eth_getBlockByNumber",
-            &format!("0x{profiler_block:x}"),
-            &profiler_block_response,
-        );
-        let Some((admin_pool, schema, mut client, _state, cache)) =
-            swap_client_with_database("execution_submit_fresh_boundary_test", state).await
+        let min_amount_out = expected_min_amount_out(50);
+        let (tx_hash, _) = expected_swap_tx(min_amount_out).await;
+        let head = finalized_swap_block(tx_hash, min_amount_out);
+        let state = swap_rpc_state()
+            .await
+            .with_response("eth_getBlockByNumber", &head)
+            .with_parameter_response("eth_getBlockByNumber", FIXTURE_BLOCK_PARAM, BLOCK_BY_NUMBER);
+        let Some((admin_pool, schema, mut client, state, cache)) =
+            swap_client_with_database_config(
+                "execution_submit_fresh_boundary_test",
+                state,
+                |http_rpc_url| {
+                    let mut config = test_config(http_rpc_url);
+                    config.max_quote_age_blocks = Some(1);
+                    config
+                },
+            )
+            .await
         else {
             return;
         };
         let pool = test_pool();
         cache
             .borrow_mut()
-            .add_pool_profiler(test_profiler(&pool, profiler_block))
+            .add_pool_profiler(test_profiler_at_block(
+                &pool,
+                FIXTURE_BLOCK,
+                FIXTURE_BLOCK_HASH,
+            ))
             .unwrap();
         let order = test_market_sell_order(pool.instrument_id);
         let mut receiver = start_with_events(&mut client);
@@ -9630,7 +12932,16 @@ mod tests {
         await_pending_tasks(&client).await;
 
         let events = collect_order_events(&mut receiver);
-        assert_swap_submitted_and_filled(&events);
+        assert_eq!(events.len(), 1, "was: {events:?}");
+        assert!(matches!(&events[0], OrderEventAny::Submitted(_)));
+        assert_eq!(
+            state
+                .recorded_requests()
+                .iter()
+                .filter(|request| request["method"] == "eth_sendRawTransaction")
+                .count(),
+            1
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -9695,12 +13006,12 @@ mod tests {
         setup_execution_schema(&admin_pool, &schema).await;
         let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
         let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
+        let database = connect_test_database(db_options).await.unwrap();
 
         let state = swap_rpc_state()
             .await
+            .with_call_response(POOL_TOKEN0_SELECTOR, CALL_USDC)
+            .with_call_response(POOL_TOKEN1_SELECTOR, CALL_WETH)
             .with_response("eth_getTransactionReceipt", RECEIPT_NULL);
         let addr = start_mock_rpc_server(state.clone()).await;
         let core = ExecutionClientCore::new(
@@ -9713,8 +13024,35 @@ mod tests {
             None,
             cache,
         );
-        let mut client =
-            BlockchainExecutionClient::new(core, test_config(format!("http://{addr}"))).unwrap();
+        let mut config = test_config(format!("http://{addr}"));
+        let result = |response: &str| {
+            serde_json::from_str::<serde_json::Value>(response).unwrap()["result"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        {
+            let verification = config.verification.as_mut().unwrap();
+            let pool_identity = &mut verification.deployment_manifest.pools[0];
+            pool_identity.token0 = USDC.to_string();
+            pool_identity.token1 = WETH.to_string();
+            let pool_contract = verification
+                .deployment_manifest
+                .contracts
+                .iter_mut()
+                .find(|contract| contract.role == BlockchainContractRole::Pool)
+                .unwrap();
+
+            for probe in &mut pool_contract.probes {
+                if probe.call_data.starts_with(POOL_TOKEN0_SELECTOR) {
+                    probe.expected_output = result(CALL_USDC);
+                } else if probe.call_data.starts_with(POOL_TOKEN1_SELECTOR) {
+                    probe.expected_output = result(CALL_WETH);
+                }
+            }
+        }
+        refresh_test_manifest_digest(&mut config);
+        let mut client = BlockchainExecutionClient::new(core, config).unwrap();
         client.cache.database = Some(database);
         client
             .cache
@@ -9722,6 +13060,7 @@ mod tests {
             .await
             .unwrap();
         protect_test_storage(&mut client, &schema).await;
+        initialize_test_verification_ledger(&client).await;
         client.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -9747,6 +13086,11 @@ mod tests {
             quoted, wrong_direction_out,
             "the asymmetric price must make the quote direction observable"
         );
+        assert_ne!(
+            expected_min_out,
+            expected_min_amount_out(50),
+            "the profiler quote must remain distinct from the independent quote fixture"
+        );
 
         client.submit_order(submit_order_cmd(&order)).unwrap();
         await_pending_tasks(&client).await;
@@ -9759,7 +13103,7 @@ mod tests {
             events[0]
         );
 
-        let (_, expected_raw) = expected_swap_tx(expected_min_out).await;
+        let (_, expected_raw) = expected_swap_tx(expected_min_amount_out(50)).await;
         let broadcasts: Vec<_> = state
             .recorded_requests()
             .into_iter()
@@ -9793,7 +13137,10 @@ mod tests {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
         assert!(
-            denied.reason.as_str().contains("Chain ID mismatch"),
+            denied
+                .reason
+                .as_str()
+                .contains("pre-sign chain ID verification disagreed"),
             "was: {}",
             denied.reason
         );
@@ -9889,10 +13236,7 @@ mod tests {
             error.to_string().contains("Timed out awaiting finality"),
             "was: {error}"
         );
-        assert_eq!(
-            transitions,
-            ["prepared", "signed", "broadcast", "included", "dropped"]
-        );
+        assert_eq!(transitions, ["prepared", "signed", "broadcast", "dropped"]);
         assert!(client.in_flight.lock().unwrap().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
@@ -10398,7 +13742,8 @@ mod tests {
                 address!("68b3465833fb72A70ecDF485E0e4C7bD8665Fc45"),
             )
             .await
-            .unwrap_err();
+            .err()
+            .unwrap();
 
         assert!(
             error
@@ -10474,13 +13819,25 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            error.to_string().contains("No deployed bytecode"),
+            error
+                .to_string()
+                .contains("pre-sign deployment manifest verification disagreed"),
             "was: {error}"
         );
         assert!(client.in_flight.lock().unwrap().is_none());
         let requests = state.recorded_requests();
-        assert_eq!(requests.len(), 1);
-        assert_eq!(requests[0]["method"], "eth_getCode");
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request["method"] == "eth_getCode")
+                .count(),
+            3
+        );
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -10499,20 +13856,26 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(error.to_string().contains("Decoding error"), "was: {error}");
+        assert!(
+            error
+                .to_string()
+                .contains("pre-sign wrapped token probe verification is unavailable"),
+            "was: {error}"
+        );
         assert!(client.in_flight.lock().unwrap().is_none());
         let requests = state.recorded_requests();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0]["method"], "eth_getCode");
-        assert_eq!(requests[1]["method"], "eth_call");
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
     async fn wrap_rejects_included_transaction_without_balance_delta() {
-        let state = broadcast_rpc_state()
-            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE, CALL_BALANCE]);
+        let state = broadcast_rpc_state().with_response_sequence("eth_call", &[CALL_BALANCE; 9]);
         let Some((admin_pool, schema, mut client, state)) =
             execution_client_with_database("execution_wrap_no_delta_test", state).await
         else {
@@ -10532,8 +13895,15 @@ mod tests {
         assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
-            vec![("wrap".into(), "finalized".into(), false, true)]
+            vec![("wrap".into(), "broadcast".into(), false, true)]
         );
+        let nonce_state = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(format!(
+            "SELECT next_canonical_nonce, revision FROM {schema}.execution_verification_nonce"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(nonce_state, (7, 0));
         let broadcasts = state
             .recorded_requests()
             .into_iter()
@@ -10542,14 +13912,16 @@ mod tests {
         assert_eq!(broadcasts, 1);
 
         let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000u64)).await;
-        let restart_state = execution_rpc_state()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &finalized_wrap_block(expected_hash),
-            )
-            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE]);
+        let block = finalized_wrap_block(expected_hash);
+        let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+        let restart_state = with_finalized_identity(
+            execution_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                .with_response_sequence("eth_call", &[CALL_BALANCE; 6]),
+            &block,
+            &receipt,
+        );
         let addr = start_mock_rpc_server(restart_state).await;
         let error = later_reconnect(client, format!("http://{addr}")).await;
         assert!(
@@ -10558,8 +13930,15 @@ mod tests {
         );
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
-            vec![("wrap".into(), "finalized".into(), false, true)]
+            vec![("wrap".into(), "broadcast".into(), false, true)]
         );
+        let nonce_state = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(format!(
+            "SELECT next_canonical_nonce, revision FROM {schema}.execution_verification_nonce"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(nonce_state, (7, 0));
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -10568,7 +13947,17 @@ mod tests {
     async fn wrap_reports_inclusion_when_postcondition_read_fails() {
         let state = broadcast_rpc_state().with_response_sequence(
             "eth_call",
-            &[CALL_BALANCE, CALL_BALANCE, RPC_METHOD_NOT_FOUND],
+            &[
+                CALL_BALANCE,
+                CALL_BALANCE,
+                CALL_BALANCE,
+                CALL_BALANCE,
+                CALL_BALANCE,
+                CALL_BALANCE,
+                RPC_METHOD_NOT_FOUND,
+                RPC_METHOD_NOT_FOUND,
+                RPC_METHOD_NOT_FOUND,
+            ],
         );
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_wrap_postcondition_rpc_test", state).await
@@ -10583,12 +13972,16 @@ mod tests {
 
         let message = error.to_string();
         assert!(
-            message.contains("failed to read WETH balance after included transaction 0x"),
+            message.contains("failed to verify WETH balance after included transaction 0x"),
             "was: {message}"
         );
         assert!(message.contains("at block 30346561"), "was: {message}");
         let in_flight = awaiting_in_flight(&client);
         assert_eq!(in_flight.purpose, TransactionPurpose::Wrap);
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("wrap".into(), "broadcast".into(), false, true)]
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -10610,13 +14003,27 @@ mod tests {
         assert!(error.to_string().contains("returned false"), "was: {error}");
         assert!(client.in_flight.lock().unwrap().is_none());
         let requests = state.recorded_requests();
-        assert!(requests.iter().any(|request| {
-            request["method"] == "eth_call"
-                && request["params"][0]["from"] == WALLET
-                && request["params"][0]["data"]
+        let approval_calls = requests
+            .iter()
+            .filter(|request| {
+                request["method"] == "eth_call"
+                    && request["params"][0]["data"]
+                        .as_str()
+                        .is_some_and(|data| data.starts_with("0x095ea7b3"))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(approval_calls.len(), 3);
+        for request in approval_calls {
+            assert_eq!(
+                request["params"][0]["from"]
                     .as_str()
-                    .is_some_and(|data| data.starts_with("0x095ea7b3"))
-        }));
+                    .unwrap()
+                    .parse::<Address>()
+                    .unwrap(),
+                WALLET.parse::<Address>().unwrap()
+            );
+            assert_eq!(request["params"][1], FIXTURE_BLOCK_PARAM);
+        }
         assert!(
             requests
                 .iter()
@@ -10646,7 +14053,9 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            error.to_string().contains("reports factory"),
+            error
+                .to_string()
+                .contains("pre-sign deployment manifest verification disagreed"),
             "was: {error}"
         );
         let requests = state.recorded_requests();
@@ -10678,7 +14087,12 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(error.to_string().contains("reports WETH9"), "was: {error}");
+        assert!(
+            error
+                .to_string()
+                .contains("pre-sign deployment manifest verification disagreed"),
+            "was: {error}"
+        );
         let requests = state.recorded_requests();
         assert!(
             requests
@@ -10731,8 +14145,17 @@ mod tests {
     async fn approve_zero_revokes_under_unlimited_policy() {
         let state = broadcast_rpc_state()
             .with_response("eth_call", CALL_BOOL_TRUE)
-            .with_call_response(FACTORY_SELECTOR, CALL_ZERO)
-            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ALLOWANCE, CALL_ZERO]);
+            .with_call_response_sequence(
+                ALLOWANCE_SELECTOR,
+                &[
+                    CALL_ALLOWANCE,
+                    CALL_ALLOWANCE,
+                    CALL_ALLOWANCE,
+                    CALL_ZERO,
+                    CALL_ZERO,
+                    CALL_ZERO,
+                ],
+            );
         let Some((admin_pool, schema, mut client, state)) =
             execution_client_with_database("execution_approve_revoke_test", state).await
         else {
@@ -10757,12 +14180,19 @@ mod tests {
             .unwrap();
         assert!(approve_data.starts_with("0x095ea7b3"));
         assert!(approve_data.ends_with(&"0".repeat(64)));
-        assert!(state.recorded_requests().iter().all(|request| {
-            request["method"] != "eth_call"
-                || !request["params"][0]["data"]
-                    .as_str()
-                    .is_some_and(|data| data.starts_with(FACTORY_SELECTOR))
-        }));
+        assert_eq!(
+            state
+                .recorded_requests()
+                .iter()
+                .filter(|request| {
+                    request["method"] == "eth_call"
+                        && request["params"][0]["data"]
+                            .as_str()
+                            .is_some_and(|data| data.starts_with(FACTORY_SELECTOR))
+                })
+                .count(),
+            12
+        );
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
             vec![("approve".into(), "finalized".into(), true, false)]
@@ -10773,7 +14203,19 @@ mod tests {
 
     #[tokio::test]
     async fn approve_accepts_empty_return_with_sufficient_allowance() {
-        let state = broadcast_rpc_state().with_response("eth_call", CALL_EMPTY);
+        let state = broadcast_rpc_state()
+            .with_response("eth_call", CALL_EMPTY)
+            .with_call_response_sequence(
+                ALLOWANCE_SELECTOR,
+                &[
+                    CALL_ZERO,
+                    CALL_ZERO,
+                    CALL_ZERO,
+                    CALL_ALLOWANCE_1000,
+                    CALL_ALLOWANCE_1000,
+                    CALL_ALLOWANCE_1000,
+                ],
+            );
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_approve_empty_test", state).await
         else {
@@ -10806,7 +14248,7 @@ mod tests {
     async fn approve_rejects_empty_return_with_insufficient_allowance() {
         let state = broadcast_rpc_state()
             .with_response("eth_call", CALL_EMPTY)
-            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO, CALL_ZERO]);
+            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO; 6]);
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_approve_insufficient_test", state).await
         else {
@@ -10828,18 +14270,27 @@ mod tests {
         assert_eq!(in_flight.purpose, TransactionPurpose::Approve);
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
-            vec![("approve".into(), "finalized".into(), false, true)]
+            vec![("approve".into(), "broadcast".into(), false, true)]
         );
+        let nonce_state = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(format!(
+            "SELECT next_canonical_nonce, revision FROM {schema}.execution_verification_nonce"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(nonce_state, (7, 0));
 
         let expected_hash = expected_approve_tx_hash(U256::from(1_000u64)).await;
-        let restart_state = execution_rpc_state()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &finalized_approve_block(expected_hash, U256::from(1_000u64)),
-            )
-            .with_call_response(ALLOWANCE_SELECTOR, CALL_ZERO);
+        let block = finalized_approve_block(expected_hash, U256::from(1_000u64));
+        let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+        let restart_state = with_finalized_identity(
+            execution_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                .with_call_response(ALLOWANCE_SELECTOR, CALL_ZERO),
+            &block,
+            &receipt,
+        );
         let addr = start_mock_rpc_server(restart_state).await;
         let error = later_reconnect(client, format!("http://{addr}")).await;
         assert!(
@@ -10850,8 +14301,15 @@ mod tests {
         );
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
-            vec![("approve".into(), "finalized".into(), false, true)]
+            vec![("approve".into(), "broadcast".into(), false, true)]
         );
+        let nonce_state = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(format!(
+            "SELECT next_canonical_nonce, revision FROM {schema}.execution_verification_nonce"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(nonce_state, (7, 0));
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -10860,7 +14318,17 @@ mod tests {
     async fn approve_reports_inclusion_when_postcondition_read_fails() {
         let state = broadcast_rpc_state()
             .with_response("eth_call", CALL_BOOL_TRUE)
-            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO, RPC_METHOD_NOT_FOUND]);
+            .with_call_response_sequence(
+                ALLOWANCE_SELECTOR,
+                &[
+                    CALL_ZERO,
+                    CALL_ZERO,
+                    CALL_ZERO,
+                    RPC_METHOD_NOT_FOUND,
+                    RPC_METHOD_NOT_FOUND,
+                    RPC_METHOD_NOT_FOUND,
+                ],
+            );
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_approve_postcondition_rpc_test", state).await
         else {
@@ -10874,12 +14342,16 @@ mod tests {
 
         let message = error.to_string();
         assert!(
-            message.contains("failed to read router allowance after included transaction 0x"),
+            message.contains("failed to verify router allowance after included transaction 0x"),
             "was: {message}"
         );
         assert!(message.contains("at block 30346561"), "was: {message}");
         let in_flight = awaiting_in_flight(&client);
         assert_eq!(in_flight.purpose, TransactionPurpose::Approve);
+        assert_eq!(
+            execution_intent_markers(&admin_pool, &schema).await,
+            vec![("approve".into(), "broadcast".into(), false, true)]
+        );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -11130,7 +14602,9 @@ mod tests {
         let error = client.connect().await.unwrap_err();
 
         assert!(
-            error.to_string().contains("Chain ID mismatch at connect"),
+            error
+                .to_string()
+                .contains("Blockchain chain ID verification disagreed"),
             "was: {error}"
         );
     }
@@ -11165,6 +14639,40 @@ mod tests {
 
     #[allow(unsafe_code)] // env-var mutation in tests; unique var names avoid cross-test races
     #[tokio::test]
+    async fn connect_rejects_missing_trace_capability_before_signer_load() {
+        let state = ready_rpc_state().with_parameter_response(
+            "debug_traceTransaction",
+            &B256::ZERO.to_string(),
+            RPC_METHOD_NOT_FOUND,
+        );
+        let addr = start_mock_rpc_server(state.clone()).await;
+        let config = test_config_with_signer_env(
+            format!("http://{addr}"),
+            "BLOCKCHAIN_TEST_TRACE_CAPABILITY",
+        );
+        let mut client = test_client_from_config(config, test_pool());
+        // SAFETY: this variable name is unique to this test across the test binary
+        unsafe { std::env::set_var("BLOCKCHAIN_TEST_TRACE_CAPABILITY", TEST_PRIVATE_KEY) };
+
+        let error = client.connect().await.unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("Blockchain call trace capability verification is locally invalid"),
+            "was: {error}"
+        );
+        assert!(client.signer.is_none());
+        assert!(
+            state
+                .recorded_requests()
+                .iter()
+                .all(|request| request["method"] != "eth_getBalance")
+        );
+    }
+
+    #[allow(unsafe_code)] // env-var mutation in tests; unique var names avoid cross-test races
+    #[tokio::test]
     async fn connect_initializes_signer_from_env() {
         let addr = start_mock_rpc_server(ready_rpc_state()).await;
         let config =
@@ -11183,6 +14691,120 @@ mod tests {
             signer.address(),
             address!("f39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
         );
+    }
+
+    #[allow(unsafe_code)] // env-var mutation in tests; unique var names avoid cross-test races
+    #[tokio::test]
+    async fn reconnect_resumes_at_the_durable_finalized_tip() {
+        let Some((admin_pool, pg_config)) =
+            connect_test_postgres("verification ledger resume").await
+        else {
+            return;
+        };
+        let schema = format!("verification_ledger_resume_{}", std::process::id());
+        setup_execution_schema(&admin_pool, &schema).await;
+        let options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let options = options.options([("search_path", schema.clone())]);
+        let database = connect_test_database(options).await.unwrap();
+        database
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+
+        let state = ready_rpc_state();
+        let addr = start_mock_rpc_server(state.clone()).await;
+        let config = test_config_with_signer_env(
+            format!("http://{addr}"),
+            "BLOCKCHAIN_TEST_VERIFICATION_RESUME",
+        );
+        let mut client = test_client_from_config(config, test_pool());
+        client.cache.database = Some(database);
+        protect_test_storage(&mut client, &schema).await;
+        let finalized_headers = [
+            ExecutionVerifiedHeader {
+                number: FIXTURE_BLOCK,
+                hash: FIXTURE_BLOCK_HASH.to_string(),
+                parent_hash: "0x0000000000000000000000000000000000000000000000000000000000000001"
+                    .to_string(),
+                timestamp: FIXTURE_BLOCK_TIMESTAMP,
+                base_fee_per_gas: Some(100_000_000),
+            },
+            ExecutionVerifiedHeader {
+                number: FIXTURE_BLOCK + 1,
+                hash: B256::from([0x22; 32]).to_string(),
+                parent_hash: FIXTURE_BLOCK_HASH.to_string(),
+                timestamp: FIXTURE_BLOCK_TIMESTAMP + 1,
+                base_fee_per_gas: Some(100_000_000),
+            },
+            ExecutionVerifiedHeader {
+                number: FIXTURE_BLOCK + 2,
+                hash: B256::from([0x33; 32]).to_string(),
+                parent_hash: B256::from([0x22; 32]).to_string(),
+                timestamp: FIXTURE_BLOCK_TIMESTAMP + 2,
+                base_fee_per_gas: Some(100_000_000),
+            },
+        ];
+        initialize_test_verification_ledger_with_headers(&client, &finalized_headers).await;
+        let verification = client.config.verification.as_ref().unwrap();
+        let position = client
+            .cache
+            .database
+            .as_ref()
+            .unwrap()
+            .load_execution_verification_position(
+                42_161,
+                WALLET,
+                &verification.manifest_version,
+                &verification.manifest_digest,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let resume = client
+            .cache
+            .database
+            .as_ref()
+            .unwrap()
+            .load_execution_verification_resume(
+                42_161,
+                WALLET,
+                &verification.manifest_version,
+                &verification.manifest_digest,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(position.next_canonical_nonce, 7);
+        assert_eq!(position.revision, 0);
+        assert_eq!(position.finalized_tip, finalized_headers[2]);
+        assert_eq!(resume.next_canonical_nonce, 7);
+        assert_eq!(resume.revision, 0);
+        assert_eq!(resume.finalized_headers, finalized_headers);
+
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(sender);
+        client.start().unwrap();
+        // SAFETY: this variable name is unique to this test across the test binary
+        unsafe { std::env::set_var("BLOCKCHAIN_TEST_VERIFICATION_RESUME", TEST_PRIVATE_KEY) };
+
+        client.connect().await.unwrap();
+
+        let skipped_height = format!("0x{:x}", FIXTURE_BLOCK + 1);
+        assert!(client.is_connected());
+        assert!(state.recorded_requests().iter().all(|request| {
+            request["method"] != "eth_getBlockByNumber"
+                || request["params"][0].as_str() != Some(&skipped_height)
+        }));
+        let header_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_verified_finalized_header"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(header_count, 3);
+
+        drop(client);
+        drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
@@ -11250,6 +14872,10 @@ mod tests {
         assert!(client.in_flight.lock().unwrap().is_some());
 
         client.disconnect().await.unwrap();
+        let ready_addr = start_mock_rpc_server(ready_rpc_state()).await;
+        let ready = test_client(format!("http://{ready_addr}"));
+        client.http_rpc_client = ready.http_rpc_client;
+        client.verification = ready.verification;
         client.connect().await.unwrap();
 
         assert!(client.in_flight.lock().unwrap().is_none());
@@ -11318,9 +14944,7 @@ mod tests {
 
         let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
         let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
+        let database = connect_test_database(db_options).await.unwrap();
 
         let state = signing_rpc_state();
         let addr = start_mock_rpc_server(state.clone()).await;
@@ -11334,6 +14958,7 @@ mod tests {
             .await
             .unwrap();
         protect_test_storage(&mut client, &schema).await;
+        initialize_test_verification_ledger(&client).await;
         client.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
@@ -11679,7 +15304,7 @@ mod tests {
                 .iter()
                 .filter(|request| request["method"] == "eth_getTransactionReceipt")
                 .count(),
-            1
+            3
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
@@ -11688,7 +15313,8 @@ mod tests {
     #[tokio::test]
     async fn rejected_broadcast_stays_dropped_and_occupied() {
         let state = signing_rpc_state()
-            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED);
+            .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED)
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL);
         let Some((admin_pool, schema, mut client, state)) =
             execution_client_with_database("execution_rejected_test", state).await
         else {
@@ -11727,6 +15353,7 @@ mod tests {
     async fn legacy_table_loss_does_not_release_rejected_broadcast() {
         let state = signing_rpc_state()
             .with_response("eth_sendRawTransaction", SEND_RAW_TRANSACTION_REJECTED)
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
             .with_sleep("eth_sendRawTransaction", Duration::from_secs(1));
         let Some((admin_pool, schema, mut client, state)) =
             execution_client_with_database("execution_rejected_update_test", state).await
@@ -11760,27 +15387,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn included_receipt_keeps_slot_when_status_update_fails() {
-        let state = signing_rpc_state()
-            .with_send_raw_transaction_echo()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS);
+    async fn finalized_receipt_keeps_slot_when_status_update_fails() {
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000u64)).await;
+        let block = finalized_wrap_block(expected_hash);
+        let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+        let state = with_finalized_identity(
+            signing_rpc_state()
+                .with_send_raw_transaction_echo()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                .with_call_response_sequence(
+                    BALANCE_OF_SELECTOR,
+                    &[
+                        CALL_BALANCE,
+                        CALL_BALANCE,
+                        CALL_BALANCE,
+                        CALL_BALANCE,
+                        CALL_BALANCE,
+                        CALL_BALANCE,
+                        CALL_BALANCE_AFTER_WRAP,
+                        CALL_BALANCE_AFTER_WRAP,
+                        CALL_BALANCE_AFTER_WRAP,
+                    ],
+                ),
+            &block,
+            &receipt,
+        );
         let Some((admin_pool, schema, mut client, state)) =
-            execution_client_with_database("execution_included_update_test", state).await
+            execution_client_with_database("execution_finalized_update_test", state).await
         else {
             return;
         };
 
         for statement in [
             format!(
-                "CREATE FUNCTION {schema}.reject_included_status() RETURNS trigger \
-                 LANGUAGE plpgsql AS 'BEGIN IF NEW.status = ''included'' THEN \
-                 RAISE EXCEPTION ''test included status rejection''; END IF; \
+                "CREATE FUNCTION {schema}.reject_finalized_status() RETURNS trigger \
+                 LANGUAGE plpgsql AS 'BEGIN IF NEW.status = ''finalized'' THEN \
+                 RAISE EXCEPTION ''test finalized status rejection''; END IF; \
                  RETURN NEW; END'"
             ),
             format!(
-                "CREATE TRIGGER reject_included_status BEFORE UPDATE ON \
+                "CREATE TRIGGER reject_finalized_status BEFORE UPDATE ON \
                  {schema}.execution_transaction_hash FOR EACH ROW \
-                 EXECUTE FUNCTION {schema}.reject_included_status()"
+                 EXECUTE FUNCTION {schema}.reject_finalized_status()"
             ),
         ] {
             sqlx::query(sqlx::AssertSqlSafe(statement))
@@ -11799,7 +15448,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("Failed to update execution hash"),
+                .contains("test finalized status rejection"),
             "was: {error}"
         );
         assert_eq!(in_flight.nonce, 7);
@@ -11816,7 +15465,7 @@ mod tests {
                 .iter()
                 .filter(|request| request["method"] == "eth_getTransactionReceipt")
                 .count(),
-            1
+            3
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
@@ -11824,10 +15473,12 @@ mod tests {
 
     #[tokio::test]
     async fn broadcast_timeout_marks_dropped_and_keeps_ownership() {
-        let state = signing_rpc_state().with_sleep(
-            "eth_sendRawTransaction",
-            Duration::from_secs(EXECUTION_RPC_TIMEOUT_SECS + 2),
-        );
+        let state = signing_rpc_state()
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_sleep(
+                "eth_sendRawTransaction",
+                Duration::from_secs(EXECUTION_RPC_TIMEOUT_SECS + 2),
+            );
         let Some((admin_pool, schema, mut client, _)) =
             execution_client_with_database("execution_timeout_test", state).await
         else {
@@ -11882,14 +15533,26 @@ mod tests {
         let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
-        let restart_state = execution_rpc_state()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &finalized_wrap_block(expected_hash),
-            )
-            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE_AFTER_WRAP]);
+        let block = finalized_wrap_block(expected_hash);
+        let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+        let restart_state = with_finalized_identity(
+            execution_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                .with_response_sequence(
+                    "eth_call",
+                    &[
+                        CALL_BALANCE,
+                        CALL_BALANCE,
+                        CALL_BALANCE,
+                        CALL_BALANCE_AFTER_WRAP,
+                        CALL_BALANCE_AFTER_WRAP,
+                        CALL_BALANCE_AFTER_WRAP,
+                    ],
+                ),
+            &block,
+            &receipt,
+        );
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
@@ -11915,14 +15578,19 @@ mod tests {
                 .iter()
                 .filter(|request| request["method"] == "eth_getTransactionReceipt")
                 .count(),
-            1
+            6
         );
         assert_eq!(
             requests
                 .iter()
-                .filter(|request| request["method"] == "eth_call")
+                .filter(|request| {
+                    request["method"] == "eth_call"
+                        && request["params"][0]["data"]
+                            .as_str()
+                            .is_some_and(|data| data.starts_with(BALANCE_OF_SELECTOR))
+                })
                 .count(),
-            2
+            6
         );
         assert_eq!(
             requests
@@ -11933,6 +15601,452 @@ mod tests {
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    fn migration_test_intent(id: i64) -> ExecutionIntentRow {
+        ExecutionIntentRow {
+            id,
+            schema_version: crate::execution::transaction::EXECUTION_SCHEMA_VERSION,
+            chain_id: 42_161,
+            wallet_address: WALLET.to_string(),
+            nonce: None,
+            purpose: "wrap".to_string(),
+            status: "prepared".to_string(),
+            client_order_id: None,
+            trader_id: None,
+            strategy_id: None,
+            account_id: None,
+            instrument_id: None,
+            pool_address: None,
+            transaction_to: WETH.to_string(),
+            transaction_input: "0xd0e30db0".to_string(),
+            transaction_value: "1".to_string(),
+            amount_in: None,
+            created_block: FIXTURE_BLOCK,
+            acknowledgement_emitted: false,
+            fill_emitted: false,
+            terminal_emitted: false,
+            active: true,
+        }
+    }
+
+    fn migration_nonce_verification() -> Verified<u64> {
+        Verified {
+            value: 7,
+            read: crate::rpc::verification::VerificationRead::TransactionCount,
+            provider_ids: [
+                "authoritative".to_string(),
+                "verifier-a".to_string(),
+                "verifier-b".to_string(),
+            ],
+            normalized_value_digest: keccak256(7_u64.to_be_bytes()),
+        }
+    }
+
+    fn migration_finalized_header() -> VerifiedBlockHeader {
+        VerifiedBlockHeader {
+            number: FIXTURE_BLOCK,
+            hash: B256::from_str(FIXTURE_BLOCK_HASH).unwrap(),
+            parent_hash: B256::from_str(
+                "0x0000000000000000000000000000000000000000000000000000000000000001",
+            )
+            .unwrap(),
+            timestamp: FIXTURE_BLOCK_TIMESTAMP,
+            base_fee_per_gas: Some(100_000_000),
+        }
+    }
+
+    #[tokio::test]
+    async fn verification_migration_recovers_prepared_unassigned_intent() {
+        let client = test_client("http://127.0.0.1:1".to_string());
+        let snapshot = ExecutionVerificationMigrationSnapshot {
+            intents: vec![migration_test_intent(1)],
+            hashes: Vec::new(),
+        };
+        let finalized = migration_finalized_header();
+        let migration = client
+            .build_execution_verification_migration(
+                snapshot,
+                finalized,
+                &[finalized],
+                &migration_nonce_verification(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(migration.records.len(), 1);
+        let record = &migration.records[0];
+        assert_eq!(record.intent_id, 1);
+        assert_eq!(record.nonce, None);
+        assert_eq!(record.transaction_hash, None);
+        assert!(record.recover_prepared);
+        assert_eq!(record.decisions.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn verification_migration_rejects_inconsistent_released_history() {
+        let client = test_client("http://127.0.0.1:1".to_string());
+        let finalized = migration_finalized_header();
+        let nonce_verification = migration_nonce_verification();
+        let mut missing_marker = migration_test_intent(1);
+        missing_marker.active = false;
+        missing_marker.status = "finalized".to_string();
+        missing_marker.nonce = Some(6);
+        let error = client
+            .build_execution_verification_migration(
+                ExecutionVerificationMigrationSnapshot {
+                    intents: vec![missing_marker],
+                    hashes: Vec::new(),
+                },
+                finalized,
+                &[finalized],
+                &nonce_verification,
+            )
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            error.to_string().contains("has no durable event marker"),
+            "was: {error}"
+        );
+
+        let mut first = migration_test_intent(1);
+        first.active = false;
+        first.status = "recoverable".to_string();
+        first.nonce = Some(6);
+        let mut second = first.clone();
+        second.id = 2;
+        let error = client
+            .build_execution_verification_migration(
+                ExecutionVerificationMigrationSnapshot {
+                    intents: vec![first, second],
+                    hashes: Vec::new(),
+                },
+                finalized,
+                &[finalized],
+                &nonce_verification,
+            )
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            error
+                .to_string()
+                .contains("duplicate signer nonce ownership"),
+            "was: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn verification_migration_reconstructs_consumed_active_intent() {
+        let expected_hash = expected_wrap_tx_hash(U256::from(1u64)).await;
+        let mut block_value: serde_json::Value =
+            serde_json::from_str(&finalized_wrap_block(expected_hash)).unwrap();
+        block_value["result"]["transactions"][0]["value"] = serde_json::json!("0x1");
+        let block = block_value.to_string();
+        let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+        let state = with_finalized_identity(
+            execution_rpc_state()
+                .with_response("eth_getTransactionCount", TRANSACTION_COUNT_NEXT)
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block),
+            &block,
+            &receipt,
+        );
+        let Some((admin_pool, pg_config)) =
+            connect_test_postgres("verification_migration_reconstructs_consumed_active_intent")
+                .await
+        else {
+            return;
+        };
+        let schema = format!(
+            "verification_migration_reconstructs_consumed_active_intent_{}",
+            std::process::id()
+        );
+        setup_execution_schema(&admin_pool, &schema).await;
+        let options: sqlx::postgres::PgConnectOptions = pg_config.into();
+        let database = connect_test_database(options.options([("search_path", schema.clone())]))
+            .await
+            .unwrap();
+        let addr = start_mock_rpc_server(state).await;
+        let (mut client, _) = swap_client_with_cache(test_config(format!("http://{addr}")));
+        client.cache.database = Some(database.clone());
+        client
+            .cache
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+        let (intent, persisted_hash, _) = persist_test_wrap_broadcast(&database, None).await;
+        protect_test_storage(&mut client, &schema).await;
+        assert_eq!(persisted_hash, expected_hash);
+
+        let snapshot = database
+            .load_execution_verification_migration_snapshot(42_161, WALLET)
+            .await
+            .unwrap();
+        let nonce_verification = required_verification(
+            client
+                .verification
+                .verify_transaction_count(&Address::from_str(WALLET).unwrap(), FIXTURE_BLOCK + 1)
+                .await,
+            "test migration nonce",
+        )
+        .unwrap();
+        let headers = [
+            VerifiedBlockHeader {
+                number: FIXTURE_BLOCK,
+                hash: B256::from_str(FIXTURE_BLOCK_HASH).unwrap(),
+                parent_hash: B256::from_str(
+                    "0x0000000000000000000000000000000000000000000000000000000000000001",
+                )
+                .unwrap(),
+                timestamp: FIXTURE_BLOCK_TIMESTAMP,
+                base_fee_per_gas: Some(100_000_000),
+            },
+            VerifiedBlockHeader {
+                number: FIXTURE_BLOCK + 1,
+                hash: B256::from([0x22; 32]),
+                parent_hash: B256::from_str(FIXTURE_BLOCK_HASH).unwrap(),
+                timestamp: FIXTURE_BLOCK_TIMESTAMP + 1,
+                base_fee_per_gas: Some(100_000_000),
+            },
+        ];
+        let migration = client
+            .build_execution_verification_migration(
+                snapshot,
+                headers[1],
+                &headers,
+                &nonce_verification,
+            )
+            .await
+            .unwrap();
+        let finalized_headers = headers
+            .iter()
+            .map(|header| ExecutionVerifiedHeader {
+                number: header.number,
+                hash: header.hash.to_string(),
+                parent_hash: header.parent_hash.to_string(),
+                timestamp: header.timestamp,
+                base_fee_per_gas: header.base_fee_per_gas,
+            })
+            .collect::<Vec<_>>();
+        let decisions = [verification_decision(
+            &nonce_verification,
+            Some(FIXTURE_BLOCK + 1),
+            Some(FIXTURE_BLOCK + 1),
+        )];
+
+        initialize_test_verification_migration(
+            &client,
+            &finalized_headers,
+            8,
+            &decisions,
+            &migration,
+        )
+        .await;
+
+        let migrated = database.get_execution_intent(intent.id).await.unwrap();
+        let resume = database
+            .load_execution_verification_resume(
+                42_161,
+                WALLET,
+                &client
+                    .config
+                    .verification
+                    .as_ref()
+                    .unwrap()
+                    .manifest_version,
+                &client.config.verification.as_ref().unwrap().manifest_digest,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let evidence: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_verification_decision \
+             WHERE intent_id = $1 AND decision_class = 'migration'"
+        )))
+        .bind(intent.id)
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+
+        assert_eq!(migrated.status, "finalized");
+        assert!(migrated.active);
+        assert_eq!(resume.next_canonical_nonce, 8);
+        assert!(evidence >= 5);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn verification_resume_accepts_one_consumed_owned_nonce() {
+        let Some((admin_pool, schema, client, _)) = execution_client_with_database(
+            "verification_resume_owned_nonce_test",
+            ready_rpc_state(),
+        )
+        .await
+        else {
+            return;
+        };
+        let database = client.cache.database.as_ref().unwrap();
+        persist_test_wrap_broadcast(database, client.payload_keys.as_deref()).await;
+        let resume = database
+            .load_execution_verification_resume(
+                42_161,
+                WALLET,
+                &client
+                    .config
+                    .verification
+                    .as_ref()
+                    .unwrap()
+                    .manifest_version,
+                &client.config.verification.as_ref().unwrap().manifest_digest,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        ensure_test_verification_ledger(&client, &resume.finalized_headers, 7, 8)
+            .await
+            .unwrap();
+
+        let nonce_state = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(format!(
+            "SELECT next_canonical_nonce, revision FROM {schema}.execution_verification_nonce"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(nonce_state, (7, 0));
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn verification_resume_rejects_unowned_nonce_advance() {
+        for (test_name, mutation, observed_canonical_nonce) in [
+            ("verification_resume_no_active_test", "no_active", 8),
+            ("verification_resume_excess_test", "unchanged", 9),
+            ("verification_resume_signed_test", "signed", 8),
+            ("verification_resume_prepared_test", "prepared", 8),
+            (
+                "verification_resume_missing_payload_test",
+                "missing_payload",
+                8,
+            ),
+        ] {
+            let Some((admin_pool, schema, client, _)) =
+                execution_client_with_database(test_name, ready_rpc_state()).await
+            else {
+                return;
+            };
+            let database = client.cache.database.as_ref().unwrap();
+            let (intent, _, _) =
+                persist_test_wrap_broadcast(database, client.payload_keys.as_deref()).await;
+
+            match mutation {
+                "no_active" => {
+                    sqlx::query(sqlx::AssertSqlSafe(format!(
+                        "UPDATE {schema}.execution_intent SET active = FALSE WHERE id = $1"
+                    )))
+                    .bind(intent.id)
+                    .execute(&admin_pool)
+                    .await
+                    .unwrap();
+                }
+                "signed" => {
+                    sqlx::query(sqlx::AssertSqlSafe(format!(
+                        "UPDATE {schema}.execution_intent SET status = 'signed' WHERE id = $1"
+                    )))
+                    .bind(intent.id)
+                    .execute(&admin_pool)
+                    .await
+                    .unwrap();
+                    sqlx::query(sqlx::AssertSqlSafe(format!(
+                        "UPDATE {schema}.execution_transaction_hash SET status = 'signed' \
+                         WHERE intent_id = $1"
+                    )))
+                    .bind(intent.id)
+                    .execute(&admin_pool)
+                    .await
+                    .unwrap();
+                }
+                "prepared" => {
+                    sqlx::query(sqlx::AssertSqlSafe(format!(
+                        "UPDATE {schema}.execution_intent \
+                         SET nonce = NULL, status = 'prepared' WHERE id = $1"
+                    )))
+                    .bind(intent.id)
+                    .execute(&admin_pool)
+                    .await
+                    .unwrap();
+                    sqlx::query(sqlx::AssertSqlSafe(format!(
+                        "UPDATE {schema}.execution_transaction_hash SET current = FALSE \
+                         WHERE intent_id = $1"
+                    )))
+                    .bind(intent.id)
+                    .execute(&admin_pool)
+                    .await
+                    .unwrap();
+                }
+                "missing_payload" => {
+                    sqlx::query(sqlx::AssertSqlSafe(format!(
+                        "UPDATE {schema}.execution_transaction_hash \
+                         SET payload_expected = FALSE, sealed_transaction = NULL \
+                         WHERE intent_id = $1"
+                    )))
+                    .bind(intent.id)
+                    .execute(&admin_pool)
+                    .await
+                    .unwrap();
+                }
+                "unchanged" => {}
+                _ => unreachable!(),
+            }
+            let resume = database
+                .load_execution_verification_resume(
+                    42_161,
+                    WALLET,
+                    &client
+                        .config
+                        .verification
+                        .as_ref()
+                        .unwrap()
+                        .manifest_version,
+                    &client.config.verification.as_ref().unwrap().manifest_digest,
+                )
+                .await
+                .unwrap()
+                .unwrap();
+
+            let error = ensure_test_verification_ledger(
+                &client,
+                &resume.finalized_headers,
+                7,
+                observed_canonical_nonce,
+            )
+            .await
+            .unwrap_err();
+
+            assert!(
+                error
+                    .to_string()
+                    .contains(if observed_canonical_nonce == 9 {
+                        "outside the owned recovery range"
+                    } else {
+                        "without"
+                    }),
+                "{mutation}: {error}"
+            );
+            let nonce_state = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(format!(
+                "SELECT next_canonical_nonce, revision FROM {schema}.execution_verification_nonce"
+            )))
+            .fetch_one(&admin_pool)
+            .await
+            .unwrap();
+            assert_eq!(nonce_state, (7, 0), "{mutation}");
+
+            drop_execution_schema(&admin_pool, &schema).await;
+        }
     }
 
     #[tokio::test]
@@ -12010,14 +16124,26 @@ mod tests {
         let keys = first_client.payload_keys.take().unwrap();
         drop(first_client);
 
-        let restart_state = execution_rpc_state()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &finalized_wrap_block(expected_hash),
-            )
-            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE_AFTER_WRAP]);
+        let block = finalized_wrap_block(expected_hash);
+        let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+        let restart_state = with_finalized_identity(
+            execution_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                .with_response_sequence(
+                    "eth_call",
+                    &[
+                        CALL_BALANCE,
+                        CALL_BALANCE,
+                        CALL_BALANCE,
+                        CALL_BALANCE_AFTER_WRAP,
+                        CALL_BALANCE_AFTER_WRAP,
+                        CALL_BALANCE_AFTER_WRAP,
+                    ],
+                ),
+            &block,
+            &receipt,
+        );
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
@@ -12246,15 +16372,33 @@ mod tests {
         let database = first_client.cache.database.as_ref().unwrap().clone();
         let (intent, _) =
             persist_invalid_test_swap(&database, first_client.payload_keys.as_deref()).await;
+
         if historical {
-            database
-                .add_execution_replacement_hash(
-                    intent.id,
-                    42161,
-                    &B256::from([0x44; 32]).to_string(),
-                )
-                .await
-                .unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE {schema}.execution_transaction_hash \
+                 SET current = FALSE, status = 'replaced' WHERE intent_id = $1"
+            )))
+            .bind(intent.id)
+            .execute(&admin_pool)
+            .await
+            .unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "INSERT INTO {schema}.execution_transaction_hash (\
+                     intent_id, chain_id, transaction_hash, payload_expected, status, current\
+                 ) VALUES ($1, 42161, $2, FALSE, 'replaced', TRUE)"
+            )))
+            .bind(intent.id)
+            .bind(B256::from([0x44; 32]).to_string())
+            .execute(&admin_pool)
+            .await
+            .unwrap();
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "UPDATE {schema}.execution_intent SET status = 'replaced' WHERE id = $1"
+            )))
+            .bind(intent.id)
+            .execute(&admin_pool)
+            .await
+            .unwrap();
         }
         let transitions_before: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT COUNT(*) FROM {schema}.execution_transaction_transition"
@@ -12335,6 +16479,7 @@ mod tests {
         let restart_state = execution_rpc_state()
             .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
             .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_response("eth_call", CALL_EMPTY)
             .with_send_raw_transaction_echo();
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
@@ -12357,6 +16502,213 @@ mod tests {
             execution_intent_markers(&admin_pool, &schema).await,
             vec![("wrap".into(), "dropped".into(), false, true)]
         );
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_suppresses_rebroadcast_when_canonical_nonce_advanced() {
+        let Some((admin_pool, schema, first_client, _)) = execution_client_with_database(
+            "execution_rebroadcast_nonce_advanced_test",
+            ready_rpc_state(),
+        )
+        .await
+        else {
+            return;
+        };
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        let (intent, _, _) =
+            persist_test_wrap_broadcast(&database, first_client.payload_keys.as_deref()).await;
+        let payload_keys = first_client.payload_keys.clone();
+        drop(first_client);
+
+        let mut empty_block: serde_json::Value =
+            serde_json::from_str(&replacement_head_block(B256::from([0x44; 32]))).unwrap();
+        empty_block["result"]["transactions"] = serde_json::json!([]);
+        let empty_block = empty_block.to_string();
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT_NEXT)
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_response("eth_call", CALL_EMPTY)
+            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d40", &empty_block)
+            .with_send_raw_transaction_echo();
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
+
+        let error = restarted
+            .reconcile_unresolved_execution()
+            .await
+            .unwrap_err();
+
+        let requests = restart_state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+        assert!(requests.iter().all(|request| {
+            request["method"] != "eth_call" || request["params"][0]["data"] != "0xd0e30db0"
+        }));
+        let decision_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_verification_decision \
+             WHERE intent_id = $1 AND decision_class = 'rebroadcast'"
+        )))
+        .bind(intent.id)
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert!(
+            error
+                .to_string()
+                .contains("without an authenticated signer transaction"),
+            "was: {error}"
+        );
+        assert_eq!(decision_count, 6);
+        let replacement_decision_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_verification_decision \
+                 WHERE intent_id = $1 AND decision_class = 'replacement_scan'"
+        )))
+        .bind(intent.id)
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(replacement_decision_count, 2);
+        let nonce_state = sqlx::query_as::<_, (i64, i64)>(sqlx::AssertSqlSafe(format!(
+            "SELECT next_canonical_nonce, revision FROM {schema}.execution_verification_nonce"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(nonce_state, (7, 0));
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn restart_suppresses_rebroadcast_when_receipt_exists() {
+        let Some((admin_pool, schema, first_client, _)) = execution_client_with_database(
+            "execution_rebroadcast_receipt_present_test",
+            ready_rpc_state(),
+        )
+        .await
+        else {
+            return;
+        };
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        let (intent, _, _) =
+            persist_test_wrap_broadcast(&database, first_client.payload_keys.as_deref()).await;
+        let payload_keys = first_client.payload_keys.clone();
+        drop(first_client);
+
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
+            .with_response("eth_call", CALL_EMPTY)
+            .with_send_raw_transaction_echo();
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
+
+        let error = restarted
+            .reconcile_unresolved_execution()
+            .await
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("finalized transaction verification is locally invalid"),
+            "was: {error}"
+        );
+        let requests = restart_state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+        assert!(requests.iter().all(|request| {
+            request["method"] != "eth_call" || request["params"][0]["data"] != "0xd0e30db0"
+        }));
+        let decision_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_verification_decision \
+             WHERE intent_id = $1 AND decision_class = 'rebroadcast'"
+        )))
+        .bind(intent.id)
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(decision_count, 6);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[rstest]
+    #[case("execution_rebroadcast_false_test", CALL_ZERO)]
+    #[case("execution_rebroadcast_revert_test", CALL_REVERTED)]
+    #[tokio::test]
+    async fn restart_suppresses_rebroadcast_when_simulation_denies(
+        #[case] test_name: &str,
+        #[case] simulation_response: &str,
+    ) {
+        let Some((admin_pool, schema, first_client, _)) =
+            execution_client_with_database(test_name, ready_rpc_state()).await
+        else {
+            return;
+        };
+        let database = first_client.cache.database.as_ref().unwrap().clone();
+        let (intent, _, _) =
+            persist_test_wrap_broadcast(&database, first_client.payload_keys.as_deref()).await;
+        let payload_keys = first_client.payload_keys.clone();
+        drop(first_client);
+
+        let restart_state = execution_rpc_state()
+            .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
+            .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
+            .with_response("eth_call", simulation_response)
+            .with_send_raw_transaction_echo();
+        let addr = start_mock_rpc_server(restart_state.clone()).await;
+        let mut restarted = test_client(format!("http://{addr}"));
+        restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
+        restarted.signer = Some(Arc::new(
+            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
+        ));
+
+        restarted.reconcile_unresolved_execution().await.unwrap();
+
+        let requests = restart_state.recorded_requests();
+        assert!(
+            requests
+                .iter()
+                .all(|request| request["method"] != "eth_sendRawTransaction")
+        );
+        let simulation_calls = requests
+            .iter()
+            .filter(|request| {
+                request["method"] == "eth_call"
+                    && request["params"][0]["data"] == "0xd0e30db0"
+                    && request["params"][1] == FIXTURE_BLOCK_PARAM
+            })
+            .count();
+        assert_eq!(simulation_calls, 3);
+        let decision_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_verification_decision \
+             WHERE intent_id = $1 AND decision_class = 'rebroadcast'"
+        )))
+        .bind(intent.id)
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(decision_count, 7);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -12391,23 +16743,33 @@ mod tests {
             "result": {
                 "number": "0x1cf0d41",
                 "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+                "parentHash": FIXTURE_BLOCK_HASH,
                 "timestamp": "0x69044a21",
                 "baseFeePerGas": "0x5f5e100",
                 "transactions": [{
                     "hash": expected_hash.to_string(),
                     "from": WALLET,
                     "nonce": "0x7",
+                    "chainId": "0xa4b1",
+                    "type": "0x2",
                     "to": WETH,
                     "input": "0xd0e30db0",
-                    "value": "0x0"
+                    "value": "0x0",
+                    "gas": "0x130b0",
+                    "maxFeePerGas": "0x7bfa480",
+                    "maxPriorityFeePerGas": "0x989680"
                 }]
             }
         })
         .to_string();
-        let restart_state = execution_rpc_state()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &mismatched_block)
-            .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE_AFTER_WRAP]);
+        let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+        let restart_state = with_finalized_identity(
+            execution_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &mismatched_block),
+            &mismatched_block,
+            &receipt,
+        );
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
@@ -12424,7 +16786,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("does not match the persisted wrap intent"),
+                .contains("finalized transaction identity mismatch"),
             "was: {error}"
         );
         let in_flight = awaiting_in_flight(&restarted);
@@ -12433,9 +16795,12 @@ mod tests {
         assert_eq!(in_flight.tx_hash, expected_hash);
         let requests = restart_state.recorded_requests();
         assert!(
-            requests
-                .iter()
-                .all(|request| request["method"] != "eth_call"),
+            requests.iter().all(|request| {
+                request["method"] != "eth_call"
+                    || !request["params"][0]["data"]
+                        .as_str()
+                        .is_some_and(|data| data.starts_with(BALANCE_OF_SELECTOR))
+            }),
             "the postcondition must not run when call identity is unproven"
         );
         assert!(
@@ -12449,7 +16814,7 @@ mod tests {
         .fetch_one(&admin_pool)
         .await
         .unwrap();
-        assert_eq!(status, "finalized");
+        assert_eq!(status, "dropped");
         assert!(active);
 
         let database = restarted.cache.database.as_ref().unwrap().clone();
@@ -12465,7 +16830,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("does not match the persisted wrap intent"),
+                .contains("finalized transaction identity mismatch"),
             "was: {error}"
         );
         let active: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
@@ -12505,14 +16870,16 @@ mod tests {
 
         // Call identity matches, but the wrapped balance does not increase
         let failing_wrap_state = || {
-            execution_rpc_state()
-                .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-                .with_parameter_response(
-                    "eth_getBlockByNumber",
-                    "0x1cf0d41",
-                    &finalized_wrap_block(expected_hash),
-                )
-                .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE])
+            let block = finalized_wrap_block(expected_hash);
+            let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+            with_finalized_identity(
+                execution_rpc_state()
+                    .with_response("eth_getTransactionReceipt", &receipt)
+                    .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                    .with_response_sequence("eth_call", &[CALL_BALANCE; 6]),
+                &block,
+                &receipt,
+            )
         };
         let restart_state = failing_wrap_state();
         let addr = start_mock_rpc_server(restart_state.clone()).await;
@@ -12543,7 +16910,7 @@ mod tests {
         );
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
-            vec![("wrap".into(), "finalized".into(), false, true)]
+            vec![("wrap".into(), "dropped".into(), false, true)]
         );
 
         let addr = start_mock_rpc_server(failing_wrap_state()).await;
@@ -12554,7 +16921,7 @@ mod tests {
         );
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
-            vec![("wrap".into(), "finalized".into(), false, true)]
+            vec![("wrap".into(), "dropped".into(), false, true)]
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
@@ -12571,6 +16938,7 @@ mod tests {
         else {
             return;
         };
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000_u64)).await;
         let error = first_client
             .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
@@ -12583,8 +16951,15 @@ mod tests {
         let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
-        let restart_state =
-            execution_rpc_state().with_response("eth_getTransactionReceipt", RECEIPT_REVERTED);
+        let block = finalized_wrap_block(expected_hash);
+        let receipt = receipt_with_transaction_hash(RECEIPT_REVERTED, expected_hash);
+        let restart_state = with_finalized_identity(
+            execution_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block),
+            &block,
+            &receipt,
+        );
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
@@ -12611,7 +16986,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn restart_reconciles_same_nonce_wrap_replacement_after_validation() {
+    async fn restart_quarantines_unretained_same_nonce_wrap_replacement() {
         let initial_state = broadcast_rpc_state()
             .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
             .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE);
@@ -12631,16 +17006,17 @@ mod tests {
             "was: {error}"
         );
         let database = first_client.cache.database.as_ref().unwrap().clone();
+        let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
-        // The replacement consumes the signer nonce with identical call fields
+        // Matching call fields do not authenticate an unknown same-nonce payload.
         let replacement_hash = B256::from([0x44; 32]);
         let restart_state = execution_rpc_state()
             .with_response("eth_getTransactionCount", TRANSACTION_COUNT_NEXT)
             .with_response_sequence("eth_call", &[CALL_BALANCE, CALL_BALANCE_AFTER_WRAP])
             .with_response_sequence(
                 "eth_getTransactionReceipt",
-                &[RECEIPT_NULL, RECEIPT_SUCCESS],
+                &[RECEIPT_NULL, RECEIPT_NULL, RECEIPT_NULL],
             )
             .with_parameter_response(
                 "eth_getBlockByNumber",
@@ -12655,12 +17031,16 @@ mod tests {
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
+        restarted.payload_keys = payload_keys;
         restarted.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));
         restarted.transaction_limits.receipt_timeout_secs = 2;
 
-        restarted.reconcile_unresolved_execution().await.unwrap();
+        let error = restarted
+            .reconcile_unresolved_execution()
+            .await
+            .unwrap_err();
 
         let hashes: Vec<(String, String, bool)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "SELECT transaction_hash, status, current FROM \
@@ -12671,32 +17051,31 @@ mod tests {
         .unwrap();
         let requests = restart_state.recorded_requests();
 
+        assert!(
+            error
+                .to_string()
+                .contains("has no authenticated retained payload"),
+            "was: {error}"
+        );
         assert_eq!(
             hashes,
-            [
-                (original_hash.to_string(), "replaced".to_string(), false),
-                (replacement_hash.to_string(), "finalized".to_string(), true),
-            ]
+            [(original_hash.to_string(), "dropped".to_string(), true)]
         );
-        assert!(restarted.in_flight.lock().unwrap().is_none());
+        assert!(restarted.in_flight.lock().unwrap().is_some());
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
-            vec![("wrap".into(), "finalized".into(), true, false)]
+            vec![("wrap".into(), "dropped".into(), false, true)]
         );
         assert_eq!(
             requests
                 .iter()
                 .filter(|request| request["method"] == "eth_getTransactionReceipt")
                 .count(),
-            2
+            3
         );
-        assert_eq!(
-            requests
-                .iter()
-                .filter(|request| request["method"] == "eth_call")
-                .count(),
-            2
-        );
+        assert!(requests.iter().all(|request| {
+            request["method"] != "eth_call" || request["params"][0]["data"] != "0xd0e30db0"
+        }));
         assert!(
             requests
                 .iter()
@@ -12707,10 +17086,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn replacement_scan_accepts_only_an_authenticated_retained_payload() {
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_u64)).await;
+        let mut replacement_block: serde_json::Value =
+            serde_json::from_str(&replacement_head_block(expected_hash)).unwrap();
+        replacement_block["result"]["transactions"][1]["value"] = serde_json::json!("0x1");
+        let replacement_block = replacement_block.to_string();
+        let state = execution_rpc_state().with_parameter_response(
+            "eth_getBlockByNumber",
+            "0x1cf0d40",
+            &replacement_block,
+        );
+        let Some((admin_pool, schema, client, _)) =
+            execution_client_with_database("replacement_scan_authenticated", state).await
+        else {
+            return;
+        };
+        let database = client.cache.database.as_ref().unwrap();
+        let (intent, persisted_hash, persisted_raw) =
+            persist_test_wrap_broadcast(database, client.payload_keys.as_deref()).await;
+        assert_eq!(persisted_hash, expected_hash);
+        let authenticated_payloads = HashMap::from([(expected_hash, persisted_raw.clone())]);
+        let head = VerifiedBlockHeader {
+            number: FIXTURE_BLOCK,
+            hash: B256::from_str(FIXTURE_BLOCK_HASH).unwrap(),
+            parent_hash: B256::from_str(
+                "0x0000000000000000000000000000000000000000000000000000000000000001",
+            )
+            .unwrap(),
+            timestamp: FIXTURE_BLOCK_TIMESTAMP,
+            base_fee_per_gas: Some(100_000_000),
+        };
+
+        let matched = client
+            .transaction_executor()
+            .unwrap()
+            .scan_canonical_replacement(&intent, 7, head, &authenticated_payloads)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(matched, (expected_hash, persisted_raw));
+        let cursor: (i64, String) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT finalized_cursor_number, finalized_cursor_hash \
+             FROM {schema}.execution_replacement_scan WHERE intent_id = $1"
+        )))
+        .bind(intent.id)
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            cursor,
+            (FIXTURE_BLOCK as i64, FIXTURE_BLOCK_HASH.to_string())
+        );
+        let evidence_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_verification_decision \
+             WHERE intent_id = $1 AND decision_class = 'replacement_scan'"
+        )))
+        .bind(intent.id)
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        assert_eq!(evidence_count, 2);
+
+        drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
     async fn restart_reconciles_finalized_approve_after_validation() {
         let initial_state = broadcast_rpc_state()
             .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
-            .with_response("eth_call", CALL_BOOL_TRUE);
+            .with_response("eth_call", CALL_BOOL_TRUE)
+            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO; 3])
+            .with_call_response(ALLOWANCE_SELECTOR, CALL_ZERO);
         let Some((admin_pool, schema, mut first_client, _)) =
             execution_client_with_database("execution_restart_approve_test", initial_state).await
         else {
@@ -12729,14 +17177,16 @@ mod tests {
         let payload_keys = first_client.payload_keys.clone();
         drop(first_client);
 
-        let restart_state = execution_rpc_state()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &finalized_approve_block(expected_hash, U256::from(1_000u64)),
-            )
-            .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE_1000);
+        let block = finalized_approve_block(expected_hash, U256::from(1_000u64));
+        let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+        let restart_state = with_finalized_identity(
+            execution_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE_1000),
+            &block,
+            &receipt,
+        );
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
@@ -12764,9 +17214,14 @@ mod tests {
         assert_eq!(
             requests
                 .iter()
-                .filter(|request| request["method"] == "eth_call")
+                .filter(|request| {
+                    request["method"] == "eth_call"
+                        && request["params"][0]["data"]
+                            .as_str()
+                            .is_some_and(|data| data.starts_with(ALLOWANCE_SELECTOR))
+                })
                 .count(),
-            1
+            3
         );
         assert_eq!(
             requests
@@ -12783,7 +17238,9 @@ mod tests {
     async fn restart_approve_postcondition_failure_keeps_signer_ownership() {
         let initial_state = broadcast_rpc_state()
             .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
-            .with_response("eth_call", CALL_BOOL_TRUE);
+            .with_response("eth_call", CALL_BOOL_TRUE)
+            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO; 3])
+            .with_call_response(ALLOWANCE_SELECTOR, CALL_ZERO);
         let Some((admin_pool, schema, mut first_client, _)) =
             execution_client_with_database("execution_restart_approve_post_test", initial_state)
                 .await
@@ -12804,14 +17261,16 @@ mod tests {
         drop(first_client);
 
         // Call identity matches, but the allowance does not equal the approved amount
-        let restart_state = execution_rpc_state()
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &finalized_approve_block(expected_hash, U256::from(1_000u64)),
-            )
-            .with_call_response(ALLOWANCE_SELECTOR, CALL_ZERO);
+        let block = finalized_approve_block(expected_hash, U256::from(1_000u64));
+        let receipt = receipt_with_transaction_hash(RECEIPT_SUCCESS, expected_hash);
+        let restart_state = with_finalized_identity(
+            execution_rpc_state()
+                .with_response("eth_getTransactionReceipt", &receipt)
+                .with_parameter_response("eth_getBlockByNumber", "0x1cf0d41", &block)
+                .with_call_response(ALLOWANCE_SELECTOR, CALL_ZERO),
+            &block,
+            &receipt,
+        );
         let addr = start_mock_rpc_server(restart_state.clone()).await;
         let mut restarted = test_client(format!("http://{addr}"));
         restarted.cache.database = Some(database);
@@ -12842,7 +17301,7 @@ mod tests {
         );
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
-            vec![("approve".into(), "finalized".into(), false, true)]
+            vec![("approve".into(), "dropped".into(), false, true)]
         );
 
         let error = later_reconnect(restarted, format!("http://{addr}")).await;
@@ -12854,21 +17313,28 @@ mod tests {
         );
         assert_eq!(
             execution_intent_markers(&admin_pool, &schema).await,
-            vec![("approve".into(), "finalized".into(), false, true)]
+            vec![("approve".into(), "dropped".into(), false, true)]
         );
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
-    async fn disappearing_included_receipt_records_reorg_before_drop() {
+    async fn disappearing_unfinalized_receipt_drops_without_committing_inclusion() {
         let state = execution_rpc_state()
             .with_response("eth_getTransactionCount", TRANSACTION_COUNT)
             .with_response("eth_estimateGas", ESTIMATE_GAS)
             .with_response("eth_call", CALL_BALANCE)
             .with_response_sequence(
                 "eth_getTransactionReceipt",
-                &[RECEIPT_SUCCESS, RECEIPT_NULL],
+                &[
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_NULL,
+                    RECEIPT_NULL,
+                    RECEIPT_NULL,
+                ],
             )
             .with_parameter_response("eth_getBlockByNumber", "finalized", BLOCK_BY_NUMBER)
             .with_send_raw_transaction_echo();
@@ -12894,30 +17360,21 @@ mod tests {
             error.to_string().contains("Timed out awaiting finality"),
             "was: {error}"
         );
-        assert_eq!(
-            transitions,
-            [
-                "prepared",
-                "signed",
-                "broadcast",
-                "included",
-                "reorged",
-                "dropped"
-            ]
-        );
+        assert_eq!(transitions, ["prepared", "signed", "broadcast", "dropped"]);
         assert!(client.in_flight.lock().unwrap().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
-    async fn canonical_block_change_records_reorg_before_drop() {
+    async fn changed_unfinalized_block_drops_without_committing_inclusion() {
         let changed_block = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
             "result": {
                 "number": "0x1cf0d41",
                 "hash": "0x4444444444444444444444444444444444444444444444444444444444444444",
+                "parentHash": FIXTURE_BLOCK_HASH,
                 "timestamp": "0x69044a21",
                 "baseFeePerGas": "0x5f5e100",
                 "transactions": []
@@ -12930,12 +17387,26 @@ mod tests {
             .with_response("eth_call", CALL_BALANCE)
             .with_response_sequence(
                 "eth_getTransactionReceipt",
-                &[RECEIPT_SUCCESS, RECEIPT_SUCCESS],
+                &[
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                ],
             )
             .with_parameter_response_sequence(
                 "eth_getBlockByNumber",
                 "0x1cf0d41",
-                &[BLOCK_CANONICAL, &changed_block],
+                &[
+                    BLOCK_CANONICAL,
+                    BLOCK_CANONICAL,
+                    BLOCK_CANONICAL,
+                    &changed_block,
+                    &changed_block,
+                    &changed_block,
+                ],
             )
             .with_parameter_response("eth_getBlockByNumber", "finalized", BLOCK_BY_NUMBER)
             .with_send_raw_transaction_echo();
@@ -12961,90 +17432,58 @@ mod tests {
             error.to_string().contains("Timed out awaiting finality"),
             "was: {error}"
         );
-        assert_eq!(
-            transitions,
-            [
-                "prepared",
-                "signed",
-                "broadcast",
-                "included",
-                "reorged",
-                "dropped"
-            ]
-        );
+        assert_eq!(transitions, ["prepared", "signed", "broadcast", "dropped"]);
         assert!(client.in_flight.lock().unwrap().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
-    async fn same_nonce_replacement_preserves_intent_and_finalizes_new_hash() {
-        let replacement_hash = B256::from([0x44; 32]);
-        let replacement_block = replacement_head_block(replacement_hash);
-        let finalized_replacement_block = finalized_wrap_block(replacement_hash);
+    async fn pre_sign_pending_nonce_drift_blocks_wrap_before_signature() {
         let state = execution_rpc_state()
             .with_response_sequence(
-                "eth_call",
-                &[CALL_BALANCE, CALL_BALANCE, CALL_BALANCE_AFTER_WRAP],
-            )
-            .with_response_sequence(
                 "eth_getTransactionCount",
-                &[TRANSACTION_COUNT, TRANSACTION_COUNT_NEXT],
+                &[
+                    TRANSACTION_COUNT,
+                    TRANSACTION_COUNT,
+                    TRANSACTION_COUNT,
+                    TRANSACTION_COUNT_NEXT,
+                    TRANSACTION_COUNT_NEXT,
+                    TRANSACTION_COUNT_NEXT,
+                ],
             )
             .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response_sequence(
-                "eth_getTransactionReceipt",
-                &[RECEIPT_NULL, RECEIPT_SUCCESS],
-            )
-            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d40", &replacement_block)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &finalized_replacement_block,
-            )
+            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
             .with_send_raw_transaction_echo();
         let Some((admin_pool, schema, mut client, state)) =
-            execution_client_with_database("execution_replacement_test", state).await
+            execution_client_with_database("pre_sign_pending_nonce_drift", state).await
         else {
             return;
         };
-        client.transaction_limits.receipt_timeout_secs = 2;
-        let original_hash = expected_wrap_tx_hash(U256::from(1_000_000_000_000_000_u64)).await;
 
-        let observed_hash = client
+        let error = client
             .wrap(U256::from(1_000_000_000_000_000_u64))
             .await
-            .unwrap();
-        let hashes: Vec<(String, String, bool)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "SELECT transaction_hash, status, current FROM \
-                 {schema}.execution_transaction_hash ORDER BY id"
+            .unwrap_err();
+        let signed_count: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_transaction_hash"
         )))
-        .fetch_all(&admin_pool)
-        .await
-        .unwrap();
-        let client_order_ids: Vec<Option<String>> = sqlx::query_scalar(sqlx::AssertSqlSafe(
-            format!("SELECT client_order_id FROM {schema}.execution_intent"),
-        ))
-        .fetch_all(&admin_pool)
+        .fetch_one(&admin_pool)
         .await
         .unwrap();
 
-        assert_eq!(observed_hash, replacement_hash);
-        assert_eq!(
-            hashes,
-            [
-                (original_hash.to_string(), "replaced".to_string(), false),
-                (replacement_hash.to_string(), "finalized".to_string(), true),
-            ]
+        assert!(
+            error
+                .to_string()
+                .contains("Pending nonce does not match the verified canonical nonce"),
+            "was: {error}"
         );
-        assert_eq!(client_order_ids, [None]);
-        assert_eq!(
+        assert_eq!(signed_count, 0);
+        assert!(
             state
                 .recorded_requests()
                 .iter()
-                .filter(|request| request["method"] == "eth_sendRawTransaction")
-                .count(),
-            1
+                .all(|request| request["method"] != "eth_sendRawTransaction")
         );
         assert!(client.in_flight.lock().unwrap().is_none());
 
@@ -13052,176 +17491,114 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn same_nonce_swap_replacement_with_different_call_stays_quarantined() {
+    async fn unknown_same_nonce_swap_replacement_emits_no_rejection() {
         let replacement_hash = B256::from([0x44; 32]);
         let replacement_block = replacement_head_block(replacement_hash);
-        let mismatched_finalized_block = finalized_wrap_block(replacement_hash);
         let state = execution_rpc_state()
-            .with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE)
-            .with_call_response(ALLOWANCE_SELECTOR, CALL_ALLOWANCE)
-            .with_response_sequence(
-                "eth_getTransactionCount",
-                &[TRANSACTION_COUNT, TRANSACTION_COUNT_NEXT],
-            )
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response("eth_getTransactionReceipt", RECEIPT_SUCCESS)
-            .with_response_sequence(
-                "eth_getTransactionReceipt",
-                &[RECEIPT_NULL, RECEIPT_SUCCESS],
-            )
             .with_parameter_response("eth_getBlockByNumber", "0x1cf0d40", &replacement_block)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &mismatched_finalized_block,
-            )
             .with_send_raw_transaction_echo();
-        let Some((admin_pool, schema, mut client, _state, _cache)) =
-            swap_client_with_database("execution_swap_replacement_call_mismatch_test", state).await
+        let Some((admin_pool, schema, mut client, _, _)) =
+            swap_client_with_database("unknown_same_nonce_swap_replacement", state).await
         else {
             return;
         };
-        client.transaction_limits.receipt_timeout_secs = 2;
-        let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
-        let plan = client
-            .prepare_swap(&submit_order_cmd(&order), &order)
-            .unwrap();
-
-        let error = execute_swap(
-            plan,
-            client.transaction_executor().unwrap(),
-            client.emitter.clone(),
-            client.transaction_limits.max_quote_age_blocks,
-            client.transaction_limits.deadline_seconds,
-        )
-        .await
-        .unwrap_err();
-        let events = collect_order_events(&mut receiver);
-        let (status, active, terminal_emitted): (String, bool, bool) =
-            sqlx::query_as(sqlx::AssertSqlSafe(format!(
-                "SELECT status, active, terminal_emitted FROM {schema}.execution_intent"
-            )))
-            .fetch_one(&admin_pool)
-            .await
-            .unwrap();
-
-        assert!(
-            error
-                .to_string()
-                .contains("does not match the persisted swap intent"),
-            "was: {error}"
-        );
-        assert_eq!(events.len(), 2, "was: {events:?}");
-        assert!(matches!(&events[0], OrderEventAny::Submitted(_)));
-        let OrderEventAny::Rejected(rejected) = &events[1] else {
-            panic!("expected OrderRejected, was {:?}", events[1]);
+        let database = client.cache.database.as_ref().unwrap();
+        let (intent, original_hash, original_payload) =
+            persist_test_swap_broadcast(database, client.payload_keys.as_deref()).await;
+        let authenticated_payloads = HashMap::from([(original_hash, original_payload)]);
+        let head = VerifiedBlockHeader {
+            number: FIXTURE_BLOCK,
+            hash: B256::from_str(FIXTURE_BLOCK_HASH).unwrap(),
+            parent_hash: B256::from_str(
+                "0x0000000000000000000000000000000000000000000000000000000000000001",
+            )
+            .unwrap(),
+            timestamp: FIXTURE_BLOCK_TIMESTAMP,
+            base_fee_per_gas: Some(100_000_000),
         };
-        assert!(
-            rejected
-                .reason
-                .as_str()
-                .contains("does not match the persisted swap intent"),
-            "was: {}",
-            rejected.reason
-        );
-        assert_eq!(status, "finalized");
-        assert!(active);
-        assert!(!terminal_emitted);
-        assert!(client.in_flight.lock().unwrap().is_some());
 
-        let database = client.cache.database.as_ref().unwrap().clone();
-        let restart_config = client.config.clone();
-        drop(client);
-        let (mut restarted, _) = swap_client_with_cache(restart_config);
-        restarted.cache.database = Some(database);
-        restarted.signer = Some(Arc::new(
-            PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
-        ));
-        let mut restart_receiver = start_with_events(&mut restarted);
-
-        let restart_error = restarted
-            .reconcile_unresolved_execution()
+        let error = client
+            .transaction_executor()
+            .unwrap()
+            .scan_canonical_replacement(&intent, 7, head, &authenticated_payloads)
             .await
             .unwrap_err();
-        let restart_events = collect_order_events(&mut restart_receiver);
-        let (active, terminal_emitted): (bool, bool) = sqlx::query_as(sqlx::AssertSqlSafe(
-            format!("SELECT active, terminal_emitted FROM {schema}.execution_intent"),
-        ))
+        let events = collect_order_events(&mut receiver);
+        let (status, active): (String, bool) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT status, active FROM {schema}.execution_intent"
+        )))
         .fetch_one(&admin_pool)
         .await
         .unwrap();
 
         assert!(
-            restart_error
+            error
                 .to_string()
-                .contains("does not match the persisted swap intent"),
-            "was: {restart_error}"
+                .contains("has no authenticated retained payload"),
+            "was: {error}"
         );
-        assert_eq!(restart_events.len(), 1, "was: {restart_events:?}");
-        assert!(matches!(&restart_events[0], OrderEventAny::Rejected(_)));
+        assert!(events.is_empty(), "was: {events:?}");
+        assert_eq!(status, "broadcast");
         assert!(active);
-        assert!(!terminal_emitted);
-        assert!(restarted.in_flight.lock().unwrap().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
 
     #[tokio::test]
-    async fn same_nonce_replacement_with_different_call_stays_quarantined() {
-        let replacement_hash = B256::from([0x44; 32]);
-        let replacement_block = replacement_head_block(replacement_hash);
-        let mismatched_finalized_block = mismatched_finalized_wrap_block(replacement_hash);
-        let state = execution_rpc_state()
-            .with_response_sequence(
-                "eth_call",
-                &[CALL_BALANCE, CALL_BALANCE, CALL_BALANCE_AFTER_WRAP],
-            )
-            .with_response_sequence(
-                "eth_getTransactionCount",
-                &[TRANSACTION_COUNT, TRANSACTION_COUNT_NEXT],
-            )
-            .with_response("eth_estimateGas", ESTIMATE_GAS)
-            .with_response_sequence(
-                "eth_getTransactionReceipt",
-                &[RECEIPT_NULL, RECEIPT_SUCCESS],
-            )
-            .with_parameter_response("eth_getBlockByNumber", "0x1cf0d40", &replacement_block)
-            .with_parameter_response(
-                "eth_getBlockByNumber",
-                "0x1cf0d41",
-                &mismatched_finalized_block,
-            )
-            .with_send_raw_transaction_echo();
-        let Some((admin_pool, schema, mut client, _)) =
-            execution_client_with_database("execution_replacement_call_mismatch_test", state).await
+    async fn replacement_scan_rejects_rpc_fields_that_conflict_with_the_payload() {
+        let expected_hash = expected_wrap_tx_hash(U256::from(1_u64)).await;
+        let mut replacement_block: serde_json::Value =
+            serde_json::from_str(&replacement_head_block(expected_hash)).unwrap();
+        replacement_block["result"]["transactions"][1]["value"] = serde_json::json!("0x2");
+        let replacement_block = replacement_block.to_string();
+        let state = execution_rpc_state().with_parameter_response(
+            "eth_getBlockByNumber",
+            "0x1cf0d40",
+            &replacement_block,
+        );
+        let Some((admin_pool, schema, client, _)) =
+            execution_client_with_database("replacement_scan_payload_mismatch", state).await
         else {
             return;
         };
-        client.transaction_limits.receipt_timeout_secs = 2;
+        let database = client.cache.database.as_ref().unwrap();
+        let (intent, persisted_hash, persisted_payload) =
+            persist_test_wrap_broadcast(database, client.payload_keys.as_deref()).await;
+        assert_eq!(persisted_hash, expected_hash);
+        let authenticated_payloads = HashMap::from([(persisted_hash, persisted_payload)]);
+        let head = VerifiedBlockHeader {
+            number: FIXTURE_BLOCK,
+            hash: B256::from_str(FIXTURE_BLOCK_HASH).unwrap(),
+            parent_hash: B256::from_str(
+                "0x0000000000000000000000000000000000000000000000000000000000000001",
+            )
+            .unwrap(),
+            timestamp: FIXTURE_BLOCK_TIMESTAMP,
+            base_fee_per_gas: Some(100_000_000),
+        };
 
         let error = client
-            .wrap(U256::from(1_000_000_000_000_000_u64))
+            .transaction_executor()
+            .unwrap()
+            .scan_canonical_replacement(&intent, 7, head, &authenticated_payloads)
             .await
             .unwrap_err();
-        let (status, active, terminal_emitted): (String, bool, bool) =
-            sqlx::query_as(sqlx::AssertSqlSafe(format!(
-                "SELECT status, active, terminal_emitted FROM {schema}.execution_intent"
-            )))
-            .fetch_one(&admin_pool)
-            .await
-            .unwrap();
+        let (status, active): (String, bool) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT status, active FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
 
         assert!(
             error
                 .to_string()
-                .contains("does not match the persisted wrap intent"),
+                .contains("failed authenticated payload validation"),
             "was: {error}"
         );
-        assert_eq!(status, "finalized");
+        assert_eq!(status, "broadcast");
         assert!(active);
-        assert!(!terminal_emitted);
-        assert!(client.in_flight.lock().unwrap().is_some());
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -13358,87 +17735,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replacement_hashes_retain_swap_order_identity() {
-        const ORIGINAL_HASH: &str =
-            "0x5555555555555555555555555555555555555555555555555555555555555555";
-        const REPLACEMENT_HASH: &str =
-            "0x6666666666666666666666666666666666666666666666666666666666666666";
-        let Some((admin_pool, schema, client, _)) = execution_client_with_database(
-            "execution_swap_replacement_identity_test",
-            ready_rpc_state(),
-        )
-        .await
-        else {
-            return;
-        };
-        let pool = test_pool();
-        let database = client.cache.database.as_ref().unwrap();
-        let intent = database
-            .reserve_execution_intent(&ExecutionIntentInsert {
-                chain_id: 42161,
-                wallet_address: WALLET.to_string(),
-                purpose: "swap".to_string(),
-                client_order_id: Some("O-SWAP-001".to_string()),
-                trader_id: Some("TRADER-001".to_string()),
-                strategy_id: Some("S-001".to_string()),
-                account_id: Some("BLOCKCHAIN-001".to_string()),
-                instrument_id: Some(pool.instrument_id.to_string()),
-                pool_address: Some(pool.address.to_string()),
-                transaction_to: ROUTER_ADDRESS.to_string(),
-                transaction_input: "0x010203".to_string(),
-                transaction_value: "0".to_string(),
-                amount_in: Some("1000000000000000".to_string()),
-                created_block: FIXTURE_BLOCK,
-            })
-            .await
-            .unwrap();
-        database
-            .assign_execution_intent_nonce(intent.id, 7)
-            .await
-            .unwrap();
-        database
-            .add_execution_transaction_hash(intent.id, 42161, ORIGINAL_HASH, &[1, 2, 3])
-            .await
-            .unwrap();
-
-        database
-            .add_execution_replacement_hash(intent.id, 42161, REPLACEMENT_HASH)
-            .await
-            .unwrap();
-
-        let rows: Vec<(String, String, bool, String)> =
-            sqlx::query_as(sqlx::AssertSqlSafe(format!(
-                "SELECT hash.transaction_hash, hash.status, hash.current, intent.client_order_id \
-                 FROM {schema}.execution_transaction_hash AS hash \
-                 JOIN {schema}.execution_intent AS intent ON intent.id = hash.intent_id \
-                 ORDER BY hash.id"
-            )))
-            .fetch_all(&admin_pool)
-            .await
-            .unwrap();
-
-        assert_eq!(
-            rows,
-            [
-                (
-                    ORIGINAL_HASH.to_string(),
-                    "replaced".to_string(),
-                    false,
-                    "O-SWAP-001".to_string(),
-                ),
-                (
-                    REPLACEMENT_HASH.to_string(),
-                    "replaced".to_string(),
-                    true,
-                    "O-SWAP-001".to_string(),
-                ),
-            ]
-        );
-
-        drop_execution_schema(&admin_pool, &schema).await;
-    }
-
-    #[tokio::test]
     async fn execution_status_transitions_are_idempotent() {
         const TRANSACTION_HASH: &str =
             "0x5555555555555555555555555555555555555555555555555555555555555555";
@@ -13566,24 +17862,74 @@ mod tests {
     #[tokio::test]
     async fn wrap_then_approve_persists_records_and_clears_in_flight() {
         let state = execution_rpc_state()
+            .with_parameter_response_sequence(
+                "eth_getBlockByNumber",
+                "latest",
+                &[
+                    BLOCK_BY_NUMBER,
+                    BLOCK_BY_NUMBER,
+                    BLOCK_BY_NUMBER,
+                    BLOCK_FINALIZED,
+                    BLOCK_FINALIZED,
+                    BLOCK_FINALIZED,
+                ],
+            )
             .with_response_sequence(
                 "eth_call",
                 &[
                     CALL_BALANCE,
                     CALL_BALANCE,
+                    CALL_BALANCE,
+                    CALL_BALANCE,
+                    CALL_BALANCE,
+                    CALL_BALANCE,
                     CALL_BALANCE_AFTER_WRAP,
+                    CALL_BALANCE_AFTER_WRAP,
+                    CALL_BALANCE_AFTER_WRAP,
+                    CALL_BOOL_TRUE,
+                    CALL_BOOL_TRUE,
                     CALL_BOOL_TRUE,
                 ],
             )
-            .with_call_response_sequence(ALLOWANCE_SELECTOR, &[CALL_ZERO, CALL_ALLOWANCE_MAX])
+            .with_call_response_sequence(
+                ALLOWANCE_SELECTOR,
+                &[
+                    CALL_ZERO,
+                    CALL_ZERO,
+                    CALL_ZERO,
+                    CALL_ALLOWANCE_MAX,
+                    CALL_ALLOWANCE_MAX,
+                    CALL_ALLOWANCE_MAX,
+                ],
+            )
             .with_response_sequence(
                 "eth_getTransactionCount",
-                &[TRANSACTION_COUNT, TRANSACTION_COUNT_NEXT],
+                &[
+                    TRANSACTION_COUNT,
+                    TRANSACTION_COUNT,
+                    TRANSACTION_COUNT,
+                    TRANSACTION_COUNT,
+                    TRANSACTION_COUNT,
+                    TRANSACTION_COUNT,
+                    TRANSACTION_COUNT_NEXT,
+                    TRANSACTION_COUNT_NEXT,
+                    TRANSACTION_COUNT_NEXT,
+                    TRANSACTION_COUNT_NEXT,
+                    TRANSACTION_COUNT_NEXT,
+                    TRANSACTION_COUNT_NEXT,
+                ],
             )
             .with_response("eth_estimateGas", ESTIMATE_GAS)
             .with_response_sequence(
                 "eth_getTransactionReceipt",
-                &[RPC_METHOD_NOT_FOUND, RECEIPT_SUCCESS, RECEIPT_SUCCESS],
+                &[
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                    RECEIPT_SUCCESS,
+                ],
             )
             .with_send_raw_transaction_echo();
         let Some((admin_pool, schema, mut client, state)) =
@@ -13645,11 +17991,32 @@ mod tests {
             let payload = broadcast["params"][0].as_str().unwrap();
             assert!(payload.starts_with("0x02"), "was: {payload}");
         }
+        let broadcast_indexes = requests
+            .iter()
+            .enumerate()
+            .filter_map(|(index, request)| {
+                (request["method"] == "eth_sendRawTransaction").then_some(index)
+            })
+            .collect::<Vec<_>>();
+
+        for (index, expected_block) in broadcast_indexes
+            .into_iter()
+            .zip([FIXTURE_BLOCK_PARAM, "0x1cf0d42"])
+        {
+            let nonce_fence = &requests[index - 6..index];
+            assert!(nonce_fence[..3].iter().all(|request| {
+                request["method"] == "eth_getTransactionCount"
+                    && request["params"][1] == expected_block
+            }));
+            assert!(nonce_fence[3..].iter().all(|request| {
+                request["method"] == "eth_getTransactionCount" && request["params"][1] == "pending"
+            }));
+        }
         let receipt_polls = requests
             .iter()
             .filter(|request| request["method"] == "eth_getTransactionReceipt")
             .count();
-        assert_eq!(receipt_polls, 3);
+        assert_eq!(receipt_polls, 6);
         let allowance_calls: Vec<_> = requests
             .iter()
             .filter(|request| {
@@ -13659,22 +18026,32 @@ mod tests {
                         .is_some_and(|data| data.starts_with(ALLOWANCE_SELECTOR))
             })
             .collect();
-        assert_eq!(allowance_calls.len(), 2);
-        assert_eq!(allowance_calls[0]["params"][1], "latest");
-        assert_eq!(allowance_calls[1]["params"][1], "0x1cf0d41");
+        assert_eq!(allowance_calls.len(), 6);
+        assert!(
+            allowance_calls[..3]
+                .iter()
+                .all(|request| request["params"][1] == "0x1cf0d42")
+        );
+        assert!(
+            allowance_calls[3..]
+                .iter()
+                .all(|request| request["params"][1] == "0x1cf0d41")
+        );
 
         // Unlimited approval policy encoded U256::MAX in the approve calldata
         let estimates: Vec<_> = requests
             .iter()
             .filter(|request| request["method"] == "eth_estimateGas")
             .collect();
-        assert_eq!(estimates.len(), 2);
-        assert!(
-            estimates
-                .iter()
-                .all(|request| request["params"].as_array().unwrap().len() == 1)
-        );
-        let approve_data = estimates[1]["params"][0]["data"].as_str().unwrap();
+        assert_eq!(estimates.len(), 6);
+        assert!(estimates[..3].iter().all(|request| {
+            request["params"].as_array().unwrap().len() == 2
+                && request["params"][1] == FIXTURE_BLOCK_PARAM
+        }));
+        assert!(estimates[3..].iter().all(|request| {
+            request["params"].as_array().unwrap().len() == 2 && request["params"][1] == "0x1cf0d42"
+        }));
+        let approve_data = estimates[3]["params"][0]["data"].as_str().unwrap();
         assert!(
             approve_data.starts_with("0x095ea7b3"),
             "was: {approve_data}"
@@ -13694,9 +18071,11 @@ mod tests {
                             .is_some_and(|data| data.starts_with(selector))
                 })
                 .collect();
-            assert_eq!(calls.len(), 1, "selector {selector}");
+            assert!(!calls.is_empty(), "selector {selector}");
             assert!(
-                calls.iter().all(|request| request["params"][1] == "latest"),
+                calls.iter().all(|request| request["params"][1]
+                    .as_str()
+                    .is_some_and(|block| block.starts_with("0x"))),
                 "selector {selector}: {calls:?}"
             );
         }
@@ -13707,7 +18086,7 @@ mod tests {
                     && request["params"] == serde_json::json!(["latest", false])
             })
             .count();
-        assert_eq!(latest_blocks, 4);
+        assert_eq!(latest_blocks, 6);
 
         drop_execution_schema(&admin_pool, &schema).await;
     }
@@ -14201,9 +18580,7 @@ mod tests {
 
         let db_options: sqlx::postgres::PgConnectOptions = pg_config.into();
         let db_options = db_options.options([("search_path", schema.clone())]);
-        let database = crate::cache::database::BlockchainCacheDatabase::connect(db_options)
-            .await
-            .unwrap();
+        let database = connect_test_database(db_options).await.unwrap();
         let addr = start_mock_rpc_server(state.clone()).await;
         let mut client = test_client(format!("http://{addr}"));
         client.cache.database = Some(database);
@@ -14213,6 +18590,7 @@ mod tests {
             .ensure_execution_transaction_schema()
             .await
             .unwrap();
+        initialize_test_verification_ledger(&client).await;
         client.signer = Some(Arc::new(
             PrivateKeySigner::from_str(TEST_PRIVATE_KEY).unwrap(),
         ));

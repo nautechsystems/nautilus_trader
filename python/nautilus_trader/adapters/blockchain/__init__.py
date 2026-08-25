@@ -23,9 +23,13 @@ from nautilus_trader._libnautilus.blockchain import *  # noqa: F403 (undefined-l
 
 
 __all__ = [
+    "BlockchainChainAnchorConfig",
     "BlockchainDataClientConfig",
     "BlockchainDataClientFactory",
     "BlockchainExecutionClientConfig",
+    "BlockchainProviderIdentity",
+    "BlockchainVerificationConfig",
+    "BlockchainVerificationProviderConfig",
     "DexPoolFilters",
     "QuoteSpendLimit",
     "load_pool_snapshot",

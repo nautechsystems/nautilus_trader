@@ -10,13 +10,47 @@ from nautilus_trader import network
 from nautilus_trader.model import DexType
 
 __all__ = [
+    "BlockchainChainAnchorConfig",
     "BlockchainDataClientConfig",
     "BlockchainDataClientFactory",
     "BlockchainExecutionClientConfig",
+    "BlockchainProviderIdentity",
+    "BlockchainVerificationConfig",
+    "BlockchainVerificationProviderConfig",
     "DexPoolFilters",
     "QuoteSpendLimit",
     "load_pool_snapshot",
 ]
+
+@typing.final
+class BlockchainChainAnchorConfig:
+    @property
+    def chain_id(self) -> int: ...
+    @property
+    def chain_name(self) -> str: ...
+    @property
+    def checkpoint_hash(self) -> str: ...
+    @property
+    def checkpoint_height(self) -> int: ...
+    @property
+    def checkpoint_timestamp(self) -> int: ...
+    @property
+    def max_future_drift_secs(self) -> int: ...
+    @property
+    def max_head_age_secs(self) -> int: ...
+    @property
+    def max_head_skew_blocks(self) -> int: ...
+    def __init__(
+        self,
+        chain_id: int,
+        chain_name: str,
+        checkpoint_height: int,
+        checkpoint_hash: str,
+        checkpoint_timestamp: int,
+        max_head_skew_blocks: int,
+        max_head_age_secs: int,
+        max_future_drift_secs: int,
+    ) -> None: ...
 
 @typing.final
 class BlockchainDataClientConfig:
@@ -78,6 +112,8 @@ class BlockchainExecutionClientConfig:
     def gas_limit(self) -> int: ...
     @property
     def http_rpc_url(self) -> str: ...
+    @property
+    def verification(self) -> BlockchainVerificationConfig | None: ...
     @property
     def max_fee_per_gas_wei(self) -> int: ...
     @property
@@ -141,6 +177,7 @@ class BlockchainExecutionClientConfig:
         payload_key_env: str | None = None,
         payload_key_retired_env: typing.Sequence[str] | None = None,
         payload_deployment_id: str | None = None,
+        verification: BlockchainVerificationConfig | None = None,
     ) -> None: ...
     @property
     def allowed_token_pairs(self) -> list[tuple[str, str]] | None: ...
@@ -152,6 +189,46 @@ class BlockchainExecutionClientConfig:
     def rpc_requests_per_second(self) -> int | None: ...
     @property
     def has_postgres_cache_database_config(self) -> bool: ...
+
+@typing.final
+class BlockchainProviderIdentity:
+    @property
+    def failure_domain_ids(self) -> list[str]: ...
+    @property
+    def operator_id(self) -> str: ...
+    @property
+    def provider_id(self) -> str: ...
+    def __init__(
+        self, provider_id: str, operator_id: str, failure_domain_ids: typing.Sequence[str]
+    ) -> None: ...
+
+@typing.final
+class BlockchainVerificationConfig:
+    @property
+    def authoritative(self) -> BlockchainProviderIdentity: ...
+    @property
+    def chain_anchor(self) -> BlockchainChainAnchorConfig: ...
+    @property
+    def manifest_digest(self) -> str: ...
+    @property
+    def manifest_version(self) -> str: ...
+    @property
+    def verifiers(self) -> list[BlockchainVerificationProviderConfig]: ...
+    def __init__(
+        self,
+        authoritative: BlockchainProviderIdentity,
+        verifiers: typing.Sequence[BlockchainVerificationProviderConfig],
+        chain_anchor: BlockchainChainAnchorConfig,
+        manifest_version: str,
+        manifest_digest: str,
+        deployment_manifest_json: str,
+    ) -> None: ...
+
+@typing.final
+class BlockchainVerificationProviderConfig:
+    @property
+    def identity(self) -> BlockchainProviderIdentity: ...
+    def __init__(self, identity: BlockchainProviderIdentity, http_rpc_url: str) -> None: ...
 
 @typing.final
 class DexPoolFilters:

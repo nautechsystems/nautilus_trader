@@ -13,18 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, fmt::Debug, num::NonZeroU32, str::FromStr};
+use std::{collections::HashMap, fmt::Debug, net::Ipv4Addr, num::NonZeroU32, str::FromStr};
 
 use alloy::primitives::{Address, B256, Bytes, U256};
 use bytes::Bytes as HttpBytes;
 use nautilus_core::{hex, string::secret::REDACTED};
 use nautilus_model::defi::rpc::{RpcLog, RpcNodeHttpResponse};
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, Method},
+    http::{HttpClient, HttpClientError, HttpRedirectPolicy, Method, Url},
     ratelimiter::quota::Quota,
 };
 use serde::de::DeserializeOwned;
 
+#[cfg(feature = "hypersync")]
+use crate::rpc::types::{RpcCallResult, RpcCallTrace, RpcTransaction};
 use crate::rpc::{
     error::{BlockchainRpcClientError, BroadcastError},
     types::{RpcBlock, RpcBlockResponse, RpcTransactionReceipt},
@@ -69,9 +71,13 @@ impl BlockchainHttpRpcClient {
     ) -> Self {
         let default_quota =
             rpc_request_per_second.and_then(|rps| Quota::per_second(NonZeroU32::new(rps)?));
+        let use_system_proxy = !is_canonical_loopback_endpoint(&http_rpc_url);
+        let proxy_url = if use_system_proxy { proxy_url } else { None };
         let http_client = HttpClient::builder()
             .maybe_default_quota(default_quota)
             .maybe_proxy_url(proxy_url)
+            .redirect_policy(HttpRedirectPolicy::Reject)
+            .use_system_proxy(use_system_proxy)
             .build()
             .expect("Failed to create HTTP client");
         Self {
@@ -115,6 +121,12 @@ impl BlockchainHttpRpcClient {
                 None,
             )
             .await?;
+
+        if response.status.is_redirection() {
+            return Err(HttpClientError::Error(
+                "redirect response rejected".to_string(),
+            ));
+        }
 
         Ok(response.body)
     }
@@ -192,18 +204,6 @@ impl BlockchainHttpRpcClient {
         block: Option<u64>,
     ) -> serde_json::Value {
         self.construct_eth_call_request(None, to, call_data, block)
-    }
-
-    #[cfg(feature = "hypersync")]
-    #[must_use]
-    pub(crate) fn construct_eth_call_from(
-        &self,
-        from: &Address,
-        to: &str,
-        call_data: &[u8],
-        block: Option<u64>,
-    ) -> serde_json::Value {
-        self.construct_eth_call_request(Some(from), to, call_data, block)
     }
 
     fn construct_eth_call_request(
@@ -337,7 +337,14 @@ impl BlockchainHttpRpcClient {
         let bytes = self
             .send_rpc_request(request, Some(EXECUTION_RPC_TIMEOUT_SECS))
             .await
-            .map_err(|_| anyhow::anyhow!("{method} request failed"))?;
+            .map_err(|e| match e {
+                BlockchainRpcClientError::ClientError(message)
+                    if message.contains("redirect response rejected") =>
+                {
+                    anyhow::anyhow!("{method} redirect rejected")
+                }
+                _ => anyhow::anyhow!("{method} request failed"),
+            })?;
 
         let parsed = serde_json::from_slice::<RpcNodeHttpResponse<T>>(bytes.as_ref())
             .map_err(|_| anyhow::anyhow!("Failed to parse {method} response"))?;
@@ -382,6 +389,33 @@ impl BlockchainHttpRpcClient {
     #[cfg(feature = "hypersync")]
     pub(crate) async fn get_code_at(&self, address: &Address, block: u64) -> anyhow::Result<Bytes> {
         self.get_code_with_block(address, Some(block)).await
+    }
+
+    /// Returns the 32-byte storage value at `slot` for `address` at an explicit block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    #[cfg(feature = "hypersync")]
+    #[allow(
+        dead_code,
+        reason = "Used by the independent verification read inventory"
+    )]
+    pub(crate) async fn get_storage_at(
+        &self,
+        address: &Address,
+        slot: &B256,
+        block: u64,
+    ) -> anyhow::Result<B256> {
+        let result: Option<String> = self
+            .execute_execution_rpc_call(
+                "eth_getStorageAt",
+                serde_json::json!([address, slot, block_parameter(Some(block))]),
+            )
+            .await?;
+        let value = result.ok_or_else(|| anyhow::anyhow!("eth_getStorageAt returned no result"))?;
+        B256::from_str(&value)
+            .map_err(|_| anyhow::anyhow!("Failed to parse eth_getStorageAt response"))
     }
 
     async fn get_code_with_block(
@@ -433,6 +467,118 @@ impl BlockchainHttpRpcClient {
             .await?;
         parse_hex_quantity_result("eth_getTransactionCount", result)
             .and_then(|v| u64::try_from(v).map_err(Into::into))
+    }
+
+    /// Returns the transaction count for an address at an explicit block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    #[cfg(feature = "hypersync")]
+    #[allow(
+        dead_code,
+        reason = "Used by the independent verification read inventory"
+    )]
+    pub(crate) async fn get_transaction_count_at(
+        &self,
+        address: &Address,
+        block: u64,
+    ) -> anyhow::Result<u64> {
+        let result: Option<String> = self
+            .execute_execution_rpc_call(
+                "eth_getTransactionCount",
+                serde_json::json!([address, block_parameter(Some(block))]),
+            )
+            .await?;
+        parse_hex_quantity_result("eth_getTransactionCount", result)
+            .and_then(|v| u64::try_from(v).map_err(Into::into))
+    }
+
+    /// Executes an `eth_call` at an explicit block and returns its raw output bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails or the result is missing or malformed.
+    #[cfg(feature = "hypersync")]
+    #[allow(
+        dead_code,
+        reason = "Used by the independent verification read inventory"
+    )]
+    pub(crate) async fn call_at(
+        &self,
+        from: Option<&Address>,
+        to: &Address,
+        value: U256,
+        data: &[u8],
+        block: u64,
+    ) -> anyhow::Result<Bytes> {
+        match self.call_result_at(from, to, value, data, block).await? {
+            RpcCallResult::Success(bytes) => Ok(bytes),
+            RpcCallResult::Reverted => anyhow::bail!("eth_call execution reverted"),
+        }
+    }
+
+    /// Executes an explicit-height `eth_call`, preserving a recognized EVM revert as data.
+    #[cfg(feature = "hypersync")]
+    pub(crate) async fn call_result_at(
+        &self,
+        from: Option<&Address>,
+        to: &Address,
+        value: U256,
+        data: &[u8],
+        block: u64,
+    ) -> anyhow::Result<RpcCallResult> {
+        let mut call = serde_json::json!({
+            "to": to,
+            "value": format!("0x{value:x}"),
+            "data": hex::encode_prefixed(data),
+        });
+
+        if let Some(from) = from {
+            call["from"] = serde_json::json!(from);
+        }
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_call",
+            "params": [call, block_parameter(Some(block))],
+        });
+        let bytes = self
+            .send_rpc_request(request, Some(EXECUTION_RPC_TIMEOUT_SECS))
+            .await
+            .map_err(|e| match e {
+                BlockchainRpcClientError::ClientError(message)
+                    if message.contains("redirect response rejected") =>
+                {
+                    anyhow::anyhow!("eth_call redirect rejected")
+                }
+                _ => anyhow::anyhow!("eth_call request failed"),
+            })?;
+        let parsed = serde_json::from_slice::<RpcNodeHttpResponse<String>>(bytes.as_ref())
+            .map_err(|_| anyhow::anyhow!("Failed to parse eth_call response"))?;
+
+        if parsed.jsonrpc.is_none()
+            && let (Some(code), Some(message)) = (parsed.code, parsed.message)
+        {
+            if eth_call_error_is_revert(code, &message) {
+                return Ok(RpcCallResult::Reverted);
+            }
+            anyhow::bail!("eth_call RPC error {code}");
+        }
+
+        if let Some(error) = parsed.error {
+            if eth_call_error_is_revert(error.code, &error.message) {
+                return Ok(RpcCallResult::Reverted);
+            }
+            anyhow::bail!("eth_call RPC error {}", error.code);
+        }
+        let value = parsed
+            .result
+            .ok_or_else(|| anyhow::anyhow!("eth_call returned no result"))?;
+        let stripped = value.strip_prefix("0x").unwrap_or(&value);
+        let bytes = hex::decode(stripped)
+            .map_err(|_| anyhow::anyhow!("Failed to decode eth_call response"))?;
+        Ok(RpcCallResult::Success(Bytes::from(bytes)))
     }
 
     /// Estimates the gas required for a transaction via `eth_estimateGas`.
@@ -602,6 +748,116 @@ impl BlockchainHttpRpcClient {
         Ok(receipt)
     }
 
+    /// Returns a full transaction by hash.
+    ///
+    /// A `null` result maps to `Ok(None)` while the transaction is not available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the RPC call fails, the response is malformed, or the returned hash
+    /// does not match `tx_hash`.
+    #[cfg(feature = "hypersync")]
+    #[allow(
+        dead_code,
+        reason = "Used by the independent verification read inventory"
+    )]
+    pub(crate) async fn get_transaction_by_hash(
+        &self,
+        tx_hash: &B256,
+    ) -> anyhow::Result<Option<RpcTransaction>> {
+        let transaction: Option<RpcTransaction> = self
+            .execute_execution_rpc_call("eth_getTransactionByHash", serde_json::json!([tx_hash]))
+            .await?;
+
+        if transaction
+            .as_ref()
+            .is_some_and(|transaction| transaction.hash != *tx_hash)
+        {
+            anyhow::bail!("eth_getTransactionByHash returned a mismatched transaction hash");
+        }
+        Ok(transaction)
+    }
+
+    /// Returns the Geth `callTracer` tree for a transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the trace method is unavailable or the result is missing or malformed.
+    #[cfg(feature = "hypersync")]
+    #[allow(
+        dead_code,
+        reason = "Used by the independent verification read inventory"
+    )]
+    pub(crate) async fn trace_transaction_call(
+        &self,
+        tx_hash: &B256,
+    ) -> anyhow::Result<RpcCallTrace> {
+        let result: Option<RpcCallTrace> = self
+            .execute_execution_rpc_call(
+                "debug_traceTransaction",
+                serde_json::json!([
+                    tx_hash,
+                    {
+                        "tracer": "callTracer",
+                        "tracerConfig": {
+                            "onlyTopCall": false,
+                            "withLog": false,
+                        },
+                    }
+                ]),
+            )
+            .await?;
+        result.ok_or_else(|| anyhow::anyhow!("debug_traceTransaction returned no result"))
+    }
+
+    /// Probes whether the endpoint recognizes the configured `callTracer` request shape.
+    #[cfg(feature = "hypersync")]
+    pub(crate) async fn probe_call_trace(&self) -> anyhow::Result<()> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "debug_traceTransaction",
+            "params": [
+                B256::ZERO,
+                {
+                    "tracer": "callTracer",
+                    "tracerConfig": {
+                        "onlyTopCall": false,
+                        "withLog": false,
+                    },
+                }
+            ],
+        });
+        let bytes = self
+            .send_rpc_request(request, Some(EXECUTION_RPC_TIMEOUT_SECS))
+            .await
+            .map_err(|e| match e {
+                BlockchainRpcClientError::ClientError(message)
+                    if message.contains("redirect response rejected") =>
+                {
+                    anyhow::anyhow!("debug_traceTransaction redirect rejected")
+                }
+                _ => anyhow::anyhow!("debug_traceTransaction request failed"),
+            })?;
+        let parsed =
+            serde_json::from_slice::<RpcNodeHttpResponse<serde_json::Value>>(bytes.as_ref())
+                .map_err(|_| anyhow::anyhow!("Failed to parse debug_traceTransaction response"))?;
+        if parsed.jsonrpc.is_none()
+            && let (Some(code), Some(_)) = (parsed.code, parsed.message)
+        {
+            return trace_probe_result(code);
+        }
+
+        if let Some(error) = parsed.error {
+            return trace_probe_result(error.code);
+        }
+        anyhow::ensure!(
+            parsed.result.is_some(),
+            "debug_traceTransaction returned no result"
+        );
+        Ok(())
+    }
+
     /// Broadcasts a signed raw transaction via `eth_sendRawTransaction`.
     ///
     /// Broadcast failures classify before retry: an `already known` response is acceptance
@@ -665,11 +921,91 @@ impl BlockchainHttpRpcClient {
     }
 }
 
+#[cfg(feature = "hypersync")]
+pub(crate) fn validate_execution_endpoint(
+    endpoint: &str,
+    description: &str,
+) -> anyhow::Result<Url> {
+    let url =
+        Url::parse(endpoint).map_err(|_| anyhow::anyhow!("Invalid {description} endpoint"))?;
+    anyhow::ensure!(
+        matches!(url.scheme(), "http" | "https"),
+        "{description} endpoint must use HTTPS or canonical loopback HTTP"
+    );
+    anyhow::ensure!(
+        url.host().is_some(),
+        "{description} endpoint host is required"
+    );
+    anyhow::ensure!(
+        url.fragment().is_none(),
+        "{description} endpoint fragments are unsupported"
+    );
+    anyhow::ensure!(
+        url.scheme() == "https" || is_canonical_loopback_endpoint(endpoint),
+        "{description} endpoint must use HTTPS unless its host is a canonical loopback IP literal"
+    );
+    Ok(url)
+}
+
+fn is_canonical_loopback_endpoint(endpoint: &str) -> bool {
+    let Some((scheme, rest)) = endpoint.split_once("://") else {
+        return false;
+    };
+
+    if !scheme.eq_ignore_ascii_case("http") && !scheme.eq_ignore_ascii_case("https") {
+        return false;
+    }
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    if authority.is_empty() || authority.contains('@') {
+        return false;
+    }
+
+    let raw_host = if let Some(suffix) = authority.strip_prefix("[::1]") {
+        if suffix.is_empty() || suffix.starts_with(':') {
+            return Url::parse(endpoint)
+                .ok()
+                .is_some_and(|url| url.host_str() == Some("[::1]"));
+        }
+        return false;
+    } else if authority.starts_with('[') {
+        return false;
+    } else {
+        authority
+            .rsplit_once(':')
+            .map_or(authority, |(host, _port)| host)
+    };
+
+    let Ok(address) = raw_host.parse::<Ipv4Addr>() else {
+        return false;
+    };
+    address.is_loopback()
+        && raw_host == address.to_string()
+        && Url::parse(endpoint).ok().is_some_and(|url| {
+            url.host_str()
+                .and_then(|host| host.parse::<Ipv4Addr>().ok())
+                == Some(address)
+        })
+}
+
 fn block_parameter(block: Option<u64>) -> serde_json::Value {
     block.map_or_else(
         || serde_json::json!("latest"),
         |number| serde_json::json!(format!("0x{number:x}")),
     )
+}
+
+#[cfg(feature = "hypersync")]
+fn eth_call_error_is_revert(code: i32, message: &str) -> bool {
+    code == 3 || message.to_ascii_lowercase().contains("revert")
+}
+
+#[cfg(feature = "hypersync")]
+fn trace_probe_result(code: i32) -> anyhow::Result<()> {
+    if matches!(code, -32_601 | -32_602) {
+        anyhow::bail!("debug_traceTransaction RPC error {code}");
+    }
+    Ok(())
 }
 
 fn rpc_response_preview(raw_response: &str) -> String {
@@ -727,6 +1063,99 @@ pub(crate) mod tests {
         );
     }
 
+    #[cfg(feature = "hypersync")]
+    #[rstest]
+    #[case("https://rpc.example.com/path?token=value")]
+    #[case("https://127.0.0.1:8545")]
+    #[case("https://[::1]:8545")]
+    #[case("http://127.0.0.1")]
+    #[case("http://127.255.255.254:8545/path")]
+    #[case("http://[::1]:8545")]
+    fn execution_endpoint_accepts_https_or_canonical_loopback(#[case] endpoint: &str) {
+        let validated = validate_execution_endpoint(endpoint, "Test").unwrap();
+
+        assert_eq!(validated, Url::parse(endpoint).unwrap());
+    }
+
+    #[cfg(feature = "hypersync")]
+    #[rstest]
+    #[case("http://rpc.example.com")]
+    #[case("http://localhost:8545")]
+    #[case("http://10.0.0.1:8545")]
+    #[case("http://169.254.1.1:8545")]
+    #[case("http://192.168.1.1:8545")]
+    #[case("http://[::ffff:127.0.0.1]:8545")]
+    #[case("http://127.1:8545")]
+    #[case("http://0177.0.0.1:8545")]
+    #[case("http://0x7f000001:8545")]
+    #[case("http://2130706433:8545")]
+    #[case("http://127.0.0.1.example.com:8545")]
+    #[case("http://example.com@127.0.0.1:8545")]
+    #[case("http://127.0.0.1.:8545")]
+    fn execution_endpoint_rejects_noncanonical_cleartext(#[case] endpoint: &str) {
+        let error = validate_execution_endpoint(endpoint, "Test").unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Test endpoint must use HTTPS unless its host is a canonical loopback IP literal"
+        );
+    }
+
+    #[rstest]
+    #[case("http://127.0.0.1:1")]
+    #[case("https://127.0.0.1:1")]
+    #[case("http://[::1]:1")]
+    #[case("https://[::1]:1")]
+    fn loopback_rpc_bypasses_configured_proxy(#[case] endpoint: &str) {
+        let client = BlockchainHttpRpcClient::new(
+            endpoint.to_string(),
+            None,
+            Some("not a valid proxy URL".to_string()),
+        );
+
+        assert_eq!(client.http_rpc_url, endpoint);
+    }
+
+    #[cfg(not(madsim))]
+    #[rstest]
+    fn loopback_rpc_bypasses_ambient_proxy() {
+        let module = module_path!()
+            .split_once("::")
+            .expect("test module includes crate name")
+            .1;
+        let child_test = format!("{module}::loopback_rpc_bypasses_ambient_proxy_child");
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &child_test, "--ignored"])
+            .env("BLOCKCHAIN_PROXY_CHILD", "1")
+            .env("HTTP_PROXY", "http://127.0.0.1:9")
+            .env("http_proxy", "http://127.0.0.1:9")
+            .env_remove("NO_PROXY")
+            .env_remove("no_proxy")
+            .env_remove("ALL_PROXY")
+            .env_remove("all_proxy")
+            .status()
+            .unwrap();
+
+        assert!(status.success(), "ambient proxy child failed: {status}");
+    }
+
+    #[cfg(not(madsim))]
+    #[ignore = "runs only in the isolated ambient-proxy child process"]
+    #[tokio::test]
+    async fn loopback_rpc_bypasses_ambient_proxy_child() {
+        if std::env::var("BLOCKCHAIN_PROXY_CHILD").as_deref() != Ok("1") {
+            return;
+        }
+        let (client, state) =
+            client_for(MockRpcState::default().with_response("eth_chainId", CHAIN_ID_ARBITRUM))
+                .await;
+
+        let chain_id = client.chain_id().await.unwrap();
+
+        assert_eq!(chain_id, 42_161);
+        assert_eq!(state.recorded_requests().len(), 1);
+    }
+
     /// Mock JSON-RPC HTTP server for tests, serving canned responses from fixture files.
     pub(crate) mod mock {
         use std::{
@@ -736,6 +1165,7 @@ pub(crate) mod tests {
             time::Duration,
         };
 
+        use alloy::{consensus::TxEnvelope, eips::eip2718::Decodable2718, primitives::TxKind};
         use axum::{Router, extract::State, routing::post};
         use serde_json::Value;
 
@@ -753,6 +1183,7 @@ pub(crate) mod tests {
             call_response_sequences: ResponseSequences<String>,
             sleep_methods: HashMap<String, Duration>,
             requests: Arc<Mutex<Vec<Value>>>,
+            sent_raw_transaction: Arc<Mutex<Option<String>>>,
             receipt_hash_from_request: bool,
             send_raw_echo: bool,
         }
@@ -891,6 +1322,12 @@ pub(crate) mod tests {
 
             let method = request["method"].as_str().unwrap_or_default();
 
+            if method == "eth_sendRawTransaction"
+                && let Some(raw) = request["params"][0].as_str()
+            {
+                *state.sent_raw_transaction.lock().unwrap() = Some(raw.to_string());
+            }
+
             if let Some(duration) = state.sleep_methods.get(method) {
                 tokio::time::sleep(*duration).await;
             }
@@ -957,6 +1394,10 @@ pub(crate) mod tests {
                 response.clone()
             } else if let Some(response) = state.responses.get(method) {
                 response.clone()
+            } else if method == "eth_getTransactionByHash" {
+                response_from_sent_transaction(&state, false)
+            } else if method == "debug_traceTransaction" {
+                response_from_sent_transaction(&state, true)
             } else if method == "eth_sendRawTransaction" && state.send_raw_echo {
                 echo_send_raw_transaction_hash(&request)
             } else {
@@ -985,6 +1426,67 @@ pub(crate) mod tests {
                 Value::String(requested_hash.to_string()),
             );
             value.to_string()
+        }
+
+        fn response_from_sent_transaction(state: &MockRpcState, trace: bool) -> String {
+            let Some(raw) = state.sent_raw_transaction.lock().unwrap().clone() else {
+                return method_not_found_response();
+            };
+            let stripped = raw.strip_prefix("0x").unwrap_or(&raw);
+            let Ok(bytes) = nautilus_core::hex::decode(stripped) else {
+                return method_not_found_response();
+            };
+            let Ok(TxEnvelope::Eip1559(signed)) = TxEnvelope::decode_2718_exact(&bytes) else {
+                return method_not_found_response();
+            };
+            let Ok(from) = signed
+                .signature()
+                .recover_address_from_prehash(&signed.signature_hash())
+            else {
+                return method_not_found_response();
+            };
+            let tx = signed.tx();
+            let TxKind::Call(to) = tx.to else {
+                return method_not_found_response();
+            };
+            let reverted = state
+                .responses
+                .get("eth_getTransactionReceipt")
+                .and_then(|response| serde_json::from_str::<Value>(response).ok())
+                .is_some_and(|response| response["result"]["status"] == "0x0");
+            let result = if trace {
+                let mut result = serde_json::json!({
+                    "type": "CALL",
+                    "from": from,
+                    "to": to,
+                    "value": format!("0x{:x}", tx.value),
+                    "gas": format!("0x{:x}", tx.gas_limit),
+                    "gasUsed": "0xc3c0",
+                    "input": nautilus_core::hex::encode_prefixed(&tx.input),
+                    "output": "0x",
+                    "calls": [],
+                });
+
+                if reverted {
+                    result["error"] = Value::String("execution reverted".to_string());
+                }
+                result
+            } else {
+                serde_json::json!({
+                    "hash": signed.hash(),
+                    "from": from,
+                    "nonce": format!("0x{:x}", tx.nonce),
+                    "chainId": format!("0x{:x}", tx.chain_id),
+                    "type": "0x2",
+                    "to": to,
+                    "input": nautilus_core::hex::encode_prefixed(&tx.input),
+                    "value": format!("0x{:x}", tx.value),
+                    "gas": format!("0x{:x}", tx.gas_limit),
+                    "maxFeePerGas": format!("0x{:x}", tx.max_fee_per_gas),
+                    "maxPriorityFeePerGas": format!("0x{:x}", tx.max_priority_fee_per_gas),
+                })
+            };
+            serde_json::json!({"jsonrpc": "2.0", "id": 1, "result": result}).to_string()
         }
 
         /// Computes the transaction hash for an `eth_sendRawTransaction` request, mirroring

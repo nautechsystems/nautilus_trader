@@ -22,6 +22,7 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use reqwest::{
     Method, Response, Url,
     header::{HeaderMap, HeaderName, HeaderValue},
+    redirect::Policy,
 };
 use ustr::Ustr;
 
@@ -43,6 +44,16 @@ const DEFAULT_HTTP2_KEEP_ALIVE_SECS: u64 = 30;
 /// cannot exhaust memory by streaming an arbitrarily large body. Mirrors the
 /// caps already enforced on the WebSocket and raw-socket paths.
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
+
+/// Controls whether an HTTP client follows redirects.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum HttpRedirectPolicy {
+    /// Follow up to ten redirects, matching the existing client behavior.
+    #[default]
+    Follow,
+    /// Reject every redirect response.
+    Reject,
+}
 
 /// An asynchronous HTTP client with rate limiting, timeouts, and custom headers.
 ///
@@ -79,6 +90,8 @@ impl HttpClient {
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
         rate_limiters: Option<Vec<Arc<RateLimiter<Ustr, MonotonicClock>>>>,
+        #[builder(default)] redirect_policy: HttpRedirectPolicy,
+        #[builder(default = true)] use_system_proxy: bool,
     ) -> Result<Self, HttpClientError> {
         let rate_limiters = if let Some(rate_limiters) = rate_limiters {
             if default_quota.is_some() || !keyed_quotas.is_empty() {
@@ -98,6 +111,26 @@ impl HttpClient {
             ))]
         };
 
+        Self::build(
+            headers,
+            header_keys,
+            timeout_secs,
+            proxy_url,
+            rate_limiters,
+            redirect_policy,
+            use_system_proxy,
+        )
+    }
+
+    fn build(
+        headers: HashMap<String, String>,
+        header_keys: Vec<String>,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+        rate_limiters: Vec<Arc<RateLimiter<Ustr, MonotonicClock>>>,
+        redirect_policy: HttpRedirectPolicy,
+        use_system_proxy: bool,
+    ) -> Result<Self, HttpClientError> {
         install_cryptographic_provider();
 
         // Build default headers
@@ -119,7 +152,11 @@ impl HttpClient {
             .pool_idle_timeout(Duration::from_secs(DEFAULT_POOL_IDLE_TIMEOUT_SECS))
             .http2_keep_alive_interval(Duration::from_secs(DEFAULT_HTTP2_KEEP_ALIVE_SECS))
             .http2_keep_alive_while_idle(true)
-            .http2_adaptive_window(true);
+            .http2_adaptive_window(true)
+            .redirect(match redirect_policy {
+                HttpRedirectPolicy::Follow => Policy::limited(10),
+                HttpRedirectPolicy::Reject => Policy::none(),
+            });
 
         if let Some(timeout_secs) = timeout_secs {
             client_builder = client_builder.timeout(Duration::from_secs(timeout_secs));
@@ -130,6 +167,8 @@ impl HttpClient {
             let proxy = reqwest::Proxy::all(&proxy_url)
                 .map_err(|_| HttpClientError::InvalidProxy("proxy URL is malformed".to_string()))?;
             client_builder = client_builder.proxy(proxy);
+        } else if !use_system_proxy {
+            client_builder = client_builder.no_proxy();
         }
 
         let client = client_builder
@@ -824,6 +863,10 @@ mod tests {
             .route("/capture", any(capture_request))
             .route("/notfound", get(|| async { StatusCode::NOT_FOUND }))
             .route(
+                "/redirect",
+                get(|| async { (StatusCode::TEMPORARY_REDIRECT, [("location", "/get")]) }),
+            )
+            .route(
                 "/slow",
                 get(|| async {
                     tokio::time::sleep(Duration::from_secs(2)).await;
@@ -1327,6 +1370,50 @@ mod tests {
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
         assert_eq!(response.body.as_ref(), b"hello-world!");
+    }
+
+    #[tokio::test]
+    async fn test_http_client_redirect_policy() {
+        let addr = start_test_server().await.unwrap();
+        let follow = HttpClient::builder().timeout_secs(2).build().unwrap();
+        let reject = HttpClient::builder()
+            .timeout_secs(2)
+            .redirect_policy(HttpRedirectPolicy::Reject)
+            .build()
+            .unwrap();
+
+        let followed = follow
+            .request(
+                Method::GET,
+                format!("http://{addr}/redirect"),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let rejected = reject
+            .request(
+                Method::GET,
+                format!("http://{addr}/redirect"),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(followed.status.as_u16(), StatusCode::OK.as_u16());
+        assert_eq!(followed.body.as_ref(), b"hello-world!");
+        assert_eq!(
+            rejected.status.as_u16(),
+            StatusCode::TEMPORARY_REDIRECT.as_u16()
+        );
+        assert!(rejected.body.is_empty());
     }
 
     #[tokio::test]
