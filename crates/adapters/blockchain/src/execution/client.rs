@@ -120,6 +120,20 @@ use crate::config::{BlockchainCallEdgeManifest, BlockchainContractProbe};
 /// Interval between receipt polls while awaiting transaction finality.
 const RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_PAYLOAD_OPERATION_BATCH_SIZE: usize = 1_000;
+/// Basis points denominator for slippage derivation.
+const BPS_DENOMINATOR: u32 = 10_000;
+/// Denial reason for order-list submissions, which have no on-chain execution route.
+const ORDER_LIST_UNSUPPORTED: &str =
+    "Order lists are not supported; submit each order individually";
+/// Rejection reason for order modifications, which immutable on-chain swaps cannot support.
+const ORDER_MODIFY_UNSUPPORTED: &str = "Order modification is not supported";
+/// Rejection reason for order cancellations, which immutable on-chain swaps cannot support.
+const ORDER_CANCEL_UNSUPPORTED: &str = "Order cancellation is not supported";
+/// Error for venue report probes that cannot answer without implying absence.
+const VENUE_EXECUTION_REPORTS_UNSUPPORTED: &str =
+    "Venue execution reports are not supported on the blockchain execution client";
+/// Maximum historical block range inspected to identify a signer-nonce replacement.
+const MAX_REPLACEMENT_SCAN_BLOCKS: u64 = 4_096;
 
 /// Result of authenticating every persisted signed transaction in one execution database.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,20 +170,6 @@ impl From<ExecutionPayloadCheck> for PayloadStorageCheck {
         }
     }
 }
-/// Basis points denominator for slippage derivation.
-const BPS_DENOMINATOR: u32 = 10_000;
-/// Denial reason for order-list submissions, which have no on-chain execution route.
-const ORDER_LIST_UNSUPPORTED: &str =
-    "Order lists are not supported; submit each order individually";
-/// Rejection reason for order modifications, which immutable on-chain swaps cannot support.
-const ORDER_MODIFY_UNSUPPORTED: &str = "Order modification is not supported";
-/// Rejection reason for order cancellations, which immutable on-chain swaps cannot support.
-const ORDER_CANCEL_UNSUPPORTED: &str = "Order cancellation is not supported";
-/// Error for venue report probes that cannot answer without implying absence.
-const VENUE_EXECUTION_REPORTS_UNSUPPORTED: &str =
-    "Venue execution reports are not supported on the blockchain execution client";
-/// Maximum historical block range inspected to identify a signer-nonce replacement.
-const MAX_REPLACEMENT_SCAN_BLOCKS: u64 = 4_096;
 
 // A broadcast transaction awaiting finality, occupying the single in-flight slot.
 #[derive(Debug, Clone, Copy)]
@@ -2082,6 +2082,16 @@ fn parse_verified_header(header: &ExecutionVerifiedHeader) -> anyhow::Result<Ver
     })
 }
 
+fn durable_verified_header(header: &VerifiedBlockHeader) -> ExecutionVerifiedHeader {
+    ExecutionVerifiedHeader {
+        number: header.number,
+        hash: header.hash.to_string(),
+        parent_hash: header.parent_hash.to_string(),
+        timestamp: header.timestamp,
+        base_fee_per_gas: header.base_fee_per_gas,
+    }
+}
+
 /// Shared execution context driving the EIP-1559 transaction pipeline.
 ///
 /// Wrap, approve, and swap submissions share one implementation so the chain, fee, gas,
@@ -2130,10 +2140,7 @@ impl TransactionExecutor {
         authorization: TransactionAuthorization,
     ) -> anyhow::Result<IncludedTransaction> {
         self.claim_slot(purpose)?;
-        let now_unix_secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))?
-            .as_secs();
+        let now_unix_secs = current_unix_secs()?;
         let decision_header = match required_verification(
             self.verification
                 .verify_decision_header(now_unix_secs)
@@ -2337,10 +2344,7 @@ impl TransactionExecutor {
             match decision_header {
                 Some(verified) => verified,
                 None => {
-                    let now_unix_secs = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))?
-                        .as_secs();
+                    let now_unix_secs = current_unix_secs()?;
                     required_verification(
                         self.verification
                             .verify_decision_header(now_unix_secs)
@@ -2894,10 +2898,7 @@ impl TransactionExecutor {
         intent: &ExecutionIntentRow,
         purpose: TransactionPurpose,
     ) -> anyhow::Result<ReconciliationAuthorization> {
-        let now_unix_secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))?
-            .as_secs();
+        let now_unix_secs = current_unix_secs()?;
         let decision_header = required_verification(
             self.verification
                 .verify_decision_header(now_unix_secs)
@@ -3553,22 +3554,10 @@ impl TransactionExecutor {
         ]);
         Ok(Some(StableFinality {
             decisions,
-            inclusion_header: ExecutionVerifiedHeader {
-                number: canonical_again.number,
-                hash: canonical_again.hash.to_string(),
-                parent_hash: canonical_again.parent_hash.to_string(),
-                timestamp: canonical_again.timestamp,
-                base_fee_per_gas: canonical_again.base_fee_per_gas,
-            },
+            inclusion_header: durable_verified_header(&canonical_again),
             finalized_headers: finalized_headers
-                .into_iter()
-                .map(|header| ExecutionVerifiedHeader {
-                    number: header.number,
-                    hash: header.hash.to_string(),
-                    parent_hash: header.parent_hash.to_string(),
-                    timestamp: header.timestamp,
-                    base_fee_per_gas: header.base_fee_per_gas,
-                })
+                .iter()
+                .map(durable_verified_header)
                 .collect(),
         }))
     }
@@ -3628,6 +3617,13 @@ fn replacement_scan_range(from_block: u64, head_block: u64) -> anyhow::Result<Ra
     );
     let max_end = from_block.saturating_add(MAX_REPLACEMENT_SCAN_BLOCKS - 1);
     Ok(from_block..=head_block.min(max_end))
+}
+
+fn current_unix_secs() -> anyhow::Result<u64> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))
+        .map(|duration| duration.as_secs())
 }
 
 fn validate_payload_operation_batch_size(batch_size: usize) -> anyhow::Result<i64> {
@@ -3934,25 +3930,15 @@ async fn execute_swap(
         return Ok(());
     }
 
-    match executor.broadcast(&prepared).await {
-        Ok(BroadcastOutcome::Accepted) => {
-            emitter.emit_order_submitted(order);
-            executor
-                .database
-                .mark_execution_event_emitted(intent.id, "acknowledgement")
-                .await?;
-        }
-        Ok(BroadcastOutcome::Ambiguous(message)) => {
-            emitter.emit_order_submitted(order);
-            executor
-                .database
-                .mark_execution_event_emitted(intent.id, "acknowledgement")
-                .await?;
-            log::warn!("{message}");
-        }
-        Err(e) => {
-            return Err(e);
-        }
+    let broadcast = executor.broadcast(&prepared).await?;
+    emitter.emit_order_submitted(order);
+    executor
+        .database
+        .mark_execution_event_emitted(intent.id, "acknowledgement")
+        .await?;
+
+    if let BroadcastOutcome::Ambiguous(message) = broadcast {
+        log::warn!("{message}");
     }
 
     let trace_purpose = match plan.order.order_side() {
@@ -3961,8 +3947,8 @@ async fn execute_swap(
         side => anyhow::bail!("Unsupported finalized swap side {side}"),
     };
 
-    match executor.await_finality(&prepared).await {
-        Ok(InclusionOutcome::Finalized(mut included)) => {
+    match executor.await_finality(&prepared).await? {
+        InclusionOutcome::Finalized(mut included) => {
             included.finality.decisions.extend(
                 verify_finalized_transaction(
                     &included,
@@ -3996,7 +3982,7 @@ async fn execute_swap(
             executor.release_slot();
             Ok(())
         }
-        Ok(InclusionOutcome::Reverted(mut included)) => {
+        InclusionOutcome::Reverted(mut included) => {
             included.finality.decisions.extend(
                 verify_finalized_transaction(
                     &included,
@@ -4019,8 +4005,7 @@ async fn execute_swap(
             executor.release_slot();
             Ok(())
         }
-        Ok(InclusionOutcome::Pending(message)) => anyhow::bail!(message),
-        Err(e) => Err(e),
+        InclusionOutcome::Pending(message) => anyhow::bail!(message),
     }
 }
 
@@ -4039,10 +4024,7 @@ async fn validate_swap_quote(
     })?;
     let expected_block_hash = B256::from_str(block_hash)
         .with_context(|| format!("Invalid profiler block hash {block_hash}"))?;
-    let now_unix_secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))?
-        .as_secs();
+    let now_unix_secs = current_unix_secs()?;
     let head = verified_value(
         verification.verify_decision_header(now_unix_secs).await,
         "swap decision header",
@@ -5439,13 +5421,7 @@ impl BlockchainExecutionClient {
         let mut records = Vec::with_capacity(snapshot.intents.len());
         let finalized_headers = finalized_headers
             .iter()
-            .map(|header| ExecutionVerifiedHeader {
-                number: header.number,
-                hash: header.hash.to_string(),
-                parent_hash: header.parent_hash.to_string(),
-                timestamp: header.timestamp,
-                base_fee_per_gas: header.base_fee_per_gas,
-            })
+            .map(durable_verified_header)
             .collect::<Vec<_>>();
 
         for intent in &snapshot.intents {
@@ -5644,13 +5620,7 @@ impl BlockchainExecutionClient {
                 receipt: receipt.clone(),
                 finality: StableFinality {
                     decisions: Vec::new(),
-                    inclusion_header: ExecutionVerifiedHeader {
-                        number: inclusion_verification.value.number,
-                        hash: inclusion_verification.value.hash.to_string(),
-                        parent_hash: inclusion_verification.value.parent_hash.to_string(),
-                        timestamp: inclusion_verification.value.timestamp,
-                        base_fee_per_gas: inclusion_verification.value.base_fee_per_gas,
-                    },
+                    inclusion_header: durable_verified_header(&inclusion_verification.value),
                     finalized_headers: finalized_headers.clone(),
                 },
             };
@@ -6242,13 +6212,7 @@ impl ExecutionClient for BlockchainExecutionClient {
                 .collect::<Vec<_>>();
             let finalized_headers = finalized_headers
                 .iter()
-                .map(|header| ExecutionVerifiedHeader {
-                    number: header.number,
-                    hash: header.hash.to_string(),
-                    parent_hash: header.parent_hash.to_string(),
-                    timestamp: header.timestamp,
-                    base_fee_per_gas: header.base_fee_per_gas,
-                })
+                .map(durable_verified_header)
                 .collect::<Vec<_>>();
             database
                 .ensure_execution_verification_schema(&ExecutionVerificationBootstrap {
