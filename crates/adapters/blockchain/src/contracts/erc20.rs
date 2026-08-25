@@ -38,7 +38,7 @@ sol! {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 pub enum Erc20Field {
     Name,
     Symbol,
@@ -372,58 +372,24 @@ impl Erc20Contract {
     }
 }
 
-/// Attempts to decode a revert reason from failed call data.
-/// Returns a human-readable error message.
-fn decode_revert_reason(data: &Bytes) -> String {
-    // For now, just return a simple description
-    // Could be enhanced to decode actual revert reasons in the future
-    if data.is_empty() {
-        "Call failed without revert data".to_string()
-    } else {
-        format!("Call failed with data: {data}")
-    }
-}
-
 /// Generic parser for ERC20 string results (name, symbol)
 fn parse_erc20_string_result(
     result: &Multicall3::Result,
     field_name: Erc20Field,
     token_address: &Address,
 ) -> Result<String, TokenInfoError> {
-    // Common validation
-    if !result.success {
-        let reason = if result.returnData.is_empty() {
-            "Call failed without revert data".to_string()
-        } else {
-            // Try to decode revert reason if present
-            decode_revert_reason(&result.returnData)
-        };
-
-        return Err(TokenInfoError::CallFailed {
-            field: field_name.to_string(),
-            address: *token_address,
-            reason,
-            raw_data: result.returnData.to_string(),
-        });
-    }
-
-    if result.returnData.is_empty() {
-        return Err(TokenInfoError::EmptyTokenField {
-            field: field_name,
-            address: *token_address,
-        });
-    }
+    let data = validate_multicall_result(result, field_name, token_address)?;
 
     match field_name {
-        Erc20Field::Name => ERC20::nameCall::abi_decode_returns(&result.returnData),
-        Erc20Field::Symbol => ERC20::symbolCall::abi_decode_returns(&result.returnData),
+        Erc20Field::Name => ERC20::nameCall::abi_decode_returns(data),
+        Erc20Field::Symbol => ERC20::symbolCall::abi_decode_returns(data),
         Erc20Field::Decimals => {
             return Err(TokenInfoError::DecodingError {
                 field: field_name.to_string(),
                 address: *token_address,
                 reason: "Expected Name or Symbol for parse_erc20_string_result function argument"
                     .to_string(),
-                raw_data: result.returnData.to_string(),
+                raw_data: data.to_string(),
             });
         }
     }
@@ -440,37 +406,49 @@ fn parse_erc20_decimals_result(
     result: &Multicall3::Result,
     token_address: &Address,
 ) -> Result<u8, TokenInfoError> {
-    // Common validation
-    if !result.success {
-        let reason = if result.returnData.is_empty() {
-            "Call failed without revert data".to_string()
-        } else {
-            decode_revert_reason(&result.returnData)
-        };
+    let data = validate_multicall_result(result, Erc20Field::Decimals, token_address)?;
 
+    ERC20::decimalsCall::abi_decode_returns(data).map_err(|e| TokenInfoError::DecodingError {
+        field: "decimals".to_string(),
+        address: *token_address,
+        reason: e.to_string(),
+        raw_data: result.returnData.to_string(),
+    })
+}
+
+fn validate_multicall_result<'a>(
+    result: &'a Multicall3::Result,
+    field: Erc20Field,
+    token_address: &Address,
+) -> Result<&'a Bytes, TokenInfoError> {
+    if !result.success {
         return Err(TokenInfoError::CallFailed {
-            field: "decimals".to_string(),
+            field: match field {
+                Erc20Field::Decimals => "decimals".to_string(),
+                _ => field.to_string(),
+            },
             address: *token_address,
-            reason,
+            reason: decode_revert_reason(&result.returnData),
             raw_data: result.returnData.to_string(),
         });
     }
 
     if result.returnData.is_empty() {
         return Err(TokenInfoError::EmptyTokenField {
-            field: Erc20Field::Decimals,
+            field,
             address: *token_address,
         });
     }
 
-    ERC20::decimalsCall::abi_decode_returns(&result.returnData).map_err(|e| {
-        TokenInfoError::DecodingError {
-            field: "decimals".to_string(),
-            address: *token_address,
-            reason: e.to_string(),
-            raw_data: result.returnData.to_string(),
-        }
-    })
+    Ok(&result.returnData)
+}
+
+fn decode_revert_reason(data: &Bytes) -> String {
+    if data.is_empty() {
+        "Call failed without revert data".to_string()
+    } else {
+        format!("Call failed with data: {data}")
+    }
 }
 
 /// Parses token information from a slice of 3 multicall results.
@@ -665,6 +643,28 @@ mod tests {
                 assert_eq!(address, empty_token_address);
             }
             _ => panic!("Expected EmptyTokenField error"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_erc20_decimals_result_failed(
+        failed_name_result: Multicall3::Result,
+        failed_token_address: Address,
+    ) {
+        let result = parse_erc20_decimals_result(&failed_name_result, &failed_token_address);
+        match result.unwrap_err() {
+            TokenInfoError::CallFailed {
+                field,
+                address,
+                reason,
+                raw_data,
+            } => {
+                assert_eq!(field, "decimals");
+                assert_eq!(address, failed_token_address);
+                assert_eq!(reason, "Call failed without revert data");
+                assert_eq!(raw_data, "0x");
+            }
+            _ => panic!("Expected CallFailed"),
         }
     }
 
