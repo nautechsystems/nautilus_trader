@@ -4208,7 +4208,8 @@ impl ParquetDataCatalog {
         data_name.starts_with("custom/")
             || matches!(
                 data_name,
-                "quotes"
+                "instruments"
+                    | "quotes"
                     | "trades"
                     | "order_book_deltas"
                     | "order_book_depths"

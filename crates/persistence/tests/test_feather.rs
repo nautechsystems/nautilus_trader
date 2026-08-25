@@ -20,16 +20,31 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     msgbus::{self, MessageBus, typed_handler::ShareableMessageHandler},
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     data::{
-        BookOrder, Data, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        BookOrder, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, OrderBookDelta,
+        OrderBookDeltas, QuoteTick, TradeTick,
     },
-    enums::{AggressorSide, BookAction, OrderSide},
-    identifiers::{InstrumentId, TradeId},
-    types::{Price, Quantity},
+    enums::{
+        AccountType, AggressorSide, BookAction, InstrumentCloseType, MarketStatusAction, OrderSide,
+        PositionSide,
+    },
+    events::{
+        AccountState, OrderEventAny, PositionEvent, PositionOpened, order::spec::OrderFilledSpec,
+    },
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
+    },
+    instruments::{Instrument, InstrumentAny, stubs::binary_option},
+    types::{Currency, Money, Price, Quantity},
 };
-use nautilus_persistence::backend::feather::{FeatherWriter, RotationConfig};
+use nautilus_persistence::backend::{
+    catalog::ParquetDataCatalog,
+    feather::{FeatherWriter, RotationConfig},
+};
+use nautilus_serialization::arrow::instrument::decode_instrument_any_batch;
 use object_store::{ObjectStore, local::LocalFileSystem};
 use rstest::rstest;
 use tempfile::TempDir;
@@ -117,6 +132,252 @@ async fn test_legacy_message_bus_subscription_persists_any_route_and_unsubscribe
     assert_eq!(
         row_count, 1,
         "legacy unsubscribe must prevent the second write"
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[expect(
+    clippy::await_holding_refcell_ref,
+    reason = "The message-bus writer is single-threaded and the test awaits its final close before reading files"
+)]
+async fn test_all_routes_subscription_persists_and_converts_typed_publications() {
+    let _bus = MessageBus::default().register_message_bus();
+    let temp_dir = TempDir::new().unwrap();
+    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let writer = Rc::new(RefCell::new(FeatherWriter::new(
+        "live/test_instance".to_string(),
+        store,
+        clock,
+        RotationConfig::NoRotation,
+        Some(HashSet::from([
+            "instrument_closes".to_string(),
+            "instrument_status".to_string(),
+            "instruments".to_string(),
+            "account_state".to_string(),
+            "order_book_deltas".to_string(),
+            "order_filled".to_string(),
+            "position_opened".to_string(),
+            "quotes".to_string(),
+            "trades".to_string(),
+        ])),
+        Some(HashSet::from([
+            "instrument_closes".to_string(),
+            "instrument_status".to_string(),
+            "instruments".to_string(),
+        ])),
+        None,
+    )));
+
+    let subscription = FeatherWriter::subscribe_to_all_message_bus_routes(&writer);
+    let mut binary = binary_option();
+    binary.id = InstrumentId::from("BINARY-OPTION.POLYMARKET");
+    let instrument = InstrumentAny::BinaryOption(binary);
+    let instrument_id = instrument.id();
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("1.00001"),
+        Price::from("1.00002"),
+        Quantity::from("1000"),
+        Quantity::from("1001"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+    let trade = TradeTick::new(
+        instrument_id,
+        Price::from("1.00001"),
+        Quantity::from("1000"),
+        AggressorSide::Buy,
+        TradeId::from("1"),
+        UnixNanos::from(2_000),
+        UnixNanos::from(2_000),
+    );
+    let deltas = OrderBookDeltas::new(
+        instrument_id,
+        vec![OrderBookDelta::clear(
+            instrument_id,
+            0,
+            UnixNanos::from(3_000),
+            UnixNanos::from(3_000),
+        )],
+    );
+    let status = InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(4_000),
+        UnixNanos::from(4_000),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let close = InstrumentClose::new(
+        instrument_id,
+        Price::from("1.00001"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(5_000),
+        UnixNanos::from(5_000),
+    );
+    let account_state = AccountState::new(
+        AccountId::from("SIM-001"),
+        AccountType::Cash,
+        Vec::new(),
+        Vec::new(),
+        true,
+        UUID4::new(),
+        UnixNanos::from(6_000),
+        UnixNanos::from(6_000),
+        Some(Currency::USD()),
+    );
+    let order_event = OrderEventAny::Filled(
+        OrderFilledSpec::builder()
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("STRATEGY-001"))
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-001"))
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .account_id(AccountId::from("SIM-001"))
+            .trade_id(TradeId::from("T-001"))
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("1.00001"))
+            .currency(Currency::USD())
+            .commission(Money::new(0.0, Currency::USD()))
+            .ts_event(UnixNanos::from(7_000))
+            .ts_init(UnixNanos::from(7_000))
+            .build(),
+    );
+    let position_event = PositionEvent::PositionOpened(PositionOpened {
+        trader_id: TraderId::from("TRADER-001"),
+        strategy_id: StrategyId::from("STRATEGY-001"),
+        instrument_id,
+        position_id: PositionId::from("P-001"),
+        account_id: AccountId::from("SIM-001"),
+        opening_order_id: ClientOrderId::from("O-001"),
+        entry: OrderSide::Buy,
+        side: PositionSide::Long,
+        signed_qty: 1.0,
+        quantity: Quantity::from("1"),
+        last_qty: Quantity::from("1"),
+        last_px: Price::from("1.00001"),
+        currency: Currency::USD(),
+        avg_px_open: 1.00001,
+        realized_pnl: None,
+        event_id: UUID4::new(),
+        ts_event: UnixNanos::from(8_000),
+        ts_init: UnixNanos::from(8_000),
+    });
+
+    msgbus::publish_instrument("data.instrument.AUD/USD.SIM".into(), &instrument);
+    msgbus::publish_deltas("data.book.deltas.AUD/USD.SIM".into(), &deltas);
+    msgbus::publish_quote("data.quotes.AUD/USD.SIM".into(), &quote);
+    msgbus::publish_trade("data.trades.AUD/USD.SIM".into(), &trade);
+    msgbus::publish_any("data.status.AUD/USD.SIM".into(), &status);
+    msgbus::publish_any("data.close.AUD/USD.SIM".into(), &close);
+    msgbus::publish_account_state("events.account.SIM-001".into(), &account_state);
+    msgbus::publish_order_event("events.order.TRADER-001".into(), &order_event);
+    msgbus::publish_position_event("events.position.STRATEGY-001".into(), &position_event);
+    subscription.unsubscribe();
+    msgbus::publish_instrument("data.instrument.AUD/USD.SIM".into(), &instrument);
+    msgbus::publish_deltas("data.book.deltas.AUD/USD.SIM".into(), &deltas);
+    msgbus::publish_quote("data.quotes.AUD/USD.SIM".into(), &quote);
+    msgbus::publish_trade("data.trades.AUD/USD.SIM".into(), &trade);
+    msgbus::publish_any("data.status.AUD/USD.SIM".into(), &status);
+    msgbus::publish_any("data.close.AUD/USD.SIM".into(), &close);
+    msgbus::publish_account_state("events.account.SIM-001".into(), &account_state);
+    msgbus::publish_order_event("events.order.TRADER-001".into(), &order_event);
+    msgbus::publish_position_event("events.position.STRATEGY-001".into(), &position_event);
+    writer.borrow_mut().close().await.unwrap();
+
+    let files = collect_feather_files(temp_dir.path());
+    assert_eq!(files.len(), 9, "expected one file per data type");
+    let instrument_file = files
+        .iter()
+        .find(|path| {
+            path.components()
+                .any(|component| component.as_os_str() == "instruments")
+        })
+        .expect("missing per-instrument definition file");
+    let mut instrument_reader =
+        StreamReader::try_new(File::open(instrument_file).unwrap(), None).unwrap();
+    let metadata = instrument_reader.schema().metadata().clone();
+    let instrument_batch = instrument_reader.next().unwrap().unwrap();
+    let decoded = decode_instrument_any_batch(&metadata, &instrument_batch).unwrap();
+    assert_eq!(decoded, vec![instrument.clone()]);
+
+    let row_count: usize = files
+        .iter()
+        .map(|path| {
+            StreamReader::try_new(File::open(path).unwrap(), None)
+                .unwrap()
+                .map(|batch| batch.unwrap().num_rows())
+                .sum::<usize>()
+        })
+        .sum();
+    assert_eq!(row_count, 9, "unsubscribe must remove every route");
+
+    let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+    catalog
+        .convert_stream_to_data("test_instance", "instruments", Some("live"), None, false)
+        .unwrap();
+    let instrument_id = instrument_id.to_string();
+    assert_eq!(
+        catalog
+            .query_instruments(Some(std::slice::from_ref(&instrument_id)))
+            .unwrap(),
+        vec![instrument],
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[expect(
+    clippy::await_holding_refcell_ref,
+    reason = "The message-bus writer is single-threaded and the test awaits its final close before reading files"
+)]
+async fn test_all_routes_subscription_unsubscribes_on_drop() {
+    let _bus = MessageBus::default().register_message_bus();
+    let temp_dir = TempDir::new().unwrap();
+    let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+    let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let writer = Rc::new(RefCell::new(FeatherWriter::new(
+        "live/test_instance".to_string(),
+        store,
+        clock,
+        RotationConfig::NoRotation,
+        Some(HashSet::from(["quotes".to_string()])),
+        None,
+        None,
+    )));
+    let quote = QuoteTick::new(
+        InstrumentId::from("AUD/USD.SIM"),
+        Price::from("1.00001"),
+        Price::from("1.00002"),
+        Quantity::from("1000"),
+        Quantity::from("1001"),
+        UnixNanos::from(1_000),
+        UnixNanos::from(1_000),
+    );
+
+    {
+        let _subscription = FeatherWriter::subscribe_to_all_message_bus_routes(&writer);
+        msgbus::publish_quote("data.quotes.AUD/USD.SIM".into(), &quote);
+    }
+    msgbus::publish_quote("data.quotes.AUD/USD.SIM".into(), &quote);
+    writer.borrow_mut().close().await.unwrap();
+
+    let files = collect_feather_files(temp_dir.path());
+    assert_eq!(files.len(), 1);
+    let row_count: usize = StreamReader::try_new(File::open(&files[0]).unwrap(), None)
+        .unwrap()
+        .map(|batch| batch.unwrap().num_rows())
+        .sum();
+    assert_eq!(
+        row_count, 1,
+        "dropping the subscription must unsubscribe every route"
     );
 }
 

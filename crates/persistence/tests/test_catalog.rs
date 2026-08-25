@@ -32,13 +32,13 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId, Symbol, TradeId},
     instruments::{
         CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny,
-        stubs::{audusd_sim, equity_aapl},
+        stubs::{audusd_sim, binary_option, equity_aapl},
     },
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_persistence::{
     backend::{
-        catalog::ParquetDataCatalog,
+        catalog::{ParquetDataCatalog, urisafe_instrument_id},
         session::{DataBackendSession, QueryResult},
     },
     test_data::{
@@ -46,7 +46,10 @@ use nautilus_persistence::{
         RustTestHashMapCustomData, RustTestParamsCustomData, RustTestPriceMapCustomData,
     },
 };
-use nautilus_serialization::{arrow::ArrowSchemaProvider, ensure_custom_data_registered};
+use nautilus_serialization::{
+    arrow::{ArrowSchemaProvider, EncodeToRecordBatch},
+    ensure_custom_data_registered,
+};
 use nautilus_testkit::common::get_nautilus_test_data_file_path;
 use object_store::local::LocalFileSystem;
 use rstest::rstest;
@@ -4613,6 +4616,43 @@ fn test_convert_stream_to_data_unknown_type_with_files_errors() {
             .contains("Unknown data class"),
         "Should error once unknown stream files are present",
     );
+}
+
+#[rstest]
+fn test_convert_stream_to_data_writes_queryable_binary_option_instrument() {
+    use arrow::ipc::writer::StreamWriter;
+
+    let (temp_dir, mut catalog) = create_temp_catalog();
+    let mut binary = binary_option();
+    binary.id = InstrumentId::from("BINARY-OPTION.POLYMARKET");
+    let instrument = InstrumentAny::BinaryOption(binary);
+    let instrument_id = instrument.id().to_string();
+    let safe_instrument_id = urisafe_instrument_id(&instrument_id);
+    let feather_dir = temp_dir
+        .path()
+        .join("live")
+        .join("test_instance")
+        .join("instruments")
+        .join(&safe_instrument_id);
+    fs::create_dir_all(&feather_dir).unwrap();
+
+    let metadata = InstrumentAny::metadata(&instrument);
+    let schema = InstrumentAny::get_schema(Some(metadata.clone()));
+    let batch = InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
+    let feather_path = feather_dir.join(format!("{safe_instrument_id}_0.feather"));
+    let mut feather_file = fs::File::create(feather_path).unwrap();
+    let mut writer = StreamWriter::try_new(&mut feather_file, &schema).unwrap();
+    writer.write(&batch).unwrap();
+    writer.finish().unwrap();
+
+    catalog
+        .convert_stream_to_data("test_instance", "instruments", Some("live"), None, false)
+        .unwrap();
+
+    let decoded = catalog
+        .query_instruments(Some(std::slice::from_ref(&instrument_id)))
+        .unwrap();
+    assert_eq!(decoded, vec![instrument]);
 }
 
 #[rstest]

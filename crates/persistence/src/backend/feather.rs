@@ -33,7 +33,19 @@ use jiff::{
 use nautilus_common::{
     cache::fifo::FifoCache,
     clock::Clock,
-    msgbus::{mstr::MStr, subscribe_any, typed_handler::ShareableMessageHandler, unsubscribe_any},
+    msgbus::{
+        mstr::MStr,
+        subscribe_account_state, subscribe_any, subscribe_bars, subscribe_book_deltas,
+        subscribe_book_depth10, subscribe_funding_rates, subscribe_index_prices,
+        subscribe_instruments, subscribe_mark_prices, subscribe_option_greeks,
+        subscribe_order_events, subscribe_position_events, subscribe_quotes, subscribe_trades,
+        typed_handler::{ShareableMessageHandler, TypedHandler},
+        unsubscribe_account_state, unsubscribe_any, unsubscribe_bars, unsubscribe_book_deltas,
+        unsubscribe_book_depth10, unsubscribe_funding_rates, unsubscribe_index_prices,
+        unsubscribe_instruments, unsubscribe_mark_prices, unsubscribe_option_greeks,
+        unsubscribe_order_events, unsubscribe_position_events, unsubscribe_quotes,
+        unsubscribe_trades,
+    },
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
@@ -45,10 +57,10 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
         OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
         OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
-        PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
+        PositionChanged, PositionClosed, PositionEvent, PositionOpened, PositionSnapshot,
     },
     instruments::InstrumentAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -206,6 +218,35 @@ pub struct FeatherWriter {
     last_flush_ns: UnixNanos,
     /// Bounded cache of recently seen event IDs for deduplication.
     seen_event_ids: Box<FifoCache<UUID4, 10_000>>,
+}
+
+/// A message-bus subscription owned by a [`FeatherWriter`].
+pub struct FeatherWriterSubscription {
+    any_handler: Option<ShareableMessageHandler>,
+    typed_unsubscribers: Vec<Box<dyn FnOnce()>>,
+}
+
+impl FeatherWriterSubscription {
+    fn unsubscribe_inner(&mut self) {
+        if let Some(handler) = self.any_handler.take() {
+            unsubscribe_any(MStr::pattern("*"), &handler);
+        }
+
+        for unsubscribe in std::mem::take(&mut self.typed_unsubscribers) {
+            unsubscribe();
+        }
+    }
+
+    /// Removes all writer handlers from the current thread's message bus.
+    pub fn unsubscribe(mut self) {
+        self.unsubscribe_inner();
+    }
+}
+
+impl Drop for FeatherWriterSubscription {
+    fn drop(&mut self) {
+        self.unsubscribe_inner();
+    }
 }
 
 impl FeatherWriter {
@@ -858,7 +899,8 @@ impl FeatherWriter {
     ///
     /// The writer must be wrapped in `Rc<RefCell<>>` to be shareable with the message bus handler.
     ///
-    /// The handler blocks each write to completion using the shared Nautilus runtime.
+    /// The handler blocks each write to completion using the shared Nautilus runtime. Use
+    /// [`Self::subscribe_to_all_message_bus_routes`] to also subscribe to native typed routes.
     ///
     /// # Errors
     ///
@@ -869,6 +911,220 @@ impl FeatherWriter {
         let handler = Self::create_any_message_handler(writer);
         subscribe_any(MStr::pattern("*"), handler.clone(), None);
         Ok(handler)
+    }
+
+    /// Subscribes to all supported messages on the message bus.
+    ///
+    /// Both the runtime-typed wildcard route and the native typed market-data routes are
+    /// registered. This is required because live data producers publish quotes, trades, deltas,
+    /// and instruments through typed routers rather than `publish_any`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The explicit route list is exhaustive"
+    )]
+    #[expect(
+        clippy::await_holding_refcell_ref,
+        reason = "The synchronous bus bridge blocks each write to completion"
+    )]
+    pub fn subscribe_to_all_message_bus_routes(
+        writer: &Rc<RefCell<Self>>,
+    ) -> FeatherWriterSubscription {
+        let runtime = writer.borrow().runtime.clone();
+        let handler = Self::create_any_message_handler(Rc::clone(writer));
+        subscribe_any(MStr::pattern("*"), handler.clone(), None);
+
+        let mut typed_unsubscribers: Vec<Box<dyn FnOnce()>> = Vec::new();
+
+        macro_rules! subscribe_typed {
+            (
+                $subscribe:path,
+                $unsubscribe:path,
+                $type:ty,
+                $writer_ident:ident,
+                $message_ident:ident,
+                $write:expr,
+                $name:literal
+            ) => {{
+                let pattern = MStr::pattern("*");
+                let typed_writer = Rc::clone(writer);
+                let typed_runtime = runtime.clone();
+                let typed_handler = TypedHandler::from(move |$message_ident: &$type| {
+                    let result = super::block_on(&typed_runtime, async {
+                        let mut $writer_ident = typed_writer.borrow_mut();
+                        $write
+                    });
+
+                    if let Err(e) = result {
+                        log::warn!("Failed to write {}: {e}", $name);
+                    }
+                });
+
+                $subscribe(pattern, typed_handler.clone(), None);
+                typed_unsubscribers.push(Box::new(move || {
+                    $unsubscribe(pattern, &typed_handler);
+                }));
+            }};
+        }
+
+        subscribe_typed!(
+            subscribe_instruments,
+            unsubscribe_instruments,
+            InstrumentAny,
+            writer,
+            message,
+            writer.write_instrument(message.clone()).await,
+            "InstrumentAny"
+        );
+        subscribe_typed!(
+            subscribe_book_deltas,
+            unsubscribe_book_deltas,
+            OrderBookDeltas,
+            writer,
+            message,
+            writer.write_batch(message.deltas.clone()).await,
+            "OrderBookDeltas"
+        );
+        subscribe_typed!(
+            subscribe_book_depth10,
+            unsubscribe_book_depth10,
+            OrderBookDepth10,
+            writer,
+            message,
+            writer.write(message.clone()).await,
+            "OrderBookDepth10"
+        );
+        subscribe_typed!(
+            subscribe_quotes,
+            unsubscribe_quotes,
+            QuoteTick,
+            writer,
+            message,
+            writer.write(message.clone()).await,
+            "QuoteTick"
+        );
+        subscribe_typed!(
+            subscribe_trades,
+            unsubscribe_trades,
+            TradeTick,
+            writer,
+            message,
+            writer.write(message.clone()).await,
+            "TradeTick"
+        );
+        subscribe_typed!(
+            subscribe_bars,
+            unsubscribe_bars,
+            Bar,
+            writer,
+            message,
+            writer.write(message.clone()).await,
+            "Bar"
+        );
+        subscribe_typed!(
+            subscribe_mark_prices,
+            unsubscribe_mark_prices,
+            MarkPriceUpdate,
+            writer,
+            message,
+            writer.write(message.clone()).await,
+            "MarkPriceUpdate"
+        );
+        subscribe_typed!(
+            subscribe_index_prices,
+            unsubscribe_index_prices,
+            IndexPriceUpdate,
+            writer,
+            message,
+            writer.write(message.clone()).await,
+            "IndexPriceUpdate"
+        );
+        subscribe_typed!(
+            subscribe_funding_rates,
+            unsubscribe_funding_rates,
+            FundingRateUpdate,
+            writer,
+            message,
+            writer.write(message.clone()).await,
+            "FundingRateUpdate"
+        );
+        subscribe_typed!(
+            subscribe_option_greeks,
+            unsubscribe_option_greeks,
+            OptionGreeks,
+            writer,
+            message,
+            writer.write(message.clone()).await,
+            "OptionGreeks"
+        );
+        subscribe_typed!(
+            subscribe_account_state,
+            unsubscribe_account_state,
+            AccountState,
+            writer,
+            message,
+            writer.write(message.clone()).await,
+            "AccountState"
+        );
+        subscribe_typed!(
+            subscribe_order_events,
+            unsubscribe_order_events,
+            OrderEventAny,
+            writer,
+            message,
+            writer.write_order_event(message.clone()).await,
+            "OrderEventAny"
+        );
+        subscribe_typed!(
+            subscribe_position_events,
+            unsubscribe_position_events,
+            PositionEvent,
+            writer,
+            message,
+            writer.write_position_event(message.clone()).await,
+            "PositionEvent"
+        );
+
+        FeatherWriterSubscription {
+            any_handler: Some(handler),
+            typed_unsubscribers,
+        }
+    }
+
+    async fn write_order_event(
+        &mut self,
+        event: OrderEventAny,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match event {
+            OrderEventAny::Initialized(event) => self.write(event).await,
+            OrderEventAny::Denied(event) => self.write(event).await,
+            OrderEventAny::Emulated(event) => self.write(event).await,
+            OrderEventAny::Released(event) => self.write(event).await,
+            OrderEventAny::Submitted(event) => self.write(event).await,
+            OrderEventAny::Accepted(event) => self.write(event).await,
+            OrderEventAny::Rejected(event) => self.write(event).await,
+            OrderEventAny::Canceled(event) => self.write(event).await,
+            OrderEventAny::Expired(event) => self.write(event).await,
+            OrderEventAny::Triggered(event) => self.write(event).await,
+            OrderEventAny::PendingUpdate(event) => self.write(event).await,
+            OrderEventAny::PendingCancel(event) => self.write(event).await,
+            OrderEventAny::ModifyRejected(event) => self.write(event).await,
+            OrderEventAny::CancelRejected(event) => self.write(event).await,
+            OrderEventAny::Updated(event) => self.write(event).await,
+            OrderEventAny::Filled(event) => self.write(event).await,
+            OrderEventAny::FillVoided(event) => self.write(event).await,
+        }
+    }
+
+    async fn write_position_event(
+        &mut self,
+        event: PositionEvent,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        match event {
+            PositionEvent::PositionOpened(event) => self.write(event).await,
+            PositionEvent::PositionChanged(event) => self.write(event).await,
+            PositionEvent::PositionClosed(event) => self.write(event).await,
+            PositionEvent::PositionAdjusted(event) => self.write(event).await,
+        }
     }
 
     #[expect(

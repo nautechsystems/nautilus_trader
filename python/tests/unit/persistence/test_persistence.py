@@ -34,7 +34,11 @@ from nautilus_trader.model import BookOrder
 from nautilus_trader.model import CurrencyPair
 from nautilus_trader.model import FundingRateUpdate
 from nautilus_trader.model import IndexPriceUpdate
+from nautilus_trader.model import InstrumentClose
+from nautilus_trader.model import InstrumentCloseType
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import InstrumentStatus
+from nautilus_trader.model import MarketStatusAction
 from nautilus_trader.model import MarkPriceUpdate
 from nautilus_trader.model import OrderBookDelta
 from nautilus_trader.model import OrderBookDepth10
@@ -669,6 +673,57 @@ def test_streaming_feather_writer_uses_per_instrument_paths(
     assert table.schema.metadata[b"instrument_id"] == str(instrument_id).encode()
     for key, value in expected_metadata.items():
         assert table.schema.metadata[key] == value
+
+
+@pytest.mark.parametrize(
+    ("data_name", "event"),
+    [
+        (
+            "instrument_status",
+            InstrumentStatus(AUDUSD_SIM, MarketStatusAction.TRADING, 1_000, 1_001),
+        ),
+        (
+            "instrument_closes",
+            InstrumentClose(
+                AUDUSD_SIM,
+                Price.from_str("1.00001"),
+                InstrumentCloseType.END_OF_SESSION,
+                2_000,
+                2_001,
+            ),
+        ),
+    ],
+)
+def test_streaming_feather_writer_status_and_close_catalog_round_trip(
+    tmp_path,
+    data_name,
+    event,
+):
+    instance_id = "test_instance"
+    stream_path = tmp_path / "live" / instance_id
+    stream_path.mkdir(parents=True)
+    writer = StreamingFeatherWriter(
+        path=str(stream_path),
+        cache=Cache(),
+        clock=Clock.new_test(),
+        include_types=[data_name],
+        flush_interval_ms=0,
+    )
+
+    writer.write(event)
+    writer.close()
+
+    files = list((stream_path / data_name).glob("*/*.feather"))
+    assert len(files) == 1
+    with files[0].open("rb") as stream:
+        table = pa.ipc.open_stream(stream).read_all()
+    assert table.schema.metadata is not None
+    assert table.schema.metadata[b"instrument_id"] == str(AUDUSD_SIM).encode()
+
+    catalog = ParquetDataCatalog(str(tmp_path))
+    catalog.convert_stream_to_data(instance_id, data_name, subdirectory="live")
+
+    assert catalog.query(data_name, identifiers=[str(AUDUSD_SIM)]) == [event]
 
 
 def test_streaming_feather_writer_replace_removes_local_files(tmp_path):

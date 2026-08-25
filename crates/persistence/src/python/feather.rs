@@ -24,7 +24,6 @@ use std::{
 
 use nautilus_common::{
     live::get_runtime,
-    msgbus::typed_handler::ShareableMessageHandler,
     python::{cache::PyCache, clock::PyClock},
 };
 use nautilus_core::{UnixNanos, datetime::get_timezone};
@@ -48,7 +47,7 @@ use object_store::ObjectStoreExt;
 use pyo3::{exceptions::PyIOError, prelude::*};
 
 use crate::{
-    backend::feather::{FeatherWriter, RotationConfig},
+    backend::feather::{FeatherWriter, FeatherWriterSubscription, RotationConfig},
     parquet::{ObjectStoreLocationKind, create_object_store_location_from_path},
 };
 
@@ -71,7 +70,7 @@ where
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
 pub struct PyStreamingFeatherWriter {
     writer: Rc<RefCell<FeatherWriter>>,
-    handler: Option<ShareableMessageHandler>,
+    handler: Option<FeatherWriterSubscription>,
 }
 
 #[pymethods]
@@ -208,6 +207,9 @@ impl PyStreamingFeatherWriter {
         per_instrument_types.insert("bars".to_string());
         per_instrument_types.insert("funding_rate_update".to_string());
         per_instrument_types.insert("index_prices".to_string());
+        per_instrument_types.insert("instrument_closes".to_string());
+        per_instrument_types.insert("instrument_status".to_string());
+        per_instrument_types.insert("instruments".to_string());
         per_instrument_types.insert("mark_prices".to_string());
         per_instrument_types.insert("order_book_deltas".to_string());
         per_instrument_types.insert("order_book_depths".to_string());
@@ -239,18 +241,16 @@ impl PyStreamingFeatherWriter {
         })
     }
 
-    /// Subscribes to all messages on the message bus (pattern "*").
+    /// Subscribes to supported messages on the message bus.
     ///
-    /// This matches the behavior of Python's `StreamingFeatherWriter` when subscribed
-    /// via `trader.subscribe("*", writer.write)`.
+    /// This registers the runtime-typed wildcard route and the native typed market-data routes.
     pub fn subscribe(&mut self) -> PyResult<()> {
         if self.handler.is_some() {
             // Already subscribed
             return Ok(());
         }
 
-        let handler = FeatherWriter::subscribe_to_message_bus(self.writer.clone())
-            .map_err(|e| PyIOError::new_err(format!("Failed to subscribe to message bus: {e}")))?;
+        let handler = FeatherWriter::subscribe_to_all_message_bus_routes(&self.writer);
 
         self.handler = Some(handler);
         Ok(())
@@ -259,7 +259,7 @@ impl PyStreamingFeatherWriter {
     /// Unsubscribes from the message bus.
     pub fn unsubscribe(&mut self) -> PyResult<()> {
         if let Some(handler) = self.handler.take() {
-            FeatherWriter::unsubscribe_from_message_bus(&handler);
+            handler.unsubscribe();
         }
         Ok(())
     }
@@ -409,7 +409,11 @@ impl PyStreamingFeatherWriter {
     /// Closes all writers by flushing and removing them.
     ///
     /// After calling this, no further writes should be performed.
-    pub fn close(&self) -> PyResult<()> {
+    pub fn close(&mut self) -> PyResult<()> {
+        if let Some(handler) = self.handler.take() {
+            handler.unsubscribe();
+        }
+
         let mut writer = self.writer.borrow_mut();
 
         block_on_python_future(async { writer.close().await })
