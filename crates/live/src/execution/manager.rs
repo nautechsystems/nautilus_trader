@@ -463,6 +463,7 @@ pub struct ExecutionManager {
     position_reconciliation_tolerances: IndexMap<AccountId, Decimal>,
     recent_fills_cache: RecencyMap<FillKey>,
     missing_order_coverage_warnings: IndexSet<ClientOrderId>,
+    open_check_lookback_warnings: IndexSet<ClientOrderId>,
     unresolved_order_coverage: IndexSet<ClientOrderId>,
     targeted_order_queries: IndexSet<ClientOrderId>,
 }
@@ -508,6 +509,7 @@ impl ExecutionManager {
             position_reconciliation_tolerances: IndexMap::new(),
             recent_fills_cache: RecencyMap::default(),
             missing_order_coverage_warnings: IndexSet::new(),
+            open_check_lookback_warnings: IndexSet::new(),
             unresolved_order_coverage: IndexSet::new(),
             targeted_order_queries: IndexSet::new(),
         })
@@ -1773,6 +1775,8 @@ impl ExecutionManager {
             filtered_orders.iter().map(Order::client_order_id).collect();
         self.missing_order_coverage_warnings
             .retain(|client_order_id| active_order_ids.contains(client_order_id));
+        self.open_check_lookback_warnings
+            .retain(|client_order_id| active_order_ids.contains(client_order_id));
         self.unresolved_order_coverage
             .retain(|client_order_id| active_order_ids.contains(client_order_id));
 
@@ -2036,6 +2040,8 @@ impl ExecutionManager {
                 venue_reported_ids.insert(*client_order_id);
                 self.missing_order_coverage_warnings
                     .shift_remove(client_order_id);
+                self.open_check_lookback_warnings
+                    .shift_remove(client_order_id);
                 // A positive report is proof the venue still knows the order:
                 // reset the missing-order ladder so only consecutive misses
                 // accumulate (mirrors the Python engine's per-report clear).
@@ -2053,6 +2059,8 @@ impl ExecutionManager {
                 if let Some(client_order_id) = mapped_client_order_id {
                     venue_reported_ids.insert(client_order_id);
                     self.missing_order_coverage_warnings
+                        .shift_remove(&client_order_id);
+                    self.open_check_lookback_warnings
                         .shift_remove(&client_order_id);
                     self.recon_check_retries.shift_remove(&client_order_id);
                 }
@@ -2133,11 +2141,23 @@ impl ExecutionManager {
             }
         } else {
             let candidates: Vec<&OrderAny> = if let Some(cutoff) = check.start {
-                check
-                    .filtered_orders
-                    .iter()
-                    .filter(|o| o.ts_last() >= cutoff)
-                    .collect()
+                let mut candidates = Vec::new();
+
+                for order in &check.filtered_orders {
+                    let client_order_id = order.client_order_id();
+                    if order.ts_last() >= cutoff {
+                        self.open_check_lookback_warnings
+                            .shift_remove(&client_order_id);
+                        candidates.push(order);
+                    } else if !venue_reported_ids.contains(&client_order_id)
+                        && self.open_check_lookback_warnings.insert(client_order_id)
+                    {
+                        log::warn!(
+                            "Skipping missing-order reconciliation for {client_order_id}: its last update predates the configured open-check lookback window; absence from the bulk response cannot be treated as evidence and no targeted query will be issued from it"
+                        );
+                    }
+                }
+                candidates
             } else {
                 check.filtered_orders.iter().collect()
             };
@@ -2653,6 +2673,8 @@ impl ExecutionManager {
         self.inflight_checks.shift_remove(client_order_id);
         self.recon_check_retries.shift_remove(client_order_id);
         self.missing_order_coverage_warnings
+            .shift_remove(client_order_id);
+        self.open_check_lookback_warnings
             .shift_remove(client_order_id);
         self.unresolved_order_coverage.shift_remove(client_order_id);
         self.targeted_order_queries.shift_remove(client_order_id);
@@ -5585,6 +5607,324 @@ mod tests {
     }
 
     #[rstest]
+    fn test_open_check_lookback_exclusion_warns_once_without_reconciliation_actions() {
+        let client_order_id = ClientOrderId::from("O-LOOKBACK-OLD");
+        let venue_order_id = VenueOrderId::from("V-LOOKBACK-OLD");
+        let client_id = ClientId::from("BINANCE");
+        let instrument_id = crypto_perpetual_ethusdt().id();
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        insert_accepted_limit_order(
+            &cache,
+            client_order_id,
+            venue_order_id,
+            instrument_id,
+            client_id,
+        );
+        let order = cache.borrow().order_owned(&client_order_id).unwrap();
+        let cutoff = UnixNanos::from(order.ts_last().as_u64().saturating_add(1));
+        let check = OpenOrderReportCheck {
+            command: GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::from(1),
+                false,
+                None,
+                None,
+                Some(cutoff),
+                None,
+                None,
+            ),
+            filtered_orders: vec![order],
+            client_coverage: IndexMap::from([(
+                client_order_id,
+                ReportClientCoverage::Resolved(IndexSet::from([client_id])),
+            )]),
+            start: Some(cutoff),
+        };
+        let queried_clients = IndexSet::from([client_id]);
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache.clone(),
+            ExecutionManagerConfig {
+                open_check_open_only: false,
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+
+        for _ in 0..2 {
+            let result = manager.reconcile_open_order_reports(
+                &check,
+                Vec::new(),
+                &queried_clients,
+                &IndexSet::new(),
+                &[],
+            );
+
+            assert!(result.events.is_empty());
+            assert!(result.targeted_queries.is_empty());
+            assert_eq!(
+                cache.borrow().order(&client_order_id).unwrap().status(),
+                OrderStatus::Accepted
+            );
+            assert!(!manager.recon_check_retries.contains_key(&client_order_id));
+            assert!(!manager.order_query_recency.contains_key(&client_order_id));
+            assert!(!manager.targeted_order_queries.contains(&client_order_id));
+            assert_eq!(
+                manager.open_check_lookback_warnings,
+                IndexSet::from([client_order_id])
+            );
+            assert_eq!(manager.open_check_lookback_warnings.len(), 1);
+        }
+    }
+
+    #[rstest]
+    fn test_open_check_lookback_warning_clears_at_boundary_and_rearms() {
+        let client_order_id = ClientOrderId::from("O-LOOKBACK-REARM");
+        let client_id = ClientId::from("BINANCE");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        insert_accepted_limit_order(
+            &cache,
+            client_order_id,
+            VenueOrderId::from("V-LOOKBACK-REARM"),
+            crypto_perpetual_ethusdt().id(),
+            client_id,
+        );
+        let order = cache.borrow().order_owned(&client_order_id).unwrap();
+        let old_cutoff = UnixNanos::from(order.ts_last().as_u64().saturating_add(1));
+        let make_check = |start| OpenOrderReportCheck {
+            command: GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::from(1),
+                false,
+                None,
+                None,
+                Some(start),
+                None,
+                None,
+            ),
+            filtered_orders: vec![order.clone()],
+            client_coverage: IndexMap::from([(
+                client_order_id,
+                ReportClientCoverage::Resolved(IndexSet::from([client_id])),
+            )]),
+            start: Some(start),
+        };
+        let queried_clients = IndexSet::new();
+        let mut manager = ExecutionManager::new(
+            Rc::new(RefCell::new(TestClock::new())),
+            cache,
+            ExecutionManagerConfig {
+                open_check_open_only: false,
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+
+        manager.reconcile_open_order_reports(
+            &make_check(old_cutoff),
+            Vec::new(),
+            &queried_clients,
+            &IndexSet::new(),
+            &[],
+        );
+        assert!(
+            manager
+                .open_check_lookback_warnings
+                .contains(&client_order_id)
+        );
+
+        let boundary = order.ts_last();
+        let boundary_result = manager.reconcile_open_order_reports(
+            &make_check(boundary),
+            Vec::new(),
+            &queried_clients,
+            &IndexSet::new(),
+            &[],
+        );
+        assert!(boundary_result.targeted_queries.is_empty());
+        assert!(
+            !manager
+                .open_check_lookback_warnings
+                .contains(&client_order_id)
+        );
+        assert!(
+            manager
+                .missing_order_coverage_warnings
+                .contains(&client_order_id)
+        );
+
+        manager.reconcile_open_order_reports(
+            &make_check(old_cutoff),
+            Vec::new(),
+            &queried_clients,
+            &IndexSet::new(),
+            &[],
+        );
+        assert_eq!(
+            manager.open_check_lookback_warnings,
+            IndexSet::from([client_order_id])
+        );
+    }
+
+    #[rstest]
+    fn test_venue_order_id_mapped_report_clears_old_order_lookback_warning() {
+        let client_order_id = ClientOrderId::from("O-LOOKBACK-MAPPED");
+        let venue_order_id = VenueOrderId::from("V-LOOKBACK-MAPPED");
+        let client_id = ClientId::from("BINANCE");
+        let instrument_id = crypto_perpetual_ethusdt().id();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        insert_accepted_limit_order(
+            &cache,
+            client_order_id,
+            venue_order_id,
+            instrument_id,
+            client_id,
+        );
+        let order = cache.borrow().order_owned(&client_order_id).unwrap();
+        let cutoff = UnixNanos::from(order.ts_last().as_u64().saturating_add(1));
+        let check = OpenOrderReportCheck {
+            command: GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::from(1),
+                false,
+                None,
+                None,
+                Some(cutoff),
+                None,
+                None,
+            ),
+            filtered_orders: vec![order],
+            client_coverage: IndexMap::from([(
+                client_order_id,
+                ReportClientCoverage::Resolved(IndexSet::from([client_id])),
+            )]),
+            start: Some(cutoff),
+        };
+        let mut manager = ExecutionManager::new(
+            Rc::new(RefCell::new(TestClock::new())),
+            cache,
+            ExecutionManagerConfig {
+                open_check_open_only: false,
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+        manager.open_check_lookback_warnings.insert(client_order_id);
+
+        // The report carries NO client_order_id, so it resolves through the
+        // cache's venue_order_id mapping.
+        let report = OrderStatusReport::new(
+            AccountId::from("TEST-001"),
+            instrument_id,
+            None,
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("10.0"),
+            Quantity::from("0.0"),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+            None,
+        );
+
+        let result = manager.reconcile_open_order_reports(
+            &check,
+            vec![SourcedOrderStatusReport { client_id, report }],
+            &IndexSet::from([client_id]),
+            &IndexSet::new(),
+            &[],
+        );
+
+        assert!(result.targeted_queries.is_empty());
+        assert!(
+            !manager
+                .open_check_lookback_warnings
+                .contains(&client_order_id)
+        );
+    }
+
+    #[rstest]
+    fn test_positive_report_clears_old_order_lookback_warning_without_reinserting_it() {
+        let client_order_id = ClientOrderId::from("O-LOOKBACK-REPORTED");
+        let venue_order_id = VenueOrderId::from("V-LOOKBACK-REPORTED");
+        let client_id = ClientId::from("BINANCE");
+        let instrument_id = crypto_perpetual_ethusdt().id();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        insert_accepted_limit_order(
+            &cache,
+            client_order_id,
+            venue_order_id,
+            instrument_id,
+            client_id,
+        );
+        let order = cache.borrow().order_owned(&client_order_id).unwrap();
+        let cutoff = UnixNanos::from(order.ts_last().as_u64().saturating_add(1));
+        let check = OpenOrderReportCheck {
+            command: GenerateOrderStatusReports::new(
+                UUID4::new(),
+                UnixNanos::from(1),
+                false,
+                None,
+                None,
+                Some(cutoff),
+                None,
+                None,
+            ),
+            filtered_orders: vec![order],
+            client_coverage: IndexMap::from([(
+                client_order_id,
+                ReportClientCoverage::Resolved(IndexSet::from([client_id])),
+            )]),
+            start: Some(cutoff),
+        };
+        let mut manager = ExecutionManager::new(
+            Rc::new(RefCell::new(TestClock::new())),
+            cache,
+            ExecutionManagerConfig {
+                open_check_open_only: false,
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+        manager.open_check_lookback_warnings.insert(client_order_id);
+        let report = OrderStatusReport::new(
+            AccountId::from("TEST-001"),
+            instrument_id,
+            Some(client_order_id),
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("10.0"),
+            Quantity::from("0.0"),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+            None,
+        );
+
+        let result = manager.reconcile_open_order_reports(
+            &check,
+            vec![SourcedOrderStatusReport { client_id, report }],
+            &IndexSet::from([client_id]),
+            &IndexSet::new(),
+            &[],
+        );
+
+        assert!(result.targeted_queries.is_empty());
+        assert!(
+            !manager
+                .open_check_lookback_warnings
+                .contains(&client_order_id)
+        );
+    }
+
+    #[rstest]
     fn test_targeted_reconciliation_uses_source_client_and_retries_commission() {
         let (mut manager, _cache, _order, report, _instrument) = cached_commission_fixtures();
         let client_order_id = report.client_order_id.unwrap();
@@ -5631,10 +5971,12 @@ mod tests {
             .expect("valid config");
         let client_order_id = ClientOrderId::from("O-TARGETED-CLEAR");
         manager.targeted_order_queries.insert(client_order_id);
+        manager.open_check_lookback_warnings.insert(client_order_id);
 
         manager.clear_recon_tracking(&client_order_id, true);
 
         assert!(manager.targeted_order_queries.is_empty());
+        assert!(manager.open_check_lookback_warnings.is_empty());
     }
 
     #[rstest]
