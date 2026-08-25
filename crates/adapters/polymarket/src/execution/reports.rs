@@ -39,8 +39,8 @@ use super::{
     },
     reconciliation::{
         FillContext, FillReportScope, TargetOrderReportScope, apply_fill_time_filters,
-        build_fill_reports_from_trades, build_position_reports, build_target_order_report,
-        cap_order_report_filled_qty, confirmed_filled_quantities,
+        build_fill_reports_from_trades, build_reconciliation_position_reports,
+        build_target_order_report, cap_order_report_filled_qty, confirmed_filled_quantities,
         normalize_terminal_order_report_quantity,
     },
 };
@@ -604,13 +604,18 @@ impl PolymarketExecutionClient {
             .context("failed to fetch orders")?;
 
         let ctx = self.fill_context();
+        let collection_load_ids = if cmd.instrument_id.is_some() {
+            None
+        } else {
+            self.config.reconciliation_load_ids()
+        };
         let (mut reports, _) = super::reconciliation::build_order_reports_from_orders(
             &orders,
             &self.shared_token_instruments,
             &ctx,
             cmd.instrument_id,
             self.clock.get_time_ns(),
-            self.config.reconciliation_load_ids(),
+            collection_load_ids,
         )?;
 
         let needs_confirmed_fills = reports.iter().any(|report| {
@@ -633,7 +638,7 @@ impl PolymarketExecutionClient {
                         &self.shared_token_instruments,
                         FillReportScope::new(cmd.instrument_id, None),
                         self.clock.get_time_ns(),
-                        self.config.reconciliation_load_ids(),
+                        collection_load_ids,
                         None,
                     )?;
                     confirmed_filled_quantities(&fills)
@@ -705,6 +710,11 @@ impl PolymarketExecutionClient {
             .instrument_id
             .or_else(|| authority.as_ref().and_then(|value| value.instrument_id));
         let expected_order_side = authority.as_ref().and_then(|value| value.order_side);
+        let collection_load_ids = if cmd.instrument_id.is_some() || cmd.venue_order_id.is_some() {
+            None
+        } else {
+            self.config.reconciliation_load_ids()
+        };
         let (mut reports, _) = build_fill_reports_from_trades(
             &trades,
             &ctx,
@@ -712,7 +722,7 @@ impl PolymarketExecutionClient {
             FillReportScope::new(scope_instrument_id, cmd.venue_order_id)
                 .with_expected_order_side(expected_order_side),
             self.clock.get_time_ns(),
-            self.config.reconciliation_load_ids(),
+            collection_load_ids,
             None,
         )?;
 
@@ -736,15 +746,14 @@ impl PolymarketExecutionClient {
             .context("failed to fetch positions from Data API")?;
 
         let ts_now = self.clock.get_time_ns();
-        let mut reports = super::reconciliation::retain_mapped_position_reports(
-            build_position_reports(&positions, self.core.account_id, ts_now),
+        let reports = build_reconciliation_position_reports(
+            &positions,
+            self.core.account_id,
+            ts_now,
             &self.shared_token_instruments,
+            cmd.instrument_id,
             self.config.reconciliation_load_ids(),
         )?;
-
-        if let Some(ref filter_id) = cmd.instrument_id {
-            reports.retain(|r| &r.instrument_id == filter_id);
-        }
 
         log::debug!("Generated {} position status reports", reports.len());
         Ok(reports)

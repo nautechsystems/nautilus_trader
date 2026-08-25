@@ -426,6 +426,19 @@ fn resolve_target_instrument(
     Ok(instrument)
 }
 
+pub(super) fn validate_client_bound_order_quantity(
+    provider_order: &PolymarketOpenOrder,
+    cached_order: &OrderAny,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        cached_order.quantity().as_decimal() == provider_order.original_size,
+        "provider order quantity {} does not match cached order quantity {}",
+        provider_order.original_size,
+        cached_order.quantity(),
+    );
+    Ok(())
+}
+
 fn validate_client_bound_order_row(
     provider_order: &PolymarketOpenOrder,
     cached_order: &OrderAny,
@@ -443,12 +456,7 @@ fn validate_client_bound_order_row(
         provider_order.order_type,
         cached_order.time_in_force(),
     );
-    anyhow::ensure!(
-        cached_order.quantity().as_decimal() == provider_order.original_size,
-        "provider order quantity {} does not match cached order quantity {}",
-        provider_order.original_size,
-        cached_order.quantity(),
-    );
+    validate_client_bound_order_quantity(provider_order, cached_order)?;
     let cached_price = cached_order
         .price()
         .context("cached Limit order is missing price")?;
@@ -523,6 +531,13 @@ fn build_order_report_from_order(
     ts_init: UnixNanos,
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<OrderRowResult> {
+    let collection_load_ids = match scope {
+        OrderEvidenceScope::Collection {
+            instrument_filter: None,
+        } => load_ids,
+        _ => None,
+    };
+
     if let OrderEvidenceScope::Target { venue_order_id, .. } = scope {
         anyhow::ensure!(
             order.id == venue_order_id.as_str(),
@@ -561,18 +576,29 @@ fn build_order_report_from_order(
             Some(instrument_id),
             &format!("provider venue order {}", order.id),
         )?,
-        OrderEvidenceScope::Collection { .. } => match instruments.get_cloned(&order.asset_id) {
+        OrderEvidenceScope::Collection { instrument_filter } => match instruments
+            .get_cloned(&order.asset_id)
+        {
             Some(instrument) => instrument,
             None => {
                 let instrument_id =
                     instrument_id_from_market_token(order.market.as_str(), order.asset_id.as_str());
 
-                if instrument_in_load_ids_scope(instrument_id, load_ids) {
+                if instrument_filter.is_some_and(|filter_id| {
+                    !polymarket_instrument_ids_equivalent(filter_id, instrument_id)
+                }) {
+                    return Ok(OrderRowResult {
+                        report: None,
+                        counted_filtered: false,
+                    });
+                }
+
+                if instrument_in_load_ids_scope(instrument_id, collection_load_ids) {
                     anyhow::bail!(unmapped_in_scope_message(
                         "open order",
                         instrument_id,
                         Some(&format!("token {}", order.asset_id)),
-                        load_ids,
+                        collection_load_ids,
                     ));
                 }
                 log::debug!("Dropping out-of-scope unmapped open order instrument {instrument_id}");
@@ -585,22 +611,28 @@ fn build_order_report_from_order(
     };
     let instrument_id = instrument.id();
 
-    if matches!(scope, OrderEvidenceScope::Collection { .. })
-        && !instrument_in_load_ids_scope(instrument_id, load_ids)
+    if let OrderEvidenceScope::Collection {
+        instrument_filter: Some(filter_id),
+    } = scope
+        && !polymarket_instrument_ids_equivalent(filter_id, instrument_id)
+    {
+        return Ok(OrderRowResult {
+            report: None,
+            counted_filtered: false,
+        });
+    }
+
+    if matches!(
+        scope,
+        OrderEvidenceScope::Collection {
+            instrument_filter: None
+        }
+    ) && !instrument_in_load_ids_scope(instrument_id, collection_load_ids)
     {
         log::debug!("Dropping loaded out-of-scope open order instrument {instrument_id}");
         return Ok(OrderRowResult {
             report: None,
             counted_filtered: true,
-        });
-    }
-
-    if let OrderEvidenceScope::Collection { instrument_filter } = scope
-        && instrument_filter.is_some_and(|filter_id| instrument_id != filter_id)
-    {
-        return Ok(OrderRowResult {
-            report: None,
-            counted_filtered: false,
         });
     }
 
@@ -1301,44 +1333,96 @@ pub(crate) fn build_position_reports(
 ) -> Vec<PositionStatusReport> {
     positions
         .iter()
-        .filter(|p| {
-            if p.size > Decimal::ZERO && p.size < DUST_POSITION_THRESHOLD {
-                log::debug!(
-                    "Filtering dust position: {}-{}, size={}",
-                    p.condition_id,
-                    p.asset,
-                    p.size
-                );
-            }
-            p.size >= DUST_POSITION_THRESHOLD
-        })
-        .filter_map(|p| {
-            let instrument_id = instrument_id_from_market_token(&p.condition_id, &p.asset);
-            let quantity = match Quantity::from_decimal_dp(p.size, USDC_DECIMALS as u8) {
-                Ok(quantity) => quantity,
-                Err(e) => {
-                    log::warn!(
-                        "Skipping invalid Data API position {}-{} size {}: {e}",
-                        p.condition_id,
-                        p.asset,
-                        p.size,
-                    );
-                    return None;
-                }
-            };
-            Some(PositionStatusReport::new(
-                account_id,
-                instrument_id,
-                PositionSideSpecified::Long,
-                quantity,
-                ts,
-                ts,
-                None,
-                None,
-                p.avg_price,
-            ))
-        })
+        .filter_map(|position| build_position_report(position, account_id, ts))
         .collect()
+}
+
+fn build_position_report(
+    position: &DataApiPosition,
+    account_id: AccountId,
+    ts: UnixNanos,
+) -> Option<PositionStatusReport> {
+    if position.size < DUST_POSITION_THRESHOLD {
+        if position.size > Decimal::ZERO {
+            log::debug!(
+                "Filtering dust position: {}-{}, size={}",
+                position.condition_id,
+                position.asset,
+                position.size
+            );
+        }
+        return None;
+    }
+
+    let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
+    let quantity = match Quantity::from_decimal_dp(position.size, USDC_DECIMALS as u8) {
+        Ok(quantity) => quantity,
+        Err(e) => {
+            log::warn!(
+                "Skipping invalid Data API position {}-{} size {}: {e}",
+                position.condition_id,
+                position.asset,
+                position.size,
+            );
+            return None;
+        }
+    };
+    Some(PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        quantity,
+        ts,
+        ts,
+        None,
+        None,
+        position.avg_price,
+    ))
+}
+
+pub(crate) fn build_reconciliation_position_reports(
+    positions: &[DataApiPosition],
+    account_id: AccountId,
+    ts: UnixNanos,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_filter: Option<InstrumentId>,
+    load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<Vec<PositionStatusReport>> {
+    let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
+    let mut admitted_positions = Vec::with_capacity(positions.len());
+
+    for position in positions {
+        let instrument_id =
+            instrument_id_from_market_token(&position.condition_id, &position.asset);
+
+        if instrument_filter.is_some_and(|filter_id| {
+            !polymarket_instrument_ids_equivalent(filter_id, instrument_id)
+        }) {
+            continue;
+        }
+
+        if !instrument_in_load_ids_scope(instrument_id, collection_load_ids) {
+            log::debug!("Dropping out-of-scope position instrument {instrument_id}");
+            continue;
+        }
+
+        if !position_instrument_loaded(instrument_id, instruments) {
+            anyhow::bail!(unmapped_in_scope_message(
+                "position",
+                instrument_id,
+                None,
+                collection_load_ids,
+            ));
+        }
+
+        admitted_positions.push(position.clone());
+    }
+
+    retain_mapped_position_reports(
+        build_position_reports(&admitted_positions, account_id, ts),
+        instruments,
+        collection_load_ids,
+    )
 }
 
 pub(crate) fn retain_mapped_position_reports(
@@ -1437,9 +1521,12 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch positions for mass status")?;
 
-    let position_reports = retain_mapped_position_reports(
-        build_position_reports(&positions, ctx.account_id, ts_init),
+    let position_reports = build_reconciliation_position_reports(
+        &positions,
+        ctx.account_id,
+        ts_init,
         instruments,
+        None,
         load_ids,
     )?;
 

@@ -33,7 +33,7 @@ use super::{
     identity::{OrderIdentity, OrderIdentityRegistry},
     order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
     pending::{PendingCancelTracker, PendingSubmitTracker},
-    reconciliation::cap_order_report_filled_qty,
+    reconciliation::{cap_order_report_filled_qty, validate_client_bound_order_quantity},
     reports::get_pusd_currency,
     submitter::{
         OrderSubmitter, SubmitResponseOutcome, is_fok_unfilled, submit_response_outcome,
@@ -961,6 +961,14 @@ pub(super) async fn check_fok_status(
     };
 
     if fill_tracker.has_fills_or_settled(&venue_order_id) {
+        return;
+    }
+
+    if order.order_type() == OrderType::Limit
+        && !order.is_quote_quantity()
+        && let Err(e) = validate_client_bound_order_quantity(&venue_order, order)
+    {
+        log::warn!("FOK status check rejected contradictory order {order_id}: {e}");
         return;
     }
 
