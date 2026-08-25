@@ -21,6 +21,7 @@ import asyncio
 import sys
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
@@ -34,6 +35,7 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
+from nautilus_trader.model import CryptoPerpetual
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
@@ -47,7 +49,7 @@ from ema_cross import EMACross
 from ema_cross import EMACrossConfig
 
 
-async def load_instrument(instrument_id: InstrumentId) -> object:
+async def load_instrument(instrument_id: InstrumentId) -> CryptoPerpetual:
     """
     Load instrument.
     """
@@ -64,7 +66,7 @@ async def load_instrument(instrument_id: InstrumentId) -> object:
 
     if len(instruments) != 1:
         raise RuntimeError(f"Expected one Binance instrument for {instrument_id}")
-    return instruments[0]
+    return cast("CryptoPerpetual", instruments[0])
 
 
 if __name__ == "__main__":

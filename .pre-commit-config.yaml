@@ -457,6 +457,23 @@ repos:
         args: ["--project", "python"]
         files: ^python/(uv\.lock|pyproject\.toml)$
 
+  - repo: local
+    hooks:
+      - id: ty
+        name: ty
+        description: Type-checks Python examples
+        entry: bash scripts/ci/check-python-types.bash python examples
+        language: system
+        files: >-
+          (?x)^(
+            Makefile|
+            docs/tutorials/.*\.py|
+            examples/.*\.py|
+            python/(nautilus_trader/.*|pyproject\.toml|uv\.lock)|
+            scripts/ci/check-python-types\.bash
+          )$
+        pass_filenames: false
+
   - repo: https://github.com/kynan/nbstripout
     rev: 0.9.1
     hooks:

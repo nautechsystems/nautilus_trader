@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Self
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.indicators import ExponentialMovingAverage
@@ -26,7 +27,7 @@ class EMACrossConfig(StrategyConfig):
         "slow_ema_period",
     )
 
-    def __new__(cls, *args: object, **kwargs: object) -> object:
+    def __new__(cls, *args: object, **kwargs: object) -> Self:
         for field in cls._CUSTOM_FIELDS:
             kwargs.pop(field, None)
         return super().__new__(cls, *args, **kwargs)

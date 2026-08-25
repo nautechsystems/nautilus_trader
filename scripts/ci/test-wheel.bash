@@ -64,6 +64,6 @@ types_dir="$neutral_dir/types"
 mkdir "$types_dir"
 cp -R "$pkg_dir/../examples" "$types_dir/examples"
 
-bash "$pkg_dir/../scripts/ci/test-python-types.bash" \
+bash "$pkg_dir/../scripts/ci/check-python-types.bash" \
   "$pkg_dir" \
   "$types_dir/examples"

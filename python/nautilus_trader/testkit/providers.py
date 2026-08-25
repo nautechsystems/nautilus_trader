@@ -37,6 +37,7 @@ from nautilus_trader.model import Currency
 from nautilus_trader.model import CurrencyPair
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
+from nautilus_trader.model import PerpetualContract
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
@@ -480,7 +481,7 @@ class TestDataProvider:
 
     @staticmethod
     def quotes_from_truefx_csv(
-        instrument: CurrencyPair,
+        instrument: CurrencyPair | PerpetualContract,
         csv_name: str,
         max_rows: int | None = None,
     ) -> list[QuoteTick]:
@@ -559,7 +560,7 @@ class TestDataProvider:
 
     @staticmethod
     def bars_from_binance_csv(
-        instrument: CurrencyPair,
+        instrument: CryptoPerpetual | CurrencyPair,
         bar_type: BarType,
         csv_name: str,
         max_rows: int | None = None,

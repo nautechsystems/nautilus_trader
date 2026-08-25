@@ -27,6 +27,7 @@ Example of databento option exercise.
 
 # %%
 from pathlib import Path
+from typing import Self
 
 import pandas as pd
 
@@ -42,6 +43,7 @@ from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Quantity
+from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import TradeTick
@@ -57,7 +59,7 @@ class OptionExerciseConfig(StrategyConfig):
 
     _CUSTOM_FIELDS = ("future_id", "option_id")
 
-    def __new__(cls, *args: object, **kwargs: object) -> object:
+    def __new__(cls, *args: object, **kwargs: object) -> Self:
         """
         Create a new instance.
         """
@@ -84,6 +86,7 @@ class OptionExerciseStrategy(Strategy):
         Initialize the helper.
         """
         super().__init__(config)
+        self._option_id = config.option_id
         self.order_submitted = False
         self.bar_type = BarType.from_str(f"{config.future_id}-1-MINUTE-LAST-EXTERNAL")
 
@@ -91,18 +94,18 @@ class OptionExerciseStrategy(Strategy):
         """
         On start.
         """
-        self.subscribe_quotes(self.config.option_id)
+        self.subscribe_quotes(self._option_id)
         self.subscribe_bars(self.bar_type)
 
-    def on_quote(self, tick) -> None:
+    def on_quote(self, quote: QuoteTick) -> None:
         """
         On quote.
         """
-        if tick.instrument_id != self.config.option_id or self.order_submitted:
+        if quote.instrument_id != self._option_id or self.order_submitted:
             return
 
         order = self.order_factory.market(
-            instrument_id=self.config.option_id,
+            instrument_id=self._option_id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(1),
         )

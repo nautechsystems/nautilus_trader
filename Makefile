@@ -1306,9 +1306,9 @@ pytest-doctest: build-debug  #-- Run supported Python doctests
 	$Q bash scripts/ci/test-python-doctests.bash "$(CURDIR)/python"
 
 .PHONY: ty
-ty: build-debug  #-- Type-check supported Python examples
-	$(info $(M) Type-checking supported Python examples...)
-	$Q bash scripts/ci/test-python-types.bash python examples
+ty: build-debug  #-- Type-check Python examples
+	$(info $(M) Type-checking Python examples...)
+	$Q bash scripts/ci/check-python-types.bash python examples
 
 #== CLI Tools
 

@@ -27,6 +27,7 @@ Example of databento futures settlement.
 
 # %%
 from pathlib import Path
+from typing import Self
 
 import pandas as pd
 
@@ -40,6 +41,7 @@ from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Quantity
+from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
 from nautilus_trader.trading import Strategy
@@ -53,7 +55,7 @@ class FuturesSettlementConfig(StrategyConfig):
 
     _CUSTOM_FIELDS = ("future_id", "next_future_id")
 
-    def __new__(cls, *args: object, **kwargs: object) -> object:
+    def __new__(cls, *args: object, **kwargs: object) -> Self:
         """
         Create a new instance.
         """
@@ -85,24 +87,26 @@ class FuturesSettlementStrategy(Strategy):
         Initialize the helper.
         """
         super().__init__(config)
+        self._future_id = config.future_id
+        self._next_future_id = config.next_future_id
         self.order_submitted = False
 
     def on_start(self) -> None:
         """
         On start.
         """
-        self.subscribe_quotes(self.config.future_id)
-        self.subscribe_quotes(self.config.next_future_id)
+        self.subscribe_quotes(self._future_id)
+        self.subscribe_quotes(self._next_future_id)
 
-    def on_quote(self, tick) -> None:
+    def on_quote(self, quote: QuoteTick) -> None:
         """
         On quote.
         """
-        if tick.instrument_id != self.config.future_id or self.order_submitted:
+        if quote.instrument_id != self._future_id or self.order_submitted:
             return
 
         order = self.order_factory.market(
-            instrument_id=self.config.future_id,
+            instrument_id=self._future_id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(1),
         )

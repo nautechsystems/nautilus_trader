@@ -76,11 +76,11 @@ class MarketBuyOnStart(Strategy):
         """
         self.subscribe_quotes(self._instrument_id)
 
-    def on_quote(self, _quote: QuoteTick) -> None:
+    def on_quote(self, quote: QuoteTick) -> None:
         """
         On quote.
         """
-        if self._submitted:
+        if quote.instrument_id != self._instrument_id or self._submitted:
             return
 
         self._submitted = True

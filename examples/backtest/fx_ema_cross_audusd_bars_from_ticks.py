@@ -49,8 +49,8 @@ if __name__ == "__main__":
     rates = provider.read_csv("short-term-interest.csv")
     rollover = FXRolloverInterestModule(
         records=[
-            InterestRateRecord(location=row.LOCATION, time=row.TIME, value=row.Value)
-            for row in rates.itertuples(index=False)
+            InterestRateRecord(location=row[0], time=row[1], value=row[2])
+            for row in rates.itertuples(index=False, name=None)
         ],
     )
 

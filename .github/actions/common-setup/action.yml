@@ -269,6 +269,18 @@ runs:
         cache-suffix: ${{ steps.cache-scope.outputs.value }}-uv-${{ steps.uv-version.outputs.version }}
         prune-cache: true
 
+    - name: Sync pre-commit Python dependencies
+      if: inputs.build-type == 'pre-commit'
+      shell: bash
+      run: >-
+        VIRTUAL_ENV="" uv sync
+        --project python
+        --group dev
+        --extra visualization
+        --no-install-project
+        --locked
+        --inexact
+
     # Self-hosted and macOS runners skip setup-uv's cache post-step under auto.
     - name: Prune uv cache
       shell: bash
