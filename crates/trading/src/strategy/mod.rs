@@ -461,7 +461,9 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        if order.is_emulated() {
+        if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
+            || order.is_emulated()
+        {
             send_emulator_command(TradingCommand::ModifyOrder(command));
         } else if let Some(algo_id) = order
             .exec_algorithm_id()
@@ -2323,10 +2325,13 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{
-        actor::DataActor,
+        actor::{
+            DataActor,
+            registry::{deregister_actor, try_get_actor_unchecked},
+        },
         cache::{Cache, ORDER_NOT_FOUND},
         clock::{Clock, TestClock},
-        component::Component,
+        component::{Component, deregister_component, register_component_actor},
         enums::ComponentState,
         msgbus::{
             self, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
@@ -2386,6 +2391,12 @@ mod tests {
         started: bool,
     }
 
+    #[derive(Debug)]
+    struct InitializedModifyStrategy {
+        core: StrategyCore,
+        modified_quantity: Quantity,
+    }
+
     impl DataActor for CoreFreeStrategy {
         fn on_start(&mut self) -> anyhow::Result<()> {
             self.started = true;
@@ -2394,6 +2405,22 @@ mod tests {
     }
 
     impl Strategy for CoreFreeStrategy {}
+
+    impl DataActor for InitializedModifyStrategy {}
+
+    nautilus_strategy!(InitializedModifyStrategy, {
+        fn on_order_initialized(&mut self, event: OrderInitialized) {
+            self.modify_order(
+                event.client_order_id,
+                Some(self.modified_quantity),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        }
+    });
 
     impl TestStrategy {
         fn new(config: StrategyConfig) -> Self {
@@ -3667,6 +3694,107 @@ mod tests {
                 if command.client_order_id == order.client_order_id()
         ));
         assert!(risk_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_modify_order_routes_initialized_trigger_order_to_emulator_reentrantly() {
+        let strategy_id = StrategyId::from("REENTRANT-001");
+        let modified_quantity = Quantity::from(200_000);
+        let mut strategy = InitializedModifyStrategy {
+            core: StrategyCore::new(StrategyConfig {
+                strategy_id: Some(strategy_id),
+                ..Default::default()
+            }),
+            modified_quantity,
+        };
+        let trader_id = TraderId::from("TRADER-001");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            clock.clone(),
+            cache.clone(),
+            None,
+        )));
+        strategy
+            .core
+            .register(trader_id, clock, cache, portfolio)
+            .unwrap();
+        strategy.initialize().unwrap();
+        strategy.start().unwrap();
+
+        let actor_id = strategy.actor_id().inner();
+        register_component_actor(strategy);
+        let order_handler = TypedHandler::from(move |event: &OrderEventAny| {
+            let mut strategy =
+                try_get_actor_unchecked::<InitializedModifyStrategy>(&actor_id).unwrap();
+            strategy.handle_order_event(event.clone());
+        });
+        let topic = format!("events.order.{strategy_id}");
+        msgbus::subscribe_order_events(topic.clone().into(), order_handler.clone(), None);
+
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (algo_handler, algo_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("TWAP.execute")));
+        msgbus::register_any("TWAP.execute".into(), algo_handler);
+
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-REENTRANT-001"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let client_order_id = order.client_order_id();
+
+        let mut strategy = try_get_actor_unchecked::<InitializedModifyStrategy>(&actor_id).unwrap();
+        strategy.submit_order(order, None, None, None).unwrap();
+        drop(strategy);
+
+        msgbus::unsubscribe_order_events(topic.into(), &order_handler);
+        deregister_component(&strategy_id.inner());
+        deregister_actor(&actor_id);
+
+        let emulator_messages = emulator_messages.get_messages();
+        assert_eq!(emulator_messages.len(), 2);
+        assert!(matches!(
+            emulator_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == client_order_id
+                    && command.quantity == Some(modified_quantity)
+        ));
+        assert!(
+            risk_messages
+                .get_messages()
+                .iter()
+                .all(|command| !matches!(command, TradingCommand::ModifyOrder(_)))
+        );
+        assert!(
+            algo_messages
+                .get_messages()
+                .iter()
+                .all(|command| !matches!(command, TradingCommand::ModifyOrder(_)))
+        );
+        assert!(matches!(
+            emulator_messages.get(1),
+            Some(TradingCommand::SubmitOrder(command))
+                if command.client_order_id == client_order_id
+        ));
     }
 
     #[rstest]
