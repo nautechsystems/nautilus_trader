@@ -66,7 +66,7 @@ use nautilus_derive::{
         enums::DeriveEnvironment,
         parse::parse_derive_instrument_any,
     },
-    config::DeriveExecClientConfig,
+    config::DeriveExecutionClientConfig,
     execution::DeriveExecutionClient,
     http::models::DeriveInstrument,
 };
@@ -143,6 +143,7 @@ struct WsState {
     cancelled_orders: Arc<tokio::sync::Mutex<Vec<Value>>>,
     cancelled_trigger_orders: Arc<tokio::sync::Mutex<Vec<Value>>>,
     cancelled_labels: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    cancel_by_instrument_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     cancel_all_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     replace_orders: Arc<tokio::sync::Mutex<Vec<Value>>>,
     // Injected JSON-RPC reply body (without `id`) per private method. When set,
@@ -152,6 +153,7 @@ struct WsState {
     trigger_order_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
     cancel_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
     cancel_trigger_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
+    cancel_by_instrument_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
     cancel_by_label_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
     replace_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
     replace_notification_before_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -175,12 +177,14 @@ impl Default for WsState {
             cancelled_orders: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             cancelled_trigger_orders: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             cancelled_labels: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            cancel_by_instrument_calls: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             cancel_all_calls: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             replace_orders: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             order_reply: Arc::new(tokio::sync::Mutex::new(None)),
             trigger_order_reply: Arc::new(tokio::sync::Mutex::new(None)),
             cancel_reply: Arc::new(tokio::sync::Mutex::new(None)),
             cancel_trigger_reply: Arc::new(tokio::sync::Mutex::new(None)),
+            cancel_by_instrument_reply: Arc::new(tokio::sync::Mutex::new(None)),
             cancel_by_label_reply: Arc::new(tokio::sync::Mutex::new(None)),
             replace_reply: Arc::new(tokio::sync::Mutex::new(None)),
             replace_notification_before_reply: Arc::new(tokio::sync::Mutex::new(None)),
@@ -641,6 +645,17 @@ async fn handle_ws(mut socket: WebSocket, state: WsState) {
                                 })
                                 .await
                             }
+                            "private/cancel_by_instrument" => {
+                                state
+                                    .cancel_by_instrument_calls
+                                    .lock()
+                                    .await
+                                    .push(params);
+                                ws_reply(id, &state.cancel_by_instrument_reply, || {
+                                    json!({"result": {"cancelled_orders": 1}})
+                                })
+                                .await
+                            }
                             "private/cancel_by_label" => {
                                 state.cancelled_labels.lock().await.push(params);
                                 ws_reply(id, &state.cancel_by_label_reply, || {
@@ -1054,8 +1069,9 @@ fn sample_subaccount_json() -> Value {
     })
 }
 
-fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecClientConfig {
-    DeriveExecClientConfig {
+fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecutionClientConfig {
+    DeriveExecutionClientConfig {
+        account_id: AccountId::from("DERIVE-001"),
         wallet_address: Some(TEST_WALLET.to_string()),
         session_key: Some(TEST_SESSION_KEY.to_string()),
         subaccount_id: Some(TEST_SUBACCOUNT),
@@ -1107,7 +1123,7 @@ async fn build_client_with_config(
     rest_state: RestState,
     ws_state: WsState,
     registry: Option<&SocketReconnectRegistry>,
-    configure: impl FnOnce(DeriveExecClientConfig) -> DeriveExecClientConfig,
+    configure: impl FnOnce(DeriveExecutionClientConfig) -> DeriveExecutionClientConfig,
 ) -> TestClient {
     let rest_addr = start_rest_server(rest_state).await;
     let ws_addr = start_ws_server(ws_state).await;
@@ -3296,9 +3312,11 @@ async fn test_cancel_order_by_label_rejection_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_cancel_all_orders_with_no_side_calls_cancel_all() {
+async fn test_cancel_all_orders_without_side_sends_cancel_by_instrument_for_empty_book() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
+    *ws_state.cancel_by_instrument_reply.lock().await =
+        Some(json!({"result": {"cancelled_orders": 0}}));
     let mut tc = build_client(rest_state, ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
 
@@ -3318,23 +3336,119 @@ async fn test_cancel_all_orders_with_no_side_calls_cancel_all() {
     wait_until(
         || {
             let state = ws_state.clone();
-            async move { !state.cancel_all_calls.lock().await.is_empty() }
+            async move { !state.cancel_by_instrument_calls.lock().await.is_empty() }
         },
-        "cancel_all posted",
+        "cancel_by_instrument posted",
     )
     .await;
-    let posts = ws_state.cancel_all_calls.lock().await;
-    let body = &posts[0];
-    assert_eq!(body["subaccount_id"].as_u64(), Some(TEST_SUBACCOUNT));
-    assert_eq!(body["instrument_name"].as_str(), Some("ETH-PERP"));
+
+    let posts = ws_state.cancel_by_instrument_calls.lock().await;
+    assert_eq!(
+        posts.as_slice(),
+        &[json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "instrument_name": "ETH-PERP",
+        })],
+    );
     assert!(ws_state.cancelled_orders.lock().await.is_empty());
+    assert!(ws_state.cancelled_trigger_orders.lock().await.is_empty());
+    assert!(ws_state.cancel_all_calls.lock().await.is_empty());
 
     tc.client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_cancel_all_orders_buy_side_iterates_filtered_open_orders() {
+async fn test_cancel_all_orders_without_side_cancels_matching_triggers() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.trigger_orders_response.lock().await = json!({
+        "orders": [
+            trigger_order_json_with(
+                "trig-eth",
+                "TRIGGER-ETH",
+                "buy",
+                "ETH-PERP",
+                1_700_000_001_000,
+                "market",
+                "untriggered",
+                "3500",
+                "3450",
+                "mark",
+                "stoploss",
+            ),
+            trigger_order_json_with(
+                "trig-btc",
+                "TRIGGER-BTC",
+                "sell",
+                "BTC-PERP",
+                1_700_000_002_000,
+                "market",
+                "untriggered",
+                "65000",
+                "66000",
+                "mark",
+                "takeprofit",
+            ),
+        ],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let cmd = CancelAllOrders::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("DERIVE")),
+        StrategyId::from("S-1"),
+        InstrumentId::from("ETH-PERP.DERIVE"),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    tc.client.cancel_all_orders(cmd).expect("cancel_all Ok");
+
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move {
+                !state.cancel_by_instrument_calls.lock().await.is_empty()
+                    && !state.cancelled_trigger_orders.lock().await.is_empty()
+            }
+        },
+        "trigger and instrument cancels posted",
+    )
+    .await;
+
+    assert_eq!(
+        ws_state.cancelled_trigger_orders.lock().await.as_slice(),
+        &[json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "order_id": "trig-eth",
+        })],
+    );
+    assert_eq!(
+        ws_state.cancel_by_instrument_calls.lock().await.as_slice(),
+        &[json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "instrument_name": "ETH-PERP",
+        })],
+    );
+    assert!(ws_state.cancel_all_calls.lock().await.is_empty());
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case(OrderSide::Buy, "buy-eth", "trig-buy-eth")]
+#[case(OrderSide::Sell, "sell-eth", "trig-sell-eth")]
+#[tokio::test]
+async fn test_cancel_all_orders_side_filter_iterates_matching_open_orders(
+    #[case] side: OrderSide,
+    #[case] regular_order_id: &str,
+    #[case] trigger_order_id: &str,
+) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     // Three open orders: buy on ETH-PERP, sell on ETH-PERP, buy on BTC-PERP.
@@ -3346,6 +3460,50 @@ async fn test_cancel_all_orders_buy_side_iterates_filtered_open_orders() {
         ],
         "subaccount_id": TEST_SUBACCOUNT,
     });
+    *rest_state.trigger_orders_response.lock().await = json!({
+        "orders": [
+            trigger_order_json_with(
+                "trig-buy-eth",
+                "T1",
+                "buy",
+                "ETH-PERP",
+                1_700_000_001_000,
+                "market",
+                "untriggered",
+                "3500",
+                "3450",
+                "mark",
+                "stoploss",
+            ),
+            trigger_order_json_with(
+                "trig-sell-eth",
+                "T2",
+                "sell",
+                "ETH-PERP",
+                1_700_000_002_000,
+                "market",
+                "untriggered",
+                "3500",
+                "3550",
+                "mark",
+                "stoploss",
+            ),
+            trigger_order_json_with(
+                "trig-buy-btc",
+                "T3",
+                "buy",
+                "BTC-PERP",
+                1_700_000_003_000,
+                "market",
+                "untriggered",
+                "65000",
+                "64000",
+                "mark",
+                "stoploss",
+            ),
+        ],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
     let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
 
@@ -3354,7 +3512,7 @@ async fn test_cancel_all_orders_buy_side_iterates_filtered_open_orders() {
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::Buy,
+        side,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3365,18 +3523,75 @@ async fn test_cancel_all_orders_buy_side_iterates_filtered_open_orders() {
     wait_until(
         || {
             let state = ws_state.clone();
-            async move { !state.cancelled_orders.lock().await.is_empty() }
+            async move {
+                !state.cancelled_orders.lock().await.is_empty()
+                    && !state.cancelled_trigger_orders.lock().await.is_empty()
+            }
         },
-        "filtered cancel posted",
+        "filtered cancels posted",
     )
     .await;
 
     let posts = ws_state.cancelled_orders.lock().await;
     assert_eq!(posts.len(), 1, "expected exactly one filtered cancel");
     let body = &posts[0];
-    assert_eq!(body["order_id"].as_str(), Some("buy-eth"));
+    assert_eq!(body["order_id"].as_str(), Some(regular_order_id));
     assert_eq!(body["instrument_name"].as_str(), Some("ETH-PERP"));
-    // Bulk cancel_all endpoint must not have been hit.
+    drop(posts);
+    assert_eq!(
+        ws_state.cancelled_trigger_orders.lock().await.as_slice(),
+        &[json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "order_id": trigger_order_id,
+        })],
+    );
+    assert!(ws_state.cancel_by_instrument_calls.lock().await.is_empty(),);
+    assert!(ws_state.cancel_all_calls.lock().await.is_empty());
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_all_orders_trigger_list_failure_still_cancels_regular_orders() {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *rest_state.trigger_orders_response.lock().await = json!({
+        "error": {"code": -32603, "message": "Trigger query unavailable"}
+    });
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let cmd = CancelAllOrders::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("DERIVE")),
+        StrategyId::from("S-1"),
+        InstrumentId::from("ETH-PERP.DERIVE"),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    tc.client.cancel_all_orders(cmd).expect("cancel_all Ok");
+
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move { !state.cancel_by_instrument_calls.lock().await.is_empty() }
+        },
+        "cancel_by_instrument posted",
+    )
+    .await;
+
+    assert_eq!(
+        ws_state.cancel_by_instrument_calls.lock().await.as_slice(),
+        &[json!({
+            "subaccount_id": TEST_SUBACCOUNT,
+            "instrument_name": "ETH-PERP",
+        })],
+    );
+    assert!(ws_state.cancelled_trigger_orders.lock().await.is_empty());
     assert!(ws_state.cancel_all_calls.lock().await.is_empty());
 
     tc.client.disconnect().await.expect("disconnect");
@@ -7279,15 +7494,72 @@ async fn test_cancel_order_jsonrpc_ambiguous_does_not_emit_cancel_rejected() {
 }
 
 #[rstest]
+#[case(-32602, "Invalid params")]
+#[case(-32603, "Internal venue error")]
+#[tokio::test]
+async fn test_cancel_all_orders_bulk_failures_emit_no_order_events(
+    #[case] code: i64,
+    #[case] message: &str,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    *ws_state.cancel_by_instrument_reply.lock().await = Some(json!({
+        "error": {"code": code, "message": message}
+    }));
+    let mut tc = build_client(rest_state, ws_state.clone()).await;
+    tc.client.connect().await.expect("connect succeeds");
+
+    let cmd = CancelAllOrders::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("DERIVE")),
+        StrategyId::from("S-1"),
+        InstrumentId::from("ETH-PERP.DERIVE"),
+        OrderSide::NoOrderSide,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    tc.client.cancel_all_orders(cmd).expect("cancel_all Ok");
+
+    wait_until(
+        || {
+            let state = ws_state.clone();
+            async move { !state.cancel_by_instrument_calls.lock().await.is_empty() }
+        },
+        "cancel_by_instrument posted",
+    )
+    .await;
+
+    let outcome = tokio::time::timeout(Duration::from_millis(200), async {
+        loop {
+            match tc.rx.recv().await {
+                Some(ExecutionEvent::Order(event)) => return Some(event),
+                Some(_) => {}
+                None => return None,
+            }
+        }
+    })
+    .await;
+    assert!(
+        outcome.is_err(),
+        "bulk failure has no per-order outcome to emit, was {outcome:?}",
+    );
+    assert!(ws_state.cancel_all_calls.lock().await.is_empty());
+
+    tc.client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_cancel_all_orders_buy_side_with_no_open_orders_is_noop() {
-    // Side-filtered cancel-all must tolerate an empty open-orders response:
-    // no further cancel posts must land. The adapter's only choice on an
-    // empty list is to do nothing, since `private/cancel_all` would drop
-    // both sides and violate the caller's filter.
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     *rest_state.open_orders_response.lock().await = json!({
+        "orders": [],
+        "subaccount_id": TEST_SUBACCOUNT,
+    });
+    *rest_state.trigger_orders_response.lock().await = json!({
         "orders": [],
         "subaccount_id": TEST_SUBACCOUNT,
     });
@@ -7310,7 +7582,10 @@ async fn test_cancel_all_orders_buy_side_with_no_open_orders_is_noop() {
     wait_until(
         || {
             let state = rest_state.clone();
-            async move { !state.open_orders_calls.lock().await.is_empty() }
+            async move {
+                !state.open_orders_calls.lock().await.is_empty()
+                    && !state.trigger_orders_calls.lock().await.is_empty()
+            }
         },
         "open orders queried",
     )
@@ -7324,6 +7599,8 @@ async fn test_cancel_all_orders_buy_side_with_no_open_orders_is_noop() {
         "no cancels should be sent when open_orders is empty, saw {}",
         cancels.len(),
     );
+    assert!(ws_state.cancelled_trigger_orders.lock().await.is_empty());
+    assert!(ws_state.cancel_by_instrument_calls.lock().await.is_empty(),);
     let cancel_all = ws_state.cancel_all_calls.lock().await;
     assert!(
         cancel_all.is_empty(),

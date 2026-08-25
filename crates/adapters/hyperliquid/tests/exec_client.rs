@@ -64,7 +64,7 @@ use nautilus_hyperliquid::{
         consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
         enums::HyperliquidEnvironment,
     },
-    config::HyperliquidExecClientConfig,
+    config::HyperliquidExecutionClientConfig,
     execution::HyperliquidExecutionClient,
     http::models::Cloid,
 };
@@ -1042,15 +1042,15 @@ async fn test_multiple_orders_in_sequence() {
 
 const TEST_PRIVATE_KEY: &str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 
-fn create_test_exec_config(addr: SocketAddr) -> HyperliquidExecClientConfig {
-    HyperliquidExecClientConfig {
+fn create_test_exec_config(addr: SocketAddr) -> HyperliquidExecutionClientConfig {
+    HyperliquidExecutionClientConfig {
         private_key: Some(TEST_PRIVATE_KEY.to_string()),
         base_url_http: Some(format!("http://{addr}/info")),
         base_url_exchange: Some(format!("http://{addr}/exchange")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
         environment: HyperliquidEnvironment::Mainnet,
         ws_post_timeout_secs: 1,
-        ..HyperliquidExecClientConfig::default()
+        ..HyperliquidExecutionClientConfig::default()
     }
 }
 
@@ -1965,7 +1965,7 @@ fn create_test_execution_client(
 }
 
 fn create_test_execution_client_from_config(
-    config: HyperliquidExecClientConfig,
+    config: HyperliquidExecutionClientConfig,
 ) -> (
     HyperliquidExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -6150,14 +6150,14 @@ async fn test_get_account_address_uses_explicit_account_address() {
     );
 
     let explicit_address = "0xcafebabedeadbeef000000000000000000000001";
-    let config = HyperliquidExecClientConfig {
+    let config = HyperliquidExecutionClientConfig {
         private_key: Some(TEST_PRIVATE_KEY.to_string()),
         base_url_http: Some(format!("http://{addr}/info")),
         base_url_exchange: Some(format!("http://{addr}/exchange")),
         base_url_ws: Some(format!("ws://{addr}/ws")),
         account_address: Some(explicit_address.to_string()),
         environment: HyperliquidEnvironment::Mainnet,
-        ..HyperliquidExecClientConfig::default()
+        ..HyperliquidExecutionClientConfig::default()
     };
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
@@ -6242,7 +6242,7 @@ async fn test_stop_aborts_ws_stream_and_pending_tasks() {
 // `await_account_registered` hard-codes a 30s timeout inside `connect()`,
 // so exercising the timeout path costs ~30s per test run. The cheap,
 // deterministic version requires plumbing an injectable timeout through
-// `HyperliquidExecClientConfig` or `connect()` -- a public-API change
+// `HyperliquidExecutionClientConfig` or `connect()` -- a public-API change
 // that does not belong inside a test-only patch. The test stays here as
 // documentation of the production gap and runs only when invoked by name
 // (`cargo test ... -- --ignored`).

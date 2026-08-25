@@ -31,7 +31,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.bybit import BybitDataClientConfig
 from nautilus_trader.adapters.bybit import BybitDataClientFactory
 from nautilus_trader.adapters.bybit import BybitEnvironment
-from nautilus_trader.adapters.bybit import BybitExecClientConfig
+from nautilus_trader.adapters.bybit import BybitExecutionClientConfig
 from nautilus_trader.adapters.bybit import BybitExecutionClientFactory
 from nautilus_trader.adapters.bybit import BybitProductType
 from nautilus_trader.common import Environment
@@ -72,8 +72,8 @@ def main() -> None:
         )
         .add_exec_client(
             None,
-            BybitExecutionClientFactory(TRADER_ID, ACCOUNT_ID),
-            BybitExecClientConfig(
+            BybitExecutionClientFactory(),
+            BybitExecutionClientConfig(
                 product_types=PRODUCT_TYPES,
                 environment=BybitEnvironment.MAINNET,
                 account_id=ACCOUNT_ID,

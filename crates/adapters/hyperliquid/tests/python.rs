@@ -25,11 +25,8 @@ use nautilus_common::{
 };
 use nautilus_hyperliquid::{
     common::{consts::HYPERLIQUID, enums::HyperliquidEnvironment},
-    config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
-    factories::{
-        HyperliquidDataClientFactory, HyperliquidExecFactoryConfig,
-        HyperliquidExecutionClientFactory,
-    },
+    config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig},
+    factories::{HyperliquidDataClientFactory, HyperliquidExecutionClientFactory},
     python,
 };
 use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
@@ -227,14 +224,11 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .into_any();
     let config = Py::new(
         py,
-        HyperliquidExecFactoryConfig {
-            trader_id,
+        HyperliquidExecutionClientConfig {
             account_id,
-            config: HyperliquidExecClientConfig {
-                private_key: Some(SMOKE_PRIVATE_KEY.to_string()),
-                environment: HyperliquidEnvironment::Testnet,
-                ..HyperliquidExecClientConfig::default()
-            },
+            private_key: Some(SMOKE_PRIVATE_KEY.to_string()),
+            environment: HyperliquidEnvironment::Testnet,
+            ..HyperliquidExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -249,11 +243,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let hyperliquid_config = extracted_config
         .as_any()
-        .downcast_ref::<HyperliquidExecFactoryConfig>()
+        .downcast_ref::<HyperliquidExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "HYPERLIQUID-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -263,9 +258,8 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(extracted_factory.name(), HYPERLIQUID);
     assert_eq!(
         extracted_factory.config_type(),
-        "HyperliquidExecFactoryConfig"
+        "HyperliquidExecutionClientConfig"
     );
-    assert_eq!(hyperliquid_config.trader_id, trader_id);
     assert_eq!(hyperliquid_config.account_id, account_id);
     assert_eq!(
         client.client_id(),

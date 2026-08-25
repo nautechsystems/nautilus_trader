@@ -38,13 +38,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoDataClientFactory
-from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
 from nautilus_trader.adapters.lighter import LIGHTER
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
 from nautilus_trader.adapters.lighter import LighterDataClientFactory
 from nautilus_trader.adapters.lighter import LighterEnvironment
-from nautilus_trader.adapters.lighter import LighterExecClientConfig
+from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
 from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -88,7 +88,7 @@ def main() -> None:
         .add_data_client(
             None,
             DatabentoDataClientFactory(),
-            DatabentoLiveClientConfig(
+            DatabentoDataClientConfig(
                 api_key=DATABENTO_API_KEY,
                 publishers_filepath=PUBLISHERS_FILEPATH,
                 use_exchange_as_venue=True,
@@ -102,8 +102,7 @@ def main() -> None:
         .add_exec_client(
             None,
             LighterExecutionClientFactory(),
-            LighterExecClientConfig(
-                trader_id=TRADER_ID,
+            LighterExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 environment=LIGHTER_ENVIRONMENT,
             ),

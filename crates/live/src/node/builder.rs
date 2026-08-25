@@ -49,7 +49,7 @@ use nautilus_trading::ImportableControllerConfig;
 use super::{
     LiveNode,
     config::{
-        LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
+        LiveDataEngineConfig, LiveExecutionEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
         RoutingConfig, validate_live_environment,
     },
 };
@@ -376,7 +376,7 @@ impl LiveNodeBuilder {
     /// The Rust live runtime currently supports only the default `qsize`.
     /// `build()` returns an error for other values.
     #[must_use]
-    pub fn with_exec_engine_config(mut self, config: LiveExecEngineConfig) -> Self {
+    pub fn with_exec_engine_config(mut self, config: LiveExecutionEngineConfig) -> Self {
         self.config.exec_engine = config;
         self
     }
@@ -666,12 +666,18 @@ impl LiveNodeBuilder {
                 log::debug!("Creating execution client {name}");
 
                 let client = socket_registry.scope(|| match factory {
-                    ExecutionClientFactoryEntry::Adapter(factory) => {
-                        factory.create(&name, config.as_ref(), kernel.cache().into())
-                    }
-                    ExecutionClientFactoryEntry::Simulated(factory) => {
-                        factory.create(&name, config.as_ref(), kernel.cache())
-                    }
+                    ExecutionClientFactoryEntry::Adapter(factory) => factory.create(
+                        self.config.trader_id,
+                        &name,
+                        config.as_ref(),
+                        kernel.cache().into(),
+                    ),
+                    ExecutionClientFactoryEntry::Simulated(factory) => factory.create(
+                        self.config.trader_id,
+                        &name,
+                        config.as_ref(),
+                        kernel.cache(),
+                    ),
                 })?;
                 let client = LiveExecutionClient::new(client);
                 let client_id = client.client_id();
@@ -712,7 +718,7 @@ impl LiveNodeBuilder {
             kernel.clock.clone(),
             kernel.cache.clone(),
             exec_manager_config,
-        );
+        )?;
 
         for client in &exec_clients {
             exec_manager.set_position_reconciliation_tolerance(

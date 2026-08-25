@@ -37,8 +37,9 @@ Commands follow different routes:
   `exec_algorithm_id` is set, and to the `RiskEngine` otherwise.
 - `submit_order_list(...)` follows the same branching behavior based on emulation and
   `exec_algorithm_id`.
-- `modify_order(...)` routes to the `OrderEmulator` for emulated orders and to the `RiskEngine`
-  otherwise.
+- `modify_order(...)` routes to the `OrderEmulator` for emulated orders, to an `ExecutionAlgorithm`
+  when the order has an `exec_algorithm_id` and is still active within the local system, and to the
+  `RiskEngine` otherwise.
 - Cancel and query commands can route directly to the `OrderEmulator`, `ExecutionAlgorithm`, or
   `ExecutionEngine`, depending on the command and order state.
 
@@ -75,136 +76,6 @@ flowchart LR
 
 Execution paths branch by emulation and algorithm routing before reaching the execution engine and
 client.
-
-## Command outcomes
-
-Execution commands resolve according to the evidence available:
-
-| Evidence                 | Meaning                                                         | Result                                                                                          |
-| ------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Definitive local failure | Validation proves that the command was not sent.                | Denies a submit or rejects a modify or cancel when the failure is attributable to that command. |
-| Definitive result        | The matching engine or venue explicitly confirms the outcome.   | Applies the corresponding accepted, updated, canceled, or rejected event.                       |
-| Unknown live outcome     | The command may have reached the venue, but no result is known. | Keeps the command in flight without inventing a rejection.                                      |
-
-The failure event depends on the command and when the failure becomes definitive:
-
-| Command                             | Event                 | Meaning                                                                |
-| ----------------------------------- | --------------------- | ---------------------------------------------------------------------- |
-| Submit or submit order list         | `OrderDenied`         | Local checks prevent submission; no `OrderSubmitted` event is emitted. |
-| Submit or submit order list         | `OrderRejected`       | The submit entered execution and was later proven unsuccessful.        |
-| Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.                    |
-| Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
-
-For modify or cancel preparation, Nautilus emits the matching rejection only when the failure is
-attributable to that command and proves it was not sent. Otherwise, it logs the failure without
-inventing an outcome.
-
-A successful batch response can still contain definitive per-order failures. A whole-request
-failure without per-order evidence does not prove that every child command failed.
-
-:::note[Unknown live outcomes]
-Transport errors, timeouts, disconnects, task cancellation, exhausted adapter request retries,
-missing acknowledgements, and parse failures after transmission usually leave the venue outcome
-unknown. HTTP status codes and rate limits are definitive only when venue-specific semantics prove
-that the command was not accepted.
-
-The live engine initially keeps an unknown outcome in flight while stream updates, polling, queries,
-or reconciliation determine the venue state. A later in-flight check can apply a terminal
-reconciliation event after the configured retry limit.
-:::
-
-An **in-flight order** is awaiting resolution:
-
-- `SUBMITTED`: initial submission awaiting acceptance or rejection.
-- `PENDING_UPDATE`: modification awaiting confirmation.
-- `PENDING_CANCEL`: cancellation awaiting confirmation.
-
-See [Runtime checks](reconciliation.md#runtime-checks) for how live reconciliation monitors and
-resolves these states.
-
-## Order denied reasons
-
-A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code and may
-include a diagnostic suffix. Only the leading code is canonical. Messages use these forms:
-
-- `CODE` when the denial needs no diagnostic suffix.
-- `CODE: value` for one typed value or a free-text diagnostic.
-- `CODE: key=value, key=value` when multiple typed values need disambiguation.
-- `CODE: value; free text` when one typed value precedes a free-text diagnostic.
-
-The table covers local denials emitted by execution algorithms and clients as well as the risk and
-execution engines. These codes are the source of truth for locally denied orders; venue rejections
-(`OrderRejected`) instead carry the venue-provided meaning. Adapters remove protocol wrappers and
-bound untrusted venue text before emission without replacing it with a standardized local denial
-code.
-
-Price and quantity checks can also emit these code-led reasons on `OrderModifyRejected`:
-
-- `PRICE_PRECISION_EXCEEDS_MAXIMUM`
-- `PRICE_NOT_POSITIVE`
-- `QUANTITY_PRECISION_EXCEEDS_MAXIMUM`
-- `QUANTITY_EXCEEDS_MAXIMUM`
-- `QUANTITY_BELOW_MINIMUM`
-
-For price reasons, `field` is `PRICE` or `TRIGGER_PRICE` and names the rejected command field.
-Other modification rejection reasons remain free-form; `OrderDeniedCode` does not classify them.
-
-`OrderRejected.due_post_only` is `true` only when venue evidence proves that a post-only order would
-cross or immediately match. Other venue rejections leave it `false`.
-
-<!-- Generated from the `OrderDeniedReason` enum (crates/model). Regenerate with: cargo test -p nautilus-model regenerate_order_denied_reasons_doc -- --ignored -->
-<!-- BEGIN GENERATED: order-denied-reasons -->
-
-| Code                                             | Description                                                                |
-| ------------------------------------------------ | -------------------------------------------------------------------------- |
-| `PRICE_PRECISION_EXCEEDS_MAXIMUM`                | The price precision exceeds the instrument maximum.                        |
-| `PRICE_NOT_POSITIVE`                             | The price is not positive.                                                 |
-| `QUANTITY_PRECISION_EXCEEDS_MAXIMUM`             | The quantity precision exceeds the instrument maximum.                     |
-| `QUANTITY_CONVERSION_FAILED`                     | The order quantity could not be converted for risk checks.                 |
-| `QUANTITY_EXCEEDS_MAXIMUM`                       | The effective order quantity exceeds the instrument maximum.               |
-| `QUANTITY_BELOW_MINIMUM`                         | The effective order quantity is below the instrument minimum.              |
-| `INVALID_MAX_NOTIONAL_PER_ORDER`                 | The configured maximum notional per order is invalid.                      |
-| `INVALID_ORDER_SIDE`                             | The order side is invalid for this operation.                              |
-| `MISSING_EXPIRE_TIME`                            | A GTD order is missing its expire time.                                    |
-| `EXPIRE_TIME_IN_PAST`                            | The order's expire time is in the past.                                    |
-| `MISSING_TRAILING_OFFSET_TYPE`                   | The order is missing a required trailing offset type.                      |
-| `UNSUPPORTED_TRAILING_OFFSET_TYPE`               | The order's trailing offset type is not supported.                         |
-| `MISSING_TRIGGER_TYPE`                           | The order is missing a required trigger type.                              |
-| `MISSING_TRAILING_OFFSET`                        | The order is missing a required trailing offset.                           |
-| `INSTRUMENT_NOT_FOUND`                           | The instrument was not found in the cache.                                 |
-| `POSITION_NOT_FOUND`                             | The position for a reduce-only order was not found.                        |
-| `MARKET_PRICE_UNAVAILABLE`                       | No market price is available for the order risk check.                     |
-| `TRAILING_STOP_CALCULATION_FAILED`               | The trailing stop trigger price could not be calculated.                   |
-| `NOTIONAL_CALCULATION_FAILED`                    | The order notional value could not be calculated.                          |
-| `NOTIONAL_BELOW_MINIMUM`                         | The order notional is below the instrument minimum.                        |
-| `NOTIONAL_EXCEEDS_MAXIMUM`                       | The order notional exceeds the instrument maximum.                         |
-| `NOTIONAL_EXCEEDS_MAX_PER_ORDER`                 | The order notional exceeds the configured maximum per order.               |
-| `NOTIONAL_EXCEEDS_FREE_BALANCE`                  | The order notional exceeds the account free balance.                       |
-| `INITIAL_MARGIN_CALCULATION_FAILED`              | The order initial margin could not be calculated.                          |
-| `INITIAL_MARGIN_EXCEEDS_FREE_BALANCE`            | The order initial margin exceeds the account free balance.                 |
-| `BETTING_BALANCE_LOCKED_CALCULATION_FAILED`      | The balance to lock for the betting order could not be calculated.         |
-| `CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE`       | The cumulative order notional exceeds the account free balance.            |
-| `CUMULATIVE_INITIAL_MARGIN_CALCULATION_FAILED`   | The cumulative initial margin could not be calculated.                     |
-| `CUMULATIVE_INITIAL_MARGIN_EXCEEDS_FREE_BALANCE` | The cumulative initial margin exceeds the account free balance.            |
-| `REDUCE_ONLY_WOULD_INCREASE_POSITION`            | A reduce-only order would increase the position.                           |
-| `ORDER_LIST_INCOMPLETE`                          | The order list is missing orders in the cache.                             |
-| `ORDER_LIST_DENIED`                              | The order was denied because its order list failed risk checks.            |
-| `TRADING_HALTED`                                 | Trading is halted; new orders are denied.                                  |
-| `TRADING_STATE_REDUCING`                         | Trading is reducing; the order would increase exposure.                    |
-| `RATE_LIMIT_EXCEEDED`                            | The order submission rate limit was exceeded.                              |
-| `STREAM_RECONCILING`                             | The execution stream is unavailable or recovering; retry after recovery.   |
-| `NO_EXECUTION_CLIENT`                            | No execution client was found for the routed command.                      |
-| `CLIENT_VENUE_MISMATCH`                          | The execution client does not handle the order venue.                      |
-| `SUBMIT_FAILED`                                  | Submitting the order to the execution client failed.                       |
-| `INVALID_CLIENT_ORDER_ID`                        | The client order ID is invalid for the venue.                              |
-| `INVALID_POSITION_ID`                            | The supplied position ID is invalid for the order submission.              |
-| `UNSUPPORTED_ORDER_LIST`                         | The venue does not support the requested order list.                       |
-| `UNSUPPORTED_ORDER_TYPE`                         | The order type is not supported.                                           |
-| `UNSUPPORTED_TIME_IN_FORCE`                      | The order's time in force is not supported.                                |
-| `UNSUPPORTED_TP_SL`                              | The venue does not support the requested take-profit/stop-loss parameters. |
-| `VALIDATION_FAILED`                              | The order failed validation before submission.                             |
-
-<!-- END GENERATED: order-denied-reasons -->
 
 ## Order management system (OMS)
 
@@ -273,7 +144,7 @@ reopen:
 | `False` (default)               | Keeps only current-cycle state, bounding the per-fill cost.    |
 | `True`                          | Keeps earlier fills correctable while position state can grow. |
 
-Live trading pins the option `True`: `LiveExecEngineConfig` always carries the replay log, so a venue
+Live trading pins the option `True`: `LiveExecutionEngineConfig` always carries the replay log, so a venue
 [`OrderFillVoided`](events/order_fill_voided.md) referencing an earlier cycle still resolves. The
 simulated venue never emits fill voids, so backtests take the bounded default. Enable it explicitly
 for a custom or external execution client that can correct a fill from a prior cycle; without the
@@ -437,6 +308,207 @@ The `Cache` provides two primary queries:
 - `orders_for_exec_spawn(...)`: Returns the primary order and its spawned orders for a primary
   `ClientOrderId`.
 
+## Cancel-all routing
+
+`Strategy.cancel_all_orders(...)` supports strategy-scoped and broad cancellation:
+
+| `strategy_only` | Strategy output                                         | Scope                                                          | Downstream routing                                  |
+| --------------- | ------------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------- |
+| `True`          | One `CancelOrder` per matching order.                   | Matching orders associated with the calling strategy.          | Each order follows its normal cancel route.         |
+| `False`         | One root `CancelAllOrders`, even without local matches. | Matching orders for one resolved execution client and account. | The execution engine creates the required children. |
+
+Broad mode delegates before the strategy inspects its cache. The command therefore reaches the
+resolved execution client even when NautilusTrader has no matching local order. This allows a venue
+bulk-cancel endpoint to remove an order that exists at the venue but is missing from the local cache.
+When the adapter provides such an endpoint, the single command can also reduce cancel request volume.
+
+For a local execution client, the `ExecutionEngine` resolves the root command to exactly one client
+in this order:
+
+1. The explicit `client_id`, when it identifies a registered local client.
+1. The client registered for the instrument's venue.
+1. The default execution client.
+
+The engine then creates fresh child commands for the selected client and its account:
+
+- One `CancelAllOrders` for the execution client, covering matching venue orders.
+- One `CancelAllOrders` for the `OrderEmulator`, covering matching emulated orders.
+- One `CancelOrder` per eligible active-local execution-algorithm order.
+
+```mermaid
+flowchart LR
+    call[Strategy.cancel_all_orders]
+    scope{strategy_only?}
+    exact[Exact CancelOrder per matching strategy order]
+    root[One root CancelAllOrders]
+    external{External client?}
+    pass[Pass through unchanged]
+    resolve[Resolve one explicit, venue, or default client and account]
+    venue[One venue CancelAllOrders]
+    emulator[One emulator CancelAllOrders]
+    algo[Exact CancelOrder per eligible algorithm order]
+
+    call --> scope
+    scope -->|True| exact
+    scope -->|False| root
+    root --> external
+    external -->|Yes| pass
+    external -->|No| resolve
+    resolve --> venue
+    resolve --> emulator
+    resolve --> algo
+```
+
+Broad mode selects one client before fan-out; it never broadcasts across all execution clients.
+Call `cancel_all_orders(...)` once per client to cancel across several clients.
+
+Every child has a new command ID, copies the root parameters, correlates to the root operation, and
+records the root command as its cause. Instrument and optional side filters apply to every local
+route. The selected execution account also bounds matching-engine cancellation, including orders in
+`SUBMITTED` and other cancelable in-flight states.
+
+Client ownership applies to local emulated and execution-algorithm orders:
+
+- Orders already assigned to another client remain untouched.
+- When the root omits `client_id`, matching unassigned orders are claimed by the client selected by
+  the engine before local cancellation.
+- When the root supplies `client_id`, unassigned orders remain untouched because the engine cannot
+  infer that they belong to the explicit client.
+- An emulated order matches its traded instrument, even when another instrument supplies its trigger.
+
+An explicitly configured external execution client receives the original root command unchanged.
+The external client owns any fan-out needed behind that boundary.
+
+## Command outcomes
+
+Execution commands resolve according to the evidence available:
+
+| Evidence                 | Meaning                                                         | Result                                                                                          |
+| ------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Definitive local failure | Validation proves that the command was not sent.                | Denies a submit or rejects a modify or cancel when the failure is attributable to that command. |
+| Definitive result        | The matching engine or venue explicitly confirms the outcome.   | Applies the corresponding accepted, updated, canceled, or rejected event.                       |
+| Unknown live outcome     | The command may have reached the venue, but no result is known. | Keeps the command in flight without inventing a rejection.                                      |
+
+The failure event depends on the command and when the failure becomes definitive:
+
+| Command                             | Event                 | Meaning                                                                |
+| ----------------------------------- | --------------------- | ---------------------------------------------------------------------- |
+| Submit or submit order list         | `OrderDenied`         | Local checks prevent submission; no `OrderSubmitted` event is emitted. |
+| Submit or submit order list         | `OrderRejected`       | The submit entered execution and was later proven unsuccessful.        |
+| Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.                    |
+| Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.                    |
+
+For modify or cancel preparation, Nautilus emits the matching rejection only when the failure is
+attributable to that command and proves it was not sent. Otherwise, it logs the failure without
+inventing an outcome.
+
+A successful batch response can still contain definitive per-order failures. A whole-request
+failure without per-order evidence does not prove that every child command failed.
+
+:::note[Unknown live outcomes]
+Transport errors, timeouts, disconnects, task cancellation, exhausted adapter request retries,
+missing acknowledgements, and parse failures after transmission usually leave the venue outcome
+unknown. HTTP status codes and rate limits are definitive only when venue-specific semantics prove
+that the command was not accepted.
+
+The live engine initially keeps an unknown outcome in flight while stream updates, polling, queries,
+or reconciliation determine the venue state. A later in-flight check can apply a terminal
+reconciliation event after the configured retry limit.
+:::
+
+An **in-flight order** is awaiting resolution:
+
+- `SUBMITTED`: initial submission awaiting acceptance or rejection.
+- `PENDING_UPDATE`: modification awaiting confirmation.
+- `PENDING_CANCEL`: cancellation awaiting confirmation.
+
+See [Runtime checks](reconciliation.md#runtime-checks) for how live reconciliation monitors and
+resolves these states.
+
+## Order denied reasons
+
+A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code and may
+include a diagnostic suffix. Only the leading code is canonical. Messages use these forms:
+
+- `CODE` when the denial needs no diagnostic suffix.
+- `CODE: value` for one typed value or a free-text diagnostic.
+- `CODE: key=value, key=value` when multiple typed values need disambiguation.
+- `CODE: value; free text` when one typed value precedes a free-text diagnostic.
+
+The table covers local denials emitted by execution algorithms and clients as well as the risk and
+execution engines. These codes are the source of truth for locally denied orders; venue rejections
+(`OrderRejected`) instead carry the venue-provided meaning. Adapters remove protocol wrappers and
+bound untrusted venue text before emission without replacing it with a standardized local denial
+code.
+
+Price and quantity checks can also emit these code-led reasons on `OrderModifyRejected`:
+
+- `PRICE_PRECISION_EXCEEDS_MAXIMUM`
+- `PRICE_NOT_POSITIVE`
+- `QUANTITY_PRECISION_EXCEEDS_MAXIMUM`
+- `QUANTITY_EXCEEDS_MAXIMUM`
+- `QUANTITY_BELOW_MINIMUM`
+
+For price reasons, `field` is `PRICE` or `TRIGGER_PRICE` and names the rejected command field.
+Other modification rejection reasons remain free-form; `OrderDeniedCode` does not classify them.
+
+`OrderRejected.due_post_only` is `true` only when venue evidence proves that a post-only order would
+cross or immediately match. Other venue rejections leave it `false`.
+
+<!-- Generated from the `OrderDeniedReason` enum (crates/model). Regenerate with: cargo test -p nautilus-model regenerate_order_denied_reasons_doc -- --ignored -->
+<!-- BEGIN GENERATED: order-denied-reasons -->
+
+| Code                                             | Description                                                                |
+| ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `PRICE_PRECISION_EXCEEDS_MAXIMUM`                | The price precision exceeds the instrument maximum.                        |
+| `PRICE_NOT_POSITIVE`                             | The price is not positive.                                                 |
+| `QUANTITY_PRECISION_EXCEEDS_MAXIMUM`             | The quantity precision exceeds the instrument maximum.                     |
+| `QUANTITY_CONVERSION_FAILED`                     | The order quantity could not be converted for risk checks.                 |
+| `QUANTITY_EXCEEDS_MAXIMUM`                       | The effective order quantity exceeds the instrument maximum.               |
+| `QUANTITY_BELOW_MINIMUM`                         | The effective order quantity is below the instrument minimum.              |
+| `INVALID_MAX_NOTIONAL_PER_ORDER`                 | The configured maximum notional per order is invalid.                      |
+| `INVALID_ORDER_SIDE`                             | The order side is invalid for this operation.                              |
+| `MISSING_EXPIRE_TIME`                            | A GTD order is missing its expire time.                                    |
+| `EXPIRE_TIME_IN_PAST`                            | The order's expire time is in the past.                                    |
+| `MISSING_TRAILING_OFFSET_TYPE`                   | The order is missing a required trailing offset type.                      |
+| `UNSUPPORTED_TRAILING_OFFSET_TYPE`               | The order's trailing offset type is not supported.                         |
+| `MISSING_TRIGGER_TYPE`                           | The order is missing a required trigger type.                              |
+| `MISSING_TRAILING_OFFSET`                        | The order is missing a required trailing offset.                           |
+| `INSTRUMENT_NOT_FOUND`                           | The instrument was not found in the cache.                                 |
+| `POSITION_NOT_FOUND`                             | The position for a reduce-only order was not found.                        |
+| `MARKET_PRICE_UNAVAILABLE`                       | No market price is available for the order risk check.                     |
+| `TRAILING_STOP_CALCULATION_FAILED`               | The trailing stop trigger price could not be calculated.                   |
+| `NOTIONAL_CALCULATION_FAILED`                    | The order notional value could not be calculated.                          |
+| `NOTIONAL_BELOW_MINIMUM`                         | The order notional is below the instrument minimum.                        |
+| `NOTIONAL_EXCEEDS_MAXIMUM`                       | The order notional exceeds the instrument maximum.                         |
+| `NOTIONAL_EXCEEDS_MAX_PER_ORDER`                 | The order notional exceeds the configured maximum per order.               |
+| `NOTIONAL_EXCEEDS_FREE_BALANCE`                  | The order notional exceeds the account free balance.                       |
+| `INITIAL_MARGIN_CALCULATION_FAILED`              | The order initial margin could not be calculated.                          |
+| `INITIAL_MARGIN_EXCEEDS_FREE_BALANCE`            | The order initial margin exceeds the account free balance.                 |
+| `BETTING_BALANCE_LOCKED_CALCULATION_FAILED`      | The balance to lock for the betting order could not be calculated.         |
+| `CUMULATIVE_NOTIONAL_EXCEEDS_FREE_BALANCE`       | The cumulative order notional exceeds the account free balance.            |
+| `CUMULATIVE_INITIAL_MARGIN_CALCULATION_FAILED`   | The cumulative initial margin could not be calculated.                     |
+| `CUMULATIVE_INITIAL_MARGIN_EXCEEDS_FREE_BALANCE` | The cumulative initial margin exceeds the account free balance.            |
+| `REDUCE_ONLY_WOULD_INCREASE_POSITION`            | A reduce-only order would increase the position.                           |
+| `ORDER_LIST_INCOMPLETE`                          | The order list is missing orders in the cache.                             |
+| `ORDER_LIST_DENIED`                              | The order was denied because its order list failed risk checks.            |
+| `TRADING_HALTED`                                 | Trading is halted; new orders are denied.                                  |
+| `TRADING_STATE_REDUCING`                         | Trading is reducing; the order would increase exposure.                    |
+| `RATE_LIMIT_EXCEEDED`                            | The order submission rate limit was exceeded.                              |
+| `STREAM_RECONCILING`                             | The execution stream is unavailable or recovering; retry after recovery.   |
+| `NO_EXECUTION_CLIENT`                            | No execution client was found for the routed command.                      |
+| `CLIENT_VENUE_MISMATCH`                          | The execution client does not handle the order venue.                      |
+| `SUBMIT_FAILED`                                  | Submitting the order to the execution client failed.                       |
+| `INVALID_CLIENT_ORDER_ID`                        | The client order ID is invalid for the venue.                              |
+| `INVALID_POSITION_ID`                            | The supplied position ID is invalid for the order submission.              |
+| `UNSUPPORTED_ORDER_LIST`                         | The venue does not support the requested order list.                       |
+| `UNSUPPORTED_ORDER_TYPE`                         | The order type is not supported.                                           |
+| `UNSUPPORTED_TIME_IN_FORCE`                      | The order's time in force is not supported.                                |
+| `UNSUPPORTED_TP_SL`                              | The venue does not support the requested take-profit/stop-loss parameters. |
+| `VALIDATION_FAILED`                              | The order failed validation before submission.                             |
+
+<!-- END GENERATED: order-denied-reasons -->
+
 ## Own order books
 
 When `manage_own_order_books` is enabled, the `ExecutionEngine` maintains a market-by-order
@@ -518,12 +590,12 @@ a restart therefore produces the same `trade_id` and is deduplicated.
 
 ### Configuration
 
-For live trading, enable overfill tolerance in the `LiveExecEngineConfig`:
+For live trading, enable overfill tolerance in the `LiveExecutionEngineConfig`:
 
 ```python
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 
-config = LiveExecEngineConfig(
+config = LiveExecutionEngineConfig(
     allow_overfills=True,
 )
 ```

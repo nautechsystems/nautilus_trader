@@ -890,7 +890,7 @@ mod tests {
         set_exec_event_sender(tx);
         let client = PolymarketExecutionClient::new(
             core,
-            crate::config::PolymarketExecClientConfig {
+            crate::config::PolymarketExecutionClientConfig {
                 private_key: Some(TEST_PRIVATE_KEY.to_string()),
                 api_key: Some("test_api_key".to_string()),
                 api_secret: Some(TEST_API_SECRET_B64.to_string()),
@@ -900,7 +900,7 @@ mod tests {
                 base_url_ws: Some("ws://127.0.0.1:3000/ws".to_string()),
                 base_url_data_api: Some(base_url_data_api.to_string()),
                 proxy_url,
-                ..crate::config::PolymarketExecClientConfig::default()
+                ..crate::config::PolymarketExecutionClientConfig::default()
             },
         )
         .expect("test client should construct");

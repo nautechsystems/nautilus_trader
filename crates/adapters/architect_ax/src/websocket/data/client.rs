@@ -1021,9 +1021,8 @@ impl AxMdWebSocketClient {
 
     fn restore_unsubscribe_state(&self, topic: &str, was_pending: bool) {
         self.subscriptions.confirm_unsubscribe(topic);
-        if was_pending {
-            self.subscriptions.mark_subscribe(topic);
-        } else {
+        self.subscriptions.mark_subscribe(topic);
+        if !was_pending {
             self.subscriptions.confirm_subscribe(topic);
         }
     }

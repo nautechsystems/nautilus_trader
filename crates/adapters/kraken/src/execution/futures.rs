@@ -68,7 +68,7 @@ use crate::{
         enums::{KrakenApiResult, KrakenSendStatus},
         parse::truncate_cl_ord_id,
     },
-    config::KrakenExecClientConfig,
+    config::KrakenExecutionClientConfig,
     http::{
         KrakenFuturesHttpClient,
         futures::{
@@ -93,7 +93,7 @@ const FUTURES_BATCH_CANCEL_LIMIT: usize = 50;
 pub struct KrakenFuturesExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: KrakenExecClientConfig,
+    config: KrakenExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http: KrakenFuturesHttpClient,
     ws: KrakenFuturesWebSocketClient,
@@ -110,7 +110,10 @@ pub struct KrakenFuturesExecutionClient {
 
 impl KrakenFuturesExecutionClient {
     /// Creates a new [`KrakenFuturesExecutionClient`].
-    pub fn new(core: ExecutionClientCore, config: KrakenExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: KrakenExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
             clock,

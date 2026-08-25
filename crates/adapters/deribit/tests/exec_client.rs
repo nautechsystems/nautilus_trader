@@ -58,7 +58,7 @@ use nautilus_deribit::{
         consts::{DERIBIT_CLIENT_ID, DERIBIT_VENUE},
         enums::DeribitEnvironment,
     },
-    config::DeribitExecClientConfig,
+    config::DeribitExecutionClientConfig,
     execution::DeribitExecutionClient,
     http::models::DeribitProductType,
     websocket::enums::DeribitWsMethod,
@@ -554,9 +554,8 @@ async fn start_test_server()
     Ok((addr, state))
 }
 
-fn create_test_exec_config(addr: SocketAddr) -> DeribitExecClientConfig {
-    DeribitExecClientConfig {
-        trader_id: TraderId::from("TESTER-001"),
+fn create_test_exec_config(addr: SocketAddr) -> DeribitExecutionClientConfig {
+    DeribitExecutionClientConfig {
         account_id: AccountId::from("DERIBIT-001"),
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),

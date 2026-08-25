@@ -60,7 +60,7 @@ use crate::{
             parse_market_definition, parse_millis_timestamp,
         },
     },
-    config::BetfairDataConfig,
+    config::BetfairDataClientConfig,
     data_types::{BetfairSequenceCompleted, register_betfair_custom_data},
     http::client::BetfairHttpClient,
     provider::{BetfairInstrumentProvider, NavigationFilter},
@@ -99,7 +99,7 @@ pub struct BetfairDataClient {
     cricket_stream_client: Option<Arc<BetfairRaceStreamClient>>,
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
-    config: BetfairDataConfig,
+    config: BetfairDataClientConfig,
     currency: Currency,
     is_connected: AtomicBool,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -139,7 +139,7 @@ impl BetfairDataClient {
         http_client: BetfairHttpClient,
         credential: BetfairCredential,
         stream_config: BetfairStreamConfig,
-        config: BetfairDataConfig,
+        config: BetfairDataClientConfig,
         nav_filter: NavigationFilter,
         currency: Currency,
         min_notional: Option<Money>,
@@ -646,6 +646,10 @@ impl DataClient for BetfairDataClient {
 
     fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::SeqCst)
+            && self.stream_client.as_ref().is_some_and(|client| {
+                client.is_authenticated()
+                    && (self.subscribed_market_ids.is_empty() || client.is_market_ready())
+            })
     }
 
     fn is_disconnected(&self) -> bool {
@@ -653,7 +657,7 @@ impl DataClient for BetfairDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected.load(Ordering::Acquire) {
             return Ok(());
         }
 
@@ -711,7 +715,7 @@ impl DataClient for BetfairDataClient {
             session_token,
             handler,
             self.stream_config.clone(),
-            HeartbeatTimeoutSource::Outbound,
+            HeartbeatTimeoutSource::Server,
             state_sink,
         )
         .await
@@ -985,7 +989,7 @@ impl DataClient for BetfairDataClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
+        if !self.is_connected.load(Ordering::Acquire) {
             return Ok(());
         }
 

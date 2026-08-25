@@ -25,7 +25,7 @@ Components:
 
 Python surface available from `nautilus_trader.adapters.deribit`:
 
-- `DeribitDataClientConfig`, `DeribitExecClientConfig`
+- `DeribitDataClientConfig`, `DeribitExecutionClientConfig`
 - `DeribitDataClientFactory`, `DeribitExecutionClientFactory`
 - `DeribitHttpClient`, `DeribitWebSocketClient`
 - `DeribitCurrency`, `DeribitEnvironment`, `DeribitProductType`, `DeribitUpdateInterval`
@@ -882,13 +882,11 @@ To use the testnet, set `environment=DeribitEnvironment.TESTNET` in your client 
 ```python
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
 from nautilus_trader.adapters.deribit import DeribitEnvironment
-from nautilus_trader.adapters.deribit import DeribitExecClientConfig
+from nautilus_trader.adapters.deribit import DeribitExecutionClientConfig
 from nautilus_trader.adapters.deribit import DeribitProductType
 from nautilus_trader.model import AccountId
-from nautilus_trader.model import TraderId
 
 product_types = [DeribitProductType.FUTURE]
-trader_id = TraderId.from_str("TRADER-001")
 account_id = AccountId.from_str("DERIBIT-001")
 
 data_config = DeribitDataClientConfig(
@@ -896,8 +894,7 @@ data_config = DeribitDataClientConfig(
     environment=DeribitEnvironment.TESTNET,
 )
 
-exec_config = DeribitExecClientConfig(
-    trader_id=trader_id,
+exec_config = DeribitExecutionClientConfig(
     account_id=account_id,
     product_types=product_types,
     environment=DeribitEnvironment.TESTNET,
@@ -954,7 +951,6 @@ HTTP failures are logged and the WebSocket subscribe is skipped.
 
 | Option                   | Default    | Description                                                        |
 | ------------------------ | ---------- | ------------------------------------------------------------------ |
-| `trader_id`              | Required   | Nautilus trader ID for generated reports and events.               |
 | `account_id`             | Required   | Nautilus account ID for generated reports and events.              |
 | `api_key`                | `None`     | Deribit API key. Loads from environment variables when omitted.    |
 | `api_secret`             | `None`     | Deribit API secret. Loads from environment variables when omitted. |
@@ -982,7 +978,7 @@ Below is an example live node using Deribit data and execution clients:
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
 from nautilus_trader.adapters.deribit import DeribitDataClientFactory
 from nautilus_trader.adapters.deribit import DeribitEnvironment
-from nautilus_trader.adapters.deribit import DeribitExecClientConfig
+from nautilus_trader.adapters.deribit import DeribitExecutionClientConfig
 from nautilus_trader.adapters.deribit import DeribitExecutionClientFactory
 from nautilus_trader.adapters.deribit import DeribitProductType
 from nautilus_trader.common import Environment
@@ -1009,8 +1005,7 @@ node = (
     .add_exec_client(
         None,
         DeribitExecutionClientFactory(),
-        DeribitExecClientConfig(
-            trader_id=trader_id,
+        DeribitExecutionClientConfig(
             account_id=account_id,
             product_types=product_types,
             environment=DeribitEnvironment.MAINNET,

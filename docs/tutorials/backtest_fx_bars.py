@@ -86,19 +86,22 @@ from nautilus_trader.backtest import InterestRateRecord
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.execution import ProbabilisticFillModel
+from nautilus_trader.model import AccountType
 from nautilus_trader.model import BarType
+from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
-from nautilus_trader.model.currencies import JPY
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.testkit.providers import TestDataProvider
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 from ema_cross import EMACross
 from ema_cross import EMACrossConfig
+
+
+JPY = Currency.from_str("JPY")
+USD = Currency.from_str("USD")
 
 
 # %% [markdown]
@@ -109,7 +112,7 @@ from ema_cross import EMACrossConfig
 
 # %%
 config = BacktestEngineConfig(
-    trader_id="BACKTESTER-001",
+    trader_id=TraderId.from_str("BACKTESTER-001"),
     logging=LoggerConfig(stdout_level=LogLevel.ERROR),
     risk_engine=RiskEngineConfig(bypass=True),
 )
@@ -169,9 +172,8 @@ engine.add_venue(
 # %% [markdown]
 # ## Instrument and data
 #
-# `QuoteTickDataWrangler.process_bar_data` synthesises one quote tick at the
-# open and one at the close of each minute bar from the bundled FXCM bid and
-# ask CSVs, giving the engine a quote tick stream ahead of bar aggregation.
+# `TestDataProvider.quotes_from_fxcm_bars` synthesises quote ticks from each
+# minute's open, high, low, and close in the bundled FXCM bid and ask CSVs.
 # The strategy declares `5-MINUTE-BID-INTERNAL`, so the engine builds 5-minute
 # BID bars from the quote stream internally.
 
@@ -179,10 +181,10 @@ engine.add_venue(
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY", SIM)
 engine.add_instrument(USDJPY_SIM)
 
-wrangler = QuoteTickDataWrangler(instrument=USDJPY_SIM)
-ticks = wrangler.process_bar_data(
-    bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
-    ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+ticks = provider.quotes_from_fxcm_bars(
+    instrument=USDJPY_SIM,
+    bid_csv="fxcm/usdjpy-m1-bid-2013.csv",
+    ask_csv="fxcm/usdjpy-m1-ask-2013.csv",
 )
 engine.add_data(ticks)
 

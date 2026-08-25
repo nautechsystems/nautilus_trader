@@ -1823,9 +1823,7 @@ impl FeedHandler {
                     position.market_id,
                 );
 
-                if matches!(frame_type, PositionFrameType::Snapshot) {
-                    skipped_market_ids.push(position.market_id);
-                }
+                skipped_market_ids.push(position.market_id);
                 continue;
             };
 
@@ -1834,9 +1832,7 @@ impl FeedHandler {
             ) {
                 Ok(report) => reports.push(report),
                 Err(e) => {
-                    if matches!(frame_type, PositionFrameType::Snapshot) {
-                        skipped_market_ids.push(position.market_id);
-                    }
+                    skipped_market_ids.push(position.market_id);
                     log::error!("Error parsing Lighter position status report: {e}");
                 }
             }
@@ -1853,6 +1849,7 @@ impl FeedHandler {
             PositionFrameType::Update => vec![NautilusWsMessage::PositionUpdate {
                 reports,
                 closed_market_ids,
+                skipped_market_ids,
             }],
         }
     }
@@ -2434,8 +2431,10 @@ mod tests {
             NautilusWsMessage::PositionUpdate {
                 reports,
                 closed_market_ids,
+                skipped_market_ids,
             } => {
                 assert!(closed_market_ids.is_empty());
+                assert!(skipped_market_ids.is_empty());
                 assert_eq!(reports.len(), 1);
                 assert_eq!(reports[0].quantity, Quantity::from("1.5000"));
             }
@@ -2458,8 +2457,10 @@ mod tests {
             NautilusWsMessage::PositionUpdate {
                 reports,
                 closed_market_ids,
+                skipped_market_ids,
             } => {
                 assert!(closed_market_ids.is_empty());
+                assert!(skipped_market_ids.is_empty());
                 assert_eq!(reports.len(), 1);
             }
             other => panic!("expected position update, was {other:?}"),
@@ -2486,8 +2487,10 @@ mod tests {
             NautilusWsMessage::PositionUpdate {
                 reports,
                 closed_market_ids,
+                skipped_market_ids,
             } => {
                 assert!(closed_market_ids.is_empty());
+                assert!(skipped_market_ids.is_empty());
                 assert!(reports.is_empty());
             }
             other => panic!("expected empty position update, was {other:?}"),
@@ -2509,8 +2512,10 @@ mod tests {
             NautilusWsMessage::PositionUpdate {
                 reports,
                 closed_market_ids,
+                skipped_market_ids,
             } => {
                 assert!(reports.is_empty());
+                assert!(skipped_market_ids.is_empty());
                 assert_eq!(closed_market_ids, &[0]);
             }
             other => panic!("expected closed position update, was {other:?}"),
@@ -2562,6 +2567,31 @@ mod tests {
                 assert!(reports.is_empty());
             }
             other => panic!("expected incomplete position snapshot, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_frame_marks_position_update_incomplete_when_position_parse_fails() {
+        let mut handler = make_handler_with_account();
+        let mut frame_json: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
+        frame_json["positions"]["0"]["position"] = json!("-1.5000");
+        let frame: super::LighterWsFrame = serde_json::from_value(frame_json).unwrap();
+
+        let messages = strip_account_marker(handler.handle_frame(frame, UnixNanos::from(11)));
+
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            NautilusWsMessage::PositionUpdate {
+                reports,
+                closed_market_ids,
+                skipped_market_ids,
+            } => {
+                assert!(reports.is_empty());
+                assert!(closed_market_ids.is_empty());
+                assert_eq!(skipped_market_ids, &[0]);
+            }
+            other => panic!("expected incomplete position update, was {other:?}"),
         }
     }
 

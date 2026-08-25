@@ -25,7 +25,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::consts::{BETFAIR, BETFAIR_CLIENT_ID, BETFAIR_VENUE},
-    config::{BetfairDataConfig, BetfairExecConfig},
+    config::{BetfairDataClientConfig, BetfairExecutionClientConfig},
     factories::{BetfairDataClientFactory, BetfairExecutionClientFactory},
 };
 
@@ -60,10 +60,10 @@ fn extract_betfair_data_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<BetfairDataConfig>(py) {
+    match config.extract::<BetfairDataClientConfig>(py) {
         Ok(config) => Ok(Box::new(config)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract BetfairDataConfig: {e}"
+            "Failed to extract BetfairDataClientConfig: {e}"
         ))),
     }
 }
@@ -73,10 +73,10 @@ fn extract_betfair_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<BetfairExecConfig>(py) {
+    match config.extract::<BetfairExecutionClientConfig>(py) {
         Ok(config) => Ok(Box::new(config)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract BetfairExecConfig: {e}"
+            "Failed to extract BetfairExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -93,9 +93,9 @@ pub fn betfair(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(BETFAIR), BETFAIR)?;
     m.add(stringify!(BETFAIR_CLIENT_ID), *BETFAIR_CLIENT_ID)?;
     m.add(stringify!(BETFAIR_VENUE), *BETFAIR_VENUE)?;
-    m.add_class::<BetfairDataConfig>()?;
-    m.add_class::<BetfairExecConfig>()?;
+    m.add_class::<BetfairDataClientConfig>()?;
     m.add_class::<BetfairDataClientFactory>()?;
+    m.add_class::<BetfairExecutionClientConfig>()?;
     m.add_class::<BetfairExecutionClientFactory>()?;
 
     let registry = get_global_pyo3_registry();
@@ -116,17 +116,19 @@ pub fn betfair(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         )));
     }
 
-    if let Err(e) = registry
-        .register_config_extractor("BetfairDataConfig".to_string(), extract_betfair_data_config)
-    {
+    if let Err(e) = registry.register_config_extractor(
+        "BetfairDataClientConfig".to_string(),
+        extract_betfair_data_config,
+    ) {
         return Err(to_pyruntime_err(format!(
             "Failed to register Betfair data config extractor: {e}"
         )));
     }
 
-    if let Err(e) = registry
-        .register_config_extractor("BetfairExecConfig".to_string(), extract_betfair_exec_config)
-    {
+    if let Err(e) = registry.register_config_extractor(
+        "BetfairExecutionClientConfig".to_string(),
+        extract_betfair_exec_config,
+    ) {
         return Err(to_pyruntime_err(format!(
             "Failed to register Betfair exec config extractor: {e}"
         )));

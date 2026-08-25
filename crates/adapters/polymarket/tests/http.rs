@@ -1024,6 +1024,26 @@ async fn test_cancel_market_orders_sends_market_param() {
 
 #[rstest]
 #[tokio::test]
+async fn test_cancel_market_orders_sends_asset_id_without_market() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+    let asset_id = "71321045679252212594626385532706912750332728571942532289631379312455583992563";
+
+    let params = CancelMarketOrdersParams {
+        market: None,
+        asset_id: Some(asset_id.to_string()),
+    };
+    client.cancel_market_orders(params).await.unwrap();
+
+    assert_eq!(
+        state.last_body.lock().await.as_ref(),
+        Some(&json!({"asset_id": asset_id}))
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_authenticated_requests_include_poly_headers() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;

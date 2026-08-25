@@ -51,7 +51,7 @@ let status = InstrumentStatus::new(
 ```python tab="Python"
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import InstrumentStatus
-from nautilus_trader.model.enums import MarketStatusAction
+from nautilus_trader.model import MarketStatusAction
 
 status = InstrumentStatus(
     instrument_id=InstrumentId.from_str("AAPL.XNAS"),

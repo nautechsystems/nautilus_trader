@@ -34,12 +34,10 @@ use rust_decimal::Decimal;
 use serde::Serialize;
 
 use super::messages::{
-    PolymarketBookLevel, PolymarketBookSnapshot, PolymarketQuote, PolymarketTrade,
+    PolymarketBestBidAsk, PolymarketBookLevel, PolymarketBookSnapshot, PolymarketQuote,
+    PolymarketTrade,
 };
-use crate::{
-    common::{enums::PolymarketOrderSide, parse::determine_trade_id},
-    http::parse::tick_relative_price_bounds,
-};
+use crate::common::{enums::PolymarketOrderSide, parse::determine_trade_id};
 
 /// Parses a millisecond epoch timestamp string into [`UnixNanos`].
 pub fn parse_timestamp_ms(ts: &str) -> anyhow::Result<UnixNanos> {
@@ -333,7 +331,7 @@ pub fn parse_quote_from_snapshot(
     }
 
     let ts_event = parse_timestamp_ms(&snap.timestamp)?;
-    let (min_price, max_price) = tick_relative_price_bounds(price_increment.as_decimal())?;
+    let (min_price, max_price) = quote_price_bounds(price_increment, price_increment.as_decimal())?;
 
     // Polymarket sends bids ascending and asks descending, so best-of-book is last.
     let (bid_price, bid_size) = match snap.bids.last() {
@@ -387,7 +385,7 @@ pub fn parse_quote_from_price_change(
         return Ok(None);
     }
 
-    let (min_price, max_price) = tick_relative_price_bounds(price_increment.as_decimal())?;
+    let (min_price, max_price) = quote_price_bounds(price_increment, price_increment.as_decimal())?;
     let bid_missing = bid_top.is_none();
     let ask_missing = ask_top.is_none();
     let bid_price = match bid_top {
@@ -454,6 +452,119 @@ pub fn parse_quote_from_price_change(
     )?))
 }
 
+enum BestBidAskTop {
+    Missing,
+    Invalid,
+    Price(Price),
+}
+
+/// Parses a quote tick from a best bid/ask message.
+///
+/// The payload carries top-of-book prices only. Each side's size comes from the supplied known
+/// level when its price matches the message and is zero otherwise.
+///
+/// Returns `None` when a side is missing and `drop_quotes_missing_side` is enabled. When missing
+/// sides are allowed, the quote uses the current tick-relative venue bounds. Returns `None` for
+/// locked, crossed, out-of-range, or off-grid prices.
+#[expect(clippy::too_many_arguments)]
+pub fn parse_quote_from_best_bid_ask(
+    bba: &PolymarketBestBidAsk,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    price_increment: Price,
+    drop_quotes_missing_side: bool,
+    bid_top: Option<(Price, Quantity)>,
+    ask_top: Option<(Price, Quantity)>,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<Option<QuoteTick>> {
+    let tick_size = price_increment.as_decimal();
+    let bid = parse_best_bid_ask_top(
+        non_empty(&bba.best_bid),
+        price_precision,
+        tick_size,
+        |value| value <= Decimal::ZERO,
+    )?;
+    let ask = parse_best_bid_ask_top(
+        non_empty(&bba.best_ask),
+        price_precision,
+        tick_size,
+        |value| value >= Decimal::ONE,
+    )?;
+    let (bid, ask) = match (bid, ask) {
+        (BestBidAskTop::Invalid, _) | (_, BestBidAskTop::Invalid) => return Ok(None),
+        (BestBidAskTop::Missing, BestBidAskTop::Missing) => (None, None),
+        (BestBidAskTop::Missing, BestBidAskTop::Price(ask)) => (None, Some(ask)),
+        (BestBidAskTop::Price(bid), BestBidAskTop::Missing) => (Some(bid), None),
+        (BestBidAskTop::Price(bid), BestBidAskTop::Price(ask)) => (Some(bid), Some(ask)),
+    };
+
+    if drop_quotes_missing_side && (bid.is_none() || ask.is_none()) {
+        return Ok(None);
+    }
+
+    let (min_price, max_price) = quote_price_bounds(price_increment, tick_size)?;
+    let bid_price = bid.unwrap_or(min_price);
+    let ask_price = ask.unwrap_or(max_price);
+    if bid_price < min_price || ask_price > max_price || bid_price >= ask_price {
+        return Ok(None);
+    }
+
+    let size_at = |price: Option<Price>, top: Option<(Price, Quantity)>| match (price, top) {
+        (Some(price), Some((top_price, top_size))) if top_price == price => top_size,
+        _ => Quantity::zero(size_precision),
+    };
+
+    Ok(Some(QuoteTick::new_checked(
+        instrument_id,
+        bid_price,
+        ask_price,
+        size_at(bid, bid_top),
+        size_at(ask, ask_top),
+        ts_event,
+        ts_init,
+    )?))
+}
+
+fn quote_price_bounds(
+    price_increment: Price,
+    tick_size: Decimal,
+) -> anyhow::Result<(Price, Price)> {
+    let max_price = Price::from_decimal_dp(Decimal::ONE - tick_size, price_increment.precision)?;
+    Ok((price_increment, max_price))
+}
+
+fn parse_best_bid_ask_top(
+    value: Option<&str>,
+    precision: u8,
+    tick_size: Decimal,
+    is_missing: impl FnOnce(Decimal) -> bool,
+) -> CorrectnessResult<BestBidAskTop> {
+    let Some(value) = value else {
+        return Ok(BestBidAskTop::Missing);
+    };
+    let decimal = Decimal::from_str(value).map_err(|e| CorrectnessError::PredicateViolation {
+        message: format!("Invalid price '{value}': {e}"),
+    })?;
+
+    if is_missing(decimal) {
+        return Ok(BestBidAskTop::Missing);
+    }
+
+    let price = Price::from_decimal_dp(decimal, precision)?;
+    if price.as_decimal() != decimal || decimal % tick_size != Decimal::ZERO {
+        return Ok(BestBidAskTop::Invalid);
+    }
+
+    Ok(BestBidAskTop::Price(price))
+}
+
+fn non_empty(value: &str) -> Option<&str> {
+    let value = value.trim();
+    (!value.is_empty()).then_some(value)
+}
+
 fn parse_bid_top(value: Option<&str>, precision: u8) -> CorrectnessResult<Option<Price>> {
     parse_top_price(value, precision, |value| value <= Decimal::ZERO)
 }
@@ -486,6 +597,7 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::instruments::{Instrument, InstrumentAny};
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
@@ -948,6 +1060,174 @@ mod tests {
             None,
             ts_event,
             ts_init,
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    fn best_bid_ask(best_bid: &str, best_ask: &str) -> PolymarketBestBidAsk {
+        PolymarketBestBidAsk {
+            market: Ustr::from("0xMARKET"),
+            asset_id: Ustr::from("0xTOKEN"),
+            best_bid: best_bid.to_string(),
+            best_ask: best_ask.to_string(),
+            spread: String::new(),
+            timestamp: "1700000003000".to_string(),
+        }
+    }
+
+    fn quantity(value: &str, precision: u8) -> Quantity {
+        Quantity::from_decimal_dp(value.parse().unwrap(), precision).unwrap()
+    }
+
+    #[rstest]
+    fn test_parse_quote_from_best_bid_ask_sizes_only_matching_tops() {
+        let instrument = test_instrument();
+        let size_precision = instrument.size_precision();
+        let ts_event = UnixNanos::from(1_700_000_003_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let quote = parse_quote_from_best_bid_ask(
+            &best_bid_ask("0.50", "0.52"),
+            instrument.id(),
+            instrument.price_precision(),
+            size_precision,
+            instrument.price_increment(),
+            true,
+            Some((Price::from("0.50"), quantity("100.00", size_precision))),
+            Some((Price::from("0.51"), quantity("75.00", size_precision))),
+            ts_event,
+            ts_init,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(quote.instrument_id, instrument.id());
+        assert_eq!(quote.bid_price, Price::from("0.50"));
+        assert_eq!(quote.ask_price, Price::from("0.52"));
+        assert_eq!(quote.bid_size, quantity("100.00", size_precision));
+        assert_eq!(quote.ask_size, Quantity::zero(size_precision));
+        assert_eq!(quote.ts_event, ts_event);
+        assert_eq!(quote.ts_init, ts_init);
+    }
+
+    #[rstest]
+    #[case("0", "0.52")]
+    #[case("0.50", "1")]
+    #[case("", "0.52")]
+    #[case("0.50", "")]
+    fn test_parse_quote_from_best_bid_ask_missing_side_drops_by_default(
+        #[case] best_bid: &str,
+        #[case] best_ask: &str,
+    ) {
+        let instrument = test_instrument();
+
+        let result = parse_quote_from_best_bid_ask(
+            &best_bid_ask(best_bid, best_ask),
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            true,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    #[case("0", "0.52", "0.01", "0.52", "0.00", "75.00")]
+    #[case("0.50", "1", "0.50", "0.99", "100.00", "0.00")]
+    fn test_parse_quote_from_best_bid_ask_missing_side_uses_tick_bound(
+        #[case] best_bid: &str,
+        #[case] best_ask: &str,
+        #[case] expected_bid: &str,
+        #[case] expected_ask: &str,
+        #[case] expected_bid_size: &str,
+        #[case] expected_ask_size: &str,
+    ) {
+        let instrument = test_instrument_with_tick("0.01");
+        let size_precision = instrument.size_precision();
+
+        let quote = parse_quote_from_best_bid_ask(
+            &best_bid_ask(best_bid, best_ask),
+            instrument.id(),
+            instrument.price_precision(),
+            size_precision,
+            instrument.price_increment(),
+            false,
+            Some((Price::from("0.50"), quantity("100.00", size_precision))),
+            Some((Price::from("0.52"), quantity("75.00", size_precision))),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(quote.instrument_id, instrument.id());
+        assert_eq!(quote.bid_price, Price::from(expected_bid));
+        assert_eq!(quote.ask_price, Price::from(expected_ask));
+        assert_eq!(quote.bid_size, quantity(expected_bid_size, size_precision));
+        assert_eq!(quote.ask_size, quantity(expected_ask_size, size_precision));
+        assert_eq!(quote.ts_event, UnixNanos::default());
+        assert_eq!(quote.ts_init, UnixNanos::default());
+    }
+
+    #[rstest]
+    #[case("0.60", "0.60")]
+    #[case("0.70", "0.60")]
+    #[case("1.10", "1")]
+    #[case("0", "-0.10")]
+    fn test_parse_quote_from_best_bid_ask_invalid_range_returns_none(
+        #[case] best_bid: &str,
+        #[case] best_ask: &str,
+    ) {
+        let instrument = test_instrument_with_tick("0.01");
+
+        let result = parse_quote_from_best_bid_ask(
+            &best_bid_ask(best_bid, best_ask),
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            false,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    #[case("0.505", "0.52")]
+    #[case("0.50", "0.525")]
+    fn test_parse_quote_from_best_bid_ask_off_grid_returns_none(
+        #[case] best_bid: &str,
+        #[case] best_ask: &str,
+    ) {
+        let instrument = test_instrument_with_tick("0.01");
+        assert_eq!(instrument.price_precision(), 2);
+        assert_eq!(instrument.price_increment(), Price::from("0.01"));
+
+        let result = parse_quote_from_best_bid_ask(
+            &best_bid_ask(best_bid, best_ask),
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+            instrument.price_increment(),
+            false,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
         )
         .unwrap();
 

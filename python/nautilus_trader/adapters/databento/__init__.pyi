@@ -8,10 +8,10 @@ import typing
 from nautilus_trader import model
 
 __all__ = [
+    "DatabentoDataClientConfig",
     "DatabentoDataClientFactory",
     "DatabentoDataLoader",
     "DatabentoImbalance",
-    "DatabentoLiveClientConfig",
     "DatabentoPublisher",
     "DatabentoStatisticType",
     "DatabentoStatisticUpdateAction",
@@ -39,6 +39,25 @@ class DatabentoDataClient:
     def api_key(self) -> str: ...
     @property
     def api_key_masked(self) -> str: ...
+
+@typing.final
+class DatabentoDataClientConfig:
+    @property
+    def publishers_filepath(self) -> pathlib.Path: ...
+    @property
+    def use_exchange_as_venue(self) -> bool: ...
+    @property
+    def bars_timestamp_on_close(self) -> bool: ...
+    @property
+    def venue_dataset_map(self) -> dict[str, str]: ...
+    def __init__(
+        self,
+        api_key: str,
+        publishers_filepath: str | os.PathLike | pathlib.Path,
+        use_exchange_as_venue: bool = False,
+        bars_timestamp_on_close: bool = True,
+        venue_dataset_map: typing.Mapping[str, str] | None = None,
+    ) -> None: ...
 
 @typing.final
 class DatabentoDataClientFactory:
@@ -302,25 +321,6 @@ class DatabentoLiveClient:
     ) -> None: ...
     def start(self, callback: typing.Any, callback_pyo3: typing.Any) -> typing.Any: ...
     def close(self) -> None: ...
-
-@typing.final
-class DatabentoLiveClientConfig:
-    @property
-    def publishers_filepath(self) -> pathlib.Path: ...
-    @property
-    def use_exchange_as_venue(self) -> bool: ...
-    @property
-    def bars_timestamp_on_close(self) -> bool: ...
-    @property
-    def venue_dataset_map(self) -> dict[str, str]: ...
-    def __init__(
-        self,
-        api_key: str,
-        publishers_filepath: str | os.PathLike | pathlib.Path,
-        use_exchange_as_venue: bool = False,
-        bars_timestamp_on_close: bool = True,
-        venue_dataset_map: typing.Mapping[str, str] | None = None,
-    ) -> None: ...
 
 @typing.final
 class DatabentoPublisher: ...

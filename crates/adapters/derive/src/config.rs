@@ -17,6 +17,7 @@
 
 use std::fmt::Debug;
 
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -127,7 +128,10 @@ impl DeriveDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.derive")
 )]
-pub struct DeriveExecClientConfig {
+pub struct DeriveExecutionClientConfig {
+    /// Account identifier for the execution client.
+    #[builder(default = AccountId::from("DERIVE-001"))]
+    pub account_id: AccountId,
     /// Derive Chain smart-contract wallet address (`X-LYRAWALLET`). Falls back
     /// to `DERIVE_WALLET_ADDRESS` (or `DERIVE_TESTNET_WALLET_ADDRESS` on
     /// testnet) when unset.
@@ -204,7 +208,8 @@ pub struct DeriveExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(DeriveExecClientConfig {
+nautilus_core::impl_pyo3_config_getters!(DeriveExecutionClientConfig {
+    account_id: AccountId,
     wallet_address: Option<String>,
     subaccount_id: Option<u64>,
     base_url_rest: Option<String>,
@@ -226,15 +231,16 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for DeriveExecClientConfig {
+impl Default for DeriveExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl Debug for DeriveExecClientConfig {
+impl Debug for DeriveExecutionClientConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(DeriveExecClientConfig))
+        f.debug_struct(stringify!(DeriveExecutionClientConfig))
+            .field("account_id", &self.account_id)
             .field("wallet_address", &self.wallet_address)
             .field(
                 "session_key",
@@ -268,7 +274,7 @@ impl Debug for DeriveExecClientConfig {
     }
 }
 
-impl DeriveExecClientConfig {
+impl DeriveExecutionClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -362,7 +368,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_defaults() {
-        let config = DeriveExecClientConfig::default();
+        let config = DeriveExecutionClientConfig::default();
         assert_eq!(config.environment, DeriveEnvironment::Mainnet);
         assert_eq!(config.http_timeout_secs, 10);
         assert_eq!(config.max_retries, 3);
@@ -377,9 +383,9 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_has_credentials_requires_all_three_fields() {
-        let mut config = DeriveExecClientConfig {
+        let mut config = DeriveExecutionClientConfig {
             wallet_address: Some("0x1234".to_string()),
-            ..DeriveExecClientConfig::default()
+            ..DeriveExecutionClientConfig::default()
         };
         assert!(!config.has_credentials());
 
@@ -392,11 +398,11 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_has_credentials_rejects_blank_strings() {
-        let config = DeriveExecClientConfig {
+        let config = DeriveExecutionClientConfig {
             wallet_address: Some("   ".to_string()),
             session_key: Some("0xabcd".to_string()),
             subaccount_id: Some(1),
-            ..DeriveExecClientConfig::default()
+            ..DeriveExecutionClientConfig::default()
         };
         assert!(!config.has_credentials());
     }
@@ -408,11 +414,11 @@ mod tests {
         // scanner on a synthetic test value. The redaction logic is
         // string-content-agnostic.
         let session_key = "FAKE_SESSION_KEY_SENTINEL";
-        let config = DeriveExecClientConfig {
+        let config = DeriveExecutionClientConfig {
             wallet_address: Some("0xWALLET".to_string()),
             session_key: Some(session_key.to_string()),
             subaccount_id: Some(42),
-            ..DeriveExecClientConfig::default()
+            ..DeriveExecutionClientConfig::default()
         };
         let debug = format!("{config:?}");
         assert!(debug.contains("redacted"));
@@ -423,7 +429,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_debug_omits_session_key_marker_when_unset() {
-        let config = DeriveExecClientConfig::default();
+        let config = DeriveExecutionClientConfig::default();
         let debug = format!("{config:?}");
         assert!(!debug.contains("redacted"));
         assert!(debug.contains("session_key: None"));

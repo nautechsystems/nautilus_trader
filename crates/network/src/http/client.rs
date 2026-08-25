@@ -290,9 +290,7 @@ impl HttpClient {
     }
 
     pub(crate) async fn await_rate_limits(&self, keys: Option<&[Ustr]>) {
-        for rate_limiter in self.rate_limiters.iter() {
-            rate_limiter.await_keys_ready(keys).await;
-        }
+        RateLimiter::await_limiters_ready(&self.rate_limiters, keys).await;
     }
 
     /// Sends an HTTP GET request.
@@ -779,7 +777,11 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use http::status::StatusCode;
     use log::{Level, LevelFilter, Log, Metadata, Record};
+    #[cfg(all(feature = "simulation", madsim))]
+    use madsim::task as test_task;
     use rstest::rstest;
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use tokio::task as test_task;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         sync::oneshot,
@@ -930,6 +932,78 @@ mod tests {
 
         assert!(request_limiter.check_key(&request_key).is_err());
         assert!(order_limiter.check_key(&order_key).is_err());
+    }
+
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_http_client_reserves_multiple_rate_limits_together() {
+        let global_key = Ustr::from("scope:global");
+        let order_key = Ustr::from("scope:order");
+        let global_limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![(
+                global_key,
+                Quota::with_period(Duration::from_secs(1)).unwrap(),
+            )],
+        ));
+        let order_limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![(
+                order_key,
+                Quota::with_period(Duration::from_secs(10)).unwrap(),
+            )],
+        ));
+        order_limiter.check_key(&order_key).unwrap();
+
+        let client = HttpClient::new_with_rate_limiters(
+            HashMap::new(),
+            Vec::new(),
+            None,
+            None,
+            vec![Arc::clone(&global_limiter), Arc::clone(&order_limiter)],
+        )
+        .unwrap();
+
+        let request = test_task::spawn(async move {
+            client
+                .await_rate_limits(Some(&[global_key, order_key]))
+                .await;
+        });
+        test_task::yield_now().await;
+
+        global_limiter.check_key(&global_key).unwrap();
+        assert!(!request.is_finished());
+
+        advance_test_clock(Duration::from_millis(9_999)).await;
+        global_limiter.until_key_ready(&global_key).await;
+        global_limiter.until_key_ready(&global_key).await;
+        advance_test_clock(Duration::from_millis(1)).await;
+        test_task::yield_now().await;
+        assert!(!request.is_finished());
+
+        advance_test_clock(Duration::from_millis(998)).await;
+        test_task::yield_now().await;
+        assert!(!request.is_finished());
+
+        advance_test_clock(Duration::from_millis(1)).await;
+        request.await.unwrap();
+
+        assert!(global_limiter.check_key(&global_key).is_err());
+        assert!(order_limiter.check_key(&order_key).is_err());
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    async fn advance_test_clock(duration: Duration) {
+        madsim::time::advance(duration);
+        test_task::yield_now().await;
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    async fn advance_test_clock(duration: Duration) {
+        tokio::time::advance(duration).await;
     }
 
     #[tokio::test]

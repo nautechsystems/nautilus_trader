@@ -46,10 +46,14 @@ use nautilus_polymarket::{
     execution::parse::{adjust_market_buy_amount, compute_commission},
     websocket::{
         messages::{
-            MarketWsMessage, PolymarketBookSnapshot, PolymarketQuotes, PolymarketTrade,
-            UserWsMessage,
+            MarketWsMessage, PolymarketBestBidAsk, PolymarketBookSnapshot, PolymarketQuotes,
+            PolymarketTrade, UserWsMessage,
         },
-        parse::{parse_book_deltas, parse_book_snapshot, parse_timestamp_ms, parse_trade_tick},
+        parse::{
+            parse_book_deltas, parse_book_snapshot, parse_quote_from_best_bid_ask,
+            parse_quote_from_price_change, parse_quote_from_snapshot, parse_timestamp_ms,
+            parse_trade_tick,
+        },
     },
 };
 use rust_decimal::Decimal;
@@ -82,6 +86,17 @@ fn bench_decode_price_change(c: &mut Criterion) {
     group.bench_function("price_change", |b| {
         b.iter(|| {
             let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_PRICE_CHANGE)).unwrap();
+            black_box(msg);
+        });
+    });
+    group.finish();
+}
+
+fn bench_decode_best_bid_ask(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decode_only");
+    group.bench_function("best_bid_ask", |b| {
+        b.iter(|| {
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_BEST_BID_ASK)).unwrap();
             black_box(msg);
         });
     });
@@ -218,6 +233,100 @@ fn bench_parse_book_deltas(c: &mut Criterion) {
                 UnixNanos::default(),
             );
             black_box(deltas);
+        });
+    });
+    group.finish();
+}
+
+fn bench_parse_quote_from_snapshot(c: &mut Criterion) {
+    let (px_prec, sz_prec) = instrument_precisions();
+    let instrument = yes_instrument();
+    let msg: MarketWsMessage = serde_json::from_str(fixtures::MARKET_BOOK).unwrap();
+    let snap: PolymarketBookSnapshot = match msg {
+        MarketWsMessage::Book(snap) => snap,
+        _ => unreachable!(),
+    };
+
+    let mut group = c.benchmark_group("parse_only");
+    group.bench_function("quote_from_snapshot", |b| {
+        b.iter(|| {
+            let quote = parse_quote_from_snapshot(
+                black_box(&snap),
+                instrument.id(),
+                px_prec,
+                sz_prec,
+                instrument.price_increment(),
+                true,
+                UnixNanos::default(),
+            )
+            .unwrap();
+            black_box(quote);
+        });
+    });
+    group.finish();
+}
+
+fn bench_parse_quote_from_price_change(c: &mut Criterion) {
+    let (px_prec, sz_prec) = instrument_precisions();
+    let instrument = yes_instrument();
+    let msg: MarketWsMessage = serde_json::from_str(fixtures::MARKET_PRICE_CHANGE).unwrap();
+    let quotes: PolymarketQuotes = match msg {
+        MarketWsMessage::PriceChange(quotes) => quotes,
+        _ => unreachable!(),
+    };
+    let change = &quotes.price_changes[0];
+    let ts_event = parse_timestamp_ms(&quotes.timestamp).unwrap();
+
+    let mut group = c.benchmark_group("parse_only");
+    group.bench_function("quote_from_price_change", |b| {
+        b.iter(|| {
+            let quote = parse_quote_from_price_change(
+                black_box(change),
+                instrument.id(),
+                px_prec,
+                sz_prec,
+                instrument.price_increment(),
+                true,
+                None,
+                ts_event,
+                UnixNanos::default(),
+            )
+            .unwrap();
+            black_box(quote);
+        });
+    });
+    group.finish();
+}
+
+fn bench_parse_best_bid_ask(c: &mut Criterion) {
+    let (px_prec, sz_prec) = instrument_precisions();
+    let instrument = yes_instrument();
+    let msg: MarketWsMessage = serde_json::from_str(fixtures::MARKET_BEST_BID_ASK).unwrap();
+    let bba: PolymarketBestBidAsk = match msg {
+        MarketWsMessage::BestBidAsk(bba) => bba,
+        _ => unreachable!(),
+    };
+    let ts_event = parse_timestamp_ms(&bba.timestamp).unwrap();
+    let bid_top = Some((Price::from("0.50"), Quantity::from("200.0")));
+    let ask_top = Some((Price::from("0.51"), Quantity::from("150.0")));
+
+    let mut group = c.benchmark_group("parse_only");
+    group.bench_function("quote_from_best_bid_ask", |b| {
+        b.iter(|| {
+            let quote = parse_quote_from_best_bid_ask(
+                black_box(&bba),
+                instrument.id(),
+                px_prec,
+                sz_prec,
+                instrument.price_increment(),
+                true,
+                bid_top,
+                ask_top,
+                ts_event,
+                UnixNanos::default(),
+            )
+            .unwrap();
+            black_box(quote);
         });
     });
     group.finish();
@@ -406,6 +515,7 @@ criterion_group!(
     bench_decode_trade,
     bench_decode_book,
     bench_decode_price_change,
+    bench_decode_best_bid_ask,
     bench_decode_user_order,
     bench_decode_user_order_captured,
     bench_decode_user_order_dispatch,
@@ -414,6 +524,9 @@ criterion_group!(
     bench_parse_trade,
     bench_parse_book_snapshot,
     bench_parse_book_deltas,
+    bench_parse_quote_from_snapshot,
+    bench_parse_quote_from_price_change,
+    bench_parse_best_bid_ask,
     bench_decimal_from_str,
     bench_price_from_decimal_dp,
     bench_quantity_from_decimal_dp,

@@ -108,7 +108,7 @@ use crate::{
         parse::{ib_contract_to_instrument_id_simple, is_spread_instrument_id},
         shared_client::SharedClientHandle,
     },
-    config::InteractiveBrokersExecClientConfig,
+    config::InteractiveBrokersExecutionClientConfig,
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
 
@@ -124,7 +124,7 @@ pub struct InteractiveBrokersExecutionClient {
     /// Core execution client functionality.
     core: ExecutionClientCore,
     /// Configuration for the client.
-    config: InteractiveBrokersExecClientConfig,
+    config: InteractiveBrokersExecutionClientConfig,
     /// Instrument provider.
     instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
     /// Connection state.
@@ -274,7 +274,7 @@ impl InteractiveBrokersExecutionClient {
     /// Returns an error if client creation fails.
     pub fn new(
         mut core: ExecutionClientCore,
-        config: InteractiveBrokersExecClientConfig,
+        config: InteractiveBrokersExecutionClientConfig,
         instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
     ) -> anyhow::Result<Self> {
         anyhow::ensure!(

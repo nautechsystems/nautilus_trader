@@ -20,27 +20,28 @@
 //! The client halts new-order submissions whenever the execution stream is unavailable or
 //! recovering. `submit_order` and `submit_order_list` emit `OrderDenied` with
 //! `STREAM_RECONCILING`, while cancel and modify commands remain available. Transport availability
-//! alone does not reopen the gate: an active replacement socket remains halted until Betfair sends
-//! a `Connection` message and the matching recovery task dispatches mass status.
+//! alone does not reopen the gate: an active replacement socket remains halted until the order
+//! subscription is current and the matching recovery task dispatches mass status.
 //!
 //! # Reconnect recovery
 //!
 //! A transport loss or server `connectionClosed` status advances the reconciliation generation
-//! immediately. Each replacement `Connection` message advances it again and raises
-//! `pending_resync`; subsequent OCMs remain buffered until `process_pending_resync` runs on the
-//! engine thread. Connectivity polling and command or report entry points invoke it to synchronize
-//! OCM state from the cache and drain the buffer.
+//! immediately. A replacement `Connection` raises `pending_resync`; a complete `SUB_IMAGE` or
+//! `RESUB_DELTA` queues the current generation once. Subsequent OCMs remain buffered until
+//! `process_pending_resync` runs on the engine thread. Connectivity polling and command or report
+//! entry points invoke it to synchronize OCM state from the cache and drain the buffer.
 //!
 //! The recovery task attempts to refresh the session, requests account state on a best-effort basis,
-//! and builds a mass status from `list_current_orders`. The mass status recovers fills that
-//! completed and rolled off the unmatched book during the gap.
+//! and builds a mass status from `list_current_orders`. Recovery uses match-time ordering and
+//! bounded retries to include fills that completed and rolled off the unmatched book during the
+//! gap.
 //!
-//! After dispatching mass status, the task clears only the generation it handled; it does not wait
-//! for a separate cache-application acknowledgement. A newer transport loss or replacement
-//! connection therefore keeps submissions halted when an older task finishes. A failed full
-//! re-login or mass-status request leaves the gate closed until a later reconnect succeeds or the
-//! client disconnects. A keep-alive failure other than explicit `LoginFailed` continues recovery
-//! with the retained session; the gate still reopens only after mass status is dispatched.
+//! Mass-status dispatch, fill-deduplication commit, and gate reopening share one generation check;
+//! the task does not wait for a separate cache-application acknowledgement. A newer transport loss
+//! or replacement connection cancels older work. Failed authentication, exhausted recovery, or a
+//! failed report dispatch leaves the gate closed until a later reconnect succeeds or the client
+//! disconnects. A keep-alive failure other than explicit `LoginFailed` continues recovery with the
+//! retained session.
 //!
 //! # Modify reconciliation
 //!
@@ -89,8 +90,8 @@ use nautilus_model::{
     data::Data,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
-        OrderAccepted, OrderCanceled, OrderDeniedReason, OrderEventAny, OrderFillVoided,
-        OrderFilled, OrderUpdated,
+        AccountState, OrderAccepted, OrderCanceled, OrderDeniedReason, OrderEventAny,
+        OrderFillVoided, OrderFilled, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
@@ -113,10 +114,10 @@ use crate::{
         },
         credential::BetfairCredential,
         enums::{
-            BetfairOrderStatus, BetfairOrderType, BetfairSide, BetfairTimeInForce,
+            BetfairOrderStatus, BetfairOrderType, BetfairSide, BetfairTimeInForce, ChangeType,
             ExecutionReportErrorCode, ExecutionReportStatus, InstructionReportErrorCode,
-            InstructionReportStatus, OrderProjection, PersistenceType, StreamingOrderStatus,
-            StreamingSide,
+            InstructionReportStatus, OrderBy, OrderProjection, PersistenceType, SegmentType,
+            SortDir, StreamingOrderStatus, StreamingSide,
         },
         parse::{
             extract_market_id, extract_selection_id, make_customer_order_ref,
@@ -126,7 +127,7 @@ use crate::{
         },
         types::{BetId, OrderSyncEntry, SelectionId},
     },
-    config::BetfairExecConfig,
+    config::BetfairExecutionClientConfig,
     data::custom_data_with_instrument,
     data_types::{BetfairOrderVoided, register_betfair_custom_data},
     http::{
@@ -146,8 +147,8 @@ use crate::{
         client::{BetfairStreamClient, HeartbeatTimeoutSource, StreamMessageHandler},
         config::BetfairStreamConfig,
         messages::{OCM, OrderMarketChange, OrderRunnerChange, StreamMessage, UnmatchedOrder},
-        ocm::OcmState,
-        parse::{FillVoidAllocation, has_cancel_quantity, parse_order_status_report},
+        ocm::{CustomerOrderRefResolution, OcmState},
+        parse::{FillTracker, FillVoidAllocation, has_cancel_quantity, parse_order_status_report},
     },
 };
 
@@ -162,7 +163,7 @@ pub struct BetfairExecutionClient {
     socket_control: Option<SocketControl>,
     credential: BetfairCredential,
     stream_config: BetfairStreamConfig,
-    config: BetfairExecConfig,
+    config: BetfairExecutionClientConfig,
     currency: Currency,
     ocm_state: Arc<Mutex<OcmState>>,
     pending_resync: Arc<AtomicBool>,
@@ -183,7 +184,7 @@ impl BetfairExecutionClient {
         http_client: BetfairHttpClient,
         credential: BetfairCredential,
         stream_config: BetfairStreamConfig,
-        config: BetfairExecConfig,
+        config: BetfairExecutionClientConfig,
         currency: Currency,
     ) -> Self {
         let clock = get_atomic_clock_realtime();
@@ -235,7 +236,7 @@ impl BetfairExecutionClient {
             || self
                 .stream_client
                 .as_ref()
-                .is_none_or(|client| !client.is_active())
+                .is_none_or(|client| !client.is_order_ready())
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -297,6 +298,15 @@ impl BetfairExecutionClient {
             .collect::<Vec<_>>();
 
         let mut state = self.ocm_state.lock().expect(MUTEX_POISONED);
+
+        for order in &orders {
+            if !order.is_closed()
+                && let Some(venue_order_id) = order.venue_order_id()
+            {
+                state.restore_order(order.client_order_id(), order.strategy_id(), venue_order_id);
+            }
+        }
+
         state.sync_from_orders(&order_data);
         Self::sync_cached_fills(&mut state, orders.iter().map(|order| &**order));
 
@@ -406,7 +416,7 @@ impl BetfairExecutionClient {
     /// buffered while waiting (cache is `!Send` so this must run on the
     /// engine thread).
     fn process_pending_resync(&self) {
-        if !self.core.is_connected() {
+        if !self.core.is_connected() || self.reconciliation_gate.is_halted() {
             return;
         }
 
@@ -489,6 +499,7 @@ impl BetfairExecutionClient {
         market_ids_filter: Option<ahash::AHashSet<String>>,
         ignore_external_orders: bool,
         reconnect_tx: tokio::sync::mpsc::UnboundedSender<u64>,
+        queued_generation: Arc<AtomicU64>,
         pending_resync: Arc<AtomicBool>,
         reconciliation_gate: Arc<ReconciliationGate>,
         replay_buffer: Arc<Mutex<Vec<ReceivedOcm>>>,
@@ -496,12 +507,41 @@ impl BetfairExecutionClient {
         clock: &'static AtomicTime,
     ) -> StreamMessageHandler {
         let has_initial_connection = Arc::new(AtomicBool::new(false));
+        let order_degraded = AtomicBool::new(false);
 
         Arc::new(move |msg: StreamMessage| {
             let ts_init = clock.get_time_ns();
 
             match msg {
                 StreamMessage::OrderChange(ocm) => {
+                    let complete =
+                        ocm.segment_type.is_none() || ocm.segment_type == Some(SegmentType::SegEnd);
+                    let current_image = ocm.status.is_none()
+                        && matches!(ocm.ct, Some(ChangeType::SubImage | ChangeType::ResubDelta))
+                        && complete;
+                    let recovered_from_degradation = ocm.status.is_none()
+                        && complete
+                        && order_degraded.swap(false, Ordering::AcqRel);
+                    if ocm.status == Some(503) && !order_degraded.swap(true, Ordering::AcqRel) {
+                        reconciliation_gate.halt();
+                        pending_resync.store(true, Ordering::Release);
+                    }
+
+                    if pending_resync.load(Ordering::Acquire)
+                        && (current_image || recovered_from_degradation)
+                    {
+                        let generation = reconciliation_gate.current_generation();
+                        if queued_generation.swap(generation, Ordering::AcqRel) != generation
+                            && reconnect_tx.send(generation).is_err()
+                        {
+                            log::warn!("Failed to schedule Betfair reconnect reconciliation");
+                        }
+                    }
+
+                    if ocm.status == Some(503) {
+                        return;
+                    }
+
                     if ocm.is_heartbeat() {
                         return;
                     }
@@ -533,6 +573,7 @@ impl BetfairExecutionClient {
                     );
                 }
                 StreamMessage::Connection(_) => {
+                    order_degraded.store(false, Ordering::Release);
                     let initial = !has_initial_connection.swap(true, Ordering::SeqCst)
                         && !reconciliation_gate.is_halted();
 
@@ -540,17 +581,17 @@ impl BetfairExecutionClient {
                         log::debug!("Betfair execution stream connected");
                     } else {
                         log::info!("Betfair execution stream reconnected");
-                        let generation = reconciliation_gate.halt();
-                        pending_resync.store(true, Ordering::Release);
 
-                        if reconnect_tx.send(generation).is_err() {
-                            log::warn!("Failed to schedule Betfair reconnect reconciliation");
+                        if !reconciliation_gate.is_halted() {
+                            reconciliation_gate.halt();
                         }
+                        pending_resync.store(true, Ordering::Release);
                     }
                 }
                 StreamMessage::Status(status) => {
                     if status.connection_closed {
                         reconciliation_gate.halt();
+                        pending_resync.store(true, Ordering::Release);
                         log::warn!(
                             "Betfair execution stream closed: {:?} - {:?}",
                             status.error_code,
@@ -664,13 +705,16 @@ impl BetfairExecutionClient {
         if order.status != StreamingOrderStatus::ExecutionComplete {
             return;
         }
+
         let Some(size_voided) = order.sv.filter(|size| *size > Decimal::ZERO) else {
             return;
         };
+
         let side = match order.side {
             StreamingSide::Back => "BACK",
             StreamingSide::Lay => "LAY",
         };
+
         let voided = BetfairOrderVoided::new(
             instrument_id,
             order.rfo.as_deref().unwrap_or("").to_string(),
@@ -690,6 +734,7 @@ impl BetfairExecutionClient {
             "Order voided: bet_id={}, size_voided={size_voided}",
             order.id
         );
+
         let custom = custom_data_with_instrument(Arc::new(voided), instrument_id);
 
         if let Err(e) = context
@@ -741,11 +786,15 @@ impl BetfairExecutionClient {
             return false;
         }
 
-        let resolved_client_order_id = state.resolve_client_order_id(uo.rfo.as_deref());
+        let customer_order_ref_resolution = uo
+            .rfo
+            .as_deref()
+            .and_then(|rfo| state.customer_order_ref_resolution(rfo));
+        let resolved_client_order_id =
+            customer_order_ref_resolution.and_then(CustomerOrderRefResolution::client_order_id);
 
-        // Patch the truncated rfo-derived client_order_id with the full
-        // resolved value so downstream reconciliation matches correctly.
-        if resolved_client_order_id.is_some() {
+        // Ambiguity clears the parser-derived client ID so routing falls back to Bet ID
+        if customer_order_ref_resolution.is_some() {
             report.client_order_id = resolved_client_order_id;
         }
 
@@ -875,7 +924,7 @@ impl BetfairExecutionClient {
                 cancel_action,
             )
         } else {
-            Self::emit_untracked_order_reports(&context, report, resolved_client_order_id, fill);
+            Self::emit_untracked_order_reports(&context, report, fill);
             true
         };
 
@@ -965,7 +1014,7 @@ impl BetfairExecutionClient {
         fill_voids: Vec<FillVoidAllocation>,
         cancel_action: CancelAction,
     ) -> bool {
-        if state.mark_accepted(client_order_id) {
+        if state.claim_acceptance(client_order_id, report.venue_order_id) {
             let accepted = OrderAccepted::new(
                 context.emitter.trader_id(),
                 strategy_id,
@@ -1184,14 +1233,11 @@ impl BetfairExecutionClient {
     fn emit_untracked_order_reports(
         context: &UnmatchedOrderContext<'_>,
         report: OrderStatusReport,
-        resolved_client_order_id: Option<ClientOrderId>,
         fill: Option<FillReport>,
     ) {
         // The fill must precede the cumulative status report to avoid an inferred duplicate.
         if let Some(mut fill_report) = fill {
-            if resolved_client_order_id.is_some() {
-                fill_report.client_order_id = resolved_client_order_id;
-            }
+            fill_report.client_order_id = report.client_order_id;
 
             log::debug!(
                 "Fill: bet_id={}, last_qty={}, last_px={}",
@@ -1209,9 +1255,19 @@ impl BetfairExecutionClient {
 #[async_trait(?Send)]
 impl ExecutionClient for BetfairExecutionClient {
     fn is_connected(&self) -> bool {
+        let connected = self.core.is_connected()
+            && !self.reconciliation_gate.is_halted()
+            && self
+                .stream_client
+                .as_ref()
+                .is_some_and(|client| client.is_order_ready());
+        if !connected {
+            return false;
+        }
+
         // Drain any OCMs the network handler buffered during reconnect
         self.process_pending_resync();
-        self.core.is_connected()
+        true
     }
 
     fn client_id(&self) -> ClientId {
@@ -1326,6 +1382,7 @@ impl ExecutionClient for BetfairExecutionClient {
             .map(|ids| ids.iter().cloned().collect::<ahash::AHashSet<String>>());
 
         let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+        let queued_generation = Arc::new(AtomicU64::new(0));
         let (account_refresh_tx, mut account_refresh_rx) = tokio::sync::mpsc::unbounded_channel();
         self.account_refresh_tx = Some(account_refresh_tx.clone());
 
@@ -1338,6 +1395,7 @@ impl ExecutionClient for BetfairExecutionClient {
             market_ids_filter,
             self.config.ignore_external_orders,
             reconnect_tx,
+            queued_generation,
             Arc::clone(&self.pending_resync),
             Arc::clone(&self.reconciliation_gate),
             Arc::clone(&self.replay_buffer),
@@ -1346,9 +1404,17 @@ impl ExecutionClient for BetfairExecutionClient {
         );
 
         let transport_gate = Arc::clone(&self.reconciliation_gate);
-        let halt_on_disconnect = move |state| {
-            if state == SocketState::Disconnected {
-                transport_gate.halt();
+        let transport_pending_resync = Arc::clone(&self.pending_resync);
+        let transport_was_connected = Arc::new(AtomicBool::new(false));
+        let halt_on_disconnect = move |state| match state {
+            SocketState::Connected => {
+                transport_was_connected.store(true, Ordering::Release);
+            }
+            SocketState::Disconnected => {
+                if transport_was_connected.swap(false, Ordering::AcqRel) {
+                    transport_gate.halt();
+                    transport_pending_resync.store(true, Ordering::Release);
+                }
             }
         };
         let state_sink = match self.socket_control.as_ref() {
@@ -1484,75 +1550,22 @@ impl ExecutionClient for BetfairExecutionClient {
         let reconnect_gate = Arc::clone(&self.reconciliation_gate);
 
         self.reconnect_handle = Some(get_runtime().spawn(async move {
+            const RECOVERY_ATTEMPTS: usize = 4;
+
             while let Some(generation) = reconnect_rx.recv().await {
                 log::info!("Handling execution stream reconnection");
+                let mut state_rx = reconnect_gate.subscribe();
 
-                let mut session_refresh = SessionRefresh::default();
-
-                let reconciled = async {
-                    match reconnect_http.keep_alive_with_token().await {
-                        Ok(_) => session_refresh.refreshed = true,
-                        Err(ref e) if e.is_login_failed() => {
-                            log::warn!("Session expired on reconnect, attempting re-login: {e}",);
-
-                            match reconnect_http.reconnect_with_token().await {
-                                Ok(_) => {
-                                    session_refresh.refreshed = true;
-                                    session_refresh.replaced = true;
-                                }
-                                Err(e) => {
-                                    log::warn!("Re-login failed on reconnect: {e}");
-                                    return false;
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "Keep-alive failed on reconnect; continuing recovery with the \
-                                 retained session: {e}",
-                            );
-                        }
+                for attempt in 0..RECOVERY_ATTEMPTS {
+                    if !reconnect_gate.is_current(generation) {
+                        break;
                     }
 
-                    let stream_session = StreamSession {
-                        client: Some(&reconnect_stream),
-                        app_key: &reconnect_app_key,
-                    };
-
-                    if session_refresh.refreshed {
-                        stream_session.publish(&reconnect_http).await;
-                    }
-
-                    match reconnect_http
-                        .send_accounts::<AccountFundsResponse, _>(
-                            METHOD_GET_ACCOUNT_FUNDS,
-                            serde_json::json!({}),
-                        )
-                        .await
-                    {
-                        Ok(funds) => {
-                            let ts_init = reconnect_clock.get_time_ns();
-
-                            match parse_account_state(
-                                &funds,
-                                reconnect_acct_id,
-                                reconnect_currency,
-                                ts_init,
-                                ts_init,
-                            ) {
-                                Ok(state) => reconnect_emitter.send_account_state(state),
-                                Err(e) => {
-                                    log::warn!("Failed to parse account state on reconnect: {e}");
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to fetch account state on reconnect: {e}");
-                        }
-                    }
-
-                    match fetch_post_reconnect_mass_status(
+                    let recovery = tokio::select! {
+                        result = attempt_post_reconnect_recovery(
                         &reconnect_http,
+                        &reconnect_stream,
+                        &reconnect_app_key,
                         reconnect_client_id,
                         reconnect_acct_id,
                         reconnect_currency,
@@ -1560,46 +1573,64 @@ impl ExecutionClient for BetfairExecutionClient {
                         reconnect_market_ids.clone(),
                         reconnect_lookback_mins,
                         &reconnect_ocm_state,
-                        &reconnect_emitter,
-                        stream_session,
-                        &mut session_refresh,
-                    )
-                    .await
-                    {
-                        Ok(mass_status) => {
-                            let order_count = mass_status.order_reports().len();
-                            let fill_count: usize = mass_status
-                                .fill_reports()
-                                .values()
-                                .map(|fills| fills.len())
-                                .sum();
-                            reconnect_emitter.send_execution_report(ExecutionReport::MassStatus(
-                                Box::new(mass_status),
-                            ));
-                            log::info!(
-                                "Post-reconnect reconciliation submitted: \
-                                 orders={order_count}, fills={fill_count}",
+                        ) => Some(result),
+                        () = wait_for_generation_change(&mut state_rx, generation) => None,
+                    };
+                    let Some(recovery) = recovery else {
+                        break;
+                    };
+
+                    match recovery {
+                        Ok(recovery) => {
+                            let committed = commit_post_reconnect_mass_status(
+                                &reconnect_gate,
+                                generation,
+                                &reconnect_ocm_state,
+                                &reconnect_emitter,
+                                recovery,
                             );
-                            true
+
+                            match committed {
+                                Ok(Some((order_count, fill_count, account_state))) => {
+                                    if let Some(account_state) = account_state {
+                                        reconnect_emitter.send_account_state(account_state);
+                                    }
+                                    log::info!(
+                                        "Post-reconnect reconciliation submitted: \
+                                        orders={order_count}, fills={fill_count}",
+                                    );
+                                }
+                                Ok(None) => log::info!(
+                                    "A newer execution stream reconnect remains unreconciled",
+                                ),
+                                Err(e) => log::warn!(
+                                    "Post-reconnect reconciliation publication failed: {e}",
+                                ),
+                            }
+                            break;
                         }
                         Err(e) => {
-                            log::warn!("Post-reconnect reconciliation failed: {e}");
-                            false
+                            let attempt_number = attempt + 1;
+                            log::warn!(
+                                "Post-reconnect reconciliation attempt \
+                                 {attempt_number}/{RECOVERY_ATTEMPTS} failed: {e}",
+                            );
+
+                            if attempt_number == RECOVERY_ATTEMPTS {
+                                log::warn!(
+                                    "Post-reconnect reconciliation exhausted retries; \
+                                     submissions remain halted",
+                                );
+                                break;
+                            }
+
+                            let delay_ms = 250_u64.saturating_mul(1_u64 << attempt);
+                            tokio::select! {
+                                () = tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)) => {}
+                                () = wait_for_generation_change(&mut state_rx, generation) => break,
+                            }
                         }
                     }
-                }
-                .await;
-
-                apply_stream_session_refresh(
-                    reconnect_http.as_ref(),
-                    Some(&reconnect_stream),
-                    &reconnect_app_key,
-                    session_refresh,
-                )
-                .await;
-
-                if reconciled && !reconnect_gate.try_resume(generation) {
-                    log::info!("A newer execution stream reconnect remains unreconciled");
                 }
             }
         }));
@@ -1801,7 +1832,7 @@ impl ExecutionClient for BetfairExecutionClient {
                 market_ids.clone(),
                 false,
                 &self.ocm_state,
-                &self.emitter,
+                Some(&self.emitter),
                 stream_session,
                 &mut order_refresh,
             ),
@@ -1866,7 +1897,7 @@ impl ExecutionClient for BetfairExecutionClient {
             self.reconcile_market_ids(),
             cmd.open_only,
             &self.ocm_state,
-            &self.emitter,
+            Some(&self.emitter),
             stream_session,
             &mut session_refresh,
         )
@@ -1958,16 +1989,24 @@ impl ExecutionClient for BetfairExecutionClient {
             return Ok(());
         }
 
-        if let Ok(mut state) = self.ocm_state.lock() {
-            state.register_customer_order_ref(order.client_order_id());
-            state.register_order_identity(order.client_order_id(), order.strategy_id());
-        }
-
         let instrument_id = order.instrument_id();
         let market_id = extract_market_id(&instrument_id)?;
         let (selection_id, handicap) = extract_selection_id(&instrument_id)?;
 
         let instruction = create_place_instruction(&order, selection_id, handicap)?;
+        let collision = self
+            .ocm_state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("OCM state lock poisoned"))?
+            .register_submission(order.client_order_id(), order.strategy_id())
+            .err();
+
+        if let Some(customer_order_ref) = collision {
+            let reason = customer_order_ref_collision_reason(&customer_order_ref);
+            log::warn!("Denying submit for {}: {reason}", order.client_order_id(),);
+            self.emitter.emit_order_denied(&order, &reason);
+            return Ok(());
+        }
 
         let market_version = self.get_market_version(&instrument_id);
 
@@ -2004,17 +2043,22 @@ impl ExecutionClient for BetfairExecutionClient {
                         ),
                         CommandFailure::NotSent(_) | CommandFailure::VenueRejected(_) => {
                             let reason = format!("submit-order error: {e}");
-                            if should_emit_http_reject(&ocm_state, &client_order_id, &reason) {
-                                let ts_event = clock.get_time_ns();
-                                emitter.emit_order_rejected_event(
-                                    strategy_id,
-                                    instrument_id,
-                                    client_order_id,
-                                    &reason,
-                                    ts_event,
-                                    false,
-                                );
-                            }
+                            emit_http_reject_if_unreported(
+                                &ocm_state,
+                                &client_order_id,
+                                &reason,
+                                || {
+                                    let ts_event = clock.get_time_ns();
+                                    emitter.emit_order_rejected_event(
+                                        strategy_id,
+                                        instrument_id,
+                                        client_order_id,
+                                        &reason,
+                                        ts_event,
+                                        false,
+                                    );
+                                },
+                            );
                         }
                     }
                     return Ok(());
@@ -2043,7 +2087,7 @@ impl ExecutionClient for BetfairExecutionClient {
                     );
                 }
                 Err(CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason)) => {
-                    if should_emit_http_reject(&ocm_state, &client_order_id, &reason) {
+                    emit_http_reject_if_unreported(&ocm_state, &client_order_id, &reason, || {
                         let ts_event = clock.get_time_ns();
                         emitter.emit_order_rejected_event(
                             strategy_id,
@@ -2053,16 +2097,19 @@ impl ExecutionClient for BetfairExecutionClient {
                             ts_event,
                             false,
                         );
-                    }
+                    });
                 }
                 Ok(()) => {
                     if let Some(bet_id) = instruction_report.and_then(|ir| ir.bet_id.as_ref()) {
                         let venue_order_id = VenueOrderId::from(bet_id.as_str());
                         let ts_event = clock.get_time_ns();
 
-                        emit_http_accept_if_claimed(&ocm_state, &client_order_id, || {
-                            emitter.emit_order_accepted(&order, venue_order_id, ts_event);
-                        });
+                        emit_http_accept_if_claimed(
+                            &ocm_state,
+                            &client_order_id,
+                            venue_order_id,
+                            || emitter.emit_order_accepted(&order, venue_order_id, ts_event),
+                        );
                     } else {
                         log::warn!(
                             "Submit succeeded without a bet ID for {client_order_id}; \
@@ -2332,11 +2379,18 @@ impl ExecutionClient for BetfairExecutionClient {
                                     return Ok(());
                                 };
 
+                                let new_venue_order_id = VenueOrderId::from(new_bet_id.as_str());
                                 let replace_was_pending = if let Ok(mut state) = ocm_state.lock() {
                                     let replace_was_pending = state
                                         .take_pending_replace(client_order_id, &old_bet_id)
                                         .is_some();
                                     state.replaced_venue_order_ids.insert(old_bet_id);
+                                    if replace_was_pending {
+                                        state.replace_venue_order_id(
+                                            &client_order_id,
+                                            new_venue_order_id,
+                                        );
+                                    }
                                     replace_was_pending
                                 } else {
                                     true
@@ -2356,7 +2410,7 @@ impl ExecutionClient for BetfairExecutionClient {
                                         ts_event,
                                         ts_event,
                                         false,
-                                        Some(VenueOrderId::from(new_bet_id.as_str())),
+                                        Some(new_venue_order_id),
                                         Some(emitter.account_id()),
                                         update_price,
                                         None,
@@ -2840,8 +2894,7 @@ impl ExecutionClient for BetfairExecutionClient {
         let market_id = extract_market_id(&instrument_id)?;
         let (selection_id, handicap) = extract_selection_id(&instrument_id)?;
 
-        let mut instructions = Vec::new();
-        let mut order_snapshots = Vec::new();
+        let mut candidates = Vec::new();
 
         for client_order_id in &cmd.order_list.client_order_ids {
             let order = self.core.get_order(client_order_id)?;
@@ -2851,15 +2904,39 @@ impl ExecutionClient for BetfairExecutionClient {
                 continue;
             }
 
-            if let Ok(mut state) = self.ocm_state.lock() {
-                state.register_customer_order_ref(order.client_order_id());
-                state.register_order_identity(order.client_order_id(), order.strategy_id());
-            }
-
             let instruction = create_place_instruction(&order, selection_id, handicap)?;
+            candidates.push((instruction, order.clone()));
+        }
 
-            instructions.push(instruction);
-            order_snapshots.push((order.client_order_id(), order.strategy_id(), order.clone()));
+        let mut instructions = Vec::new();
+        let mut order_snapshots = Vec::new();
+        let mut collisions = Vec::new();
+        {
+            let mut state = self
+                .ocm_state
+                .lock()
+                .map_err(|_| anyhow::anyhow!("OCM state lock poisoned"))?;
+
+            for (instruction, order) in candidates {
+                match state.register_submission(order.client_order_id(), order.strategy_id()) {
+                    Ok(()) => {
+                        instructions.push(instruction);
+                        order_snapshots.push((order.client_order_id(), order.strategy_id(), order));
+                    }
+                    Err(customer_order_ref) => {
+                        collisions.push((order, customer_order_ref));
+                    }
+                }
+            }
+        }
+
+        for (order, customer_order_ref) in collisions {
+            let reason = customer_order_ref_collision_reason(&customer_order_ref);
+            log::warn!(
+                "Denying order list leg {}: {reason}",
+                order.client_order_id(),
+            );
+            self.emitter.emit_order_denied(&order, &reason);
         }
 
         if instructions.is_empty() {
@@ -2903,16 +2980,21 @@ impl ExecutionClient for BetfairExecutionClient {
                             let reason = format!("submit-order-list error: {e}");
 
                             for (client_oid, strategy_id, _) in &order_snapshots {
-                                if should_emit_http_reject(&ocm_state, client_oid, &reason) {
-                                    emitter.emit_order_rejected_event(
-                                        *strategy_id,
-                                        instrument_id,
-                                        *client_oid,
-                                        &reason,
-                                        ts_event,
-                                        false,
-                                    );
-                                }
+                                emit_http_reject_if_unreported(
+                                    &ocm_state,
+                                    client_oid,
+                                    &reason,
+                                    || {
+                                        emitter.emit_order_rejected_event(
+                                            *strategy_id,
+                                            instrument_id,
+                                            *client_oid,
+                                            &reason,
+                                            ts_event,
+                                            false,
+                                        );
+                                    },
+                                );
                             }
                         }
                     }
@@ -2952,9 +3034,12 @@ impl ExecutionClient for BetfairExecutionClient {
                         if let Some(bet_id) = instruction_report.and_then(|ir| ir.bet_id.as_ref()) {
                             let venue_order_id = VenueOrderId::from(bet_id.as_str());
                             let ts_event = clock.get_time_ns();
-                            emit_http_accept_if_claimed(&ocm_state, client_oid, || {
-                                emitter.emit_order_accepted(order, venue_order_id, ts_event);
-                            });
+                            emit_http_accept_if_claimed(
+                                &ocm_state,
+                                client_oid,
+                                venue_order_id,
+                                || emitter.emit_order_accepted(order, venue_order_id, ts_event),
+                            );
                         } else {
                             log::warn!(
                                 "Submit succeeded without a bet ID for {client_oid}; \
@@ -2969,17 +3054,22 @@ impl ExecutionClient for BetfairExecutionClient {
                         CommandFailure::NotSent(reason)
                         | CommandFailure::VenueRejected(reason),
                     ) => {
-                        if should_emit_http_reject(&ocm_state, client_oid, &reason) {
-                            let ts_event = clock.get_time_ns();
-                            emitter.emit_order_rejected_event(
-                                *strategy_id,
-                                instrument_id,
-                                *client_oid,
-                                &reason,
-                                ts_event,
-                                false,
-                            );
-                        }
+                        emit_http_reject_if_unreported(
+                            &ocm_state,
+                            client_oid,
+                            &reason,
+                            || {
+                                let ts_event = clock.get_time_ns();
+                                emitter.emit_order_rejected_event(
+                                    *strategy_id,
+                                    instrument_id,
+                                    *client_oid,
+                                    &reason,
+                                    ts_event,
+                                    false,
+                                );
+                            },
+                        );
                     }
                 }
             }
@@ -3080,11 +3170,31 @@ fn create_place_instruction(
     }
 }
 
+fn customer_order_ref_collision_reason(customer_order_ref: &str) -> String {
+    OrderDeniedReason::ValidationFailed {
+        detail: format!("customerOrderRef {customer_order_ref} collides with another active order"),
+    }
+    .to_string()
+}
+
 // Even states admit submissions; each halt advances to a distinct odd generation.
-// Generation exhaustion stays halted until lifecycle cleanup wraps the gate to zero.
-#[derive(Debug, Default)]
+// The commit lock makes generation validation, publication, and reopening one boundary.
+#[derive(Debug)]
 struct ReconciliationGate {
     state: AtomicU64,
+    commit_lock: Mutex<()>,
+    state_tx: tokio::sync::watch::Sender<u64>,
+}
+
+impl Default for ReconciliationGate {
+    fn default() -> Self {
+        let (state_tx, _) = tokio::sync::watch::channel(0);
+        Self {
+            state: AtomicU64::new(0),
+            commit_lock: Mutex::new(()),
+            state_tx,
+        }
+    }
 }
 
 impl ReconciliationGate {
@@ -3093,6 +3203,10 @@ impl ReconciliationGate {
     }
 
     fn halt(&self) -> u64 {
+        let _commit = self
+            .commit_lock
+            .lock()
+            .expect("reconciliation gate lock poisoned");
         let mut current = self.state.load(Ordering::Acquire);
 
         loop {
@@ -3114,13 +3228,25 @@ impl ReconciliationGate {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_) => return next,
+                Ok(_) => {
+                    self.state_tx.send_replace(next);
+                    return next;
+                }
                 Err(actual) => current = actual,
             }
         }
     }
 
+    #[cfg(test)]
     fn try_resume(&self, generation: u64) -> bool {
+        let _commit = self
+            .commit_lock
+            .lock()
+            .expect("reconciliation gate lock poisoned");
+        self.try_resume_locked(generation)
+    }
+
+    fn try_resume_locked(&self, generation: u64) -> bool {
         generation != u64::MAX
             && generation & 1 == 1
             && self
@@ -3131,10 +3257,46 @@ impl ReconciliationGate {
                     Ordering::AcqRel,
                     Ordering::Acquire,
                 )
-                .is_ok()
+                .is_ok_and(|_| {
+                    self.state_tx.send_replace(generation + 1);
+                    true
+                })
+    }
+
+    fn is_current(&self, generation: u64) -> bool {
+        self.state.load(Ordering::Acquire) == generation
+    }
+
+    fn current_generation(&self) -> u64 {
+        self.state.load(Ordering::Acquire)
+    }
+
+    fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.state_tx.subscribe()
+    }
+
+    fn commit<F>(&self, generation: u64, publish: F) -> anyhow::Result<bool>
+    where
+        F: FnOnce() -> anyhow::Result<()>,
+    {
+        let _commit = self
+            .commit_lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("reconciliation gate lock poisoned"))?;
+
+        if !self.is_current(generation) {
+            return Ok(false);
+        }
+
+        publish()?;
+        Ok(self.try_resume_locked(generation))
     }
 
     fn clear(&self) {
+        let _commit = self
+            .commit_lock
+            .lock()
+            .expect("reconciliation gate lock poisoned");
         let mut current = self.state.load(Ordering::Acquire);
 
         while current & 1 == 1 {
@@ -3144,11 +3306,70 @@ impl ReconciliationGate {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_) => return,
+                Ok(_) => {
+                    self.state_tx.send_replace(current.wrapping_add(1));
+                    return;
+                }
                 Err(actual) => current = actual,
             }
         }
     }
+}
+
+fn commit_post_reconnect_mass_status(
+    gate: &ReconciliationGate,
+    generation: u64,
+    ocm_state: &Arc<Mutex<OcmState>>,
+    emitter: &ExecutionEventEmitter,
+    recovery: PostReconnectRecovery,
+) -> anyhow::Result<Option<(usize, usize, Option<AccountState>)>> {
+    let PostReconnectRecovery {
+        client_id,
+        account_id,
+        currency,
+        ts_init,
+        mut order_reports,
+        active_quantities,
+        fill_orders,
+        account_state,
+    } = recovery;
+    let mut committed = None;
+    let published = gate.commit(generation, || {
+        let mut state = ocm_state
+            .lock()
+            .map_err(|_| anyhow::anyhow!("OCM state lock poisoned"))?;
+        let mut staged_state = state.clone();
+        let updates = resolve_pending_modifies_in_state(
+            &mut order_reports,
+            &active_quantities,
+            &mut staged_state,
+            emitter,
+        );
+        let customer_order_refs = staged_state.customer_order_refs.clone();
+        let fill_reports = build_incremental_fill_reports(
+            &fill_orders,
+            &mut staged_state.fill_tracker,
+            &customer_order_refs,
+            account_id,
+            currency,
+            ts_init,
+        )?;
+        let order_count = order_reports.len();
+        let fill_count = fill_reports.len();
+        let mut mass_status =
+            ExecutionMassStatus::new(client_id, account_id, *BETFAIR_VENUE, ts_init, None);
+        mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
+
+        for update in updates {
+            emitter.try_send_order_event(update)?;
+        }
+        emitter.try_send_execution_report(ExecutionReport::MassStatus(Box::new(mass_status)))?;
+        *state = staged_state;
+        committed = Some((order_count, fill_count, account_state));
+        Ok(())
+    })?;
+    Ok(published.then(|| committed.expect("published recovery result must be present")))
 }
 
 #[derive(Debug)]
@@ -3186,6 +3407,11 @@ struct UnmatchedOrderContext<'a> {
     ts_init: UnixNanos,
 }
 
+struct FetchedOrderStatusReports {
+    reports: Vec<OrderStatusReport>,
+    active_quantities: AHashMap<String, Quantity>,
+}
+
 /// Paginates `list_current_orders` into `OrderStatusReport`s without touching
 /// the engine cache, so it is callable from any tokio task.
 #[expect(
@@ -3199,10 +3425,47 @@ async fn fetch_order_status_reports_http(
     market_ids: Option<Vec<String>>,
     open_only: bool,
     ocm_state: &Arc<Mutex<OcmState>>,
-    emitter: &ExecutionEventEmitter,
+    emitter: Option<&ExecutionEventEmitter>,
     stream_session: StreamSession<'_>,
     session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<Vec<OrderStatusReport>> {
+    let mut fetched = fetch_order_status_reports_snapshot_http(
+        http_client,
+        account_id,
+        ts_init,
+        market_ids,
+        open_only,
+        ocm_state,
+        stream_session,
+        session_refresh,
+    )
+    .await?;
+
+    if let Some(emitter) = emitter {
+        resolve_pending_modifies(
+            &mut fetched.reports,
+            &fetched.active_quantities,
+            ocm_state,
+            emitter,
+        );
+    }
+    Ok(fetched.reports)
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "report context and stream session state remain explicit at the HTTP boundary"
+)]
+async fn fetch_order_status_reports_snapshot_http(
+    http_client: &Arc<BetfairHttpClient>,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+    market_ids: Option<Vec<String>>,
+    open_only: bool,
+    ocm_state: &Arc<Mutex<OcmState>>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
+) -> anyhow::Result<FetchedOrderStatusReports> {
     let order_projection = if open_only {
         Some(OrderProjection::Executable)
     } else {
@@ -3236,24 +3499,28 @@ async fn fetch_order_status_reports_http(
                 .await?;
         let page_size = response.current_orders.len() as u32;
 
+        if response.more_available && page_size == 0 {
+            anyhow::bail!("listCurrentOrders returned an empty page with moreAvailable=true");
+        }
+
         for order in &response.current_orders {
-            match parse_current_order_report(order, account_id, ts_init) {
-                Ok(mut r) => {
-                    if let Some(ref rfo) = order.customer_order_ref
-                        && let Ok(state) = ocm_state.lock()
-                        && let Some(full_id) = state.resolve_client_order_id(Some(rfo.as_str()))
-                    {
-                        r.client_order_id = Some(full_id);
-                    }
+            let mut report =
+                parse_current_order_report(order, account_id, ts_init).map_err(|e| {
+                    anyhow::anyhow!("Failed to parse order report for {}: {e}", order.bet_id)
+                })?;
 
-                    if let Some(active_quantity) = current_order_active_quantity(order) {
-                        active_quantities.insert(order.bet_id.clone(), active_quantity);
-                    }
-
-                    reports.push(r);
-                }
-                Err(e) => log::warn!("Failed to parse order report for {}: {e}", order.bet_id),
+            if let Some(ref customer_order_ref) = order.customer_order_ref
+                && let Ok(state) = ocm_state.lock()
+                && let Some(resolution) = state.customer_order_ref_resolution(customer_order_ref)
+            {
+                report.client_order_id = resolution.client_order_id();
             }
+
+            let active_quantity = current_order_active_quantity(order).map_err(|e| {
+                anyhow::anyhow!("Failed to parse active quantity for {}: {e}", order.bet_id)
+            })?;
+            active_quantities.insert(order.bet_id.clone(), active_quantity);
+            reports.push(report);
         }
 
         if !response.more_available {
@@ -3263,9 +3530,10 @@ async fn fetch_order_status_reports_http(
         from_record += page_size;
     }
 
-    resolve_pending_modifies(&mut reports, &active_quantities, ocm_state, emitter);
-
-    Ok(reports)
+    Ok(FetchedOrderStatusReports {
+        reports,
+        active_quantities,
+    })
 }
 
 fn resolve_pending_modifies(
@@ -3278,6 +3546,21 @@ fn resolve_pending_modifies(
         log::error!("OcmState mutex poisoned");
         return;
     };
+
+    let updates =
+        resolve_pending_modifies_in_state(reports, active_quantities, &mut state, emitter);
+    for update in updates {
+        emitter.send_order_event(update);
+    }
+}
+
+fn resolve_pending_modifies_in_state(
+    reports: &mut Vec<OrderStatusReport>,
+    active_quantities: &AHashMap<String, Quantity>,
+    state: &mut OcmState,
+    emitter: &ExecutionEventEmitter,
+) -> Vec<OrderEventAny> {
+    let mut updates = Vec::new();
 
     let mut resolved_bet_ids = AHashSet::new();
 
@@ -3299,32 +3582,32 @@ fn resolve_pending_modifies(
         if let Some(total_quantity) =
             state.promote_pending_replace(&client_order_id, &bet_id, report.quantity)
         {
-            emit_reconciled_update(
+            updates.push(make_reconciled_update(
                 emitter,
                 report,
                 client_order_id,
                 strategy_id,
                 total_quantity,
                 report.price,
-            );
+            ));
             resolved_bet_ids.insert(bet_id);
             continue;
         }
 
         if let Some(quantity) = resolve_pending_reduction_from_reconciliation(
-            &mut state,
+            state,
             active_quantities,
             &client_order_id,
             &bet_id,
         ) {
-            emit_reconciled_update(
+            updates.push(make_reconciled_update(
                 emitter,
                 report,
                 client_order_id,
                 strategy_id,
                 quantity,
                 None,
-            );
+            ));
             resolved_bet_ids.insert(bet_id.clone());
         }
     }
@@ -3333,6 +3616,7 @@ fn resolve_pending_modifies(
         let bet_id = report.venue_order_id.as_str();
         !state.replaced_venue_order_ids.contains(bet_id) && !resolved_bet_ids.contains(bet_id)
     });
+    updates
 }
 
 fn resolve_pending_reduction_from_reconciliation(
@@ -3345,14 +3629,14 @@ fn resolve_pending_reduction_from_reconciliation(
     state.confirm_pending_reduction(client_order_id, bet_id, active_quantity)
 }
 
-fn emit_reconciled_update(
+fn make_reconciled_update(
     emitter: &ExecutionEventEmitter,
     report: &OrderStatusReport,
     client_order_id: ClientOrderId,
     strategy_id: StrategyId,
     quantity: Quantity,
     price: Option<Price>,
-) {
+) -> OrderEventAny {
     let updated = OrderUpdated::new(
         emitter.trader_id(),
         strategy_id,
@@ -3370,13 +3654,13 @@ fn emit_reconciled_update(
         None,
         false,
     );
-    emitter.send_order_event(OrderEventAny::Updated(updated));
+    OrderEventAny::Updated(updated)
 }
 
-fn current_order_active_quantity(order: &CurrentOrderSummary) -> Option<Quantity> {
+fn current_order_active_quantity(order: &CurrentOrderSummary) -> anyhow::Result<Quantity> {
     let active =
         order.size_matched.unwrap_or(Decimal::ZERO) + order.size_remaining.unwrap_or(Decimal::ZERO);
-    parse_betfair_quantity(active).ok()
+    parse_betfair_quantity(active)
 }
 
 /// Paginates `list_current_orders` into `FillReport`s without touching the
@@ -3396,6 +3680,38 @@ async fn fetch_fill_reports_http(
     stream_session: StreamSession<'_>,
     session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<Vec<FillReport>> {
+    let orders = fetch_fill_orders_http(
+        http_client,
+        market_ids,
+        date_range,
+        stream_session,
+        session_refresh,
+    )
+    .await?;
+    let mut state = ocm_state
+        .lock()
+        .map_err(|_| anyhow::anyhow!("OCM state lock poisoned"))?;
+    let customer_order_refs = state.customer_order_refs.clone();
+    let mut fill_tracker = state.fill_tracker.clone();
+    let reports = build_incremental_fill_reports(
+        &orders,
+        &mut fill_tracker,
+        &customer_order_refs,
+        account_id,
+        currency,
+        ts_init,
+    )?;
+    state.fill_tracker = fill_tracker;
+    Ok(reports)
+}
+
+async fn fetch_fill_orders_http(
+    http_client: &Arc<BetfairHttpClient>,
+    market_ids: Option<Vec<String>>,
+    date_range: Option<TimeRange>,
+    stream_session: StreamSession<'_>,
+    session_refresh: &mut SessionRefresh,
+) -> anyhow::Result<Vec<CurrentOrderSummary>> {
     let mut orders = Vec::new();
     let mut from_record: u32 = 0;
 
@@ -3407,8 +3723,8 @@ async fn fetch_fill_reports_http(
             customer_order_refs: None,
             customer_strategy_refs: None,
             date_range: date_range.clone(),
-            order_by: None,
-            sort_dir: None,
+            order_by: Some(OrderBy::ByMatchTime),
+            sort_dir: Some(SortDir::EarliestToLatest),
             from_record: if from_record > 0 {
                 Some(from_record)
             } else {
@@ -3422,6 +3738,10 @@ async fn fetch_fill_reports_http(
                 .await?;
         let page_size = response.current_orders.len() as u32;
 
+        if response.more_available && page_size == 0 {
+            anyhow::bail!("listCurrentOrders returned an empty page with moreAvailable=true");
+        }
+
         orders.extend(response.current_orders);
 
         if !response.more_available {
@@ -3431,21 +3751,17 @@ async fn fetch_fill_reports_http(
         from_record += page_size;
     }
 
-    let mut state = ocm_state
-        .lock()
-        .map_err(|_| anyhow::anyhow!("OCM state lock poisoned"))?;
-    Ok(build_incremental_fill_reports(
-        &orders, &mut state, account_id, currency, ts_init,
-    ))
+    Ok(orders)
 }
 
 fn build_incremental_fill_reports(
     orders: &[CurrentOrderSummary],
-    state: &mut OcmState,
+    fill_tracker: &mut FillTracker,
+    customer_order_refs: &AHashMap<String, CustomerOrderRefResolution>,
     account_id: AccountId,
     currency: Currency,
     ts_init: UnixNanos,
-) -> Vec<FillReport> {
+) -> anyhow::Result<Vec<FillReport>> {
     let mut reports = Vec::new();
 
     for order in orders {
@@ -3456,19 +3772,18 @@ fn build_incremental_fill_reports(
             continue;
         }
 
-        if let Err(e) = parse_betfair_timestamp(&order.placed_date) {
-            log::warn!("Failed to parse fill report for {}: {e}", order.bet_id);
-            continue;
-        }
+        parse_betfair_timestamp(&order.placed_date).map_err(|e| {
+            anyhow::anyhow!("Failed to parse fill report for {}: {e}", order.bet_id)
+        })?;
 
-        let has_applied_fill_lots = state.fill_tracker.has_fill_lots(&order.bet_id);
+        let has_applied_fill_lots = fill_tracker.has_fill_lots(&order.bet_id);
         let cumulative = if has_applied_fill_lots {
             gross_matched
         } else {
             size_matched
         };
         let incremental_fill = if has_applied_fill_lots && size_voided > Decimal::ZERO {
-            state.fill_tracker.advance_cumulative_fill_with_voids(
+            fill_tracker.advance_cumulative_fill_with_voids(
                 &order.bet_id,
                 cumulative,
                 size_voided,
@@ -3476,7 +3791,7 @@ fn build_incremental_fill_reports(
                 order.price_size.price,
             )
         } else {
-            state.fill_tracker.advance_cumulative_fill(
+            fill_tracker.advance_cumulative_fill(
                 &order.bet_id,
                 cumulative,
                 order.average_price_matched,
@@ -3485,7 +3800,7 @@ fn build_incremental_fill_reports(
         };
 
         if !has_applied_fill_lots && incremental_fill.is_some() {
-            state.fill_tracker.sync_order(
+            fill_tracker.sync_order(
                 &order.bet_id,
                 gross_matched,
                 order.average_price_matched.unwrap_or(Decimal::ZERO),
@@ -3493,33 +3808,135 @@ fn build_incremental_fill_reports(
         }
 
         if !has_applied_fill_lots {
-            state
-                .fill_tracker
-                .sync_voided_qty(&order.bet_id, size_voided);
+            fill_tracker.sync_voided_qty(&order.bet_id, size_voided);
         }
         let Some((trade_id, last_qty, last_px)) = incremental_fill else {
             continue;
         };
 
-        match parse_current_order_fill_report(
+        let mut report = parse_current_order_fill_report(
             order, account_id, currency, trade_id, last_qty, last_px, ts_init,
-        ) {
-            Ok(mut report) => {
-                if let Some(ref rfo) = order.customer_order_ref
-                    && let Some(full_id) = state.resolve_client_order_id(Some(rfo.as_str()))
-                {
-                    report.client_order_id = Some(full_id);
-                }
-                reports.push(report);
-            }
-            Err(e) => log::warn!("Failed to parse fill report for {}: {e}", order.bet_id),
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to parse fill report for {}: {e}", order.bet_id))?;
+        if let Some(ref customer_order_ref) = order.customer_order_ref
+            && let Some(resolution) = customer_order_refs.get(customer_order_ref).copied()
+        {
+            report.client_order_id = resolution.client_order_id();
         }
+        reports.push(report);
     }
 
-    reports
+    Ok(reports)
 }
 
-/// Builds an [`ExecutionMassStatus`] over `lookback_mins` of REST history.
+struct PostReconnectRecovery {
+    client_id: ClientId,
+    account_id: AccountId,
+    currency: Currency,
+    ts_init: UnixNanos,
+    order_reports: Vec<OrderStatusReport>,
+    active_quantities: AHashMap<String, Quantity>,
+    fill_orders: Vec<CurrentOrderSummary>,
+    account_state: Option<AccountState>,
+}
+
+async fn wait_for_generation_change(
+    state_rx: &mut tokio::sync::watch::Receiver<u64>,
+    generation: u64,
+) {
+    while *state_rx.borrow_and_update() == generation {
+        if state_rx.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "recovery keeps venue clients, account context, and generation inputs explicit"
+)]
+async fn attempt_post_reconnect_recovery(
+    http_client: &Arc<BetfairHttpClient>,
+    stream_client: &Arc<BetfairStreamClient>,
+    app_key: &str,
+    client_id: ClientId,
+    account_id: AccountId,
+    currency: Currency,
+    clock: &'static AtomicTime,
+    market_ids: Option<Vec<String>>,
+    lookback_mins: u64,
+    ocm_state: &Arc<Mutex<OcmState>>,
+) -> anyhow::Result<PostReconnectRecovery> {
+    let mut session_refresh = SessionRefresh::default();
+    match http_client.keep_alive_with_token().await {
+        Ok(_) => session_refresh.refreshed = true,
+        Err(ref e) if e.is_login_failed() => {
+            log::warn!("Session expired on reconnect, attempting re-login: {e}");
+            http_client.reconnect_with_token().await?;
+            session_refresh.refreshed = true;
+            session_refresh.replaced = true;
+        }
+        Err(e) => log::warn!(
+            "Keep-alive failed on reconnect; continuing recovery with the retained session: {e}",
+        ),
+    }
+
+    let stream_session = StreamSession {
+        client: Some(stream_client),
+        app_key,
+    };
+
+    if session_refresh.refreshed {
+        stream_session.publish(http_client).await;
+    }
+
+    let account_state = match http_client
+        .send_accounts::<AccountFundsResponse, _>(METHOD_GET_ACCOUNT_FUNDS, serde_json::json!({}))
+        .await
+    {
+        Ok(funds) => {
+            let ts_init = clock.get_time_ns();
+            match parse_account_state(&funds, account_id, currency, ts_init, ts_init) {
+                Ok(state) => Some(state),
+                Err(e) => {
+                    log::warn!("Failed to parse account state on reconnect: {e}");
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to fetch account state on reconnect: {e}");
+            None
+        }
+    };
+
+    let result = fetch_post_reconnect_mass_status(
+        http_client,
+        client_id,
+        account_id,
+        currency,
+        clock,
+        market_ids,
+        lookback_mins,
+        ocm_state,
+        stream_session,
+        &mut session_refresh,
+    )
+    .await;
+    apply_stream_session_refresh(
+        http_client.as_ref(),
+        Some(stream_client),
+        app_key,
+        session_refresh,
+    )
+    .await;
+    result.map(|mut result| {
+        result.account_state = account_state;
+        result
+    })
+}
+
+/// Fetches the REST inputs for an [`ExecutionMassStatus`] over `lookback_mins` of history.
 #[expect(clippy::too_many_arguments)]
 async fn fetch_post_reconnect_mass_status(
     http_client: &Arc<BetfairHttpClient>,
@@ -3530,10 +3947,9 @@ async fn fetch_post_reconnect_mass_status(
     market_ids: Option<Vec<String>>,
     lookback_mins: u64,
     ocm_state: &Arc<Mutex<OcmState>>,
-    emitter: &ExecutionEventEmitter,
     stream_session: StreamSession<'_>,
     session_refresh: &mut SessionRefresh,
-) -> anyhow::Result<ExecutionMassStatus> {
+) -> anyhow::Result<PostReconnectRecovery> {
     let ts_now = clock.get_time_ns();
     let lookback_ns = lookback_mins
         .saturating_mul(60)
@@ -3542,40 +3958,39 @@ async fn fetch_post_reconnect_mass_status(
 
     let date_range = TimeRange {
         from: Some(start.to_rfc3339()),
-        to: None,
+        to: Some(ts_now.to_rfc3339()),
     };
 
-    let order_reports = fetch_order_status_reports_http(
+    let fetched_orders = fetch_order_status_reports_snapshot_http(
         http_client,
         account_id,
         ts_now,
         market_ids.clone(),
         false,
         ocm_state,
-        emitter,
         stream_session,
         session_refresh,
     )
     .await?;
 
-    let fill_reports = fetch_fill_reports_http(
+    let fill_orders = fetch_fill_orders_http(
         http_client,
-        account_id,
-        currency,
-        ts_now,
         market_ids,
         Some(date_range),
-        ocm_state,
         stream_session,
         session_refresh,
     )
     .await?;
-
-    let mut mass_status =
-        ExecutionMassStatus::new(client_id, account_id, *BETFAIR_VENUE, ts_now, None);
-    mass_status.add_order_reports(order_reports);
-    mass_status.add_fill_reports(fill_reports);
-    Ok(mass_status)
+    Ok(PostReconnectRecovery {
+        client_id,
+        account_id,
+        currency,
+        ts_init: ts_now,
+        order_reports: fetched_orders.reports,
+        active_quantities: fetched_orders.active_quantities,
+        fill_orders,
+        account_state: None,
+    })
 }
 
 fn list_current_orders_filter_bet_id(bet_id: String) -> ListCurrentOrdersParams {
@@ -3777,6 +4192,7 @@ async fn apply_stream_session_refresh(
 fn emit_http_accept_if_claimed(
     ocm_state: &Arc<Mutex<OcmState>>,
     client_order_id: &ClientOrderId,
+    venue_order_id: VenueOrderId,
     emit: impl FnOnce(),
 ) {
     let Ok(mut state) = ocm_state.lock() else {
@@ -3795,7 +4211,7 @@ fn emit_http_accept_if_claimed(
         return;
     }
 
-    if state.mark_accepted(*client_order_id) {
+    if state.claim_acceptance(*client_order_id, venue_order_id) {
         emit();
     }
 }
@@ -3854,17 +4270,17 @@ fn emit_replace_failure(
     }
 }
 
-// Returns `false` if the OCM stream already reported on this order, so the
-// HTTP rejection event should be suppressed to avoid an `InvalidStateTrigger`
-// against the local order state machine.
-fn should_emit_http_reject(
+// Claims and emits a definitive HTTP rejection while holding the same state lock as OCM.
+fn emit_http_reject_if_unreported(
     ocm_state: &Arc<Mutex<OcmState>>,
     client_order_id: &ClientOrderId,
     reason: &str,
-) -> bool {
-    let Ok(state) = ocm_state.lock() else {
+    emit: impl FnOnce(),
+) {
+    let Ok(mut state) = ocm_state.lock() else {
         log::error!("OcmState mutex poisoned");
-        return true;
+        emit();
+        return;
     };
 
     if state
@@ -3874,10 +4290,11 @@ fn should_emit_http_reject(
         log::debug!(
             "Suppressing late HTTP rejection for {client_order_id}: OCM already reported order state ({reason})"
         );
-        return false;
+        return;
     }
 
-    true
+    emit();
+    state.remove_order_correlation(client_order_id);
 }
 
 fn order_customer_ref() -> String {
@@ -4449,7 +4866,7 @@ mod tests {
         let mut state = OcmState::default();
         let client_oid = ClientOrderId::from("O-20240101-001");
 
-        state.register_customer_order_ref(client_oid);
+        state.register_order_ref(client_oid).unwrap();
 
         let rfo = make_customer_order_ref(client_oid.as_str());
         let resolved = state.resolve_client_order_id(Some(&rfo));
@@ -4469,7 +4886,11 @@ mod tests {
         let id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
         let client_oid = ClientOrderId::from(id);
 
-        state.register_customer_order_ref_with_legacy(client_oid);
+        state.restore_order(
+            client_oid,
+            StrategyId::from("S-001"),
+            VenueOrderId::from("bet-1"),
+        );
 
         let rfo_current = make_customer_order_ref(id);
         let rfo_legacy = make_customer_order_ref_legacy(id);
@@ -4486,13 +4907,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_ocm_state_remove_customer_order_refs() {
+    fn test_ocm_state_remove_order_correlation() {
         let mut state = OcmState::default();
         let id = "O-20240101-550e8400-e29b-41d4-a716-446655440000";
         let client_oid = ClientOrderId::from(id);
 
-        state.register_customer_order_ref_with_legacy(client_oid);
-        state.remove_customer_order_refs(&client_oid);
+        state.restore_order(
+            client_oid,
+            StrategyId::from("S-001"),
+            VenueOrderId::from("bet-1"),
+        );
+        state.remove_order_correlation(&client_oid);
 
         let rfo_current = make_customer_order_ref(id);
         let rfo_legacy = make_customer_order_ref_legacy(id);
@@ -4504,14 +4929,23 @@ mod tests {
     fn test_http_accept_emits_when_unclaimed() {
         let state = Arc::new(Mutex::new(OcmState::default()));
         let client_oid = ClientOrderId::from("O-001");
+        state
+            .lock()
+            .unwrap()
+            .register_submission(client_oid, StrategyId::from("S-001"))
+            .unwrap();
 
         let mut emitted = false;
-        emit_http_accept_if_claimed(&state, &client_oid, || emitted = true);
+        emit_http_accept_if_claimed(&state, &client_oid, VenueOrderId::from("bet-1"), || {
+            emitted = true;
+        });
         assert!(emitted, "first HTTP accept must emit");
 
         // A second claim for the same order is suppressed (already accepted).
         let mut emitted_again = false;
-        emit_http_accept_if_claimed(&state, &client_oid, || emitted_again = true);
+        emit_http_accept_if_claimed(&state, &client_oid, VenueOrderId::from("bet-1"), || {
+            emitted_again = true;
+        });
         assert!(!emitted_again, "already-accepted order must not re-emit");
     }
 
@@ -4519,41 +4953,72 @@ mod tests {
     fn test_http_accept_suppressed_after_stream_report() {
         let client_oid = ClientOrderId::from("O-001");
         let mut inner = OcmState::default();
+        inner
+            .register_submission(client_oid, StrategyId::from("S-001"))
+            .unwrap();
         inner.stream_reported_client_orders.insert(client_oid);
         let state = Arc::new(Mutex::new(inner));
 
         let mut emitted = false;
-        emit_http_accept_if_claimed(&state, &client_oid, || emitted = true);
+        emit_http_accept_if_claimed(&state, &client_oid, VenueOrderId::from("bet-1"), || {
+            emitted = true;
+        });
         assert!(!emitted, "OCM-reported order must suppress the HTTP accept");
     }
 
     #[rstest]
-    fn test_should_emit_http_reject_without_stream_report() {
+    fn test_http_reject_emits_and_removes_correlation_without_stream_report() {
         let state = Arc::new(Mutex::new(OcmState::default()));
         let client_oid = ClientOrderId::from("O-001");
+        state
+            .lock()
+            .unwrap()
+            .register_submission(client_oid, StrategyId::from("S-001"))
+            .unwrap();
+        let mut emitted = false;
 
-        assert!(should_emit_http_reject(
+        emit_http_reject_if_unreported(
             &state,
             &client_oid,
             "BetLapsedPriceImprovementTooLarge",
-        ));
+            || emitted = true,
+        );
+
+        assert!(emitted);
+        let rfo = make_customer_order_ref(client_oid.as_str());
+        assert_eq!(
+            state.lock().unwrap().resolve_client_order_id(Some(&rfo)),
+            None
+        );
     }
 
     #[rstest]
-    fn test_should_not_emit_http_reject_after_stream_report() {
+    fn test_http_reject_suppressed_after_stream_report() {
         // OCM-first race: the stream has already moved the order through
         // a terminal state (e.g. lapsed). A late HTTP rejection would
         // hit InvalidStateTrigger and pollute the own book audit log.
         let client_oid = ClientOrderId::from("O-001");
         let mut inner = OcmState::default();
+        inner
+            .register_submission(client_oid, StrategyId::from("S-001"))
+            .unwrap();
         inner.stream_reported_client_orders.insert(client_oid);
         let state = Arc::new(Mutex::new(inner));
+        let mut emitted = false;
 
-        assert!(!should_emit_http_reject(
+        emit_http_reject_if_unreported(
             &state,
             &client_oid,
             "BetLapsedPriceImprovementTooLarge",
-        ));
+            || emitted = true,
+        );
+
+        assert!(!emitted);
+        let rfo = make_customer_order_ref(client_oid.as_str());
+        assert_eq!(
+            state.lock().unwrap().resolve_client_order_id(Some(&rfo)),
+            Some(client_oid),
+        );
     }
 
     fn cancel_unmatched_order(
@@ -4636,6 +5101,7 @@ mod tests {
             None,
             false,
             reconnect_tx,
+            Arc::new(AtomicU64::new(0)),
             Arc::new(AtomicBool::new(pending_resync)),
             Arc::new(ReconciliationGate::default()),
             Arc::clone(&replay_buffer),
@@ -4800,8 +5266,9 @@ mod tests {
         let strategy_id = StrategyId::from("S-QUOTER");
 
         let mut inner = OcmState::default();
-        inner.register_customer_order_ref(client_order_id);
-        inner.register_order_identity(client_order_id, strategy_id);
+        inner
+            .register_submission(client_order_id, strategy_id)
+            .unwrap();
         inner.mark_accepted(client_order_id); // accepted before cancel (no synthesized accept)
         let ocm_state = Arc::new(Mutex::new(inner));
 
@@ -4872,6 +5339,75 @@ mod tests {
     }
 
     #[rstest]
+    #[case::current(
+        "FIRST-12345678901234567890123456789012",
+        "SECOND-12345678901234567890123456789012",
+        "12345678901234567890123456789012"
+    )]
+    #[case::legacy(
+        "12345678901234567890123456789012-FIRST",
+        "12345678901234567890123456789012-SECOND",
+        "12345678901234567890123456789012"
+    )]
+    fn test_ambiguous_customer_order_ref_does_not_route_status_or_fill(
+        #[case] first_id: &str,
+        #[case] second_id: &str,
+        #[case] customer_order_ref: &str,
+    ) {
+        let account_id = AccountId::from("BETFAIR-001");
+        let first = ClientOrderId::from(first_id);
+        let second = ClientOrderId::from(second_id);
+        let mut state = OcmState::default();
+        state.restore_order(
+            first,
+            StrategyId::from("S-FIRST"),
+            VenueOrderId::from("bet-first"),
+        );
+        state.restore_order(
+            second,
+            StrategyId::from("S-SECOND"),
+            VenueOrderId::from("bet-second"),
+        );
+        let ocm_state = Arc::new(Mutex::new(state));
+        let (emitter, mut rx) = emitter_with_receiver(account_id);
+        let order = fill_unmatched_order(
+            "bet-ambiguous",
+            Some(customer_order_ref.to_string()),
+            Decimal::new(10, 0),
+        );
+
+        let processed = BetfairExecutionClient::process_unmatched_order(
+            &order,
+            InstrumentId::from("1.234567-12345-0.0.BETFAIR"),
+            account_id,
+            Currency::from("GBP"),
+            &emitter,
+            &ocm_state,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert!(processed);
+
+        match rx.try_recv().expect("expected a fill report") {
+            ExecutionEvent::Report(ExecutionReport::Fill(fill)) => {
+                assert_eq!(fill.client_order_id, None);
+                assert_eq!(fill.venue_order_id, VenueOrderId::from("bet-ambiguous"));
+            }
+            other => panic!("ambiguous reference must emit an unowned fill report: {other:?}"),
+        }
+
+        match rx.try_recv().expect("expected a status report") {
+            ExecutionEvent::Report(ExecutionReport::Order(report)) => {
+                assert_eq!(report.client_order_id, None);
+                assert_eq!(report.venue_order_id, VenueOrderId::from("bet-ambiguous"));
+            }
+            other => panic!("ambiguous reference must emit an unowned status report: {other:?}"),
+        }
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_untracked_order_with_fill_reports_with_resolved_id() {
         // Resolved rfo but untracked: the fill is reported with the resolved
         // client_order_id patched on.
@@ -4879,7 +5415,7 @@ mod tests {
         let client_order_id = ClientOrderId::from("O-EXT-FILL");
 
         let mut inner = OcmState::default();
-        inner.register_customer_order_ref(client_order_id); // resolves, but no identity
+        inner.register_order_ref(client_order_id).unwrap();
         let ocm_state = Arc::new(Mutex::new(inner));
 
         let (emitter, mut rx) = emitter_with_receiver(account_id);
@@ -5000,8 +5536,9 @@ mod tests {
         let strategy_id = StrategyId::from("S-VOID");
         let account_id = AccountId::from("BETFAIR-001");
         let mut inner = OcmState::default();
-        inner.register_customer_order_ref(client_order_id);
-        inner.register_order_identity(client_order_id, strategy_id);
+        inner
+            .register_submission(client_order_id, strategy_id)
+            .unwrap();
         inner.mark_accepted(client_order_id);
         let state = Arc::new(Mutex::new(inner));
         let (emitter, mut rx) = emitter_with_receiver(account_id);
@@ -5048,8 +5585,9 @@ mod tests {
         let client_order_id = ClientOrderId::from(uo.rfo.as_deref().unwrap());
         let account_id = AccountId::from("BETFAIR-001");
         let mut inner = OcmState::default();
-        inner.register_customer_order_ref(client_order_id);
-        inner.register_order_identity(client_order_id, StrategyId::from("S-VOID"));
+        inner
+            .register_submission(client_order_id, StrategyId::from("S-VOID"))
+            .unwrap();
         inner.mark_accepted(client_order_id);
         let state = Arc::new(Mutex::new(inner));
         let (emitter, mut rx) = emitter_with_receiver(account_id);
@@ -5143,8 +5681,9 @@ mod tests {
         let strategy_id = StrategyId::from("S-QUOTER");
 
         let mut inner = OcmState::default();
-        inner.register_customer_order_ref(client_order_id);
-        inner.register_order_identity(client_order_id, strategy_id);
+        inner
+            .register_submission(client_order_id, strategy_id)
+            .unwrap();
         let ocm_state = Arc::new(Mutex::new(inner));
 
         let (emitter, mut rx) = emitter_with_receiver(account_id);
@@ -5197,8 +5736,9 @@ mod tests {
         let strategy_id = StrategyId::from("S-QUOTER");
 
         let mut inner = OcmState::default();
-        inner.register_customer_order_ref(client_order_id);
-        inner.register_order_identity(client_order_id, strategy_id);
+        inner
+            .register_submission(client_order_id, strategy_id)
+            .unwrap();
         inner.mark_accepted(client_order_id); // already accepted via HTTP place ack
         let ocm_state = Arc::new(Mutex::new(inner));
 
@@ -5259,7 +5799,7 @@ mod tests {
         let mut state = OcmState::default();
         let client_oid = ClientOrderId::from("O-001");
 
-        state.register_customer_order_ref(client_oid);
+        state.register_order_ref(client_oid).unwrap();
         state.register_pending_replace(client_oid, "old_bet".to_string(), None);
 
         // Should NOT remove refs because replace is pending
@@ -5273,7 +5813,7 @@ mod tests {
         let mut state = OcmState::default();
         let client_oid = ClientOrderId::from("O-001");
 
-        state.register_customer_order_ref(client_oid);
+        state.register_order_ref(client_oid).unwrap();
 
         // Should remove refs because no pending replace
         state.cleanup_terminal_order(&client_oid);
@@ -5306,9 +5846,14 @@ mod tests {
 
         state.sync_from_orders(&orders);
 
-        // Open order: should have customer_order_ref registered
+        let open_client_order_id = ClientOrderId::from("O-001");
         let rfo1 = make_customer_order_ref("O-001");
-        assert!(state.resolve_client_order_id(Some(&rfo1)).is_some());
+        assert_eq!(
+            state.resolve_client_order_id(Some(&rfo1)),
+            Some(open_client_order_id),
+        );
+        assert_eq!(state.order_strategy_id(&open_client_order_id), None);
+        assert!(!state.mark_accepted(open_client_order_id));
 
         // Closed order: should be in terminal_orders, no customer_order_ref
         assert!(state.terminal_orders.contains("bet2"));
@@ -5420,7 +5965,7 @@ mod tests {
             .borrow_mut()
             .add_order(order, None, Some(ClientId::from("BETFAIR-SYNC")), false)
             .unwrap();
-        let config = BetfairExecConfig::default();
+        let config = BetfairExecutionClientConfig::default();
         let core = ExecutionClientCore::new(
             trader_id,
             ClientId::from("BETFAIR-SYNC"),
@@ -5463,6 +6008,8 @@ mod tests {
             Decimal::from(4),
         );
 
+        assert_eq!(state.order_strategy_id(&client_order_id), Some(strategy_id),);
+        assert!(!state.mark_accepted(client_order_id));
         assert_eq!(
             old_increment.map(|(_, quantity, price)| (quantity, price)),
             Some((Quantity::from(1), Price::from("3.0"))),
@@ -5572,7 +6119,7 @@ mod tests {
             .parse::<Currency>()
             .expect("registered account currency");
 
-        let config = BetfairExecConfig {
+        let config = BetfairExecutionClientConfig {
             account_currency: currency_code.to_string(),
             calculate_account_state: false,
             ignore_external_orders: true,
@@ -5581,7 +6128,7 @@ mod tests {
         let stream_config = config.stream_config();
         let cache = Rc::new(RefCell::new(Cache::default()));
         let core = ExecutionClientCore::new(
-            config.trader_id,
+            TraderId::from("TESTER-001"),
             ClientId::from("BETFAIR-LIVE-SMOKE"),
             *BETFAIR_VENUE,
             OmsType::Netting,
@@ -5606,6 +6153,13 @@ mod tests {
         );
         client.start().expect("execution client start");
         client.connect().await.expect("execution client connect");
+
+        let funds_before: AccountFundsResponse = client
+            .http_client
+            .send_accounts(METHOD_GET_ACCOUNT_FUNDS, serde_json::json!({}))
+            .await
+            .expect("account funds before reconnect");
+        assert_eq!(funds_before.exposure.unwrap_or_default(), Decimal::ZERO);
 
         while exec_rx.try_recv().is_ok() {}
 
@@ -5644,8 +6198,16 @@ mod tests {
 
         assert!(stream_client.is_active());
         assert!(!client.is_reconciling());
+        let funds_after: AccountFundsResponse = client
+            .http_client
+            .send_accounts(METHOD_GET_ACCOUNT_FUNDS, serde_json::json!({}))
+            .await
+            .expect("account funds after reconnect");
+        assert_eq!(funds_after.exposure.unwrap_or_default(), Decimal::ZERO);
         eprintln!(
-            "Betfair read-only reconnect smoke completed: orders={order_count}, fills={fill_count}",
+            "Betfair read-only reconnect smoke completed: orders={order_count}, fills={fill_count}, exposure_before={}, exposure_after={}",
+            funds_before.exposure.unwrap_or_default(),
+            funds_after.exposure.unwrap_or_default(),
         );
 
         client
@@ -5715,7 +6277,15 @@ mod tests {
         assert!(!reconciliation_gate.is_halted());
 
         handler(stream_decode(br#"{"op":"connection","connectionId":"second"}"#).unwrap());
+        assert!(reconnect_rx.try_recv().is_err());
+        handler(
+            stream_decode(br#"{"op":"ocm","id":2,"pt":1000,"ct":"RESUB_DELTA","oc":[]}"#).unwrap(),
+        );
         assert_eq!(reconnect_rx.try_recv().unwrap(), 1);
+        handler(
+            stream_decode(br#"{"op":"ocm","id":2,"pt":1001,"ct":"RESUB_DELTA","oc":[]}"#).unwrap(),
+        );
+        assert!(reconnect_rx.try_recv().is_err());
         assert!(pending_resync.load(Ordering::Acquire));
         assert!(reconciliation_gate.is_halted());
     }
@@ -5733,8 +6303,50 @@ mod tests {
 
         assert_eq!(reconciliation_gate.halt(), 1);
         handler(stream_decode(br#"{"op":"connection","connectionId":"replacement"}"#).unwrap());
+        assert!(reconnect_rx.try_recv().is_err());
+        handler(
+            stream_decode(br#"{"op":"ocm","id":2,"pt":1000,"ct":"SUB_IMAGE","oc":[]}"#).unwrap(),
+        );
 
-        assert_eq!(reconnect_rx.try_recv().unwrap(), 3);
+        assert_eq!(reconnect_rx.try_recv().unwrap(), 1);
+        assert!(pending_resync.load(Ordering::Acquire));
+        assert!(reconciliation_gate.is_halted());
+    }
+
+    #[rstest]
+    fn test_new_503_epoch_supersedes_in_flight_recovery() {
+        let pending_resync = Arc::new(AtomicBool::new(false));
+        let reconciliation_gate = Arc::new(ReconciliationGate::default());
+        let (reconnect_tx, mut reconnect_rx) = tokio::sync::mpsc::unbounded_channel();
+        let handler = ocm_reconnect_handler(
+            reconnect_tx,
+            Arc::clone(&pending_resync),
+            Arc::clone(&reconciliation_gate),
+        );
+
+        handler(
+            stream_decode(br#"{"op":"ocm","id":2,"pt":1000,"ct":"HEARTBEAT","status":503}"#)
+                .unwrap(),
+        );
+        handler(stream_decode(br#"{"op":"ocm","id":2,"pt":1001,"ct":"HEARTBEAT"}"#).unwrap());
+        let stale = reconnect_rx.try_recv().unwrap();
+
+        handler(
+            stream_decode(br#"{"op":"ocm","id":2,"pt":1002,"ct":"HEARTBEAT","status":503}"#)
+                .unwrap(),
+        );
+        let current = reconciliation_gate.current_generation();
+        handler(
+            stream_decode(br#"{"op":"ocm","id":2,"pt":1003,"ct":"HEARTBEAT","status":503}"#)
+                .unwrap(),
+        );
+
+        assert_ne!(current, stale);
+        assert_eq!(reconciliation_gate.current_generation(), current);
+        assert!(!reconciliation_gate.try_resume(stale));
+
+        handler(stream_decode(br#"{"op":"ocm","id":2,"pt":1004,"ct":"HEARTBEAT"}"#).unwrap());
+        assert_eq!(reconnect_rx.try_recv().unwrap(), current);
         assert!(pending_resync.load(Ordering::Acquire));
         assert!(reconciliation_gate.is_halted());
     }
@@ -5758,6 +6370,7 @@ mod tests {
             None,
             false,
             reconnect_tx,
+            Arc::new(AtomicU64::new(0)),
             pending_resync,
             reconciliation_gate,
             Arc::new(Mutex::new(Vec::new())),
@@ -5778,6 +6391,242 @@ mod tests {
         assert!(gate.is_halted());
         assert!(gate.try_resume(current));
         assert!(!gate.is_halted());
+    }
+
+    #[rstest]
+    fn test_reconciliation_gate_publish_failure_stays_halted() {
+        let gate = ReconciliationGate::default();
+        let generation = gate.halt();
+
+        let result = gate.commit(generation, || anyhow::bail!("receiver closed"));
+
+        assert!(result.is_err());
+        assert!(gate.is_halted());
+        assert_eq!(gate.current_generation(), generation);
+    }
+
+    #[rstest]
+    fn test_unpublished_recovery_does_not_advance_fill_tracker() {
+        let gate = ReconciliationGate::default();
+        let generation = gate.halt();
+        let account_id = AccountId::from("BETFAIR-001");
+        let (emitter, receiver) = emitter_with_receiver(account_id);
+        drop(receiver);
+        let ocm_state = Arc::new(Mutex::new(OcmState::default()));
+        let data = load_test_json("rest/list_current_orders_execution_complete.json");
+        let response: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let mut fill_order = response.current_orders[1].clone();
+        fill_order.bet_id = "bet-unpublished".to_string();
+        let recovery = PostReconnectRecovery {
+            client_id: ClientId::from("BETFAIR"),
+            account_id,
+            currency: Currency::GBP(),
+            ts_init: UnixNanos::default(),
+            order_reports: Vec::new(),
+            active_quantities: AHashMap::new(),
+            fill_orders: vec![fill_order],
+            account_state: None,
+        };
+
+        let result =
+            commit_post_reconnect_mass_status(&gate, generation, &ocm_state, &emitter, recovery);
+
+        assert!(result.is_err());
+        assert!(gate.is_halted());
+        assert!(
+            !ocm_state
+                .lock()
+                .unwrap()
+                .fill_tracker
+                .has_fill_lots("bet-unpublished")
+        );
+    }
+
+    #[rstest]
+    fn test_invalid_recovery_does_not_publish_or_advance_fill_tracker() {
+        let gate = ReconciliationGate::default();
+        let generation = gate.halt();
+        let account_id = AccountId::from("BETFAIR-001");
+        let (emitter, mut receiver) = emitter_with_receiver(account_id);
+        let ocm_state = Arc::new(Mutex::new(OcmState::default()));
+        let data = load_test_json("rest/list_current_orders_execution_complete.json");
+        let response: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let mut fill_order = response.current_orders[1].clone();
+        fill_order.bet_id = "bet-invalid".to_string();
+        fill_order.placed_date = "not-a-timestamp".to_string();
+        let recovery = PostReconnectRecovery {
+            client_id: ClientId::from("BETFAIR"),
+            account_id,
+            currency: Currency::GBP(),
+            ts_init: UnixNanos::default(),
+            order_reports: Vec::new(),
+            active_quantities: AHashMap::new(),
+            fill_orders: vec![fill_order],
+            account_state: None,
+        };
+
+        let result =
+            commit_post_reconnect_mass_status(&gate, generation, &ocm_state, &emitter, recovery);
+
+        assert!(result.is_err());
+        assert!(gate.is_halted());
+        assert!(receiver.try_recv().is_err());
+        assert!(
+            !ocm_state
+                .lock()
+                .unwrap()
+                .fill_tracker
+                .has_fill_lots("bet-invalid")
+        );
+    }
+
+    #[rstest]
+    fn test_recovery_commit_uses_current_fill_tracker() {
+        let gate = ReconciliationGate::default();
+        let generation = gate.halt();
+        let account_id = AccountId::from("BETFAIR-001");
+        let (emitter, mut receiver) = emitter_with_receiver(account_id);
+        let data = load_test_json("rest/list_current_orders_execution_complete.json");
+        let response: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let fill_order = response.current_orders[1].clone();
+        let ocm_state = Arc::new(Mutex::new(OcmState::default()));
+        assert!(
+            ocm_state
+                .lock()
+                .unwrap()
+                .fill_tracker
+                .advance_cumulative_fill(
+                    &fill_order.bet_id,
+                    Decimal::from(5),
+                    fill_order.average_price_matched,
+                    fill_order.price_size.price,
+                )
+                .is_some()
+        );
+        let recovery = PostReconnectRecovery {
+            client_id: ClientId::from("BETFAIR"),
+            account_id,
+            currency: Currency::GBP(),
+            ts_init: UnixNanos::default(),
+            order_reports: Vec::new(),
+            active_quantities: AHashMap::new(),
+            fill_orders: vec![fill_order.clone()],
+            account_state: None,
+        };
+
+        let committed =
+            commit_post_reconnect_mass_status(&gate, generation, &ocm_state, &emitter, recovery)
+                .unwrap();
+        let mass_status = match receiver.try_recv().unwrap() {
+            ExecutionEvent::Report(ExecutionReport::MassStatus(status)) => status,
+            other => panic!("expected mass status, was {other:?}"),
+        };
+        let fills = mass_status.fill_reports();
+        let fill = &fills[&VenueOrderId::from(fill_order.bet_id.as_str())][0];
+
+        assert_eq!(
+            committed.map(|(orders, fills, _)| (orders, fills)),
+            Some((0, 1))
+        );
+        assert_eq!(fill.last_qty, Quantity::from("5.00"));
+        assert!(!gate.is_halted());
+        assert!(
+            ocm_state
+                .lock()
+                .unwrap()
+                .fill_tracker
+                .advance_cumulative_fill(
+                    &fill_order.bet_id,
+                    fill_order.size_matched.unwrap(),
+                    fill_order.average_price_matched,
+                    fill_order.price_size.price,
+                )
+                .is_none()
+        );
+    }
+
+    #[rstest]
+    fn test_recovery_commit_resolves_pending_reduction() {
+        let gate = ReconciliationGate::default();
+        let generation = gate.halt();
+        let account_id = AccountId::from("BETFAIR-001");
+        let client_order_id = ClientOrderId::from("O-RECOVERY-REDUCTION");
+        let strategy_id = StrategyId::from("S-001");
+        let data = load_test_json("rest/list_current_orders_executable.json");
+        let response: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let order = response.current_orders[0].clone();
+        let bet_id = order.bet_id.clone();
+        let mut report =
+            parse_current_order_report(&order, account_id, UnixNanos::default()).unwrap();
+        report.client_order_id = Some(client_order_id);
+        let mut state = OcmState::default();
+        state
+            .register_submission(client_order_id, strategy_id)
+            .unwrap();
+        state.register_pending_reduction(
+            client_order_id,
+            bet_id.clone(),
+            Quantity::from(10),
+            Quantity::from(4),
+        );
+        let ocm_state = Arc::new(Mutex::new(state));
+        let (emitter, mut receiver) = emitter_with_receiver(account_id);
+        let recovery = PostReconnectRecovery {
+            client_id: ClientId::from("BETFAIR"),
+            account_id,
+            currency: Currency::GBP(),
+            ts_init: UnixNanos::default(),
+            order_reports: vec![report],
+            active_quantities: AHashMap::from([(bet_id.clone(), Quantity::from(4))]),
+            fill_orders: Vec::new(),
+            account_state: None,
+        };
+
+        let committed =
+            commit_post_reconnect_mass_status(&gate, generation, &ocm_state, &emitter, recovery)
+                .unwrap();
+        let updated = match receiver.try_recv().unwrap() {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => updated,
+            other => panic!("expected reconciled order update, was {other:?}"),
+        };
+        let mass_status = match receiver.try_recv().unwrap() {
+            ExecutionEvent::Report(ExecutionReport::MassStatus(status)) => status,
+            other => panic!("expected mass status after order update, was {other:?}"),
+        };
+
+        assert_eq!(
+            committed.map(|(orders, fills, _)| (orders, fills)),
+            Some((0, 0))
+        );
+        assert!(mass_status.order_reports().is_empty());
+        assert_eq!(updated.client_order_id, client_order_id);
+        assert_eq!(updated.quantity, Quantity::from(4));
+        assert_eq!(updated.price, None);
+        assert!(updated.reconciliation);
+        assert_eq!(
+            ocm_state.lock().unwrap().reduced_quantity(&bet_id),
+            Some(Quantity::from(4)),
+        );
+        assert!(!gate.is_halted());
+    }
+
+    #[rstest]
+    fn test_reconciliation_gate_stale_commit_does_not_publish() {
+        let gate = ReconciliationGate::default();
+        let stale = gate.halt();
+        let current = gate.halt();
+        let published = AtomicBool::new(false);
+
+        let committed = gate
+            .commit(stale, || {
+                published.store(true, Ordering::Release);
+                Ok(())
+            })
+            .unwrap();
+
+        assert!(!committed);
+        assert!(!published.load(Ordering::Acquire));
+        assert_eq!(gate.current_generation(), current);
     }
 
     #[rstest]
@@ -5907,13 +6756,16 @@ mod tests {
             state.mark_terminal_order(order.bet_id.clone());
         }
 
+        let customer_order_refs = state.customer_order_refs.clone();
         let replay = build_incremental_fill_reports(
             &response.current_orders,
-            &mut state,
+            &mut state.fill_tracker,
+            &customer_order_refs,
             account_id,
             currency,
             UnixNanos::default(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(stream_fill_count, 2);
         assert!(replay.is_empty());
@@ -5928,15 +6780,94 @@ mod tests {
             state.mark_terminal_order(order.bet_id.clone());
         }
 
+        let customer_order_refs = state.customer_order_refs.clone();
         let reports = build_incremental_fill_reports(
             &response.current_orders,
-            &mut state,
+            &mut state.fill_tracker,
+            &customer_order_refs,
             AccountId::from("BETFAIR-001"),
             Currency::GBP(),
             UnixNanos::default(),
-        );
+        )
+        .unwrap();
 
         assert!(!reports.is_empty());
+    }
+
+    #[rstest]
+    fn test_match_time_recovery_keeps_fill_for_order_placed_before_lookback() {
+        let mut order = make_summary(
+            "bet_pre_lookback",
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2020-01-01T00:00:00Z",
+        );
+        order.matched_date = Some("2026-08-24T00:00:00Z".to_string());
+        order.size_matched = Some(Decimal::new(10, 0));
+        order.size_remaining = Some(Decimal::ZERO);
+        order.average_price_matched = Some(Decimal::new(25, 1));
+        let mut fill_tracker = FillTracker::default();
+
+        let reports = build_incremental_fill_reports(
+            &[order],
+            &mut fill_tracker,
+            &AHashMap::new(),
+            AccountId::from("BETFAIR-001"),
+            Currency::GBP(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(
+            reports[0].venue_order_id,
+            VenueOrderId::from("bet_pre_lookback")
+        );
+        assert_eq!(reports[0].last_qty, Quantity::from("10.00"));
+    }
+
+    #[rstest]
+    fn test_rest_fill_omits_ambiguous_customer_order_ref() {
+        let reference = "12345678901234567890123456789012";
+        let first = ClientOrderId::from(format!("FIRST-{reference}"));
+        let second = ClientOrderId::from(format!("SECOND-{reference}"));
+        let strategy_id = StrategyId::from("S-001");
+        let mut state = OcmState::default();
+        state.restore_order(first, strategy_id, VenueOrderId::from("bet-first"));
+        state.restore_order(second, strategy_id, VenueOrderId::from("bet-second"));
+
+        let mut order = make_summary(
+            "bet-ambiguous",
+            "1.100",
+            12345,
+            Decimal::ZERO,
+            BetfairOrderStatus::ExecutionComplete,
+            "2026-08-25T00:00:00Z",
+        );
+        order.customer_order_ref = Some(reference.to_string());
+        order.size_matched = Some(Decimal::new(10, 0));
+        order.size_remaining = Some(Decimal::ZERO);
+        order.average_price_matched = Some(Decimal::new(25, 1));
+        let customer_order_refs = state.customer_order_refs.clone();
+
+        let reports = build_incremental_fill_reports(
+            &[order],
+            &mut state.fill_tracker,
+            &customer_order_refs,
+            AccountId::from("BETFAIR-001"),
+            Currency::GBP(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].client_order_id, None);
+        assert_eq!(
+            reports[0].venue_order_id,
+            VenueOrderId::from("bet-ambiguous"),
+        );
     }
 
     #[rstest]
@@ -5956,22 +6887,27 @@ mod tests {
         let mut state = OcmState::default();
         let account_id = AccountId::from("BETFAIR-001");
 
+        let customer_order_refs = state.customer_order_refs.clone();
         let first = build_incremental_fill_reports(
             &[order.clone()],
-            &mut state,
+            &mut state.fill_tracker,
+            &customer_order_refs,
             account_id,
             Currency::GBP(),
             UnixNanos::default(),
-        );
+        )
+        .unwrap();
         order.size_matched = Some(Decimal::new(10, 0));
         order.average_price_matched = Some(Decimal::new(25, 1));
         let later = build_incremental_fill_reports(
             &[order],
-            &mut state,
+            &mut state.fill_tracker,
+            &customer_order_refs,
             account_id,
             Currency::GBP(),
             UnixNanos::default(),
-        );
+        )
+        .unwrap();
 
         assert!(first.is_empty());
         assert_eq!(later.len(), 1);
@@ -6003,13 +6939,16 @@ mod tests {
         order.size_voided = Some(Decimal::new(20, 0));
         order.average_price_matched = Some(Decimal::new(20, 1));
 
+        let customer_order_refs = state.customer_order_refs.clone();
         let reports = build_incremental_fill_reports(
             &[order],
-            &mut state,
+            &mut state.fill_tracker,
+            &customer_order_refs,
             AccountId::from("BETFAIR-001"),
             Currency::GBP(),
             UnixNanos::default(),
-        );
+        )
+        .unwrap();
         let update = crate::stream::messages::UnmatchedOrder {
             id: bet_id.to_string(),
             p: Decimal::new(20, 1),

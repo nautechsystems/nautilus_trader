@@ -35,7 +35,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::consts::{DERIBIT, DERIBIT_CLIENT_ID, DERIBIT_VENUE},
-    config::{DeribitDataClientConfig, DeribitExecClientConfig},
+    config::{DeribitDataClientConfig, DeribitExecutionClientConfig},
     data_types::{DeribitBookSummary, DeribitVolatilityIndex, register_deribit_custom_data},
     factories::{DeribitDataClientFactory, DeribitExecutionClientFactory},
 };
@@ -84,10 +84,10 @@ fn extract_deribit_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<DeribitExecClientConfig>(py) {
+    match config.extract::<DeribitExecutionClientConfig>(py) {
         Ok(c) => Ok(Box::new(c)),
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract DeribitExecClientConfig: {e}"
+            "Failed to extract DeribitExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -111,8 +111,8 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<DeribitVolatilityIndex>()?;
     m.add_class::<DeribitBookSummary>()?;
     m.add_class::<DeribitDataClientConfig>()?;
-    m.add_class::<DeribitExecClientConfig>()?;
     m.add_class::<DeribitDataClientFactory>()?;
+    m.add_class::<DeribitExecutionClientConfig>()?;
     m.add_class::<DeribitExecutionClientFactory>()?;
     m.add_function(wrap_pyfunction!(urls::py_get_deribit_http_base_url, m)?)?;
     m.add_function(wrap_pyfunction!(urls::py_get_deribit_ws_url, m)?)?;
@@ -145,7 +145,7 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "DeribitExecClientConfig".to_string(),
+        "DeribitExecutionClientConfig".to_string(),
         extract_deribit_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

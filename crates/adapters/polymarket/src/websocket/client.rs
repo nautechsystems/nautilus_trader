@@ -283,7 +283,7 @@ impl PolymarketWebSocketClient {
         // path, a fresh connect() never fires resubscribe_all() inside the handler.
         let initial_market_replay = match self.channel {
             WsChannel::Market => {
-                let topics = self.subscriptions.all_topics();
+                let topics = self.subscriptions.reset_after_reconnect();
                 if !topics.is_empty() || self.discovery_subscribed.load(Ordering::Relaxed) {
                     log::debug!(
                         "Replaying market subscription state onto new session: assets={}, discovery={}",

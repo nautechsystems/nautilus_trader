@@ -176,7 +176,7 @@ node.set_cache_database(cache_database)?;
 node.run().await?;
 ```
 
-With the default `LiveExecEngineConfig.load_cache = true`, the node restores persisted cache state
+With the default `LiveExecutionEngineConfig.load_cache = true`, the node restores persisted cache state
 and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
 `CacheConfig.flush_on_start = true` clears the backing instead.
 
@@ -543,15 +543,15 @@ lookback window in seconds.
 
 #### Automatic purging in live trading
 
-`LiveExecEngineConfig` schedules the bulk purges on a timer. All purge intervals default to `None`,
+`LiveExecutionEngineConfig` schedules the bulk purges on a timer. All purge intervals default to `None`,
 which disables the corresponding loop. Set an interval to enable a loop and set its buffer or
 lookback to control how recent entries remain protected. This example uses the recommended starting
 values from the live-trading configuration guide:
 
 ```python
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 
-exec_engine = LiveExecEngineConfig(
+exec_engine = LiveExecutionEngineConfig(
     purge_closed_orders_interval_mins=15,
     purge_closed_orders_buffer_mins=60,
     purge_closed_positions_interval_mins=15,

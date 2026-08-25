@@ -23,15 +23,18 @@ mod gcra;
 mod nanos;
 
 use std::{
+    collections::HashMap,
     fmt::Debug,
     hash::Hash,
     num::NonZeroU64,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
 use dashmap::DashMap;
-use futures_util::{StreamExt, stream};
 
 use self::{
     clock::{Clock, FakeRelativeClock, MonotonicClock},
@@ -52,6 +55,14 @@ use self::{
 pub struct InMemoryState(AtomicU64);
 
 impl InMemoryState {
+    fn load(&self) -> Option<Nanos> {
+        NonZeroU64::new(self.0.load(Ordering::Acquire)).map(|n| n.get().into())
+    }
+
+    fn store(&self, value: Nanos) {
+        self.0.store(value.into(), Ordering::Release);
+    }
+
     /// Measures and updates the GCRA's state atomically, retrying on concurrent modifications.
     ///
     /// # Errors
@@ -148,6 +159,7 @@ where
     gcra: DashMap<K, Gcra>,
     clock: C,
     start: C::Instant,
+    decision_lock: Mutex<()>,
 }
 
 impl<K, C> Debug for RateLimiter<K, C>
@@ -201,6 +213,7 @@ where
             gcra,
             clock,
             start,
+            decision_lock: Mutex::new(()),
         }
     }
 }
@@ -223,7 +236,15 @@ where
     C: Clock,
 {
     /// Adds or updates a quota for a specific key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the rate limiter decision mutex is poisoned.
     pub fn add_quota_for_key(&self, key: K, value: Quota) {
+        let _guard = self
+            .decision_lock
+            .lock()
+            .expect("rate limiter decision lock poisoned");
         self.gcra.insert(key, Gcra::new(value));
     }
 
@@ -232,7 +253,16 @@ where
     /// # Errors
     ///
     /// Returns `Err(NotUntil)` if the key is rate-limited, indicating when it will be allowed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the rate limiter decision mutex is poisoned.
     pub fn check_key(&self, key: &K) -> Result<(), NotUntil<C::Instant>> {
+        let _guard = self
+            .decision_lock
+            .lock()
+            .expect("rate limiter decision lock poisoned");
+
         match self.gcra.get(key) {
             Some(quota) => quota.test_and_update(self.start, key, &self.state, self.clock.now()),
             None => self.default_gcra.as_ref().map_or(Ok(()), |gcra| {
@@ -242,6 +272,10 @@ where
     }
 
     /// Waits until the specified key is ready (not rate-limited).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the rate limiter decision mutex is poisoned.
     pub async fn until_key_ready(&self, key: &K) {
         loop {
             match self.check_key(key) {
@@ -258,28 +292,135 @@ where
     /// Waits until all specified keys are ready (not rate-limited).
     ///
     /// If no keys are provided, this function returns immediately.
-    /// Uses fast paths for 0-2 keys to avoid stream scheduling overhead.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the rate limiter decision mutex is poisoned.
     pub async fn await_keys_ready(&self, keys: Option<&[K]>) {
         let Some(keys) = keys else {
             return;
         };
 
-        match keys.len() {
-            0 => {}
-            1 => self.until_key_ready(&keys[0]).await,
-            2 => {
-                tokio::join!(
-                    self.until_key_ready(&keys[0]),
-                    self.until_key_ready(&keys[1]),
-                );
+        loop {
+            let wait = {
+                let _guard = self
+                    .decision_lock
+                    .lock()
+                    .expect("rate limiter decision lock poisoned");
+
+                match self.plan_keys(keys, self.clock.now()) {
+                    Ok(planned) => {
+                        self.commit_keys(planned);
+                        None
+                    }
+                    Err(wait) => Some(wait),
+                }
+            };
+
+            match wait {
+                Some(wait) => self.clock.sleep(wait).await,
+                None => return,
             }
-            _ => {
-                let tasks = keys.iter().map(|key| self.until_key_ready(key));
-                stream::iter(tasks)
-                    .for_each_concurrent(None, |key_future| async move {
-                        key_future.await;
+        }
+    }
+
+    fn plan_keys<'a>(
+        &self,
+        keys: &'a [K],
+        now: C::Instant,
+    ) -> Result<HashMap<&'a K, Nanos>, Duration> {
+        let mut planned = HashMap::with_capacity(keys.len());
+        let mut wait: Option<Duration> = None;
+
+        for key in keys {
+            let tat = planned
+                .get(key)
+                .copied()
+                .or_else(|| self.state.get(key).and_then(|state| state.load()));
+            let decision = match self.gcra.get(key) {
+                Some(quota) => Some(quota.test(self.start, tat, now)),
+                None => self
+                    .default_gcra
+                    .as_ref()
+                    .map(|gcra| gcra.test(self.start, tat, now)),
+            };
+
+            match decision {
+                Some(Ok(next)) => {
+                    planned.insert(key, next);
+                }
+                Some(Err(denied)) => {
+                    let duration = denied.wait_time_from(now);
+                    wait = Some(wait.map_or(duration, |current| current.max(duration)));
+                }
+                None => {}
+            }
+        }
+
+        match wait {
+            Some(wait) => Err(wait),
+            None => Ok(planned),
+        }
+    }
+
+    fn commit_keys(&self, planned: HashMap<&K, Nanos>) {
+        for (key, tat) in planned {
+            self.state.entry(key.clone()).or_default().store(tat);
+        }
+    }
+}
+
+impl<K> RateLimiter<K, MonotonicClock>
+where
+    K: Hash + Eq + Clone,
+{
+    pub(crate) async fn await_limiters_ready(rate_limiters: &[Arc<Self>], keys: Option<&[K]>) {
+        let Some(keys) = keys else {
+            return;
+        };
+
+        if rate_limiters.is_empty() || keys.is_empty() {
+            return;
+        }
+
+        let mut ordered = rate_limiters.iter().map(Arc::as_ref).collect::<Vec<_>>();
+        ordered.sort_unstable_by_key(|limiter| std::ptr::from_ref(*limiter) as usize);
+        ordered.dedup_by(|a, b| std::ptr::eq(*a, *b));
+
+        loop {
+            let wait = {
+                let _guards = ordered
+                    .iter()
+                    .map(|limiter| {
+                        limiter
+                            .decision_lock
+                            .lock()
+                            .expect("rate limiter decision lock poisoned")
                     })
-                    .await;
+                    .collect::<Vec<_>>();
+                let mut plans = Vec::with_capacity(ordered.len());
+                let mut wait: Option<Duration> = None;
+
+                for limiter in &ordered {
+                    match limiter.plan_keys(keys, limiter.clock.now()) {
+                        Ok(planned) => plans.push((*limiter, planned)),
+                        Err(duration) => {
+                            wait = Some(wait.map_or(duration, |current| current.max(duration)));
+                        }
+                    }
+                }
+
+                if wait.is_none() {
+                    for (limiter, planned) in plans {
+                        limiter.commit_keys(planned);
+                    }
+                }
+                wait
+            };
+
+            match wait {
+                Some(wait) => ordered[0].clock.sleep(wait).await,
+                None => return,
             }
         }
     }
@@ -289,12 +430,19 @@ where
 mod tests {
     use std::{
         num::NonZeroU32,
-        sync::atomic::{AtomicU32, Ordering},
+        sync::{
+            Arc,
+            atomic::{AtomicU32, Ordering},
+        },
         time::Duration,
     };
 
     use dashmap::DashMap;
+    #[cfg(all(feature = "simulation", madsim))]
+    use madsim::task as test_task;
     use rstest::rstest;
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use tokio::task as test_task;
 
     use super::{
         DashMapStateStore, RateLimiter,
@@ -315,6 +463,7 @@ mod tests {
             gcra,
             clock,
             start,
+            decision_lock: std::sync::Mutex::new(()),
         }
     }
 
@@ -460,6 +609,72 @@ mod tests {
         assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
     }
 
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_await_keys_ready_reserves_keys_together() {
+        let fast = "fast".to_string();
+        let slow = "slow".to_string();
+        let limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![
+                (
+                    fast.clone(),
+                    Quota::with_period(Duration::from_secs(1)).unwrap(),
+                ),
+                (
+                    slow.clone(),
+                    Quota::with_period(Duration::from_secs(10)).unwrap(),
+                ),
+            ],
+        ));
+        limiter.check_key(&slow).unwrap();
+
+        let waiting_limiter = Arc::clone(&limiter);
+        let waiting_fast = fast.clone();
+        let waiting_slow = slow.clone();
+
+        let request = test_task::spawn(async move {
+            waiting_limiter
+                .await_keys_ready(Some(&[waiting_fast, waiting_slow]))
+                .await;
+        });
+        test_task::yield_now().await;
+
+        limiter.check_key(&fast).unwrap();
+        assert!(!request.is_finished());
+
+        advance_test_clock(Duration::from_millis(9_999)).await;
+        limiter.until_key_ready(&fast).await;
+        limiter.until_key_ready(&fast).await;
+        advance_test_clock(Duration::from_millis(1)).await;
+        test_task::yield_now().await;
+        assert!(!request.is_finished());
+
+        advance_test_clock(Duration::from_millis(998)).await;
+        test_task::yield_now().await;
+        assert!(!request.is_finished());
+
+        advance_test_clock(Duration::from_millis(1)).await;
+        request.await.unwrap();
+
+        assert!(limiter.check_key(&fast).is_err());
+        assert!(limiter.check_key(&slow).is_err());
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    async fn advance_test_clock(duration: Duration) {
+        madsim::time::advance(duration);
+        test_task::yield_now().await;
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    async fn advance_test_clock(duration: Duration) {
+        tokio::time::advance(duration).await;
+    }
+
     #[rstest]
     fn test_per_second_returns_none_on_zero_replenish_interval() {
         assert!(Quota::per_second(NonZeroU32::new(u32::MAX).unwrap()).is_none());
@@ -590,6 +805,7 @@ mod tests {
             gcra: DashMap::new(),
             clock,
             start,
+            decision_lock: std::sync::Mutex::new(()),
         };
 
         let accepted = AtomicU32::new(0);

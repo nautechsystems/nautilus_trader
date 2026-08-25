@@ -24,8 +24,7 @@ __all__ = [
     "DeriveDataClientConfig",
     "DeriveDataClientFactory",
     "DeriveEnvironment",
-    "DeriveExecClientConfig",
-    "DeriveExecFactoryConfig",
+    "DeriveExecutionClientConfig",
     "DeriveExecutionClientFactory",
 ]
 

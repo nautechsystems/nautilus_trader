@@ -155,7 +155,7 @@ at-the-open instruction.
 | Leverage control | -         | No leverage on a betting exchange.             |
 | Margin mode      | -         | No margin on a betting exchange.               |
 
-Set `position_check_interval_secs=None` on `LiveExecEngineConfig`, because Betfair reports no
+Set `position_check_interval_secs=None` on `LiveExecutionEngineConfig`, because Betfair reports no
 venue-side positions to check against.
 
 ### Order querying
@@ -176,6 +176,9 @@ Startup:
 3. Connect the Betfair execution stream and subscribe to order updates.
 4. Generate startup mass status from `listCurrentOrders`.
 5. Reconcile order and fill reports into the execution engine.
+
+Cached open orders with venue identity are restored as already accepted, so startup or resync does
+not emit another `OrderAccepted`.
 
 On every stream reconnect, the adapter repeats the order-and-fill mass-status fetch over a recent
 window. It halts new-order submissions after transport loss or a server `connectionClosed` status
@@ -198,12 +201,12 @@ Reconciliation behavior:
 Betfair expires session tokens, so the adapter renews them rather than waiting for a failure. It
 handles renewal and recovery through four mechanisms:
 
-| Mechanism            | Trigger                                     | Action                                                                                               |
-| -------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Periodic keep-alive  | Every 10 hours (36,000 seconds).            | Renew the session token and update retained stream authentication without reconnecting.              |
-| Keep-alive fallback  | Keep-alive returns `LoginFailed`.           | Re-login, update all active stream authentication, then request replacement stream transports.       |
-| Stream reconnect     | `Connection` message after initial connect. | Try keep-alive. `LoginFailed` triggers full re-login; other failures retain the existing session.    |
-| HTTP report recovery | A report query returns a session error.     | Try keep-alive and retry once; any keep-alive failure falls back to full re-login before that retry. |
+| Mechanism            | Trigger                                       | Action                                                                                               |
+| -------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Periodic keep-alive  | Every 10 hours (36,000 seconds).              | Renew the session token and update retained stream authentication without reconnecting.              |
+| Keep-alive fallback  | Keep-alive returns `LoginFailed`.             | Re-login, update all active stream authentication, then request replacement stream transports.       |
+| Stream reconnect     | Current order image after transport recovery. | Try keep-alive. `LoginFailed` triggers full re-login; other failures retain the existing session.    |
+| HTTP report recovery | A report query returns a session error.       | Try keep-alive and retry once; any keep-alive failure falls back to full re-login before that retry. |
 
 The periodic keep-alive tasks and data stream reconnect handler log and skip transient keep-alive
 errors such as network timeouts and 5xx responses. The execution reconnect handler also preserves
@@ -215,13 +218,15 @@ Both the data and execution clients use the same session-renewal policy. Each sp
 
 - A **keep-alive task** that periodically attempts renewal. An ordinary successful keep-alive
   updates retained authentication without replacing the transport.
-- A **reconnect handler** that listens for `Connection` messages after a stream reconnect and
+- A **reconnect handler** that waits for the replacement order subscription to become current, then
   attempts to refresh the session.
 
 After a full re-login, the adapter updates authentication for every affected active stream before it
 requests any reconnect. Each replacement connection sends the latest authentication before retained
-subscriptions or traffic buffered during the reconnect. Market and order streams also
-retain their subscription IDs and `clk`/`initialClk` resume values.
+subscriptions or traffic buffered during the reconnect. Market and order streams retain their
+subscription IDs and `clk`/`initialClk` resume values. Correlated status responses keep socket
+availability, authentication, pending subscriptions, current subscriptions, rejected requests, and
+degraded streams distinct.
 
 The data client applies the same update to active market, race, and cricket streams. A periodic
 keep-alive fallback requests replacement transports immediately after updating authentication. An
@@ -240,22 +245,25 @@ unavailable. In particular, fills can complete and roll off the unmatched book b
 post-reconnect stream image arrives. The adapter therefore fetches and dispatches a mass status over
 a recent window before allowing new submissions.
 
-| Step | Trigger                                               | Action                                                                                                                                                  |
-| ---- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Transport loss or a server `connectionClosed` status. | Advances the reconciliation generation and halts new submissions immediately.                                                                           |
-| 2    | Replacement `Connection` message.                     | Advances the generation again, raises `pending_resync`, and queues that generation.                                                                     |
-| 3    | Reconnect task receives the generation.               | Attempts a session refresh, publishes authentication after a successful refresh, requests `getAccountFunds`, then queries orders and fills in sequence. |
-| 4    | Both `listCurrentOrders` queries succeed.             | Builds and dispatches `ExecutionReport::MassStatus` through the execution event channel.                                                                |
-| 5    | Recovery task finishes.                               | Requests a replacement after full re-login. Clears the halt if mass status was dispatched and the generation is current.                                |
+| Step | Trigger                                               | Action                                                                                                               |
+| ---- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| 1    | Transport loss or a server `connectionClosed` status. | Advances the reconciliation generation and halts new submissions immediately.                                        |
+| 2    | Replacement `Connection` message.                     | Marks authentication and retained subscriptions pending and raises `pending_resync`.                                 |
+| 3    | Complete `SUB_IMAGE` or `RESUB_DELTA`.                | Queues the current generation once. OCMs remain buffered until recovery completes.                                   |
+| 4    | Reconnect task receives the generation.               | Refreshes the session, requests `getAccountFunds`, then queries orders and fills with up to four bounded attempts.   |
+| 5    | Both `listCurrentOrders` queries succeed.             | Dispatches the complete mass status, commits fill deduplication, and reopens submissions under one generation check. |
 
 The account-state refresh is best effort: a request or parse failure is logged but does not prevent
 mass-status dispatch or reopening the gate. A keep-alive failure other than `LoginFailed` continues
 with the retained session because the report queries retain their own retry and session-recovery
-logic. A failed full re-login or either report query leaves the gate halted until a later reconnect
-succeeds or the client disconnects. This fail-closed behavior also covers the interval where the
-replacement socket is active but Betfair has not sent its `Connection` message.
+logic. Read-only mass-status recovery retries four times with exponential backoff. Exhausted retries,
+a failed full re-login, or a failed report dispatch leave the gate halted until a later reconnect
+succeeds or the client disconnects. A newer transport loss, reconnect, disconnect, or shutdown
+cancels stale recovery work. This fail-closed behavior also covers an active socket whose
+authentication or order subscription is not current.
 
-Mass-status dispatch is the completion boundary for the handled generation. The gate does not wait
+Mass-status dispatch and fill-deduplication commit form the completion boundary for the handled
+generation. A failed or stale recovery does not advance fill deduplication. The gate does not wait
 for a separate acknowledgement that the execution engine has applied the report to its cache.
 
 While the execution stream is unavailable or reconciliation is in progress:
@@ -270,9 +278,11 @@ While the execution stream is unavailable or reconciliation is in progress:
 If the client disconnects while a reconciliation is still in flight, `clear_resync_state` clears
 the active halt so a subsequent connect/submit cycle starts clean.
 
-The lookback window for the mass-status fetch is `stream_gap_recovery_lookback_mins`
-(default `10`). It should comfortably exceed the longest expected reconnect duration so
-a fill that completed mid-gap is still captured.
+The lookback window for the mass-status fetch is `stream_gap_recovery_lookback_mins` (default `10`).
+Fill recovery requests `OrderProjection::All`, orders results by match time, and bounds the request
+at the recovery timestamp. Betfair applies the date range to match time, so the result includes an
+order placed before the lookback when it matched during the gap, including execution-complete and
+settled orders still returned by `listCurrentOrders`.
 
 ## Tick scheme and pricing
 
@@ -349,6 +359,19 @@ Betfair provides separate values for logical order correlation and request dedup
 | ------------------ | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `customerOrderRef` | One logical order | Derived from `client_order_id`, returned as OCM `rfo`, and retained across replacement Bet IDs.                              |
 | `customerRef`      | One REST command  | Generated for each place, replace, or cancel request and reused unchanged for every retry, including batches and reductions. |
+
+:::warning
+Client order IDs longer than 32 characters use their last 32 characters as `customerOrderRef`.
+Keep those suffixes distinct across tracked orders. A new submission whose reference matches
+another tracked order emits `OrderDenied` before `OrderSubmitted` or HTTP dispatch with
+`VALIDATION_FAILED: customerOrderRef <ref> collides with another active order`; in an order list,
+only the colliding leg is denied.
+:::
+
+When OCM state is synchronized from cached orders, the adapter also recognizes the legacy
+first-32-character format. If either truncation identifies more than one tracked order, OCM and
+reconciliation order status and fill reports omit `client_order_id` and retain the Bet ID so
+reconciliation can match by venue identity.
 
 ### Retry and ambiguity
 
@@ -575,10 +598,20 @@ The adapter configures stream liveness and message size as follows:
   off unless a firewall or proxy needs traffic to keep the connection open because the heartbeat
   response blocks the connection while it is served. See Betfair's
   [Exchange Stream API heartbeat guidance](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687396/Exchange+Stream+API#ExchangeStreamAPI-Heartbeat/HeartbeatMessage).
-  The dead peer timeout applies when this interval is set. The order stream also applies it because
-  the execution client subscribes immediately and requests server heartbeats. This avoids reconnect
-  loops before the first market subscription and on race or cricket streams, whose subscriptions
-  cannot request server heartbeats.
+  Outbound heartbeats do not set the server subscription interval or determine market and order
+  stream readiness. For race and cricket streams, an unset timeout uses two outbound heartbeat
+  intervals for dead-peer detection.
+- `stream_heartbeat_timeout_secs` overrides dead-peer detection. When unset, the adapter uses two
+  effective server heartbeat intervals, rounded up to a whole second, and follows a valid interval
+  reported by Betfair. An explicit override must cover at least two requested intervals. Dead-peer
+  detection starts after the first market or order subscription, which avoids reconnect loops before
+  a data client subscribes. Race and cricket streams do not support subscription heartbeats.
+- A change message with status 503 marks its subscription degraded without replacing the socket. A
+  later current message restores data readiness after a valid initial image has been received. A
+  degraded initial image still requires a later valid `SUB_IMAGE`. For execution,
+  the recovery message queues mass-status reconciliation, and submissions reopen only after the
+  report publishes. Execution submissions remain closed whenever the order stream is pending,
+  rejected, degraded, disconnected, or reconciling.
 
 ### Data client configuration
 
@@ -602,7 +635,7 @@ The adapter configures stream liveness and message size as follows:
 | `stream_host`                       | `None`   | Optional stream host override.                             |
 | `stream_port`                       | `None`   | Optional stream port override.                             |
 | `stream_heartbeat_secs`             | `None`   | Outbound heartbeat interval in seconds; `None` sends none. |
-| `stream_heartbeat_timeout_secs`     | `60`     | Dead-peer timeout before reconnect.                        |
+| `stream_heartbeat_timeout_secs`     | `None`   | Dead-peer override; `None` uses two server intervals.      |
 | `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                                   |
 | `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                                   |
 | `stream_use_tls`                    | `True`   | Use TLS for the stream connection.                         |
@@ -621,7 +654,6 @@ receive every price update.
 
 | Option                              | Default       | Notes                                                              |
 | ----------------------------------- | ------------- | ------------------------------------------------------------------ |
-| `trader_id`                         | `TRADER-001`  | Trader ID for the client core.                                     |
 | `account_id`                        | `BETFAIR-001` | Account ID for the client core.                                    |
 | `account_currency`                  | `GBP`         | Betfair account currency.                                          |
 | `username`                          | `None`        | Falls back to `BETFAIR_USERNAME`.                                  |
@@ -633,7 +665,7 @@ receive every price update.
 | `stream_host`                       | `None`        | Optional stream host override.                                     |
 | `stream_port`                       | `None`        | Optional stream port override.                                     |
 | `stream_heartbeat_secs`             | `None`        | Outbound heartbeat interval in seconds; `None` sends none.         |
-| `stream_heartbeat_timeout_secs`     | `60`          | Dead-peer timeout before reconnect.                                |
+| `stream_heartbeat_timeout_secs`     | `None`        | Dead-peer override; `None` uses two server intervals.              |
 | `stream_reconnect_delay_initial_ms` | `2,000`       | Initial reconnect delay.                                           |
 | `stream_reconnect_delay_max_ms`     | `30,000`      | Maximum reconnect delay.                                           |
 | `stream_use_tls`                    | `True`        | Use TLS for the stream connection.                                 |

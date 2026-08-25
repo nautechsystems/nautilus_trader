@@ -26,7 +26,7 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
@@ -127,6 +127,7 @@ impl Default for BlockchainExecutionClientFactory {
 impl ExecutionClientFactory for BlockchainExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
@@ -141,7 +142,7 @@ impl ExecutionClientFactory for BlockchainExecutionClientFactory {
             })?;
 
         let core_execution_client = ExecutionClientCore::new(
-            blockchain_execution_config.trader_id,
+            trader_id,
             ClientId::from(name),
             *BLOCKCHAIN_VENUE,
             OmsType::Netting,

@@ -31,7 +31,7 @@ import pytest
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import Environment
 from nautilus_trader.common import ImportableActorConfig
-from nautilus_trader.live import LiveExecEngineConfig
+from nautilus_trader.live import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import NodeState
@@ -57,7 +57,7 @@ def build_node(trader_id: str) -> LiveNode:
         LiveNodeConfig(
             trader_id=TraderId(trader_id),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             timeout_connection_secs=0,
             timeout_reconciliation_secs=0,
             timeout_portfolio_secs=0,

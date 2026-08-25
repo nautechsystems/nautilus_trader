@@ -28,11 +28,11 @@ pub type FactoryExtractor =
     fn(py: Python<'_>, factory: Py<PyAny>) -> PyResult<Box<dyn DataClientFactory>>;
 
 /// Function type for extracting a `Py<PyAny>` factory to a boxed `ExecutionClientFactory` trait object.
-pub type ExecFactoryExtractor =
+pub type ExecutionFactoryExtractor =
     fn(py: Python<'_>, factory: Py<PyAny>) -> PyResult<Box<dyn ExecutionClientFactory>>;
 
 /// Function type for extracting a `Py<PyAny>` factory to a boxed `SimulatedExecutionClientFactory` trait object.
-pub type SimExecFactoryExtractor =
+pub type SimulatedExecutionFactoryExtractor =
     fn(py: Python<'_>, factory: Py<PyAny>) -> PyResult<Box<dyn SimulatedExecutionClientFactory>>;
 
 /// Function type for extracting a `Py<PyAny>` config to a boxed `ClientConfig` trait object.
@@ -46,8 +46,8 @@ pub type ConfigExtractor = fn(py: Python<'_>, config: Py<PyAny>) -> PyResult<Box
 #[derive(Debug)]
 pub struct FactoryRegistry {
     factory_extractors: Mutex<HashMap<String, FactoryExtractor>>,
-    exec_factory_extractors: Mutex<HashMap<String, ExecFactoryExtractor>>,
-    sim_exec_factory_extractors: Mutex<HashMap<String, SimExecFactoryExtractor>>,
+    exec_factory_extractors: Mutex<HashMap<String, ExecutionFactoryExtractor>>,
+    sim_exec_factory_extractors: Mutex<HashMap<String, SimulatedExecutionFactoryExtractor>>,
     config_extractors_by_type: Mutex<HashMap<String, ConfigExtractor>>,
 }
 
@@ -122,7 +122,7 @@ impl FactoryRegistry {
     pub fn register_exec_factory_extractor(
         &self,
         name: String,
-        extractor: ExecFactoryExtractor,
+        extractor: ExecutionFactoryExtractor,
     ) -> anyhow::Result<()> {
         let mut extractors = self.exec_factory_extractors.lock().expect(MUTEX_POISONED);
 
@@ -145,7 +145,7 @@ impl FactoryRegistry {
     pub fn register_sim_exec_factory_extractor(
         &self,
         name: String,
-        extractor: SimExecFactoryExtractor,
+        extractor: SimulatedExecutionFactoryExtractor,
     ) -> anyhow::Result<()> {
         let mut extractors = self
             .sim_exec_factory_extractors

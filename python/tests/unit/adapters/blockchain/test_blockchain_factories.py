@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
+from unit.adapters.example_modules import capture_actor_example_main
 from unit.adapters.example_modules import capture_data_tester_main
 from unit.adapters.example_modules import load_example_module
 
@@ -28,6 +29,7 @@ from nautilus_trader.model import TraderId
 
 BLOCKCHAIN = "BLOCKCHAIN"
 blockchain_data_tester = load_example_module("blockchain", "data_tester")
+blockchain_node_test = load_example_module("blockchain", "node_test")
 
 
 def test_blockchain_data_factory_exposes_python_name() -> None:
@@ -56,6 +58,7 @@ def test_live_node_builder_accepts_blockchain_data_factory() -> None:
 
 
 def test_blockchain_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENVIO_API_TOKEN", "00000000-0000-0000-0000-000000000000")
     captured = capture_data_tester_main(monkeypatch, blockchain_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
@@ -63,3 +66,32 @@ def test_blockchain_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kwargs["request_instruments"] is True
     assert "exec_client_args" not in captured
     assert captured["run_called"] is True
+
+
+def test_blockchain_data_tester_requires_hypersync_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ENVIO_API_TOKEN", raising=False)
+
+    with pytest.raises(SystemExit, match="ENVIO_API_TOKEN must be set"):
+        blockchain_data_tester.main()
+
+
+def test_blockchain_node_example_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ENVIO_API_TOKEN", "00000000-0000-0000-0000-000000000000")
+    captured = capture_actor_example_main(monkeypatch, blockchain_node_test)
+    _, _, config = captured["data_client_args"]
+
+    assert isinstance(config, BlockchainDataClientConfig)
+    assert config.use_hypersync_for_live_data is True
+    assert "importable_actor_config" in captured
+    assert captured["run_called"] is True
+
+
+def test_blockchain_node_example_requires_hypersync_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("ENVIO_API_TOKEN", raising=False)
+
+    with pytest.raises(SystemExit, match="ENVIO_API_TOKEN must be set"):
+        blockchain_node_test.main()

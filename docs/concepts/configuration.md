@@ -142,7 +142,7 @@ the [integration guides](../integrations/index.md).
 
 ## Engine configs
 
-Engine configs use the same typed-field approach. In `LiveExecEngineConfig`, fields such as
+Engine configs use the same typed-field approach. In `LiveExecutionEngineConfig`, fields such as
 `reconciliation`, `inflight_check_interval_ms`, and `open_check_threshold_ms` have concrete defaults:
 
 | Field                        | Default | Purpose                                                |
@@ -155,9 +155,9 @@ Optional fields such as `open_check_interval_secs` and `position_check_interval_
 disable their periodic checks:
 
 ```python
-from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 
-config = LiveExecEngineConfig(
+config = LiveExecutionEngineConfig(
     open_check_interval_secs=30.0,  # Enable open order polling
     open_check_lookback_mins=60,  # Look back 60 minutes
 )

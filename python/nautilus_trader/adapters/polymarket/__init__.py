@@ -26,7 +26,7 @@ __all__ = [
     "PolymarketDataClientConfig",
     "PolymarketDataClientFactory",
     "PolymarketDataLoader",
-    "PolymarketExecClientConfig",
+    "PolymarketExecutionClientConfig",
     "PolymarketExecutionClientFactory",
     "PolymarketFeeModel",
     "PolymarketInstrumentProviderConfig",

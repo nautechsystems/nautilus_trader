@@ -650,6 +650,9 @@ pub struct DeriveCancelByLabelResult {
     pub cancelled_orders: i64,
 }
 
+/// Result returned by `private/cancel_by_instrument`.
+pub type DeriveCancelByInstrumentResult = DeriveCancelByLabelResult;
+
 /// Empty result returned by state-changing endpoints without a typed payload.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct DeriveEmptyResult {}

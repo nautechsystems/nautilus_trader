@@ -348,10 +348,7 @@ impl KrakenSpotWebSocketClient {
                         }
                         log::info!("WebSocket reconnected, resubscribing");
 
-                        let confirmed_topics = subscriptions.all_topics();
-                        for topic in &confirmed_topics {
-                            subscriptions.mark_failure(topic);
-                        }
+                        subscriptions.reset_after_reconnect();
 
                         let payloads = subscription_payloads.read().await;
                         if payloads.is_empty() {
@@ -2113,6 +2110,7 @@ mod tests {
 
         assert!(client.subscriptions.add_reference(key));
         assert!(!client.subscriptions.add_reference(key));
+        client.subscriptions.mark_subscribe(key);
         client.subscriptions.confirm_subscribe(key);
 
         assert!(client.subscriptions_contains(key));

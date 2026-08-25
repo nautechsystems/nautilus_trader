@@ -324,6 +324,7 @@ impl CoinbaseWebSocketClient {
             loop {
                 match handler.next().await {
                     Some(NautilusWsMessage::Reconnected) => {
+                        subscriptions.reset_after_reconnect();
                         resubscribe_all(
                             &subscriptions,
                             &credential,

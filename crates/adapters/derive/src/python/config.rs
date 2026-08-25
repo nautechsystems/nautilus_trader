@@ -15,13 +15,14 @@
 
 //! Python bindings for Derive configuration.
 
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 use rust_decimal::Decimal;
 
 use crate::{
     common::enums::DeriveEnvironment,
-    config::{DeriveDataClientConfig, DeriveExecClientConfig},
+    config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
 };
 
 #[pymethods]
@@ -86,10 +87,11 @@ impl DeriveDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl DeriveExecClientConfig {
+impl DeriveExecutionClientConfig {
     /// Configuration for the Derive live execution client.
     #[new]
     #[pyo3(signature = (
+        account_id = None,
         wallet_address = None,
         session_key = None,
         subaccount_id = None,
@@ -114,6 +116,7 @@ impl DeriveExecClientConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
+        account_id: Option<AccountId>,
         wallet_address: Option<String>,
         session_key: Option<String>,
         subaccount_id: Option<u64>,
@@ -138,6 +141,7 @@ impl DeriveExecClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
+            account_id: account_id.unwrap_or(defaults.account_id),
             wallet_address,
             session_key,
             subaccount_id,
@@ -170,6 +174,6 @@ impl DeriveExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(DeriveExecClientConfig).to_string()
+        stringify!(DeriveExecutionClientConfig).to_string()
     }
 }

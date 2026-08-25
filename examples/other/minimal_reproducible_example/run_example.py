@@ -20,28 +20,28 @@ from decimal import Decimal
 
 from strategy import DemoStrategy
 
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import DataEngineConfig
-from nautilus_trader.config import LoggingConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.model import AccountType
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import CurrencyPair
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import Quantity
 from nautilus_trader.model import TraderId
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import Venue
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 
 NANOSECONDS_IN_SECOND = 1_000_000_000
+USD = Currency.from_str("USD")
 
 
-def generate_artificial_bars(instrument: Instrument, bar_type: BarType) -> list[Bar]:
+def generate_artificial_bars(instrument: CurrencyPair, bar_type: BarType) -> list[Bar]:
     # Changes between generated bars
     PRICE_CHANGE = instrument.price_increment.as_double() * 10  # 10 ticks
     TIME_CHANGE_NANOS = 60 * NANOSECONDS_IN_SECOND  # 1 minute
@@ -77,13 +77,13 @@ def generate_artificial_bars(instrument: Instrument, bar_type: BarType) -> list[
     for _ in range(10):
         last_bar = Bar(
             bar_type=first_bar.bar_type,
-            open=instrument.make_price(first_bar.open + PRICE_CHANGE),
-            high=instrument.make_price(first_bar.high + PRICE_CHANGE),
-            low=instrument.make_price(first_bar.low + PRICE_CHANGE),
-            close=instrument.make_price(first_bar.close + PRICE_CHANGE),
+            open=instrument.make_price(last_bar.open.as_double() + PRICE_CHANGE),
+            high=instrument.make_price(last_bar.high.as_double() + PRICE_CHANGE),
+            low=instrument.make_price(last_bar.low.as_double() + PRICE_CHANGE),
+            close=instrument.make_price(last_bar.close.as_double() + PRICE_CHANGE),
             volume=first_bar.volume,
-            ts_event=first_bar.ts_event + TIME_CHANGE_NANOS,
-            ts_init=first_bar.ts_init + TIME_CHANGE_NANOS,
+            ts_event=last_bar.ts_event + TIME_CHANGE_NANOS,
+            ts_init=last_bar.ts_init + TIME_CHANGE_NANOS,
         )
         generated_bars.append(last_bar)
 
@@ -91,13 +91,13 @@ def generate_artificial_bars(instrument: Instrument, bar_type: BarType) -> list[
     for _ in range(10):
         last_bar = Bar(
             bar_type=first_bar.bar_type,
-            open=instrument.make_price(first_bar.open - PRICE_CHANGE),
-            high=instrument.make_price(first_bar.high - PRICE_CHANGE),
-            low=instrument.make_price(first_bar.low - PRICE_CHANGE),
-            close=instrument.make_price(first_bar.close - PRICE_CHANGE),
+            open=instrument.make_price(last_bar.open.as_double() - PRICE_CHANGE),
+            high=instrument.make_price(last_bar.high.as_double() - PRICE_CHANGE),
+            low=instrument.make_price(last_bar.low.as_double() - PRICE_CHANGE),
+            close=instrument.make_price(last_bar.close.as_double() - PRICE_CHANGE),
             volume=first_bar.volume,
-            ts_event=first_bar.ts_event + TIME_CHANGE_NANOS,
-            ts_init=first_bar.ts_init + TIME_CHANGE_NANOS,
+            ts_event=last_bar.ts_event + TIME_CHANGE_NANOS,
+            ts_init=last_bar.ts_init + TIME_CHANGE_NANOS,
         )
         generated_bars.append(last_bar)
 
@@ -107,7 +107,7 @@ def generate_artificial_bars(instrument: Instrument, bar_type: BarType) -> list[
 def run_backtest():
     # Step 1: Configure and create backtest engine
     engine_config = BacktestEngineConfig(
-        trader_id=TraderId("BACKTEST_TRADER-001"),
+        trader_id=TraderId.from_str("BACKTEST_TRADER-001"),
         # Configure how data will be processed
         data_engine=DataEngineConfig(
             time_bars_interval_type="left-open",
@@ -115,10 +115,6 @@ def run_backtest():
             time_bars_skip_first_non_full_bar=False,
             time_bars_build_with_no_updates=False,  # don't emit aggregated bars, when no source data
             validate_data_sequence=True,
-        ),
-        # Configure logging
-        logging=LoggingConfig(
-            log_level="DEBUG",  # set DEBUG log level for console to see loaded bars in logs
         ),
     )
     engine = BacktestEngine(config=engine_config)
@@ -129,29 +125,28 @@ def run_backtest():
         venue=Venue(VENUE_NAME),
         oms_type=OmsType.NETTING,  # Order Management System type
         account_type=AccountType.MARGIN,  # Type of trading account
-        starting_balances=[Money(1_000_000, USD)],  # Initial account balance
+        starting_balances=[Money.from_str("1000000 USD")],  # Initial account balance
         base_currency=USD,  # Base currency for account
         default_leverage=Decimal(1),  # No leverage used for account
     )
 
     # Step 3: Create instrument definition and add it to the engine
-    EURUSD_FUTURE = TestInstrumentProvider.eurusd_future(
-        expiry_year=2024,
-        expiry_month=3,
-        venue_name=VENUE_NAME,
+    EURUSD = TestInstrumentProvider.default_fx_ccy(
+        symbol="EURUSD",
+        venue=Venue(VENUE_NAME),
     )
-    engine.add_instrument(EURUSD_FUTURE)
+    engine.add_instrument(EURUSD)
 
     # -------------------------------------------------------
     # PREPARE DATA
     # -------------------------------------------------------
 
     # Step 4a: Prepare BarType
-    EURUSD_1MIN_BARTYPE = BarType.from_str(f"{EURUSD_FUTURE.id}-1-MINUTE-LAST-EXTERNAL")
+    EURUSD_1MIN_BARTYPE = BarType.from_str(f"{EURUSD.id}-1-MINUTE-LAST-EXTERNAL")
 
     # Step 4b: Prepare bar data as list[Bar]
     bars: list[Bar] = generate_artificial_bars(
-        instrument=EURUSD_FUTURE,
+        instrument=EURUSD,
         bar_type=EURUSD_1MIN_BARTYPE,
     )
 

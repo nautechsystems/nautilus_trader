@@ -14,7 +14,7 @@ __all__ = [
     "CoinbaseDataClientConfig",
     "CoinbaseDataClientFactory",
     "CoinbaseEnvironment",
-    "CoinbaseExecClientConfig",
+    "CoinbaseExecutionClientConfig",
     "CoinbaseExecutionClientFactory",
     "CoinbaseMarginType",
 ]
@@ -64,7 +64,9 @@ class CoinbaseDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class CoinbaseExecClientConfig:
+class CoinbaseExecutionClientConfig:
+    @property
+    def account_id(self) -> model.AccountId: ...
     @property
     def base_url_rest(self) -> str | None: ...
     @property
@@ -91,6 +93,7 @@ class CoinbaseExecClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
+        account_id: model.AccountId | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,
         base_url_rest: str | None = None,
@@ -112,7 +115,7 @@ class CoinbaseExecClientConfig:
 
 @typing.final
 class CoinbaseExecutionClientFactory:
-    def __init__(self, trader_id: model.TraderId, account_id: model.AccountId) -> None: ...
+    def __init__(self) -> None: ...
     def name(self) -> str: ...
 
 @typing.final

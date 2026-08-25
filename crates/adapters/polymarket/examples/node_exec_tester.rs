@@ -31,7 +31,7 @@
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     enums::TimeInForce,
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
@@ -40,7 +40,8 @@ use nautilus_model::{
 use nautilus_polymarket::{
     common::{consts::POLYMARKET_CLIENT_ID, enums::SignatureType},
     config::{
-        PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
+        PolymarketDataClientConfig, PolymarketExecutionClientConfig,
+        PolymarketInstrumentProviderConfig,
     },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
 };
@@ -82,8 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let data_factory = PolymarketDataClientFactory;
 
     // PolyGnosisSafe: POLYMARKET_PK is the EOA signer, POLYMARKET_FUNDER is the Gnosis Safe proxy
-    let exec_config = PolymarketExecClientConfig {
-        trader_id,
+    let exec_config = PolymarketExecutionClientConfig {
         account_id,
         signature_type: SignatureType::PolyGnosisSafe,
         instrument_config: Some(instrument_config),
@@ -95,7 +95,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stdout_level: LevelFilter::Info,
         ..Default::default()
     };
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         reconciliation_instrument_ids: Some(vec![instrument_id.to_string()]),
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),

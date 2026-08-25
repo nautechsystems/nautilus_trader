@@ -26,7 +26,7 @@ use std::{
 
 use nautilus_hyperliquid::{
     common::enums::HyperliquidEnvironment,
-    config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
+    config::{HyperliquidDataClientConfig, HyperliquidExecutionClientConfig},
     http::{
         HyperliquidHttpClient,
         models::{HyperliquidOrderStatus, HyperliquidRecentTrade},
@@ -397,11 +397,11 @@ async fn live_config_debug_redacts_and_optional_private_paths() {
         ),
         ..HyperliquidDataClientConfig::default()
     };
-    let exec = HyperliquidExecClientConfig {
+    let exec = HyperliquidExecutionClientConfig {
         private_key: Some(
             "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
         ),
-        ..HyperliquidExecClientConfig::default()
+        ..HyperliquidExecutionClientConfig::default()
     };
     let data_debug = format!("{data:?}");
     let exec_debug = format!("{exec:?}");

@@ -13,19 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from types import ModuleType
+
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
 from unit.adapters.example_modules import capture_exec_tester_main
 from unit.adapters.example_modules import load_example_module
 
+from nautilus_trader.adapters.betfair import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair import BetfairDataClientFactory
-from nautilus_trader.adapters.betfair import BetfairDataConfig
-from nautilus_trader.adapters.betfair import BetfairExecConfig
+from nautilus_trader.adapters.betfair import BetfairExecutionClientConfig
 from nautilus_trader.adapters.betfair import BetfairExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import AccountId
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import TraderId
 
 
@@ -50,7 +53,7 @@ def test_live_node_builder_accepts_betfair_data_factory() -> None:
         .add_data_client(
             None,
             BetfairDataClientFactory(),
-            BetfairDataConfig(
+            BetfairDataClientConfig(
                 account_currency="GBP",
                 username=SMOKE_USERNAME,
                 password=SMOKE_PASSWORD,
@@ -75,7 +78,7 @@ def test_live_node_builder_accepts_betfair_exec_factory() -> None:
         .add_data_client(
             None,
             BetfairDataClientFactory(),
-            BetfairDataConfig(
+            BetfairDataClientConfig(
                 account_currency="GBP",
                 username=SMOKE_USERNAME,
                 password=SMOKE_PASSWORD,
@@ -86,8 +89,7 @@ def test_live_node_builder_accepts_betfair_exec_factory() -> None:
         .add_exec_client(
             None,
             BetfairExecutionClientFactory(),
-            BetfairExecConfig(
-                trader_id=trader_id,
+            BetfairExecutionClientConfig(
                 account_id=account_id,
                 account_currency="GBP",
                 username=SMOKE_USERNAME,
@@ -103,20 +105,61 @@ def test_live_node_builder_accepts_betfair_exec_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
+@pytest.mark.parametrize("module", [betfair_data_tester, betfair_exec_tester])
+def test_betfair_examples_require_market_target(
+    monkeypatch: pytest.MonkeyPatch,
+    module: ModuleType,
+) -> None:
+    monkeypatch.delenv("BETFAIR_MARKET_ID", raising=False)
+    monkeypatch.delenv("BETFAIR_INSTRUMENT_ID", raising=False)
+
+    with pytest.raises(SystemExit, match="BETFAIR_MARKET_ID must be set"):
+        module.main()
+
+
+@pytest.mark.parametrize("module", [betfair_data_tester, betfair_exec_tester])
+def test_betfair_examples_require_instrument_target(
+    monkeypatch: pytest.MonkeyPatch,
+    module: ModuleType,
+) -> None:
+    monkeypatch.setenv("BETFAIR_MARKET_ID", "1.234567890")
+    monkeypatch.delenv("BETFAIR_INSTRUMENT_ID", raising=False)
+
+    with pytest.raises(SystemExit, match="BETFAIR_INSTRUMENT_ID must be set"):
+        module.main()
+
+
 def test_betfair_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BETFAIR_MARKET_ID", "1.234567890")
+    monkeypatch.setenv("BETFAIR_INSTRUMENT_ID", "1.234567890-123456.BETFAIR")
     captured = capture_data_tester_main(monkeypatch, betfair_data_tester)
     kwargs = captured["data_tester_kwargs"]
+    _, _, config = captured["data_client_args"]
 
     assert isinstance(kwargs, dict)
+    assert isinstance(config, BetfairDataClientConfig)
+    assert config.market_ids == ["1.234567890"]
+    assert kwargs["instrument_ids"] == [
+        InstrumentId.from_str("1.234567890-123456.BETFAIR"),
+    ]
     assert kwargs["subscribe_book_deltas"] is True
     assert captured["run_called"] is True
 
 
 def test_betfair_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BETFAIR_MARKET_ID", "1.234567890")
+    monkeypatch.setenv("BETFAIR_INSTRUMENT_ID", "1.234567890-123456.BETFAIR")
     captured = capture_exec_tester_main(monkeypatch, betfair_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
+    _, _, data_config = captured["data_client_args"]
+    _, _, exec_config = captured["exec_client_args"]
 
     assert isinstance(kwargs, dict)
+    assert isinstance(data_config, BetfairDataClientConfig)
+    assert data_config.market_ids == ["1.234567890"]
+    assert isinstance(exec_config, BetfairExecutionClientConfig)
+    assert exec_config.stream_market_ids_filter == ["1.234567890"]
+    assert kwargs["instrument_id"] == InstrumentId.from_str("1.234567890-123456.BETFAIR")
     assert kwargs["dry_run"] is False
     assert kwargs["enable_limit_buys"] is False
     assert kwargs["enable_limit_sells"] is False

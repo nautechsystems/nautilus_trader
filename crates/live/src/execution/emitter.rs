@@ -408,13 +408,24 @@ impl ExecutionEventEmitter {
 
     /// Emits an order event.
     pub fn send_order_event(&self, event: OrderEventAny) {
-        if let Some(sender) = &self.sender {
-            if let Err(e) = sender.send(ExecutionEvent::Order(event)) {
-                log::warn!("Failed to send order event: {e}");
-            }
-        } else {
-            log::warn!("Cannot send order event: sender not initialized");
+        if let Err(e) = self.try_send_order_event(event) {
+            log::warn!("{e}");
         }
+    }
+
+    /// Emits an order event and returns any channel error to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is uninitialized or its receiver is closed.
+    pub fn try_send_order_event(&self, event: OrderEventAny) -> anyhow::Result<()> {
+        let sender = self
+            .sender
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Cannot send order event: sender not initialized"))?;
+        sender
+            .send(ExecutionEvent::Order(event))
+            .map_err(|e| anyhow::anyhow!("Failed to send order event: {e}"))
     }
 
     /// Emits a batch of order submitted events as a single channel message.
@@ -469,13 +480,23 @@ impl ExecutionEventEmitter {
 
     /// Emits an execution report.
     pub fn send_execution_report(&self, report: ExecutionReport) {
-        if let Some(sender) = &self.sender {
-            if let Err(e) = sender.send(ExecutionEvent::Report(report)) {
-                log::warn!("Failed to send execution report: {e}");
-            }
-        } else {
-            log::warn!("Cannot send execution report: sender not initialized");
+        if let Err(e) = self.try_send_execution_report(report) {
+            log::warn!("{e}");
         }
+    }
+
+    /// Emits an execution report and returns any channel error to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is not initialized or the receiving channel is closed.
+    pub fn try_send_execution_report(&self, report: ExecutionReport) -> anyhow::Result<()> {
+        let sender = self.sender.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Cannot send execution report: sender not initialized")
+        })?;
+        sender
+            .send(ExecutionEvent::Report(report))
+            .map_err(|e| anyhow::anyhow!("Failed to send execution report: {e}"))
     }
 
     /// Emits an order status report.

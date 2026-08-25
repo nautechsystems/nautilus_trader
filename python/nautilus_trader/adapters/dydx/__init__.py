@@ -25,7 +25,7 @@ __all__ = [
     "DYDX_VENUE",
     "DydxDataClientConfig",
     "DydxDataClientFactory",
-    "DydxExecClientConfig",
+    "DydxExecutionClientConfig",
     "DydxExecutionClientFactory",
     "DydxNetwork",
 ]

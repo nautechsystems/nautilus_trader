@@ -19,7 +19,7 @@
 //! addresses) are sourced from the "Protocol Constants" reference at
 //! <https://docs.derive.xyz/reference/protocol-constants>. Both mainnet and
 //! testnet values are populated; per-instance overrides on
-//! [`crate::config::DeriveExecClientConfig`] take precedence.
+//! [`crate::config::DeriveExecutionClientConfig`] take precedence.
 
 use std::{sync::LazyLock, time::Duration};
 

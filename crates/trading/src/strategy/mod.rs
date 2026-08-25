@@ -98,10 +98,8 @@ pub type BatchModifyOrder = (
 /// ```
 ///
 /// Default methods that read or mutate native runtime state carry explicit
-/// [`StrategyNative`] bounds. Strategy implementations that only need core-free
-/// callbacks can implement this trait with their own [`Component`]
-/// implementation, while runtime-registered strategies keep using native
-/// wiring.
+/// [`StrategyNative`] and [`Component`] bounds. Implementations that only need
+/// behavioral callbacks do not own or implement native runtime state.
 pub trait Strategy: DataActor {
     /// Returns the external order claims for this strategy.
     ///
@@ -465,6 +463,12 @@ pub trait Strategy: DataActor {
 
         if order.is_emulated() {
             send_emulator_command(TradingCommand::ModifyOrder(command));
+        } else if let Some(algo_id) = order
+            .exec_algorithm_id()
+            .filter(|_| order.is_active_local())
+        {
+            let endpoint = format!("{algo_id}.execute");
+            msgbus::send_any(endpoint.into(), &TradingCommand::ModifyOrder(command));
         } else {
             send_risk_command(TradingCommand::ModifyOrder(command));
         }
@@ -942,6 +946,12 @@ pub trait Strategy: DataActor {
 
     /// Cancels all open orders for the given instrument.
     ///
+    /// When `strategy_only` is `true`, only orders associated with this strategy are canceled. When
+    /// `false`, one [`CancelAllOrders`] command is sent even when the cache has no matching order.
+    /// The execution engine selects the explicit, venue-routed, or default client and may cancel
+    /// orders associated with other strategies for the same instrument, client, and account. It
+    /// does not broadcast across execution clients.
+    ///
     /// # Errors
     ///
     /// Returns an error if the strategy is not registered or order cancellation fails.
@@ -950,6 +960,7 @@ pub trait Strategy: DataActor {
         instrument_id: InstrumentId,
         order_side: Option<OrderSide>,
         client_id: Option<ClientId>,
+        strategy_only: bool,
         params: Option<Params>,
     ) -> anyhow::Result<()>
     where
@@ -961,41 +972,72 @@ pub trait Strategy: DataActor {
         let trader_id = registered_trader_id(core)?;
         let strategy_id = registered_strategy_id(core)?;
         let ts_init = core.clock_mut().timestamp_ns();
+
+        if !strategy_only {
+            let command_id = UUID4::new();
+            let command = CancelAllOrders::new(
+                trader_id,
+                client_id,
+                strategy_id,
+                instrument_id,
+                order_side.unwrap_or(OrderSide::NoOrderSide),
+                command_id,
+                ts_init,
+                params,
+                Some(command_id),
+            );
+
+            send_exec_command(TradingCommand::CancelAllOrders(command));
+            return Ok(());
+        }
+
         let cache = core.cache_ref();
 
-        let open_count = cache.orders_open_count(
-            None,
-            Some(&instrument_id),
-            Some(&strategy_id),
-            None,
-            order_side,
-        );
+        let mut open_order_ids: Vec<ClientOrderId> = cache
+            .orders_open(
+                None,
+                Some(&instrument_id),
+                Some(&strategy_id),
+                None,
+                order_side,
+            )
+            .into_iter()
+            .map(|order| order.client_order_id())
+            .collect();
 
-        let emulated_count = cache.orders_emulated_count(
-            None,
-            Some(&instrument_id),
-            Some(&strategy_id),
-            None,
-            order_side,
-        );
+        let mut emulated_order_ids: Vec<ClientOrderId> = cache
+            .orders_emulated(
+                None,
+                Some(&instrument_id),
+                Some(&strategy_id),
+                None,
+                order_side,
+            )
+            .into_iter()
+            .map(|order| order.client_order_id())
+            .collect();
 
-        let inflight_count = cache.orders_inflight_count(
-            None,
-            Some(&instrument_id),
-            Some(&strategy_id),
-            None,
-            order_side,
-        );
+        let mut inflight_order_ids: Vec<ClientOrderId> = cache
+            .orders_inflight(
+                None,
+                Some(&instrument_id),
+                Some(&strategy_id),
+                None,
+                order_side,
+            )
+            .into_iter()
+            .map(|order| order.client_order_id())
+            .collect();
 
         // Sort the algorithm IDs so the per-algo cancel cascade fires msgbus
         // events in a deterministic order across runs; the cache returns an
         // unordered AHashSet.
         let mut exec_algorithm_ids: Vec<_> = cache.exec_algorithm_ids().into_iter().collect();
         exec_algorithm_ids.sort();
-        let mut algo_orders: Vec<OrderAny> = Vec::new();
+        let mut algo_order_ids: Vec<ClientOrderId> = Vec::new();
 
         for algo_id in &exec_algorithm_ids {
-            algo_orders.extend(
+            algo_order_ids.extend(
                 cache
                     .orders_for_exec_algorithm(
                         algo_id,
@@ -1006,11 +1048,42 @@ pub trait Strategy: DataActor {
                         order_side,
                     )
                     .into_iter()
-                    .map(|o| o.clone()),
+                    .map(|order| order.client_order_id()),
             );
         }
 
-        let algo_count = algo_orders.len();
+        let matches_client = |client_order_id: &ClientOrderId| {
+            client_id.is_none_or(|client_id| {
+                cache
+                    .client_id(client_order_id)
+                    .is_none_or(|order_client_id| *order_client_id == client_id)
+            })
+        };
+
+        open_order_ids.retain(&matches_client);
+        emulated_order_ids.retain(&matches_client);
+        inflight_order_ids.retain(&matches_client);
+        algo_order_ids.retain(&matches_client);
+
+        let open_count = open_order_ids.len();
+        let emulated_count = emulated_order_ids.len();
+        let inflight_count = inflight_order_ids.len();
+        let algo_count = algo_order_ids.len();
+
+        let mut cancel_routes: Vec<_> = open_order_ids
+            .iter()
+            .chain(&emulated_order_ids)
+            .chain(&inflight_order_ids)
+            .chain(&algo_order_ids)
+            .map(|client_order_id| {
+                (
+                    *client_order_id,
+                    client_id.or_else(|| cache.client_id(client_order_id).copied()),
+                )
+            })
+            .collect();
+        cancel_routes.sort_by_key(|(client_order_id, _)| *client_order_id);
+        cancel_routes.dedup_by_key(|(client_order_id, _)| *client_order_id);
 
         drop(cache);
 
@@ -1043,43 +1116,19 @@ pub trait Strategy: DataActor {
             );
         }
 
-        if open_count > 0 || inflight_count > 0 {
-            let command = CancelAllOrders::new(
-                trader_id,
-                client_id,
-                strategy_id,
-                instrument_id,
-                order_side.unwrap_or(OrderSide::NoOrderSide),
-                UUID4::new(),
-                ts_init,
-                params.clone(),
-                None, // correlation_id
-            );
+        let mut first_error = None;
 
-            send_exec_command(TradingCommand::CancelAllOrders(command));
+        for (client_order_id, client_id) in cancel_routes {
+            if let Err(e) = self.cancel_order(client_order_id, client_id, params.clone()) {
+                if first_error.is_none() {
+                    first_error = Some(e);
+                } else {
+                    log::error!("Error canceling {client_order_id}: {e}");
+                }
+            }
         }
 
-        if emulated_count > 0 {
-            let command = CancelAllOrders::new(
-                trader_id,
-                client_id,
-                strategy_id,
-                instrument_id,
-                order_side.unwrap_or(OrderSide::NoOrderSide),
-                UUID4::new(),
-                ts_init,
-                params,
-                None, // correlation_id
-            );
-
-            send_emulator_command(TradingCommand::CancelAllOrders(command));
-        }
-
-        for order in algo_orders {
-            self.cancel_order(order.client_order_id(), client_id, None)?;
-        }
-
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     /// Closes a position by submitting a market order for the opposite side.
@@ -1454,7 +1503,7 @@ pub trait Strategy: DataActor {
     /// Returns an error if time event handling fails.
     fn on_time_event(&mut self, event: &TimeEvent) -> anyhow::Result<()>
     where
-        Self: StrategyNative,
+        Self: StrategyNative + Component,
     {
         if event.name.starts_with("GTD-EXPIRY:") {
             self.expire_gtd_order(event.clone());
@@ -1693,7 +1742,7 @@ pub trait Strategy: DataActor {
         drop(cache);
 
         for instrument_id in instruments {
-            if let Err(e) = self.cancel_all_orders(instrument_id, None, None, None) {
+            if let Err(e) = self.cancel_all_orders(instrument_id, None, None, true, None) {
                 log::error!("Error canceling orders for {instrument_id}: {e}");
             }
 
@@ -1743,7 +1792,7 @@ pub trait Strategy: DataActor {
     /// This method is called by the market exit timer.
     fn check_market_exit(&mut self, _event: TimeEvent)
     where
-        Self: StrategyNative,
+        Self: StrategyNative + Component,
     {
         // Guard against stale timer events after cancel_market_exit
         if !self.is_exiting() {
@@ -1848,7 +1897,7 @@ pub trait Strategy: DataActor {
     /// and stops the strategy if a stop was pending.
     fn finalize_market_exit(&mut self)
     where
-        Self: StrategyNative,
+        Self: StrategyNative + Component,
     {
         let (actor_id, should_stop) = {
             let core = StrategyNative::strategy_core_mut(self);
@@ -2278,11 +2327,11 @@ mod tests {
         cache::{Cache, ORDER_NOT_FOUND},
         clock::{Clock, TestClock},
         component::Component,
-        enums::{ComponentState, ComponentTrigger},
+        enums::ComponentState,
         msgbus::{
             self, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
             stubs::{
-                TypedIntoMessageSavingHandler, TypedMessageSavingHandler,
+                TypedIntoMessageSavingHandler, TypedMessageSavingHandler, get_any_saving_handler,
                 get_typed_into_message_saving_handler, get_typed_message_saving_handler,
             },
         },
@@ -2296,13 +2345,13 @@ mod tests {
         events::{
             OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
             order::spec::{
-                OrderAcceptedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderFillVoidedSpec,
-                OrderFilledSpec, OrderRejectedSpec,
+                OrderAcceptedSpec, OrderCanceledSpec, OrderEmulatedSpec, OrderExpiredSpec,
+                OrderFillVoidedSpec, OrderFilledSpec, OrderRejectedSpec,
             },
         },
         identifiers::{
-            AccountId, ActorId, ClientOrderId, ComponentId, InstrumentId, OrderListId, PositionId,
-            StrategyId, TradeId, TraderId, VenueOrderId,
+            AccountId, ActorId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+            TradeId, TraderId, VenueOrderId,
         },
         orderbook::own::OwnOrderBook,
         orders::{LimitOrder, MarketOrder, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -2334,32 +2383,7 @@ mod tests {
 
     #[derive(Debug)]
     struct CoreFreeStrategy {
-        state: ComponentState,
         started: bool,
-    }
-
-    impl Component for CoreFreeStrategy {
-        fn component_id(&self) -> ComponentId {
-            ComponentId::new("CoreFreeStrategy")
-        }
-
-        fn state(&self) -> ComponentState {
-            self.state
-        }
-
-        fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
-            self.state = self.state.transition(&trigger)?;
-            Ok(())
-        }
-
-        fn register(
-            &mut self,
-            _trader_id: TraderId,
-            _clock: Rc<RefCell<dyn Clock>>,
-            _cache: Rc<RefCell<Cache>>,
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
     }
 
     impl DataActor for CoreFreeStrategy {
@@ -2664,6 +2688,30 @@ mod tests {
             None,
             None,
             None,
+            None,
+        ))
+    }
+
+    fn make_initialized_algorithm_order(client_order_id: &str) -> OrderAny {
+        OrderAny::Market(MarketOrder::new(
+            TraderId::from("TRADER-001"),
+            StrategyId::from("TEST-001"),
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            ClientOrderId::from(client_order_id),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(ExecAlgorithmId::from("TWAP")),
+            None,
+            Some(ClientOrderId::from(client_order_id)),
             None,
         ))
     }
@@ -3456,6 +3504,248 @@ mod tests {
     }
 
     #[rstest]
+    fn test_modify_order_routes_active_local_algorithm_order_to_algorithm() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+        let (algo_handler, algo_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("TWAP.execute")));
+        msgbus::register_any("TWAP.execute".into(), algo_handler);
+
+        let order = make_initialized_algorithm_order("O-20250208-ALGO-MODIFY-001");
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_order(
+                order.client_order_id(),
+                Some(Quantity::from(200_000)),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let algo_messages = algo_messages.get_messages();
+        assert_eq!(algo_messages.len(), 1);
+        assert!(matches!(
+            algo_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert!(risk_messages.get_messages().is_empty());
+        assert!(exec_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_modify_order_routes_accepted_algorithm_order_to_risk() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (algo_handler, algo_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("TWAP.execute")));
+        msgbus::register_any("TWAP.execute".into(), algo_handler);
+
+        let mut order = make_initialized_algorithm_order("O-20250208-ALGO-MODIFY-002");
+        let account_id = AccountId::from("ACC-001");
+        order
+            .apply(TestOrderEventStubs::submitted(&order, account_id))
+            .unwrap();
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                VenueOrderId::from("O-20250208-ALGO-MODIFY-002"),
+            ))
+            .unwrap();
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_order(
+                order.client_order_id(),
+                Some(Quantity::from(200_000)),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let risk_messages = risk_messages.get_messages();
+        assert_eq!(risk_messages.len(), 1);
+        assert!(matches!(
+            risk_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert!(algo_messages.get_messages().is_empty());
+        assert_eq!(
+            strategy
+                .cache()
+                .order(&order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::PendingUpdate
+        );
+    }
+
+    #[rstest]
+    fn test_modify_order_routes_emulated_order_to_order_emulator() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-20250208-EMULATED-MODIFY-001"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        order
+            .apply(OrderEventAny::Emulated(
+                OrderEmulatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .build(),
+            ))
+            .unwrap();
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_order(
+                order.client_order_id(),
+                None,
+                None,
+                Some(Price::from("52000.0")),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let emulator_messages = emulator_messages.get_messages();
+        assert_eq!(emulator_messages.len(), 1);
+        assert!(matches!(
+            emulator_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert!(risk_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_modify_order_prefers_emulator_over_algorithm_for_emulated_algorithm_order() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (algo_handler, algo_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("TWAP.execute")));
+        msgbus::register_any("TWAP.execute".into(), algo_handler);
+
+        let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(ClientOrderId::from("O-20250208-EMULATED-ALGO-MODIFY-001"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .exec_algorithm_id(ExecAlgorithmId::from("TWAP"))
+            .exec_spawn_id(ClientOrderId::from("O-20250208-EMULATED-ALGO-MODIFY-001"))
+            .build();
+        order
+            .apply(OrderEventAny::Emulated(
+                OrderEmulatedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .build(),
+            ))
+            .unwrap();
+
+        // An `Emulated` order satisfies both `is_emulated` and `is_active_local`, so this
+        // order matches the emulator branch and the algorithm branch at once.
+        assert!(order.is_emulated());
+        assert!(order.is_active_local());
+        assert!(order.exec_algorithm_id().is_some());
+
+        add_order_to_cache(&strategy, &order);
+
+        strategy
+            .modify_order(
+                order.client_order_id(),
+                None,
+                None,
+                Some(Price::from("52000.0")),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let emulator_messages = emulator_messages.get_messages();
+        assert_eq!(emulator_messages.len(), 1);
+        assert!(matches!(
+            emulator_messages.first(),
+            Some(TradingCommand::ModifyOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert!(algo_messages.get_messages().is_empty());
+        assert!(risk_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
     fn test_modify_order_marks_order_pending_update_locally_before_send() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
@@ -3624,6 +3914,421 @@ mod tests {
             event_messages.first(),
             Some(OrderEventAny::PendingCancel(_))
         ));
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_strategy_only_sends_only_caller_strategy_cancels() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let order = make_accepted_market_order("O-20250208-CANCEL-ALL-001");
+        let mut sibling_order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("SIBLING-001"))
+            .instrument_id(order.instrument_id())
+            .client_order_id(ClientOrderId::from("O-20250208-CANCEL-ALL-002"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let account_id = AccountId::from("ACC-001");
+        sibling_order
+            .apply(TestOrderEventStubs::submitted(&sibling_order, account_id))
+            .unwrap();
+        sibling_order
+            .apply(TestOrderEventStubs::accepted(
+                &sibling_order,
+                account_id,
+                VenueOrderId::from("2"),
+            ))
+            .unwrap();
+        add_order_to_cache(&strategy, &order);
+        add_order_to_cache(&strategy, &sibling_order);
+        strategy.core.cache_rc().borrow_mut().build_index();
+
+        strategy
+            .cancel_all_orders(order.instrument_id(), None, None, true, None)
+            .unwrap();
+
+        let messages = exec_messages.get_messages();
+        let cache = strategy.cache();
+        let cached_order = cache.order(&order.client_order_id()).unwrap();
+        let cached_sibling = cache.order(&sibling_order.client_order_id()).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(
+            messages.first(),
+            Some(TradingCommand::CancelOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert_eq!(cached_order.status(), OrderStatus::PendingCancel);
+        assert_eq!(cached_sibling.status(), OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_strategy_only_deduplicates_emulated_inflight_order() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let client_order_id = ClientOrderId::from("O-20250208-CANCEL-ALL-EMULATED-001");
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .exec_algorithm_id(ExecAlgorithmId::from("ALGO-001"))
+            .exec_spawn_id(client_order_id)
+            .build();
+        add_order_to_cache(&strategy, &order);
+        strategy.core.cache_rc().borrow_mut().build_index();
+
+        strategy
+            .cancel_all_orders(order.instrument_id(), None, None, true, None)
+            .unwrap();
+
+        let emulator_messages = emulator_messages.get_messages();
+        assert_eq!(emulator_messages.len(), 1);
+        assert!(matches!(
+            emulator_messages.first(),
+            Some(TradingCommand::CancelOrder(command))
+                if command.client_order_id == order.client_order_id()
+        ));
+        assert!(exec_messages.get_messages().is_empty());
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_without_strategy_only_sends_cancel_all_command() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+
+        strategy
+            .cancel_all_orders(instrument_id, None, None, false, None)
+            .unwrap();
+
+        let messages = exec_messages.get_messages();
+        assert_eq!(messages.len(), 1);
+        let Some(TradingCommand::CancelAllOrders(command)) = messages.first() else {
+            panic!("Expected a CancelAllOrders command, was {messages:?}");
+        };
+        assert_eq!(command.strategy_id, StrategyId::from("TEST-001"));
+        assert_eq!(command.instrument_id, instrument_id);
+        assert_eq!(command.client_id, None);
+        assert_eq!(command.order_side, OrderSide::NoOrderSide);
+        assert_eq!(command.correlation_id, Some(command.command_id));
+        assert_eq!(command.causation_id, None);
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_without_strategy_only_delegates_local_routing_with_params() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let exec_algorithm_id = ExecAlgorithmId::from("ALGO-001");
+        let algorithm_endpoint = format!("{exec_algorithm_id}.execute");
+        let (algorithm_handler, algorithm_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("ALGO-001.execute")));
+        msgbus::register_any(algorithm_endpoint.into(), algorithm_handler);
+
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let sibling_strategy_id = StrategyId::from("SIBLING-001");
+        let selected_client = ClientId::from("CLIENT-001");
+        let account_id = AccountId::from("ACC-001");
+
+        let mut open_order = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(sibling_strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-BROAD-OPEN-001"))
+            .side(OrderSide::Buy)
+            .price(Price::from("49000.0"))
+            .quantity(Quantity::from(100_000))
+            .build();
+        open_order
+            .apply(TestOrderEventStubs::submitted(&open_order, account_id))
+            .unwrap();
+        open_order
+            .apply(TestOrderEventStubs::accepted(
+                &open_order,
+                account_id,
+                VenueOrderId::from("V-BROAD-OPEN-001"),
+            ))
+            .unwrap();
+        let emulated_order = OrderTestBuilder::new(OrderType::StopMarket)
+            .strategy_id(sibling_strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-BROAD-EMULATED-001"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let algorithm_order_id = ClientOrderId::from("O-BROAD-ALGO-001");
+        let algorithm_order = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(sibling_strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(algorithm_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .exec_algorithm_id(exec_algorithm_id)
+            .exec_spawn_id(algorithm_order_id)
+            .build();
+
+        {
+            let cache_rc = strategy.core.cache_rc();
+            let mut cache = cache_rc.borrow_mut();
+            for order in [&open_order, &emulated_order, &algorithm_order] {
+                cache
+                    .add_order(order.clone(), None, Some(selected_client), true)
+                    .unwrap();
+            }
+            cache.build_index();
+        }
+
+        let mut params = Params::new();
+        params.insert(
+            "routing_hint".to_string(),
+            Value::String("broad_cancel".to_string()),
+        );
+        strategy
+            .cancel_all_orders(
+                instrument_id,
+                Some(OrderSide::Buy),
+                Some(selected_client),
+                false,
+                Some(params.clone()),
+            )
+            .unwrap();
+
+        let exec_messages = exec_messages.get_messages();
+        let Some(TradingCommand::CancelAllOrders(exec_command)) = exec_messages.first() else {
+            panic!("Expected an execution CancelAllOrders command, was {exec_messages:?}");
+        };
+
+        assert_eq!(exec_messages.len(), 1);
+        assert!(emulator_messages.get_messages().is_empty());
+        assert!(algorithm_messages.get_messages().is_empty());
+        assert_eq!(exec_command.client_id, Some(selected_client));
+        assert_eq!(exec_command.strategy_id, StrategyId::from("TEST-001"));
+        assert_eq!(exec_command.instrument_id, instrument_id);
+        assert_eq!(exec_command.order_side, OrderSide::Buy);
+        assert_eq!(exec_command.params.as_ref(), Some(&params));
+        assert_eq!(exec_command.correlation_id, Some(exec_command.command_id));
+        assert_eq!(exec_command.causation_id, None);
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_strategy_only_filters_by_client() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let selected_client = ClientId::from("CLIENT-001");
+        let other_client = ClientId::from("CLIENT-002");
+        let selected_order = make_accepted_market_order("O-20250208-CANCEL-CLIENT-001");
+        let other_order = make_accepted_market_order("O-20250208-CANCEL-CLIENT-002");
+        let cache_rc = strategy.core.cache_rc();
+        {
+            let mut cache = cache_rc.borrow_mut();
+            cache
+                .add_order(selected_order.clone(), None, Some(selected_client), true)
+                .unwrap();
+            cache
+                .add_order(other_order.clone(), None, Some(other_client), true)
+                .unwrap();
+            cache.build_index();
+        }
+
+        strategy
+            .cancel_all_orders(
+                selected_order.instrument_id(),
+                None,
+                Some(selected_client),
+                true,
+                None,
+            )
+            .unwrap();
+
+        let messages = exec_messages.get_messages();
+        let cache = strategy.cache();
+        let cached_selected = cache.order(&selected_order.client_order_id()).unwrap();
+        let cached_other = cache.order(&other_order.client_order_id()).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(
+            messages.first(),
+            Some(TradingCommand::CancelOrder(command))
+                if command.client_id == Some(selected_client)
+                    && command.client_order_id == selected_order.client_order_id()
+        ));
+        assert_eq!(cached_selected.status(), OrderStatus::PendingCancel);
+        assert_eq!(cached_other.status(), OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_strategy_only_filters_by_side_and_preserves_params() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let buy_order = make_accepted_market_order("O-20250208-CANCEL-SIDE-001");
+        let mut sell_order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(buy_order.instrument_id())
+            .client_order_id(ClientOrderId::from("O-20250208-CANCEL-SIDE-002"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let account_id = AccountId::from("ACC-001");
+        sell_order
+            .apply(TestOrderEventStubs::submitted(&sell_order, account_id))
+            .unwrap();
+        sell_order
+            .apply(TestOrderEventStubs::accepted(
+                &sell_order,
+                account_id,
+                VenueOrderId::from("O-20250208-CANCEL-SIDE-002"),
+            ))
+            .unwrap();
+        add_order_to_cache(&strategy, &buy_order);
+        add_order_to_cache(&strategy, &sell_order);
+        strategy.core.cache_rc().borrow_mut().build_index();
+
+        let mut params = Params::new();
+        params.insert(
+            "routing_hint".to_string(),
+            Value::String("strategy_only".to_string()),
+        );
+        strategy
+            .cancel_all_orders(
+                buy_order.instrument_id(),
+                Some(OrderSide::Buy),
+                None,
+                true,
+                Some(params.clone()),
+            )
+            .unwrap();
+
+        let messages = exec_messages.get_messages();
+        let Some(TradingCommand::CancelOrder(command)) = messages.first() else {
+            panic!("Expected a CancelOrder command, was {messages:?}");
+        };
+        let cache = strategy.cache();
+        let cached_buy = cache.order(&buy_order.client_order_id()).unwrap();
+        let cached_sell = cache.order(&sell_order.client_order_id()).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(command.trader_id, TraderId::from("TRADER-001"));
+        assert_eq!(command.client_id, None);
+        assert_eq!(command.strategy_id, StrategyId::from("TEST-001"));
+        assert_eq!(command.instrument_id, buy_order.instrument_id());
+        assert_eq!(command.client_order_id, buy_order.client_order_id());
+        assert_eq!(command.venue_order_id, buy_order.venue_order_id());
+        assert_eq!(command.params.as_ref(), Some(&params));
+        assert_eq!(cached_buy.status(), OrderStatus::PendingCancel);
+        assert_eq!(cached_sell.status(), OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_strategy_only_continues_after_error_and_returns_first_error() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+
+        let mut failing_order = make_accepted_market_order("O-20250208-CANCEL-ERROR-001");
+        let OrderAny::Market(order) = &mut failing_order else {
+            panic!("Expected a MarketOrder");
+        };
+        order.account_id = None;
+        let succeeding_order = make_accepted_market_order("O-20250208-CANCEL-ERROR-002");
+        add_order_to_cache(&strategy, &failing_order);
+        add_order_to_cache(&strategy, &succeeding_order);
+        strategy.core.cache_rc().borrow_mut().build_index();
+
+        let error = strategy
+            .cancel_all_orders(failing_order.instrument_id(), None, None, true, None)
+            .unwrap_err()
+            .to_string();
+
+        let messages = exec_messages.get_messages();
+        let cache = strategy.cache();
+        let cached_failing = cache.order(&failing_order.client_order_id()).unwrap();
+        let cached_succeeding = cache.order(&succeeding_order.client_order_id()).unwrap();
+        assert_eq!(
+            error,
+            "Cannot generate pending cancel event for O-20250208-CANCEL-ERROR-001: \
+             account_id is not set"
+        );
+        assert_eq!(messages.len(), 1);
+        assert!(matches!(
+            messages.first(),
+            Some(TradingCommand::CancelOrder(command))
+                if command.client_order_id == succeeding_order.client_order_id()
+        ));
+        assert_eq!(cached_failing.status(), OrderStatus::Accepted);
+        assert_eq!(cached_succeeding.status(), OrderStatus::PendingCancel);
     }
 
     #[rstest]
@@ -4987,14 +5692,11 @@ mod tests {
 
     #[rstest]
     fn test_strategy_behavior_does_not_require_native_core_access() {
-        fn assert_strategy<T: Strategy + DataActor + Component>() {}
+        fn assert_strategy<T: Strategy + DataActor>() {}
 
         assert_strategy::<CoreFreeStrategy>();
 
-        let mut strategy = CoreFreeStrategy {
-            state: ComponentState::PreInitialized,
-            started: false,
-        };
+        let mut strategy = CoreFreeStrategy { started: false };
         DataActor::on_start(&mut strategy).unwrap();
 
         assert!(strategy.started);

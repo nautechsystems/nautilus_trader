@@ -17,7 +17,7 @@
 
 use std::num::NonZeroU32;
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::{ratelimiter::quota::Quota, websocket::TransportBackend};
 use serde::{Deserialize, Serialize};
 
@@ -334,10 +334,7 @@ impl Default for DydxDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.dydx")
 )]
-pub struct DydxExecClientConfig {
-    /// The trader ID for the client.
-    #[builder(default = TraderId::from("TRADER-001"))]
-    pub trader_id: TraderId,
+pub struct DydxExecutionClientConfig {
     /// The account ID for the client.
     #[builder(default = AccountId::from("DYDX-001"))]
     pub account_id: AccountId,
@@ -396,15 +393,14 @@ pub struct DydxExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(DydxExecClientConfig {
-    trader_id: TraderId,
+nautilus_core::impl_pyo3_config_getters!(DydxExecutionClientConfig {
     account_id: AccountId,
     network: DydxNetwork,
     wallet_address: Option<String>,
     subaccount_number: u32,
 });
 
-impl Default for DydxExecClientConfig {
+impl Default for DydxExecutionClientConfig {
     fn default() -> Self {
         Self {
             grpc_rate_limit_per_second: default_grpc_rate_limit_per_second(),
@@ -413,7 +409,7 @@ impl Default for DydxExecClientConfig {
     }
 }
 
-impl DydxExecClientConfig {
+impl DydxExecutionClientConfig {
     /// Returns the gRPC URLs to use, with fallback support.
     ///
     /// Returns `grpc_urls` if non-empty, otherwise uses `grpc_endpoint` if provided,
@@ -620,10 +616,8 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: DydxExecClientConfig = toml::from_str("").unwrap();
-        let expected = DydxExecClientConfig::default();
-
-        assert_eq!(config.trader_id, expected.trader_id);
+        let config: DydxExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = DydxExecutionClientConfig::default();
         assert_eq!(config.account_id, expected.account_id);
         assert_eq!(config.network, expected.network);
         assert_eq!(config.subaccount_number, expected.subaccount_number);

@@ -31,11 +31,11 @@ use ahash::AHashMap;
 use log::LevelFilter;
 use nautilus_coinbase::{
     common::{consts::COINBASE_CLIENT_ID, enums::CoinbaseEnvironment},
-    config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
+    config::{CoinbaseDataClientConfig, CoinbaseExecutionClientConfig},
     factories::{CoinbaseDataClientFactory, CoinbaseExecutionClientFactory},
 };
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     enums::AccountType,
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
@@ -79,7 +79,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = CoinbaseExecClientConfig {
+    let exec_config = CoinbaseExecutionClientConfig {
+        account_id,
         environment: coinbase_environment,
         api_key: None,    // Will use 'COINBASE_API_KEY' env var
         api_secret: None, // Will use 'COINBASE_API_SECRET' env var
@@ -94,13 +95,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let data_factory = CoinbaseDataClientFactory::new();
-    let exec_factory = CoinbaseExecutionClientFactory::new(trader_id, account_id);
+    let exec_factory = CoinbaseExecutionClientFactory::new();
 
     // The user-channel handler enriches missing `price` / `stop_price` /
     // `trigger_type` fields from REST on first sight, so external LIMIT and
     // STOP_LIMIT orders are safe under the default
     // `filter_unclaimed_external_orders=false`.
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()

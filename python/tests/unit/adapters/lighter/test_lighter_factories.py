@@ -20,7 +20,7 @@ from nautilus_trader.adapters.lighter import LIGHTER
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
 from nautilus_trader.adapters.lighter import LighterDataClientFactory
 from nautilus_trader.adapters.lighter import LighterEnvironment
-from nautilus_trader.adapters.lighter import LighterExecClientConfig
+from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
 from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -72,8 +72,7 @@ def test_live_node_builder_accepts_lighter_exec_factory() -> None:
         .add_exec_client(
             None,
             LighterExecutionClientFactory(),
-            LighterExecClientConfig(
-                trader_id=trader_id,
+            LighterExecutionClientConfig(
                 account_id=account_id,
                 environment=LighterEnvironment.TESTNET,
             ),

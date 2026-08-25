@@ -44,8 +44,8 @@ use pyo3::{prelude::*, types::PyDict};
 use crate::{
     common::consts::{POLYMARKET, POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
     config::{
-        PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
-        PolymarketUpDownEventSlugConfig,
+        PolymarketDataClientConfig, PolymarketExecutionClientConfig,
+        PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig,
     },
     data_types::{
         PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice, register_polymarket_custom_data,
@@ -485,14 +485,14 @@ fn extract_polymarket_exec_config(
     py: Python<'_>,
     config: Py<PyAny>,
 ) -> PyResult<Box<dyn ClientConfig>> {
-    match config.extract::<PolymarketExecClientConfig>(py) {
+    match config.extract::<PolymarketExecutionClientConfig>(py) {
         Ok(c) => {
             c.validated_proxy_url()
                 .map_err(|e| to_pyvalue_err(format!("Invalid Polymarket proxy URL: {e}")))?;
             Ok(Box::new(c))
         }
         Err(e) => Err(to_pyvalue_err(format!(
-            "Failed to extract PolymarketExecClientConfig: {e}"
+            "Failed to extract PolymarketExecutionClientConfig: {e}"
         ))),
     }
 }
@@ -507,10 +507,10 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketUpDownEventSlugConfig>()?;
     m.add_class::<PolymarketInstrumentProviderConfig>()?;
     m.add_class::<PolymarketDataClientConfig>()?;
-    m.add_class::<PolymarketExecClientConfig>()?;
-    m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<PolymarketDataClientFactory>()?;
+    m.add_class::<PolymarketExecutionClientConfig>()?;
     m.add_class::<PolymarketExecutionClientFactory>()?;
+    m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<loader::PyPolymarketDataLoader>()?;
     m.add_class::<PolymarketRtdsCryptoPrice>()?;
     m.add_class::<PolymarketRtdsEquityPrice>()?;
@@ -552,7 +552,7 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
 
     if let Err(e) = registry.register_config_extractor(
-        "PolymarketExecClientConfig".to_string(),
+        "PolymarketExecutionClientConfig".to_string(),
         extract_polymarket_exec_config,
     ) {
         return Err(to_pyruntime_err(format!(

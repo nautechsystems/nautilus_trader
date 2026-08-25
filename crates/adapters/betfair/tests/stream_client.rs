@@ -36,7 +36,7 @@ use nautilus_betfair::{
         enums::{MarketDataFilterField, SegmentType},
     },
     stream::{
-        client::BetfairStreamClient,
+        client::{BetfairStreamClient, StreamLifecycleState},
         config::BetfairStreamConfig,
         error::BetfairStreamError,
         messages::{
@@ -89,7 +89,7 @@ fn plain_config(port: u16) -> BetfairStreamConfig {
         host: "127.0.0.1".to_string(),
         port,
         heartbeat_secs: None,
-        heartbeat_timeout_secs: 60,
+        heartbeat_timeout_secs: Some(60),
         reconnect_delay_initial_ms: 200,
         reconnect_delay_max_ms: 1_000,
         use_tls: false,
@@ -127,10 +127,648 @@ async fn test_connect_sends_auth() {
     let json: serde_json::Value = serde_json::from_str(&first_msg).unwrap();
 
     assert_eq!(json["op"], "authentication");
+    assert_eq!(json["id"], 1);
     assert_eq!(json["appKey"], "test-app-key");
     assert_eq!(json["session"], "sess-token");
 
     client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_authentication_rejection_is_correlated() {
+    let (port, listener) = bind().await;
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"auth-rejected"}"#,
+        )
+        .await;
+        let auth: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{},"statusCode":"FAILURE","errorCode":"INVALID_SESSION_INFORMATION","connectionClosed":false}}"#,
+                auth["id"],
+            ),
+        )
+        .await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    });
+
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        Arc::new(|_| {}),
+        plain_config(port),
+    )
+    .await
+    .unwrap();
+    wait_until_async(
+        || async { client.authentication_state() == StreamLifecycleState::Rejected },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert_eq!(
+        client.authentication_state(),
+        StreamLifecycleState::Rejected
+    );
+    assert!(!client.is_authenticated());
+    client.close().await;
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscription_rejection_is_correlated() {
+    let (port, listener) = bind().await;
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"sub-rejected"}"#,
+        )
+        .await;
+        let auth: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+                auth["id"],
+            ),
+        )
+        .await;
+        let sub: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{},"statusCode":"FAILURE","errorCode":"INVALID_INPUT","connectionClosed":false}}"#,
+                sub["id"],
+            ),
+        )
+        .await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    });
+
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        Arc::new(|_| {}),
+        plain_config(port),
+    )
+    .await
+    .unwrap();
+    client.subscribe_orders(None, None).await.unwrap();
+    wait_until_async(
+        || async { client.order_subscription_state() == StreamLifecycleState::Rejected },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert_eq!(
+        client.order_subscription_state(),
+        StreamLifecycleState::Rejected
+    );
+    assert!(!client.is_order_ready());
+    client.close().await;
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_degraded_initial_image_reissues_order_subscription() {
+    let (port, listener) = bind().await;
+    let (recover_tx, recover_rx) = tokio::sync::oneshot::channel();
+    let (image_tx, image_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"degraded-image"}"#,
+        )
+        .await;
+        let auth: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+                auth["id"],
+            ),
+        )
+        .await;
+        let sub: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        let id = sub["id"].as_u64().unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{id},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+            ),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"ocm","id":{id},"pt":1000,"ct":"SUB_IMAGE","status":503,"oc":[]}}"#,
+            ),
+        )
+        .await;
+        recover_rx.await.unwrap();
+        write_line(
+            &mut write_half,
+            &format!(r#"{{"op":"ocm","id":{id},"pt":1001,"ct":"HEARTBEAT"}}"#,),
+        )
+        .await;
+        let replacement: serde_json::Value =
+            serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        let replacement_id = replacement["id"].as_u64().unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{replacement_id},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+            ),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(r#"{{"op":"ocm","id":{id},"pt":1002,"ct":"SUB_IMAGE","oc":[]}}"#,),
+        )
+        .await;
+        image_rx.await.unwrap();
+        write_line(
+            &mut write_half,
+            &format!(r#"{{"op":"ocm","id":{replacement_id},"pt":1003,"ct":"SUB_IMAGE","oc":[]}}"#,),
+        )
+        .await;
+
+        while !read_line(&mut reader).await.is_empty() {}
+        (id, replacement)
+    });
+
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        Arc::new(|_| {}),
+        plain_config(port),
+    )
+    .await
+    .unwrap();
+    wait_until_async(
+        || async { client.is_authenticated() },
+        Duration::from_secs(2),
+    )
+    .await;
+    client.subscribe_orders(None, None).await.unwrap();
+    wait_until_async(
+        || async { client.order_subscription_state() == StreamLifecycleState::Degraded },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(!client.is_order_ready());
+
+    recover_tx.send(()).unwrap();
+    wait_until_async(
+        || async { client.order_subscription_state() == StreamLifecycleState::Pending },
+        Duration::from_secs(2),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        client.order_subscription_state(),
+        StreamLifecycleState::Pending
+    );
+    assert!(!client.is_order_ready());
+
+    image_tx.send(()).unwrap();
+    wait_until_async(|| async { client.is_order_ready() }, Duration::from_secs(2)).await;
+    assert!(client.is_order_ready());
+    client.close().await;
+    let (original_id, replacement) = server.await.unwrap();
+    assert_eq!(replacement["op"], "orderSubscription");
+    assert_ne!(replacement["id"], original_id);
+    assert!(replacement.get("clk").is_none());
+    assert!(replacement.get("initialClk").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_market_subscription_lifecycle_degrades_and_recovers() {
+    let (port, listener) = bind().await;
+    let (degrade_tx, degrade_rx) = tokio::sync::oneshot::channel();
+    let (recover_tx, recover_rx) = tokio::sync::oneshot::channel();
+    let (finish_tx, finish_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"lifecycle"}"#,
+        )
+        .await;
+        let auth: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+                auth["id"],
+            ),
+        )
+        .await;
+        let sub: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        let id = sub["id"].as_u64().unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{id},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+            ),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"mcm","id":{id},"pt":1000,"ct":"SUB_IMAGE","heartbeatMs":5000,"mc":[]}}"#,
+            ),
+        )
+        .await;
+
+        degrade_rx.await.unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"mcm","id":{id},"pt":1001,"status":503,"clk":"unreliable-clock","mc":[]}}"#,
+            ),
+        )
+        .await;
+
+        recover_rx.await.unwrap();
+        write_line(
+            &mut write_half,
+            &format!(r#"{{"op":"mcm","id":{id},"pt":1002,"ct":"HEARTBEAT"}}"#,),
+        )
+        .await;
+        let replacement: serde_json::Value =
+            serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        let replacement_id = replacement["id"].as_u64().unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{replacement_id},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+            ),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(r#"{{"op":"mcm","id":{id},"pt":1003,"clk":"stale-clock","mc":[]}}"#,),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"mcm","id":{replacement_id},"pt":1004,"ct":"SUB_IMAGE","segmentType":"SEG_START","mc":[]}}"#,
+            ),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"mcm","id":{replacement_id},"pt":1004,"status":503,"segmentType":"SEG","mc":[]}}"#,
+            ),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"mcm","id":{replacement_id},"pt":1004,"ct":"SUB_IMAGE","segmentType":"SEG_END","mc":[]}}"#,
+            ),
+        )
+        .await;
+
+        let final_sub: serde_json::Value =
+            serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        let final_id = final_sub["id"].as_u64().unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{final_id},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+            ),
+        )
+        .await;
+        finish_rx.await.unwrap();
+        write_line(
+            &mut write_half,
+            &format!(r#"{{"op":"mcm","id":{final_id},"pt":1005,"ct":"SUB_IMAGE","mc":[]}}"#,),
+        )
+        .await;
+        (id, replacement, final_sub)
+    });
+
+    let degraded_forwarded = Arc::new(AtomicBool::new(false));
+    let degraded_forwarded_handler = Arc::clone(&degraded_forwarded);
+    let stale_forwarded = Arc::new(AtomicBool::new(false));
+    let stale_forwarded_handler = Arc::clone(&stale_forwarded);
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        Arc::new(move |data| {
+            if data
+                .windows(b"unreliable-clock".len())
+                .any(|window| window == b"unreliable-clock")
+            {
+                degraded_forwarded_handler.store(true, Ordering::Release);
+            }
+
+            if data
+                .windows(b"stale-clock".len())
+                .any(|window| window == b"stale-clock")
+            {
+                stale_forwarded_handler.store(true, Ordering::Release);
+            }
+        }),
+        plain_config(port),
+    )
+    .await
+    .unwrap();
+    wait_until_async(
+        || async { client.is_authenticated() },
+        Duration::from_secs(2),
+    )
+    .await;
+    client
+        .subscribe_markets(Default::default(), Default::default(), None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        client.market_subscription_state(),
+        StreamLifecycleState::Pending
+    );
+
+    wait_until_async(
+        || async { client.is_market_ready() },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(client.is_market_ready());
+
+    degrade_tx.send(()).unwrap();
+    wait_until_async(
+        || async { client.market_subscription_state() == StreamLifecycleState::Degraded },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(!client.is_market_ready());
+    assert!(!degraded_forwarded.load(Ordering::Acquire));
+    recover_tx.send(()).unwrap();
+    wait_until_async(
+        || async { client.market_subscription_state() == StreamLifecycleState::Pending },
+        Duration::from_secs(2),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert!(client.is_active());
+    assert!(!client.is_market_ready());
+    assert!(!stale_forwarded.load(Ordering::Acquire));
+
+    finish_tx.send(()).unwrap();
+    wait_until_async(
+        || async { client.is_market_ready() },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(client.is_market_ready());
+    client.close().await;
+    let (original_id, replacement, final_sub) = server.await.unwrap();
+    assert_eq!(replacement["op"], "marketSubscription");
+    assert_ne!(replacement["id"], original_id);
+    assert!(replacement.get("clk").is_none());
+    assert!(replacement.get("initialClk").is_none());
+    assert_ne!(final_sub["id"], replacement["id"]);
+    assert!(final_sub.get("clk").is_none());
+    assert!(final_sub.get("initialClk").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_stale_subscription_change_is_not_forwarded() {
+    let (port, listener) = bind().await;
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"stale-change"}"#,
+        )
+        .await;
+        let auth: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+                auth["id"],
+            ),
+        )
+        .await;
+        let sub: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        let id = sub["id"].as_u64().unwrap();
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"status","id":{id},"statusCode":"SUCCESS","connectionClosed":false}}"#,
+            ),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(r#"{{"op":"mcm","id":{id},"pt":1000,"ct":"SUB_IMAGE","mc":[]}}"#,),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"mcm","id":{},"pt":1001,"clk":"stale-clock","mc":[]}}"#,
+                id + 1,
+            ),
+        )
+        .await;
+        write_line(
+            &mut write_half,
+            &format!(
+                r#"{{"op":"mcm","id":{},"pt":1002,"ct":"HEARTBEAT","status":503}}"#,
+                id + 1,
+            ),
+        )
+        .await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    });
+
+    let stale_forwarded = Arc::new(AtomicBool::new(false));
+    let stale_forwarded_handler = Arc::clone(&stale_forwarded);
+    let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
+        if data
+            .windows(b"stale-clock".len())
+            .any(|window| window == b"stale-clock")
+        {
+            stale_forwarded_handler.store(true, Ordering::Release);
+        }
+    });
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        handler,
+        plain_config(port),
+    )
+    .await
+    .unwrap();
+    wait_until_async(
+        || async { client.is_authenticated() },
+        Duration::from_secs(2),
+    )
+    .await;
+    client
+        .subscribe_markets(Default::default(), Default::default(), None, None)
+        .await
+        .unwrap();
+    wait_until_async(
+        || async { client.is_market_ready() },
+        Duration::from_secs(2),
+    )
+    .await;
+    server.await.unwrap();
+
+    assert!(client.is_market_ready());
+    assert!(!stale_forwarded.load(Ordering::Acquire));
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_silent_subscribed_peer_reconnects_after_two_server_intervals() {
+    let (port, listener) = bind().await;
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"silent-first"}"#,
+        )
+        .await;
+        read_line(&mut reader).await;
+        read_line(&mut reader).await;
+
+        let (socket, _) = tokio::time::timeout(Duration::from_secs(3), listener.accept())
+            .await
+            .expect("silent subscribed peer did not trigger reconnect")
+            .unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"silent-second"}"#,
+        )
+        .await;
+        let auth = read_line(&mut reader).await;
+        let sub = read_line(&mut reader).await;
+        (auth, sub)
+    });
+
+    let config = BetfairStreamConfig {
+        heartbeat_timeout_secs: None,
+        reconnect_delay_initial_ms: 100,
+        reconnect_delay_max_ms: 500,
+        ..plain_config(port)
+    };
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        Arc::new(|_| {}),
+        config,
+    )
+    .await
+    .unwrap();
+    client.subscribe_orders(None, Some(500)).await.unwrap();
+
+    let (auth, sub) = server.await.unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&auth).unwrap()["op"],
+        "authentication"
+    );
+    let sub = serde_json::from_str::<serde_json::Value>(&sub).unwrap();
+    assert_eq!(sub["op"], "orderSubscription");
+    assert_eq!(sub["heartbeatMs"], 500);
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_server_heartbeat_traffic_prevents_dead_peer_reconnect() {
+    let (port, listener) = bind().await;
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        let (read_half, mut write_half) = socket.into_split();
+        let mut reader = BufReader::new(read_half);
+        write_line(
+            &mut write_half,
+            r#"{"op":"connection","connectionId":"heartbeat-traffic"}"#,
+        )
+        .await;
+        read_line(&mut reader).await;
+        let sub: serde_json::Value = serde_json::from_str(&read_line(&mut reader).await).unwrap();
+        let id = sub["id"].as_u64().unwrap();
+
+        for pt in 1_000..1_005 {
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            write_line(
+                &mut write_half,
+                &format!(
+                    r#"{{"op":"ocm","id":{id},"pt":{pt},"ct":"HEARTBEAT","heartbeatMs":500}}"#,
+                ),
+            )
+            .await;
+        }
+
+        let reconnect = tokio::time::timeout(Duration::from_millis(400), listener.accept()).await;
+        result_tx.send(reconnect.is_err()).unwrap();
+        let _ = done_rx.await;
+    });
+
+    let config = BetfairStreamConfig {
+        heartbeat_timeout_secs: None,
+        reconnect_delay_initial_ms: 100,
+        reconnect_delay_max_ms: 500,
+        ..plain_config(port)
+    };
+    let client = BetfairStreamClient::connect(
+        &test_credential(),
+        "tok".to_string(),
+        Arc::new(|_| {}),
+        config,
+    )
+    .await
+    .unwrap();
+    client.subscribe_orders(None, Some(500)).await.unwrap();
+
+    assert!(
+        result_rx.await.unwrap(),
+        "heartbeat traffic must keep the peer current",
+    );
+    assert!(client.is_active());
+    client.close().await;
+    let _ = done_tx.send(());
+    server.await.unwrap();
 }
 
 #[rstest]
@@ -197,7 +835,7 @@ async fn test_connect_without_heartbeat_keeps_idle_connection_active() {
     });
 
     let config = BetfairStreamConfig {
-        heartbeat_timeout_secs: 1,
+        heartbeat_timeout_secs: Some(10),
         ..plain_config(port)
     };
     let client = BetfairStreamClient::connect(
@@ -238,7 +876,7 @@ async fn test_aux_stream_without_heartbeat_keeps_idle_connection_active() {
     });
 
     let config = BetfairStreamConfig {
-        heartbeat_timeout_secs: 1,
+        heartbeat_timeout_secs: Some(1),
         reconnect_delay_initial_ms: 100,
         reconnect_delay_max_ms: 500,
         ..plain_config(port)
@@ -560,7 +1198,7 @@ async fn test_subscribe_orders_resubscribe_resets_clk_for_reconnect() {
 
         write_line(
             &mut write_half,
-            r#"{"op":"ocm","id":1,"pt":1000,"clk":"first-clk","oc":[]}"#,
+            r#"{"op":"ocm","id":2,"pt":1000,"clk":"first-clk","oc":[]}"#,
         )
         .await;
 
@@ -916,7 +1554,7 @@ async fn test_reconnect_resends_auth_and_subscription_with_clk() {
 
         write_line(
             &mut write_half,
-            r#"{"op":"mcm","id":1,"pt":2000,"clk":"clk-xyz","mc":[{"id":"1.111"}]}"#,
+            r#"{"op":"mcm","id":2,"pt":2000,"clk":"clk-xyz","mc":[{"id":"1.111"}]}"#,
         )
         .await;
 

@@ -232,8 +232,12 @@ class OptionChainBacktest(Strategy):
         return None
 
     def _maker_order(self, selected: SelectedOption) -> LimitOrder:
+        trader_id = self.trader_id
+        if trader_id is None:
+            raise RuntimeError("Strategy is not registered with a trader")
+
         return LimitOrder(
-            trader_id=self.trader_id,
+            trader_id=trader_id,
             strategy_id=self.strategy_id,
             instrument_id=selected.instrument_id,
             client_order_id=self._client_order_id("M"),
@@ -250,8 +254,12 @@ class OptionChainBacktest(Strategy):
         )
 
     def _taker_order(self, selected: SelectedOption) -> MarketOrder:
+        trader_id = self.trader_id
+        if trader_id is None:
+            raise RuntimeError("Strategy is not registered with a trader")
+
         return MarketOrder(
-            trader_id=self.trader_id,
+            trader_id=trader_id,
             strategy_id=self.strategy_id,
             instrument_id=selected.instrument_id,
             client_order_id=self._client_order_id("T"),
@@ -402,6 +410,7 @@ def nearest_series(options: list[OptionMetadata]) -> SeriesSelection:
             for metadata in same_expiry
             if metadata.settlement_currency == settlement_currency
         },
+        key=lambda strike: strike.as_decimal(),
     )
     series_id = OptionSeriesId(
         VENUE,

@@ -386,7 +386,7 @@ class RoutedOrderProbe(Strategy):
         self._sent = False
 
 
-class RoutedOrderExecAlgorithmConfig(DataActorConfig):
+class RoutedOrderExecutionAlgorithmConfig(DataActorConfig):
     _CUSTOM_FIELDS = ("exec_algorithm_id", "signal_name")
 
     def __new__(cls, *args, **kwargs):
@@ -410,12 +410,12 @@ class RoutedOrderExecAlgorithmConfig(DataActorConfig):
         self.signal_name = signal_name
 
 
-class RoutedOrderExecAlgorithm(DataActor):
+class RoutedOrderDataActorExecutionAlgorithm(DataActor):
     received_client_order_ids = []
     received_exec_algorithm_ids = []
     signal_values = []
 
-    def __init__(self, config: RoutedOrderExecAlgorithmConfig):
+    def __init__(self, config: RoutedOrderExecutionAlgorithmConfig):
         super().__init__(config)
         self._signal_name = config.signal_name
 
@@ -447,7 +447,7 @@ class RoutedOrderExecutionAlgorithm(ExecutionAlgorithm):
     signal_counts_after_unsubscribe = []
     signal_values = []
 
-    def __init__(self, config: RoutedOrderExecAlgorithmConfig):
+    def __init__(self, config: RoutedOrderExecutionAlgorithmConfig):
         super().__init__(config)
         self._signal_name = config.signal_name
 
@@ -491,7 +491,7 @@ class DoubleSpawnExecutionAlgorithm(ExecutionAlgorithm):
     cached_primary_quantities = []
     spawned_exec_algorithm_ids = []
 
-    def __init__(self, config: RoutedOrderExecAlgorithmConfig):
+    def __init__(self, config: RoutedOrderExecutionAlgorithmConfig):
         super().__init__(config)
 
     @classmethod
@@ -516,7 +516,7 @@ class DoubleSpawnExecutionAlgorithm(ExecutionAlgorithm):
 class OversizedSpawnExecutionAlgorithm(ExecutionAlgorithm):
     error_messages = []
 
-    def __init__(self, config: RoutedOrderExecAlgorithmConfig):
+    def __init__(self, config: RoutedOrderExecutionAlgorithmConfig):
         super().__init__(config)
 
     @classmethod

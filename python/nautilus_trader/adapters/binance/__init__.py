@@ -30,7 +30,7 @@ __all__ = [
     "BinanceDataClientConfig",
     "BinanceDataClientFactory",
     "BinanceEnvironment",
-    "BinanceExecClientConfig",
+    "BinanceExecutionClientConfig",
     "BinanceExecutionClientFactory",
     "BinanceFuturesLiquidation",
     "BinanceFuturesMarkPriceUpdate",

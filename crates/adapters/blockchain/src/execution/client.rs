@@ -3023,7 +3023,6 @@ mod tests {
         signer_env: &str,
     ) -> BlockchainExecutionClientConfig {
         BlockchainExecutionClientConfig::builder()
-            .trader_id(TraderId::from("TRADER-001"))
             .client_id(AccountId::from("BLOCKCHAIN-001"))
             .chain(chains::ARBITRUM.clone())
             .wallet_address(WALLET.to_string())

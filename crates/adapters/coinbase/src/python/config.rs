@@ -15,14 +15,14 @@
 
 //! Python bindings for Coinbase configuration.
 
-use nautilus_model::enums::AccountType;
+use nautilus_model::{enums::AccountType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 use rust_decimal::Decimal;
 
 use crate::{
     common::enums::{CoinbaseEnvironment, CoinbaseMarginType},
-    config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
+    config::{CoinbaseDataClientConfig, CoinbaseExecutionClientConfig},
 };
 
 #[pymethods]
@@ -87,10 +87,11 @@ impl CoinbaseDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl CoinbaseExecClientConfig {
+impl CoinbaseExecutionClientConfig {
     /// Configuration for the Coinbase live execution client.
     #[new]
     #[pyo3(signature = (
+        account_id = None,
         api_key = None,
         api_secret = None,
         base_url_rest = None,
@@ -109,6 +110,7 @@ impl CoinbaseExecClientConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
+        account_id: Option<AccountId>,
         api_key: Option<String>,
         api_secret: Option<String>,
         base_url_rest: Option<String>,
@@ -127,6 +129,7 @@ impl CoinbaseExecClientConfig {
     ) -> Self {
         let defaults = Self::default();
         Self {
+            account_id: account_id.unwrap_or(defaults.account_id),
             api_key,
             api_secret,
             base_url_rest,
@@ -152,6 +155,6 @@ impl CoinbaseExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(CoinbaseExecClientConfig).to_string()
+        stringify!(CoinbaseExecutionClientConfig).to_string()
     }
 }

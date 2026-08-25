@@ -24,6 +24,7 @@
 use std::{any::Any, cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
+use nautilus_model::identifiers::TraderId;
 
 use crate::{
     cache::{Cache, CacheView},
@@ -76,13 +77,14 @@ pub trait ExecutionClientFactory: Debug {
     /// Create a new execution client instance.
     ///
     /// Execution clients receive a read-only cache view so venue adapters can query platform state
-    /// during construction without mutating the cache.
+    /// during construction without mutating the cache. The trader ID comes from the owning node.
     ///
     /// # Errors
     ///
     /// Returns an error if client creation fails.
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
@@ -107,6 +109,7 @@ pub trait SimulatedExecutionClientFactory: Debug {
     /// Returns an error if client creation fails.
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: Rc<RefCell<Cache>>,

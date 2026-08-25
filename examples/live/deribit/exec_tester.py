@@ -30,7 +30,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
 from nautilus_trader.adapters.deribit import DeribitDataClientFactory
 from nautilus_trader.adapters.deribit import DeribitEnvironment
-from nautilus_trader.adapters.deribit import DeribitExecClientConfig
+from nautilus_trader.adapters.deribit import DeribitExecutionClientConfig
 from nautilus_trader.adapters.deribit import DeribitExecutionClientFactory
 from nautilus_trader.adapters.deribit import DeribitProductType
 from nautilus_trader.common import Environment
@@ -72,8 +72,7 @@ def main() -> None:
         .add_exec_client(
             None,
             DeribitExecutionClientFactory(),
-            DeribitExecClientConfig(
-                trader_id=TRADER_ID,
+            DeribitExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 product_types=PRODUCT_TYPES,
                 environment=DeribitEnvironment.TESTNET,

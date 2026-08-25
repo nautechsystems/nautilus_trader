@@ -31,7 +31,7 @@ use nautilus_model::{
 
 use crate::{
     common::consts::{BITMEX, BITMEX_VENUE},
-    config::{BitmexDataClientConfig, BitmexExecClientConfig},
+    config::{BitmexDataClientConfig, BitmexExecutionClientConfig},
     data::BitmexDataClient,
     execution::BitmexExecutionClient,
 };
@@ -42,51 +42,7 @@ impl ClientConfig for BitmexDataClientConfig {
     }
 }
 
-/// Configuration for creating BitMEX execution clients via factory.
-///
-/// This wraps [`BitmexExecClientConfig`] with the additional trader and account
-/// identifiers required by the [`ExecutionClientCore`].
-#[derive(Clone, Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.adapters.bitmex", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
-)]
-pub struct BitmexExecFactoryConfig {
-    /// The trader ID for the execution client.
-    pub trader_id: TraderId,
-    /// The account ID for the execution client.
-    pub account_id: AccountId,
-    /// The underlying execution client configuration.
-    pub config: BitmexExecClientConfig,
-}
-
-#[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(BitmexExecFactoryConfig {
-    trader_id: TraderId,
-    account_id: AccountId,
-    config: BitmexExecClientConfig,
-});
-
-impl BitmexExecFactoryConfig {
-    /// Creates a new [`BitmexExecFactoryConfig`].
-    ///
-    /// The `account_id` defaults to `BITMEX-001` and is overridden once the
-    /// real account number is detected from the API.
-    #[must_use]
-    pub fn new(trader_id: TraderId, config: BitmexExecClientConfig) -> Self {
-        Self {
-            trader_id,
-            account_id: AccountId::from("BITMEX-001"),
-            config,
-        }
-    }
-}
-
-impl ClientConfig for BitmexExecFactoryConfig {
+impl ClientConfig for BitmexExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -179,29 +135,32 @@ impl Default for BitmexExecutionClientFactory {
 impl ExecutionClientFactory for BitmexExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-        let factory_config = config
+        let mut bitmex_config = config
             .as_any()
-            .downcast_ref::<BitmexExecFactoryConfig>()
+            .downcast_ref::<BitmexExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BitmexExecutionClientFactory. Expected BitmexExecFactoryConfig, was {config:?}",
+                    "Invalid config type for BitmexExecutionClientFactory. Expected BitmexExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
 
-        let mut bitmex_config = factory_config.config;
-        bitmex_config.account_id = Some(factory_config.account_id);
+        let account_id = bitmex_config
+            .account_id
+            .unwrap_or_else(|| AccountId::from("BITMEX-001"));
+        bitmex_config.account_id = Some(account_id);
 
         let core = ExecutionClientCore::new(
-            factory_config.trader_id,
+            trader_id,
             ClientId::from(name),
             *BITMEX_VENUE,
             OmsType::Netting,
-            factory_config.account_id,
+            account_id,
             AccountType::Margin,
             None, // base_currency
             cache,
@@ -216,6 +175,6 @@ impl ExecutionClientFactory for BitmexExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "BitmexExecFactoryConfig"
+        "BitmexExecutionClientConfig"
     }
 }

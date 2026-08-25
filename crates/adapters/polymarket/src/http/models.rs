@@ -169,6 +169,8 @@ pub struct GammaMarket {
     pub description: Option<String>,
     /// Market start date (ISO 8601).
     pub start_date: Option<String>,
+    /// Event window start time (ISO 8601).
+    pub event_start_time: Option<String>,
     /// Market end date (ISO 8601).
     pub end_date: Option<String>,
     /// Whether market is active.
@@ -183,6 +185,8 @@ pub struct GammaMarket {
     pub uma_resolution_statuses: Option<String>,
     /// Source used to resolve the market.
     pub resolution_source: Option<String>,
+    /// Crypto market resolution configuration.
+    pub crypto_market_config: Option<CryptoMarketConfig>,
     /// Whether CLOB is accepting orders.
     pub accepting_orders: Option<bool>,
     /// Whether order book trading is enabled.
@@ -283,6 +287,29 @@ pub struct FeeSchedule {
         deserialize_with = "deserialize_decimal_from_json_number"
     )]
     pub rebate_rate: Decimal,
+}
+
+/// Crypto market resolution configuration returned by Gamma.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CryptoMarketConfig {
+    pub id: String,
+    pub asset: String,
+    pub duration: String,
+    pub twap_enabled: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_optional_non_null_i64"
+    )]
+    pub twap_lookback_seconds: Option<i64>,
+}
+
+fn deserialize_optional_non_null_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    i64::deserialize(deserializer).map(Some)
 }
 
 /// An event response from the Gamma API `GET /events`.
@@ -812,9 +839,99 @@ mod tests {
     }
 
     #[rstest]
+    fn test_gamma_market_crypto_market_config_fields() {
+        let market: GammaMarket = load("gamma_market_crypto_twap.json");
+        let config = market.crypto_market_config.as_ref().unwrap();
+
+        assert_eq!(config.id, "btc-5m-twap-60");
+        assert_eq!(config.asset, "btc");
+        assert_eq!(config.duration, "5m");
+        assert!(config.twap_enabled);
+        assert_eq!(config.twap_lookback_seconds, Some(60));
+        assert_eq!(
+            market.resolution_source.as_deref(),
+            Some("https://data.chain.link/streams/btc-usd-twap-60s-streams")
+        );
+        assert_eq!(
+            market.event_start_time.as_deref(),
+            Some("2026-08-22T16:00:00Z")
+        );
+    }
+
+    #[rstest]
+    fn test_crypto_market_config_absent_twap_lookback_serializes_omitted() {
+        let crypto_market_config = serde_json::json!({
+            "id": "btc-5m",
+            "asset": "btc",
+            "duration": "5m",
+            "twapEnabled": false,
+        });
+
+        let config: CryptoMarketConfig = serde_json::from_value(crypto_market_config).unwrap();
+        let encoded = serde_json::to_value(config).unwrap();
+
+        assert!(encoded.get("twapLookbackSeconds").is_none());
+    }
+
+    #[rstest]
+    fn test_crypto_market_config_rejects_null_twap_lookback() {
+        let crypto_market_config = serde_json::json!({
+            "id": "btc-5m",
+            "asset": "btc",
+            "duration": "5m",
+            "twapEnabled": false,
+            "twapLookbackSeconds": null,
+        });
+
+        let result = serde_json::from_value::<CryptoMarketConfig>(crypto_market_config);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case(serde_json::json!(-37))]
+    #[case(serde_json::json!(i64::MIN))]
+    #[case(serde_json::json!(i64::MAX))]
+    fn test_crypto_market_config_signed_twap_lookback_roundtrip(
+        #[case] twap_lookback_seconds: serde_json::Value,
+    ) {
+        let crypto_market_config = serde_json::json!({
+            "id": "eth-15m",
+            "asset": "eth",
+            "duration": "15m",
+            "twapEnabled": true,
+            "twapLookbackSeconds": twap_lookback_seconds,
+        });
+
+        let config: CryptoMarketConfig = serde_json::from_value(crypto_market_config).unwrap();
+        let encoded = serde_json::to_value(config).unwrap();
+
+        assert_eq!(encoded["twapLookbackSeconds"], twap_lookback_seconds);
+    }
+
+    #[rstest]
+    fn test_crypto_market_config_rejects_twap_lookback_above_i64_max() {
+        let crypto_market_config = serde_json::json!({
+            "id": "eth-15m",
+            "asset": "eth",
+            "duration": "15m",
+            "twapEnabled": true,
+            "twapLookbackSeconds": 9_223_372_036_854_775_808u64,
+        });
+
+        let result = serde_json::from_value::<CryptoMarketConfig>(crypto_market_config);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_gamma_market_enriched_fields() {
         let market: GammaMarket = load("gamma_market.json");
 
+        assert_eq!(
+            market.event_start_time.as_deref(),
+            Some("2026-03-12T09:20:00Z")
+        );
         assert_eq!(market.best_bid, Some(0.5));
         assert_eq!(market.best_ask, Some(0.51));
         assert_eq!(market.spread, Some(0.009));
@@ -858,6 +975,8 @@ mod tests {
         assert!(market.competitive.is_none());
         assert!(market.category.is_none());
         assert!(market.neg_risk_market_id.is_none());
+        assert!(market.crypto_market_config.is_none());
+        assert!(market.event_start_time.is_none());
     }
 
     #[rstest]

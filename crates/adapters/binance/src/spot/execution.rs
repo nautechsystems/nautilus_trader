@@ -94,7 +94,7 @@ use crate::{
         },
         urls::{get_http_base_url_with_us, get_spot_user_stream_url},
     },
-    config::BinanceExecClientConfig,
+    config::BinanceExecutionClientConfig,
     spot::{
         enums::{
             BinanceCancelReplaceMode, BinanceOrderResponseType, BinanceSpotOrderType,
@@ -127,7 +127,7 @@ const WS_RECONNECT_SETUP_RETRY_DELAY: Duration = Duration::from_secs(1);
 pub struct BinanceSpotExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: BinanceExecClientConfig,
+    config: BinanceExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     dispatch_state: Arc<WsDispatchState>,
     http_client: BinanceSpotHttpClient,
@@ -150,7 +150,10 @@ impl BinanceSpotExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client fails to initialize or credentials are missing.
-    pub fn new(core: ExecutionClientCore, config: BinanceExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(
+        core: ExecutionClientCore,
+        config: BinanceExecutionClientConfig,
+    ) -> anyhow::Result<Self> {
         config.validate()?;
         let (api_key, api_secret) = resolve_credentials(
             config.api_key.clone(),

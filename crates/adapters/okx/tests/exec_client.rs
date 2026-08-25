@@ -98,7 +98,7 @@ use nautilus_okx::{
         models::OKXInstrument,
         parse::parse_instrument_any,
     },
-    config::OKXExecClientConfig,
+    config::OKXExecutionClientConfig,
     execution::OKXExecutionClient,
     http::{
         client::OKXResponse,
@@ -3394,7 +3394,7 @@ fn create_test_execution_client(
 
 fn create_test_execution_client_configured(
     base_url: &str,
-    configure: impl FnOnce(&mut OKXExecClientConfig),
+    configure: impl FnOnce(&mut OKXExecutionClientConfig),
 ) -> (
     OKXExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -3417,8 +3417,7 @@ fn create_test_execution_client_configured(
         cache.clone(),
     );
 
-    let mut config = OKXExecClientConfig {
-        trader_id,
+    let mut config = OKXExecutionClientConfig {
         account_id,
         base_url_http: Some(base_url.to_string()),
         base_url_ws_private: Some("ws://127.0.0.1:19999/ws/v5/private".to_string()),

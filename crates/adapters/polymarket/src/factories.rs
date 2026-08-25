@@ -26,7 +26,7 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 use nautilus_network::retry::RetryConfig;
 #[cfg(test)]
@@ -34,7 +34,7 @@ use nautilus_network::websocket::proxy::ProxyUrl;
 
 use crate::{
     common::consts::{POLYMARKET, POLYMARKET_VENUE},
-    config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+    config::{PolymarketDataClientConfig, PolymarketExecutionClientConfig},
     data::PolymarketDataClient,
     execution::PolymarketExecutionClient,
     http::{
@@ -153,7 +153,7 @@ impl PolymarketDataClientFactory {
     }
 }
 
-impl ClientConfig for PolymarketExecClientConfig {
+impl ClientConfig for PolymarketExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -174,16 +174,17 @@ pub struct PolymarketExecutionClientFactory;
 impl ExecutionClientFactory for PolymarketExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let polymarket_config = config
             .as_any()
-            .downcast_ref::<PolymarketExecClientConfig>()
+            .downcast_ref::<PolymarketExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for PolymarketExecutionClientFactory. Expected PolymarketExecClientConfig, was {config:?}",
+                    "Invalid config type for PolymarketExecutionClientFactory. Expected PolymarketExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -193,7 +194,7 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
 
         let client_id = ClientId::from(name);
         let core = ExecutionClientCore::new(
-            polymarket_config.trader_id,
+            trader_id,
             client_id,
             *POLYMARKET_VENUE,
             oms_type,
@@ -213,7 +214,7 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "PolymarketExecClientConfig"
+        "PolymarketExecutionClientConfig"
     }
 }
 
@@ -279,7 +280,7 @@ mod tests {
     use super::*;
     use crate::{
         common::credential::Credential,
-        config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+        config::{PolymarketDataClientConfig, PolymarketExecutionClientConfig},
         http::clob::PolymarketClobHttpClient,
     };
 
@@ -331,16 +332,16 @@ mod tests {
     fn test_polymarket_execution_client_factory_creation() {
         let factory = PolymarketExecutionClientFactory;
         assert_eq!(factory.name(), POLYMARKET);
-        assert_eq!(factory.config_type(), "PolymarketExecClientConfig");
+        assert_eq!(factory.config_type(), "PolymarketExecutionClientConfig");
     }
 
     #[rstest]
     fn test_polymarket_exec_client_config_implements_client_config() {
-        let config = PolymarketExecClientConfig::default();
+        let config = PolymarketExecutionClientConfig::default();
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
         let downcasted = boxed_config
             .as_any()
-            .downcast_ref::<PolymarketExecClientConfig>();
+            .downcast_ref::<PolymarketExecutionClientConfig>();
         assert!(downcasted.is_some());
     }
 
@@ -350,7 +351,12 @@ mod tests {
         let wrong_config = WrongConfig;
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create(POLYMARKET, &wrong_config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            POLYMARKET,
+            &wrong_config,
+            cache.into(),
+        );
         assert!(result.is_err());
         assert!(
             result
@@ -382,12 +388,17 @@ mod tests {
     fn execution_factory_invalid_proxy_error_redacts_credentials() {
         const SECRET: &str = "execution-factory-proxy-secret";
         let factory = PolymarketExecutionClientFactory;
-        let config = PolymarketExecClientConfig {
+        let config = PolymarketExecutionClientConfig {
             proxy_url: Some(format!("http://proxy-user:{SECRET}@[::1")),
-            ..PolymarketExecClientConfig::default()
+            ..PolymarketExecutionClientConfig::default()
         };
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let Err(e) = factory.create(POLYMARKET, &config, cache.into()) else {
+        let Err(e) = factory.create(
+            TraderId::from("TRADER-001"),
+            POLYMARKET,
+            &config,
+            cache.into(),
+        ) else {
             panic!("malformed proxy URL should fail");
         };
 

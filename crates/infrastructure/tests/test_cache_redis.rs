@@ -31,7 +31,7 @@ mod serial_tests {
         queries::DatabaseQueries,
     };
     use nautilus_live::{
-        config::{LiveExecEngineConfig, LiveNodeConfig},
+        config::{LiveExecutionEngineConfig, LiveNodeConfig},
         node::LiveNode,
     };
     use nautilus_model::{
@@ -1256,7 +1256,7 @@ mod serial_tests {
             timeout_connection: Duration::ZERO,
             timeout_disconnection: Duration::ZERO,
             delay_post_stop: Duration::ZERO,
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -1305,7 +1305,7 @@ mod serial_tests {
             timeout_connection: Duration::ZERO,
             timeout_disconnection: Duration::ZERO,
             delay_post_stop: Duration::ZERO,
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 load_cache: false,
                 reconciliation: false,
                 ..Default::default()
@@ -1352,7 +1352,7 @@ mod serial_tests {
             timeout_connection: Duration::ZERO,
             timeout_disconnection: Duration::ZERO,
             delay_post_stop: Duration::ZERO,
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },

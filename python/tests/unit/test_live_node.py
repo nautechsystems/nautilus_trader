@@ -26,7 +26,7 @@ from nautilus_trader.common import Environment
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.common import MessageBusConfig
 from nautilus_trader.live import LiveDataEngineConfig
-from nautilus_trader.live import LiveExecEngineConfig
+from nautilus_trader.live import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
@@ -39,7 +39,7 @@ from nautilus_trader.portfolio import Portfolio
 from nautilus_trader.trading import ExecutionAlgorithm
 from nautilus_trader.trading import ExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableControllerConfig
-from nautilus_trader.trading import ImportableExecAlgorithmConfig
+from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
 from nautilus_trader.trading import Strategy
 from nautilus_trader.trading import StrategyConfig
@@ -187,7 +187,7 @@ def test_live_node_config_registers_importable_controller():
         LiveNodeConfig(
             trader_id=trader_id,
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             controller=ImportableControllerConfig(
                 controller_path="tests.unit.common.actor:ControllerRegistrationProbe",
                 config_path="tests.unit.common.actor:ControllerRegistrationProbeConfig",
@@ -207,7 +207,7 @@ def test_live_node_exposes_cache_and_portfolio_inspection():
         LiveNodeConfig(
             trader_id=TraderId("TESTER-010"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
         ),
     )
 
@@ -230,7 +230,7 @@ async def test_live_node_start_stop_dispose_local():
         LiveNodeConfig(
             trader_id=TraderId("TESTER-004"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             msgbus=MessageBusConfig(external_streams=["signals"]),
             timeout_connection_secs=0,
             timeout_reconciliation_secs=0,
@@ -277,7 +277,7 @@ def test_live_node_dispose_before_start_twice_does_not_raise():
         LiveNodeConfig(
             trader_id=TraderId("TESTER-006"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
         ),
     )
 
@@ -291,7 +291,7 @@ def test_live_node_stop_before_start_raises():
         LiveNodeConfig(
             trader_id=TraderId("TESTER-008"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
         ),
     )
 
@@ -309,7 +309,7 @@ async def test_live_node_run_after_dispose_raises():
         LiveNodeConfig(
             trader_id=TraderId("TESTER-009"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             timeout_connection_secs=0,
             timeout_reconciliation_secs=0,
             timeout_portfolio_secs=0,
@@ -334,7 +334,7 @@ async def test_live_node_strategy_start_failure_disposes_resources():
         LiveNodeConfig(
             trader_id=TraderId("TESTER-007"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             timeout_connection_secs=1,
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
@@ -358,19 +358,19 @@ async def test_live_node_strategy_start_failure_disposes_resources():
 
 
 def test_importable_exec_algorithm_config_construction():
-    config = ImportableExecAlgorithmConfig(
-        exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
-        config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+    config = ImportableExecutionAlgorithmConfig(
+        exec_algorithm_path="tests.unit.common.actor:TestExecutionAlgorithm",
+        config_path="tests.unit.common.actor:TestExecutionAlgorithmConfig",
         config={"actor_id": "ALGO-001"},
     )
 
-    assert config.exec_algorithm_path == "tests.unit.common.actor:TestExecAlgorithm"
-    assert config.config_path == "tests.unit.common.actor:TestExecAlgorithmConfig"
+    assert config.exec_algorithm_path == "tests.unit.common.actor:TestExecutionAlgorithm"
+    assert config.config_path == "tests.unit.common.actor:TestExecutionAlgorithmConfig"
     assert config.config == {"actor_id": "ALGO-001"}
 
 
 def test_importable_exec_algorithm_config_empty():
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="module:Class",
         config_path="module:Config",
         config={},
@@ -403,7 +403,7 @@ def test_builder_accepts_supported_runtime_configs():
         .with_portfolio_config(PortfolioConfig())
         .with_data_engine_config(LiveDataEngineConfig(time_bars_build_with_no_updates=False))
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
-        .with_exec_engine_config(LiveExecEngineConfig(reconciliation=False))
+        .with_exec_engine_config(LiveExecutionEngineConfig(reconciliation=False))
         .build()
     )
 
@@ -504,9 +504,9 @@ def test_add_strategy_from_config_rejects_nonexistent_module(live_node):
 
 
 def test_add_exec_algorithm_from_config_registers(live_node):
-    config = ImportableExecAlgorithmConfig(
-        exec_algorithm_path="tests.unit.common.actor:TestExecAlgorithm",
-        config_path="tests.unit.common.actor:TestExecAlgorithmConfig",
+    config = ImportableExecutionAlgorithmConfig(
+        exec_algorithm_path="tests.unit.common.actor:TestExecutionAlgorithm",
+        config_path="tests.unit.common.actor:TestExecutionAlgorithmConfig",
         config={},
     )
 
@@ -514,7 +514,7 @@ def test_add_exec_algorithm_from_config_registers(live_node):
 
 
 def test_add_exec_algorithm_from_config_registers_v2_instance(live_node):
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="tests.unit.test_live_node:LifecycleExecutionAlgorithm",
         config_path="nautilus_trader.trading:ExecutionAlgorithmConfig",
         config={"exec_algorithm_id": "PY-LIVE-CONFIG"},
@@ -683,7 +683,7 @@ async def test_add_exec_algorithm_rejects_running_node():
         LiveNodeConfig(
             trader_id=TraderId("TESTER-008"),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             timeout_connection_secs=0,
             timeout_reconciliation_secs=0,
             timeout_portfolio_secs=0,
@@ -723,7 +723,7 @@ def test_add_exec_algorithm_rejects_data_actor_instance(live_node):
 
 
 def test_add_exec_algorithm_from_config_rejects_invalid_path(live_node):
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="invalid_path_no_colon",
         config_path="module:Config",
         config={},
@@ -734,7 +734,7 @@ def test_add_exec_algorithm_from_config_rejects_invalid_path(live_node):
 
 
 def test_add_exec_algorithm_from_config_rejects_nonexistent_module(live_node):
-    config = ImportableExecAlgorithmConfig(
+    config = ImportableExecutionAlgorithmConfig(
         exec_algorithm_path="nonexistent.module:SomeClass",
         config_path="nonexistent.module:SomeConfig",
         config={},

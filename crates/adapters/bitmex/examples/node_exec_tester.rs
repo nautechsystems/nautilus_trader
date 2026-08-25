@@ -26,13 +26,13 @@
 
 use nautilus_bitmex::{
     common::{consts::BITMEX_CLIENT_ID, enums::BitmexEnvironment},
-    config::{BitmexDataClientConfig, BitmexExecClientConfig},
-    factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
+    config::{BitmexDataClientConfig, BitmexExecutionClientConfig},
+    factories::{BitmexDataClientFactory, BitmexExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
-    enums::TimeInForce,
+    enums::{TimeInForce, TriggerType},
     identifiers::{InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
@@ -58,17 +58,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = BitmexExecFactoryConfig::new(
-        trader_id,
-        BitmexExecClientConfig {
-            environment: BITMEX_ENVIRONMENT,
-            ..Default::default()
-        },
-    );
+    let exec_config = BitmexExecutionClientConfig {
+        environment: BITMEX_ENVIRONMENT,
+        ..Default::default()
+    };
 
     let data_factory = BitmexDataClientFactory::new();
     let exec_factory = BitmexExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         reconciliation_instrument_ids: Some(vec![instrument_id.to_string()]),
         filter_unclaimed_external_orders: true,
         open_check_interval_secs: Some(10.0),
@@ -100,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .open_position_on_start_qty(order_qty.as_decimal())
         .open_position_time_in_force(TimeInForce::Ioc)
         .close_positions_time_in_force(TimeInForce::Ioc)
+        .stop_trigger_type(TriggerType::MarkPrice)
         .log_data(false)
         .build()?;
 

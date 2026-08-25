@@ -15,17 +15,20 @@
 
 import datetime as dt
 
-from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common import LogColor
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.model import Bar
+from nautilus_trader.model import BarType
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import TimeInForce
+from nautilus_trader.trading import Strategy
 
 
 class DemoStrategy(Strategy):
+    def __new__(cls, *args, **kwargs):
+        return super().__new__(cls)
+
     def __init__(self, input_bartype: BarType):
         super().__init__()
 
@@ -43,7 +46,7 @@ class DemoStrategy(Strategy):
 
     def on_start(self):
         # Remember and log start time of strategy
-        self.start_time = dt.datetime.now()
+        self.start_time = dt.datetime.now(dt.UTC)
         self.log.info(f"Strategy started at: {self.start_time}")
 
         # Subscribe to primary data
@@ -61,7 +64,7 @@ class DemoStrategy(Strategy):
             order = self.order_factory.market(
                 instrument_id=self.instrument_id,
                 order_side=OrderSide.SELL,
-                quantity=Quantity.from_int(1),  # 1 contract
+                quantity=Quantity.from_int(1_000),
                 time_in_force=TimeInForce.GTC,
             )
             self.submit_order(order)
@@ -73,7 +76,7 @@ class DemoStrategy(Strategy):
             order = self.order_factory.market(
                 instrument_id=self.instrument_id,
                 order_side=OrderSide.BUY,
-                quantity=Quantity.from_int(1),  # 1 contract
+                quantity=Quantity.from_int(1_000),
                 time_in_force=TimeInForce.GTC,
             )
             self.submit_order(order)
@@ -82,7 +85,7 @@ class DemoStrategy(Strategy):
 
     def on_stop(self):
         # Remember and log end time of strategy
-        self.end_time = dt.datetime.now()
+        self.end_time = dt.datetime.now(dt.UTC)
         self.log.info(f"Strategy finished at: {self.end_time}")
 
         # Log count of processed bars

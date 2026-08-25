@@ -1336,7 +1336,7 @@ mod serial_tests {
     };
     use nautilus_live::{
         builder::LiveNodeBuilder,
-        config::{LiveExecEngineConfig, LiveNodeConfig},
+        config::{LiveExecutionEngineConfig, LiveNodeConfig},
     };
     use nautilus_model::data::{QuoteTick, TradeTick};
     #[cfg(feature = "python")]
@@ -1850,7 +1850,7 @@ mod serial_tests {
                         environment: Environment::Sandbox,
                         trader_id: TraderId::from("NODEB-001"),
                         msgbus: Some(node_b_msgbus),
-                        exec_engine: LiveExecEngineConfig {
+                        exec_engine: LiveExecutionEngineConfig {
                             reconciliation: false,
                             ..Default::default()
                         },
@@ -1932,7 +1932,7 @@ mod serial_tests {
                     trader_id: trader_a,
                     instance_id: Some(instance_a),
                     msgbus: Some(node_a_msgbus),
-                    exec_engine: LiveExecEngineConfig {
+                    exec_engine: LiveExecutionEngineConfig {
                         reconciliation: false,
                         ..Default::default()
                     },

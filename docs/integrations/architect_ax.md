@@ -142,7 +142,7 @@ for complete `LiveNode` setup.
 For live trading with real funds. Requires a verified AX Exchange account.
 
 ```python
-config = AxExecClientConfig(
+config = AxExecutionClientConfig(
     environment=AxEnvironment.PRODUCTION,
 )
 ```
@@ -402,30 +402,29 @@ API base URL. The adapter resolves both from the configured environment.
 
 ### Execution client configuration options
 
-| Option                    | Default      | Description                                                         |
-| ------------------------- | ------------ | ------------------------------------------------------------------- |
-| `trader_id`               | `TRADER-001` | Trader ID for the execution client.                                 |
-| `account_id`              | `AX-001`     | Account ID for the execution client.                                |
-| `api_key`                 | `None`       | API key; loaded from `AX_API_KEY` env var when omitted.             |
-| `api_secret`              | `None`       | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `environment`             | `SANDBOX`    | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
-| `base_url_http`           | `None`       | Override for the API REST base URL.                                 |
-| `base_url_orders`         | `None`       | Override for the orders REST base URL.                              |
-| `base_url_ws_private`     | `None`       | Override for the orders WebSocket URL.                              |
-| `proxy_url`               | `None`       | Optional proxy URL for HTTP and WebSocket transports.               |
-| `http_timeout_secs`       | `60`         | Timeout (seconds) for REST requests.                                |
-| `max_retries`             | `3`          | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`  | `1,000`      | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`      | `10,000`     | Maximum delay (milliseconds) between retries (exponential backoff). |
-| `heartbeat_interval_secs` | `30`         | Heartbeat interval (seconds) for WebSocket connections.             |
-| `recv_window_ms`          | `5,000`      | Reserved; AX uses bearer tokens and the adapter sends no window.    |
-| `cancel_on_disconnect`    | `False`      | Cancel this WebSocket session's open orders on disconnect.          |
-| `transport_backend`       | `Sockudo`    | WebSocket transport backend.                                        |
+| Option                    | Default   | Description                                                         |
+| ------------------------- | --------- | ------------------------------------------------------------------- |
+| `account_id`              | `AX-001`  | Account ID for the execution client.                                |
+| `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
+| `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
+| `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
+| `base_url_http`           | `None`    | Override for the API REST base URL.                                 |
+| `base_url_orders`         | `None`    | Override for the orders REST base URL.                              |
+| `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                              |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
+| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                |
+| `max_retries`             | `3`       | Maximum retry attempts for REST requests.                           |
+| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                       |
+| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries (exponential backoff). |
+| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.             |
+| `recv_window_ms`          | `5,000`   | Reserved; AX uses bearer tokens and the adapter sends no window.    |
+| `cancel_on_disconnect`    | `False`   | Cancel this WebSocket session's open orders on disconnect.          |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                        |
 
 When `transport_backend=None`, the compiled Rust default selects Sockudo when the
 `transport-sockudo` Cargo feature is enabled and Tungstenite otherwise.
 
-Use `AxDataClientConfig` with `AxDataClientFactory` and `AxExecClientConfig` with
+Use `AxDataClientConfig` with `AxDataClientFactory` and `AxExecutionClientConfig` with
 `AxExecutionClientFactory`. The Python examples show the complete `LiveNode.builder(...)`
 configuration for data and execution clients.
 

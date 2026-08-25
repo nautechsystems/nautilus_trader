@@ -48,7 +48,7 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::{
     common::{
-        credential::{Credential, scrub_auth},
+        credential::Credential,
         enums::{LighterOrderType, LighterTimeInForce},
         symbol::MarketRegistry,
     },
@@ -521,6 +521,12 @@ impl TradeDedupCache {
     }
 }
 
+#[derive(Debug, Default)]
+struct PositionSnapshot {
+    reports: AHashMap<InstrumentId, PositionStatusReport>,
+    skipped_market_ids: Option<AHashSet<i16>>,
+}
+
 /// Per-client WebSocket dispatch state.
 ///
 /// Threaded into the consumption loop and the order-action methods; cloned
@@ -552,13 +558,10 @@ pub(crate) struct WsDispatchState {
     /// per-market and the venue's REST quota would make a full-market
     /// fan-out prohibitively slow.
     pub(crate) active_markets: Arc<DashSet<i16>>,
-    /// WS-driven position cache backing `generate_position_status_reports`
-    /// (Lighter has no REST equivalent). `Mutex` not `DashMap` so a reader
-    /// never lands between `replace_positions`' clear and repopulate.
-    pub(crate) last_positions: Arc<Mutex<AHashMap<InstrumentId, PositionStatusReport>>>,
-    /// Markets omitted from the latest position snapshot because their rows could not be mapped or
-    /// parsed. `None` means no snapshot has completed for the current connection epoch.
-    position_snapshot_skipped: Arc<Mutex<Option<AHashSet<i16>>>>,
+    /// WS-driven position reports and their coverage state. Lighter has no REST
+    /// equivalent, so both values share one lock to keep reconciliation from
+    /// pairing reports from one frame with completeness from another.
+    position_snapshot: Arc<Mutex<PositionSnapshot>>,
     /// Identity context for orders this client submitted. Keyed on the
     /// originating [`ClientOrderId`]; populated by the execution client at
     /// submit time, consumed by the consumption loop to decide whether an
@@ -801,8 +804,7 @@ impl WsDispatchState {
             nonce_manager: Arc::new(NonceManager::default()),
             last_account_state: Arc::new(Mutex::new(None)),
             active_markets: Arc::new(DashSet::new()),
-            last_positions: Arc::new(Mutex::new(AHashMap::new())),
-            position_snapshot_skipped: Arc::new(Mutex::new(None)),
+            position_snapshot: Arc::new(Mutex::new(PositionSnapshot::default())),
             order_identities: Arc::new(DashMap::new()),
             create_registry: Arc::new(Mutex::new(())),
             seen_trade_ids: Arc::new(TradeDedupCache::new(REPLAY_CACHE_CAPACITY)),
@@ -1548,90 +1550,104 @@ impl WsDispatchState {
     /// the strict-await gate before the next `account_all_positions` frame
     /// replaces the cache.
     pub(crate) fn clear_position_cache(&self) {
-        self.last_positions.lock().expect(MUTEX_POISONED).clear();
-        self.invalidate_position_snapshot();
+        let mut snapshot = self.position_snapshot.lock().expect(MUTEX_POISONED);
+        snapshot.reports.clear();
+        snapshot.skipped_market_ids = None;
     }
 
     pub(crate) fn invalidate_position_snapshot(&self) {
-        *self.position_snapshot_skipped.lock().expect(MUTEX_POISONED) = None;
-    }
-
-    pub(crate) fn record_position_snapshot(&self, skipped_market_ids: &[i16]) {
-        *self.position_snapshot_skipped.lock().expect(MUTEX_POISONED) =
-            Some(skipped_market_ids.iter().copied().collect());
-    }
-
-    pub(crate) fn position_snapshot_covers(&self, market_id: i16) -> bool {
-        self.position_snapshot_skipped
+        self.position_snapshot
             .lock()
             .expect(MUTEX_POISONED)
-            .as_ref()
-            .is_some_and(|skipped| !skipped.contains(&market_id))
+            .skipped_market_ids = None;
     }
 
-    /// Replace the cache from a complete `account_all_positions` snapshot
+    /// Replace the cache and coverage from an `account_all_positions` snapshot
     /// and return the instrument ids that were present before but absent
     /// after. The caller is expected to emit a flat
     /// [`PositionStatusReport`] for each removed instrument; otherwise the
     /// execution engine won't observe externally-closed positions.
-    /// Instruments absent from `snapshot` are evicted; an empty input
-    /// clears the cache entirely.
-    pub(crate) fn replace_positions(&self, snapshot: &[PositionStatusReport]) -> Vec<InstrumentId> {
-        self.replace_positions_except(snapshot, &[])
-    }
-
-    /// Replace the cache from a snapshot while retaining instruments whose
-    /// venue rows were skipped and therefore cannot be treated as closed.
-    pub(crate) fn replace_positions_except(
+    /// Instruments absent from `reports` are evicted unless retained because
+    /// their venue rows were skipped. An empty report set clears the cache
+    /// when no instrument is retained.
+    pub(crate) fn replace_position_snapshot(
         &self,
-        snapshot: &[PositionStatusReport],
+        reports: &[PositionStatusReport],
         retained: &[InstrumentId],
+        skipped_market_ids: &[i16],
     ) -> Vec<InstrumentId> {
-        let mut guard = self.last_positions.lock().expect(MUTEX_POISONED);
-        let new_ids: ahash::AHashSet<InstrumentId> =
-            snapshot.iter().map(|r| r.instrument_id).collect();
-        let retained_ids: ahash::AHashSet<InstrumentId> = retained.iter().copied().collect();
-        let removed: Vec<InstrumentId> = guard
-            .keys()
-            .filter(|id| !new_ids.contains(id) && !retained_ids.contains(id))
-            .copied()
-            .collect();
-        guard.retain(|id, _| retained_ids.contains(id));
-        for report in snapshot {
-            guard.insert(report.instrument_id, report.clone());
-        }
+        let mut snapshot = self.position_snapshot.lock().expect(MUTEX_POISONED);
+        let removed = replace_position_reports(&mut snapshot.reports, reports, retained);
+        snapshot.skipped_market_ids = Some(skipped_market_ids.iter().copied().collect());
         removed
     }
 
     /// Apply live position updates without evicting instruments omitted from the frame.
-    pub(crate) fn update_positions(
+    /// The caller must emit a flat report for every returned removed instrument.
+    pub(crate) fn apply_position_update(
         &self,
-        updates: &[PositionStatusReport],
+        reports: &[PositionStatusReport],
         closed: &[InstrumentId],
+        covered_market_ids: &[i16],
+        skipped_market_ids: &[i16],
     ) -> Vec<InstrumentId> {
-        let mut guard = self.last_positions.lock().expect(MUTEX_POISONED);
-        let removed = closed
-            .iter()
-            .filter_map(|instrument_id| guard.remove(instrument_id).map(|_| *instrument_id))
-            .collect();
-
-        for report in updates {
-            guard.insert(report.instrument_id, report.clone());
+        let mut snapshot = self.position_snapshot.lock().expect(MUTEX_POISONED);
+        let removed = update_position_reports(&mut snapshot.reports, reports, closed);
+        if let Some(skipped) = snapshot.skipped_market_ids.as_mut() {
+            for market_id in covered_market_ids {
+                skipped.remove(market_id);
+            }
+            skipped.extend(skipped_market_ids.iter().copied());
         }
         removed
     }
 
-    /// Snapshot the cached positions, optionally filtered by instrument.
-    pub(crate) fn snapshot_positions(
+    /// Snapshot cached position reports and their coverage under one lock.
+    pub(crate) fn snapshot_positions_with_coverage(
         &self,
-        instrument_id: Option<InstrumentId>,
-    ) -> Vec<PositionStatusReport> {
-        let guard = self.last_positions.lock().expect(MUTEX_POISONED);
-        match instrument_id {
-            Some(id) => guard.get(&id).cloned().map(|r| vec![r]).unwrap_or_default(),
-            None => guard.values().cloned().collect(),
-        }
+    ) -> (Vec<PositionStatusReport>, Option<AHashSet<i16>>) {
+        let snapshot = self.position_snapshot.lock().expect(MUTEX_POISONED);
+        (
+            snapshot.reports.values().cloned().collect(),
+            snapshot.skipped_market_ids.clone(),
+        )
     }
+}
+
+fn replace_position_reports(
+    current: &mut AHashMap<InstrumentId, PositionStatusReport>,
+    snapshot: &[PositionStatusReport],
+    retained: &[InstrumentId],
+) -> Vec<InstrumentId> {
+    let new_ids: AHashSet<InstrumentId> = snapshot.iter().map(|r| r.instrument_id).collect();
+    let retained_ids: AHashSet<InstrumentId> = retained.iter().copied().collect();
+    let removed: Vec<InstrumentId> = current
+        .keys()
+        .filter(|id| !new_ids.contains(id) && !retained_ids.contains(id))
+        .copied()
+        .collect();
+
+    current.retain(|id, _| retained_ids.contains(id));
+    for report in snapshot {
+        current.insert(report.instrument_id, report.clone());
+    }
+    removed
+}
+
+fn update_position_reports(
+    current: &mut AHashMap<InstrumentId, PositionStatusReport>,
+    updates: &[PositionStatusReport],
+    closed: &[InstrumentId],
+) -> Vec<InstrumentId> {
+    let removed = closed
+        .iter()
+        .filter_map(|instrument_id| current.remove(instrument_id).map(|_| *instrument_id))
+        .collect();
+
+    for report in updates {
+        current.insert(report.instrument_id, report.clone());
+    }
+    removed
 }
 
 /// Standalone derivation so the fixed-seed contract is testable without
@@ -1846,8 +1862,14 @@ pub(crate) async fn lookup_order_status_report(
     let ts_init = clock.get_time_ns();
     let supplied_cloid = client_order_id.copied();
 
-    let finalize = |order: &LighterOrder| -> Option<OrderStatusReport> {
-        let report = parse_http_order_to_report(order, registry, account_id, ts_init)?;
+    let finalize = |order: &LighterOrder| -> anyhow::Result<OrderStatusReport> {
+        let report =
+            parse_http_order_to_report(order, registry, account_id, ts_init).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "failed to parse matching Lighter order {} for market_index={market_index}",
+                    order.order_id,
+                )
+            })?;
         let mut report = dispatch.translate_order_cloid(report);
         // Substitute the caller-supplied cloid whenever it positively
         // identifies this order: when the order's
@@ -1867,7 +1889,7 @@ pub(crate) async fn lookup_order_status_report(
         {
             report = report.with_client_order_id(cloid);
         }
-        Some(dispatch.preserve_pending_order_status(report))
+        Ok(dispatch.preserve_pending_order_status(report))
     };
 
     let mut active_matches = active.orders.iter().filter(|order| matches_order(order));
@@ -1881,10 +1903,8 @@ pub(crate) async fn lookup_order_status_report(
         );
     }
 
-    if let Some(order) = active_match
-        && let Some(report) = finalize(order)
-    {
-        return Ok(Some(report));
+    if let Some(order) = active_match {
+        return finalize(order).map(Some);
     }
 
     if target_venue_index.is_none() {
@@ -1919,10 +1939,8 @@ pub(crate) async fn lookup_order_status_report(
             .context("failed to fetch Lighter inactive orders")?;
 
         for order in &inactive.orders {
-            if matches_order(order)
-                && let Some(report) = finalize(order)
-            {
-                return Ok(Some(report));
+            if matches_order(order) {
+                return finalize(order).map(Some);
             }
         }
 
@@ -2170,23 +2188,6 @@ pub(crate) fn derive_market_order_price_ticks(
     })
 }
 
-/// Degrade an `Err` sub-report to an empty `Vec` after logging the full
-/// chain at WARN. Deliberate: a transient REST failure on one category
-/// must not blank out the others. Visibility comes from the `{e:#}` log,
-/// not from the returned `ExecutionMassStatus`.
-pub(crate) fn unwrap_reports_or_warn<T>(label: &str, result: anyhow::Result<Vec<T>>) -> Vec<T> {
-    match result {
-        Ok(reports) => reports,
-        Err(e) => {
-            log::warn!(
-                "Lighter mass-status: {label} reports failed: {}",
-                scrub_auth(&format!("{e:#}")),
-            );
-            Vec::new()
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -2313,10 +2314,13 @@ mod tests {
                 .into_iter()
                 .map(|(instrument, qty)| stub_position_report(instrument, qty))
                 .collect();
-            state.replace_positions(&frame);
+            state.replace_position_snapshot(&frame, &[], &[]);
         }
 
-        let result = state.snapshot_positions(filter.map(InstrumentId::from));
+        let (mut result, _) = state.snapshot_positions_with_coverage();
+        if let Some(instrument_id) = filter.map(InstrumentId::from) {
+            result.retain(|report| report.instrument_id == instrument_id);
+        }
 
         let mut actual: Vec<(String, String)> = result
             .into_iter()
@@ -2336,30 +2340,40 @@ mod tests {
         // Anchors the contract the consumption loop relies on for the
         // `Reconnected` and `connect()` cache-drop paths.
         let state = WsDispatchState::new();
-        state.replace_positions(&[stub_position_report("ETH-PERP.LIGHTER", "1.0")]);
-        assert_eq!(state.snapshot_positions(None).len(), 1);
+        state.replace_position_snapshot(
+            &[stub_position_report("ETH-PERP.LIGHTER", "1.0")],
+            &[],
+            &[],
+        );
+        assert_eq!(state.snapshot_positions_with_coverage().0.len(), 1);
 
-        state.replace_positions(&[]);
+        state.replace_position_snapshot(&[], &[], &[]);
 
-        assert!(state.snapshot_positions(None).is_empty());
+        assert!(state.snapshot_positions_with_coverage().0.is_empty());
     }
 
     #[rstest]
     fn replace_positions_except_keeps_only_retained_absent_positions() {
         let state = WsDispatchState::new();
-        state.replace_positions(&[
-            stub_position_report("ETH-PERP.LIGHTER", "1.0"),
-            stub_position_report("BTC-PERP.LIGHTER", "2.0"),
-            stub_position_report("DOGE-PERP.LIGHTER", "4.0"),
-        ]);
+        state.replace_position_snapshot(
+            &[
+                stub_position_report("ETH-PERP.LIGHTER", "1.0"),
+                stub_position_report("BTC-PERP.LIGHTER", "2.0"),
+                stub_position_report("DOGE-PERP.LIGHTER", "4.0"),
+            ],
+            &[],
+            &[],
+        );
 
-        let removed = state.replace_positions_except(
+        let removed = state.replace_position_snapshot(
             &[stub_position_report("ETH-PERP.LIGHTER", "3.0")],
             &[InstrumentId::from("BTC-PERP.LIGHTER")],
+            &[],
         );
 
         let mut actual: Vec<(String, String)> = state
-            .snapshot_positions(None)
+            .snapshot_positions_with_coverage()
+            .0
             .into_iter()
             .map(|r| (r.instrument_id.to_string(), r.quantity.to_string()))
             .collect();
@@ -2378,19 +2392,26 @@ mod tests {
     #[rstest]
     fn update_positions_merges_rows_and_removes_only_explicit_closures() {
         let state = WsDispatchState::new();
-        state.replace_positions(&[
-            stub_position_report("ETH-PERP.LIGHTER", "1.0"),
-            stub_position_report("BTC-PERP.LIGHTER", "2.0"),
-        ]);
+        state.replace_position_snapshot(
+            &[
+                stub_position_report("ETH-PERP.LIGHTER", "1.0"),
+                stub_position_report("BTC-PERP.LIGHTER", "2.0"),
+            ],
+            &[],
+            &[],
+        );
 
-        let removed = state.update_positions(
+        let removed = state.apply_position_update(
             &[stub_position_report("ETH-PERP.LIGHTER", "3.0")],
             &[InstrumentId::from("DOGE-PERP.LIGHTER")],
+            &[],
+            &[],
         );
 
         assert!(removed.is_empty());
         let mut actual: Vec<(String, String)> = state
-            .snapshot_positions(None)
+            .snapshot_positions_with_coverage()
+            .0
             .into_iter()
             .map(|report| {
                 (
@@ -2408,29 +2429,17 @@ mod tests {
             ],
         );
 
-        let removed = state.update_positions(&[], &[InstrumentId::from("BTC-PERP.LIGHTER")]);
+        let removed =
+            state.apply_position_update(&[], &[InstrumentId::from("BTC-PERP.LIGHTER")], &[], &[]);
 
         assert_eq!(removed, vec![InstrumentId::from("BTC-PERP.LIGHTER")]);
-        let positions = state.snapshot_positions(None);
+        let positions = state.snapshot_positions_with_coverage().0;
         assert_eq!(positions.len(), 1);
         assert_eq!(
             positions[0].instrument_id,
             InstrumentId::from("ETH-PERP.LIGHTER")
         );
         assert_eq!(positions[0].quantity, Quantity::from("3.0"));
-    }
-
-    #[rstest]
-    fn unwrap_reports_or_warn_returns_inner_on_ok() {
-        let result: anyhow::Result<Vec<i32>> = Ok(vec![1, 2, 3]);
-        assert_eq!(unwrap_reports_or_warn("orders", result), vec![1, 2, 3]);
-    }
-
-    #[rstest]
-    fn unwrap_reports_or_warn_returns_empty_on_err() {
-        let result: anyhow::Result<Vec<i32>> = Err(anyhow::anyhow!("boom"));
-        let out: Vec<i32> = unwrap_reports_or_warn("orders", result);
-        assert!(out.is_empty());
     }
 
     #[rstest]
@@ -3442,10 +3451,10 @@ mod tests {
         let state = WsDispatchState::new();
         let prior_reports: Vec<PositionStatusReport> =
             prior.iter().map(|i| position_at(i)).collect();
-        state.replace_positions(&prior_reports);
+        state.replace_position_snapshot(&prior_reports, &[], &[]);
 
         let next_reports: Vec<PositionStatusReport> = next.iter().map(|i| position_at(i)).collect();
-        let mut removed = state.replace_positions(&next_reports);
+        let mut removed = state.replace_position_snapshot(&next_reports, &[], &[]);
         removed.sort();
         let mut expected: Vec<InstrumentId> = expected_removed
             .iter()
@@ -3891,31 +3900,76 @@ mod tests {
         // positions from leaking past the strict-await gate when the
         // venue's initial `account_all_positions` frame is empty.
         let state = WsDispatchState::new();
-        state.replace_positions(&[stub_position_report("ETH-PERP.LIGHTER", "1.0")]);
-        assert!(!state.snapshot_positions(None).is_empty());
+        state.replace_position_snapshot(
+            &[stub_position_report("ETH-PERP.LIGHTER", "1.0")],
+            &[],
+            &[],
+        );
+        assert!(!state.snapshot_positions_with_coverage().0.is_empty());
 
         state.clear_position_cache();
 
-        assert!(state.snapshot_positions(None).is_empty());
-        assert!(!state.position_snapshot_covers(0));
+        let (reports, coverage) = state.snapshot_positions_with_coverage();
+        assert!(reports.is_empty());
+        assert_eq!(coverage, None);
     }
 
     #[rstest]
     fn position_snapshot_coverage_requires_current_complete_market_row() {
         let state = WsDispatchState::new();
 
-        assert!(!state.position_snapshot_covers(0));
+        assert_eq!(state.snapshot_positions_with_coverage().1, None);
 
-        state.record_position_snapshot(&[]);
-        assert!(state.position_snapshot_covers(0));
+        state.replace_position_snapshot(&[], &[], &[]);
+        assert_eq!(
+            state.snapshot_positions_with_coverage().1,
+            Some(AHashSet::new()),
+        );
 
-        state.record_position_snapshot(&[0]);
-        assert!(!state.position_snapshot_covers(0));
-        assert!(state.position_snapshot_covers(1));
+        state.replace_position_snapshot(&[], &[], &[0]);
+        assert_eq!(
+            state.snapshot_positions_with_coverage().1,
+            Some(AHashSet::from_iter([0])),
+        );
+
+        state.apply_position_update(&[], &[], &[0], &[1]);
+        assert_eq!(
+            state.snapshot_positions_with_coverage().1,
+            Some(AHashSet::from_iter([1])),
+        );
+
+        state.apply_position_update(&[], &[], &[1], &[]);
+        assert_eq!(
+            state.snapshot_positions_with_coverage().1,
+            Some(AHashSet::new()),
+        );
 
         state.invalidate_position_snapshot();
-        assert!(!state.position_snapshot_covers(0));
-        assert!(!state.position_snapshot_covers(1));
+        state.apply_position_update(&[], &[], &[0], &[]);
+        assert_eq!(state.snapshot_positions_with_coverage().1, None);
+    }
+
+    #[rstest]
+    fn position_snapshot_updates_reports_and_coverage_together() {
+        let state = WsDispatchState::new();
+        let initial = stub_position_report("ETH-PERP.LIGHTER", "1.0");
+
+        state.replace_position_snapshot(std::slice::from_ref(&initial), &[], &[1]);
+        let (reports, coverage) = state.snapshot_positions_with_coverage();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].instrument_id, initial.instrument_id);
+        assert_eq!(reports[0].quantity, initial.quantity);
+        assert_eq!(coverage, Some(AHashSet::from_iter([1])));
+
+        let updated = stub_position_report("ETH-PERP.LIGHTER", "2.0");
+        state.apply_position_update(std::slice::from_ref(&updated), &[], &[1], &[2]);
+        let (reports, coverage) = state.snapshot_positions_with_coverage();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].instrument_id, updated.instrument_id);
+        assert_eq!(reports[0].quantity, updated.quantity);
+        assert_eq!(coverage, Some(AHashSet::from_iter([2])));
     }
 
     #[rstest]

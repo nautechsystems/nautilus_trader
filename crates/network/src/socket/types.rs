@@ -41,4 +41,9 @@ pub enum WriterCommand<W = TcpWriter> {
     UpdateWithReplay(W, Vec<Bytes>, tokio::sync::oneshot::Sender<bool>),
     /// Sends data to the server.
     Send(Bytes),
+    /// Sends data once, either directly or through reconnect replay.
+    ///
+    /// A newer buffered command with the same key supersedes an older one. If reconnect replay
+    /// already contains the exact data, the buffered command is discarded after replay.
+    SendOrReplay { key: u64, data: Bytes },
 }

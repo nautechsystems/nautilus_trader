@@ -28,7 +28,7 @@ module contracts.
 
 Python surface available from `nautilus_trader.adapters.derive`:
 
-- `DeriveDataClientConfig`, `DeriveExecClientConfig`, `DeriveExecFactoryConfig`
+- `DeriveDataClientConfig`, `DeriveExecutionClientConfig`
 - `DeriveDataClientFactory`, `DeriveExecutionClientFactory`
 - `DeriveEnvironment`
 - `DERIVE`, `DERIVE_CLIENT_ID`, and `DERIVE_VENUE`
@@ -97,7 +97,7 @@ credentials.
 The EIP-712 protocol constants (`DOMAIN_SEPARATOR`, `ACTION_TYPEHASH`, per-action module
 addresses) for both networks are shipped in `crates/adapters/derive/src/common/consts.rs`
 and tracked against Derive's [Protocol Constants reference](https://docs.derive.xyz/reference/protocol-constants).
-`DeriveExecClientConfig::domain_separator`, `action_typehash`, and `trade_module_address`
+`DeriveExecutionClientConfig::domain_separator`, `action_typehash`, and `trade_module_address`
 accept per-instance overrides that take precedence over the shipped values.
 
 ## Testnet onboarding
@@ -126,7 +126,7 @@ Steps to reach a position where the execution client can submit a signed order:
    non-zero collateral; the API will reject orders until the subaccount has enough margin
    for the requested size.
 6. **Set the environment variables.** Export the three values the client reads in testnet
-   mode (or pass them on `DeriveExecClientConfig`, where the config field wins):
+   mode (or pass them on `DeriveExecutionClientConfig`, where the config field wins):
 
    ```bash
    export DERIVE_TESTNET_WALLET_ADDRESS="0x..."  # Derive Chain smart-contract wallet
@@ -180,7 +180,7 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
    `query_account`) that the deposit lands in `collaterals_value` and `initial_margin` stays
    positive after the intended order.
 6. **Set the environment variables.** Export the three mainnet values (or pass them on
-   `DeriveExecClientConfig`, where the config field wins):
+   `DeriveExecutionClientConfig`, where the config field wins):
 
    ```bash
    export DERIVE_WALLET_ADDRESS="0x..."  # Derive Chain smart-contract wallet
@@ -193,7 +193,7 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
    of the file. Check that constant before every run and edit it to switch networks; the
    examples do not read the network from the environment. Production deployments select
    the network via `DeriveDataClientConfig::environment` /
-   `DeriveExecClientConfig::environment`.
+   `DeriveExecutionClientConfig::environment`.
 
 ## Referral code attribution
 
@@ -261,19 +261,15 @@ publishes `OrderBookDepth10` snapshots.
 
 ### Execution
 
-Order placement, cancellation, modification, query, and report generation use Derive's
-EIP-712 self-custodial signing flow. Order-entry writes (`private/order`,
-`private/trigger_order`, `private/replace`, `private/cancel`,
-`private/cancel_trigger_order`, `private/cancel_by_label`, `private/cancel_all`) go over
-the WebSocket on the same authenticated session that streams account, order, trade, and
-balance state through the private channels (`{subaccount_id}.orders`,
-`{subaccount_id}.trades`, `{subaccount_id}.balances`). The signed EIP-712 body is
-identical regardless of transport.
+Derive uses the configured session key for authenticated execution:
+
+- Order submission and replacement requests carry locally generated EIP-712 signatures.
+- The live execution client sends order writes over the authenticated WebSocket and receives
+  account, order, trade, and balance updates through private channels.
+- Report generation, account refreshes, and instrument lookups use REST.
 
 :::note
-The HTTP order-entry endpoints remain available on `DeriveHttpClient` for tooling and tests,
-but the live execution client routes all writes over the WebSocket. Report generation,
-account refresh, and instrument lookups still use REST.
+`DeriveHttpClient` also exposes HTTP order-entry methods for tooling and tests.
 :::
 
 Perpetuals, options, and ERC-20 spot pairs all use the Derive Trade module. Spot has no
@@ -346,6 +342,32 @@ order is signed, so a tight offset on a fast-moving or high-priced instrument ca
 wrong side before the venue receives the order. Size the trigger offset to comfortably exceed
 expected price movement during submission (for `ETH-PERP`, tens of dollars rather than a few
 cents); a too-tight offset produces spurious `11051` rejections.
+
+#### Bulk cancellation
+
+Derive supports both multi-order cancellation methods exposed by `Strategy`.
+
+| Strategy method          | Supported | Parameters                                                            | Notes                                      |
+| ------------------------ | --------- | --------------------------------------------------------------------- | ------------------------------------------ |
+| `cancel_orders(...)`     | ✓         | `client_order_ids`, `client_id`, `params`                             | All orders must use the same instrument.   |
+| `cancel_all_orders(...)` | ✓         | `instrument_id`, `order_side`, `client_id`, `strategy_only`, `params` | Defaults to the calling strategy's orders. |
+
+The Derive execution client applies these methods as follows:
+
+- `cancel_orders` cancels each requested regular or trigger order individually.
+- `cancel_all_orders` with `strategy_only=True` expands cached matches into individual cancels.
+- `cancel_all_orders` with `strategy_only=False` and a Buy or Sell filter lists regular and trigger
+  orders, filters by instrument and side, and cancels each match. It never widens to both sides.
+- `cancel_all_orders` with `strategy_only=False` and no side filter cancels matching triggers
+  individually, then sends `private/cancel_by_instrument` for regular orders. It never sends
+  `private/cancel_all`.
+
+`private/cancel_by_instrument` cancels regular open orders only. A successful request with
+`cancelled_orders == 0` is an expected no-op and logs at debug level.
+
+A failed trigger query or trigger cancellation logs a warning but does not suppress the regular
+instrument cancellation. A failed bulk request has no per-order outcome to emit; private channel
+updates and later reconciliation remain responsible for observed order state.
 
 #### Execution instructions
 
@@ -462,13 +484,13 @@ sessions authorized via `public/login`; the venue applies a reduced, unspecified
 unauthenticated sessions, so public data-client traffic can hit venue limits earlier. The venue
 also caps concurrent WebSocket connections per IP (4 for a Trader).
 
-Matching-engine writes that carry an instrument (order, replace, trigger order, and
-instrument-scoped cancel) draw on both the account-wide matching bucket and that instrument's
-independent bucket, so a Market Maker's account-wide override never inflates the
-per-instrument allowance. Trigger order create and cancel methods are paced as matching writes
-even though the venue does not list them explicitly; `private/cancel_trigger_order` carries no
-instrument and draws on the account-wide bucket only. The stricter classification stays on the
-safe side of the documented contract.
+Matching-engine writes that carry an instrument (order, replace, trigger order, single-order
+cancel, and `private/cancel_by_instrument`) draw on both the account-wide matching bucket and that
+instrument's independent bucket, so a Market Maker's account-wide override never inflates the
+per-instrument allowance. Trigger order create and cancel methods are paced as matching writes even
+though the venue does not list them explicitly; `private/cancel_trigger_order` carries no instrument
+and draws on the account-wide bucket only.
+This conservative classification stays within Derive's documented rate contract.
 
 Pacing waits happen before the request is signed, so a delay never consumes the validity of the
 REST `X-LYRA*` authentication headers or of the nonces and EIP-712 signatures on the WebSocket
@@ -568,10 +590,11 @@ currency or subscribe first. `request_instrument` is the exception: it always fe
 
 ### Execution client configuration options
 
-Class/struct: `DeriveExecClientConfig`.
+Class/struct: `DeriveExecutionClientConfig`.
 
 | Option                                            | Default   | Description                                                                                                                                                                       |
 | ------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `account_id`                                      | `Venue`   | Nautilus account identifier; defaults to `DERIVE-001`.                                                                                                                            |
 | `wallet_address`                                  | `None`    | Derive Chain smart-contract wallet address. Falls back to env vars below.                                                                                                         |
 | `session_key`                                     | `None`    | secp256k1 session-key private key. Falls back to env vars below.                                                                                                                  |
 | `subaccount_id`                                   | `None`    | Derive subaccount id. Falls back to env vars below.                                                                                                                               |
@@ -611,9 +634,8 @@ The session key is the secp256k1 private key registered on the wallet for API si
 
 ### Python live node
 
-Python nodes use `LiveNode.builder(...)` and pass concrete factory
-instances. The execution factory needs `DeriveExecFactoryConfig`, which wraps the trader
-and account identifiers with the underlying `DeriveExecClientConfig`.
+Python nodes use `LiveNode.builder(...)` and pass concrete factory instances. The node supplies the
+trader identifier, while `DeriveExecutionClientConfig` supplies the account identifier.
 
 ```python
 from decimal import Decimal
@@ -621,8 +643,7 @@ from decimal import Decimal
 from nautilus_trader.adapters.derive import DeriveDataClientConfig
 from nautilus_trader.adapters.derive import DeriveDataClientFactory
 from nautilus_trader.adapters.derive import DeriveEnvironment
-from nautilus_trader.adapters.derive import DeriveExecClientConfig
-from nautilus_trader.adapters.derive import DeriveExecFactoryConfig
+from nautilus_trader.adapters.derive import DeriveExecutionClientConfig
 from nautilus_trader.adapters.derive import DeriveExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -636,28 +657,19 @@ data_config = DeriveDataClientConfig(
     currencies=["ETH", "BTC"],
 )
 
-exec_config = DeriveExecClientConfig(
+exec_config = DeriveExecutionClientConfig(
+    account_id=AccountId("DERIVE-001"),
     environment=DeriveEnvironment.TESTNET,
     max_fee_per_contract=Decimal("1000"),
-)
-
-exec_factory_config = DeriveExecFactoryConfig(
-    trader_id,
-    AccountId("DERIVE-001"),
-    exec_config,
 )
 
 node = (
     LiveNode.builder("DERIVE-001", trader_id, Environment.LIVE)
     .add_data_client(None, DeriveDataClientFactory(), data_config)
-    .add_exec_client(None, DeriveExecutionClientFactory(), exec_factory_config)
+    .add_exec_client(None, DeriveExecutionClientFactory(), exec_config)
     .build()
 )
 ```
-
-Do not pass `DeriveExecClientConfig` directly to `add_exec_client`; the Derive execution
-factory requires the wrapped `DeriveExecFactoryConfig` so it can create the
-`ExecutionClientCore` with the correct trader and account identifiers.
 
 ### Rust data client
 
@@ -679,11 +691,11 @@ let config = DeriveDataClientConfig {
 ```rust
 use nautilus_derive::{
     common::enums::DeriveEnvironment,
-    config::DeriveExecClientConfig,
+    config::DeriveExecutionClientConfig,
 };
 use rust_decimal::Decimal;
 
-let config = DeriveExecClientConfig {
+let config = DeriveExecutionClientConfig {
     wallet_address: Some("0x...".to_string()),
     session_key: Some("0x...".to_string()),
     subaccount_id: Some(1),

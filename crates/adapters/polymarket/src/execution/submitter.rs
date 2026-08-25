@@ -47,7 +47,7 @@ use crate::{
         clob::PolymarketClobHttpClient,
         error::{Error, Result as HttpResult, sanitize_error_text},
         models::{PolymarketOpenOrder, PolymarketOrder},
-        query::{CancelResponse, OrderResponse},
+        query::{CancelMarketOrdersParams, CancelResponse, OrderResponse},
     },
 };
 
@@ -303,6 +303,33 @@ impl OrderSubmitter {
                     let http_client = http_client.clone();
                     let order_id = order_id.clone();
                     async move { http_client.cancel_order(&order_id).await }
+                },
+                |e| e.is_retryable(),
+                Error::retry_after,
+                |e| Error::transport(e.to_string()),
+            )
+            .await
+    }
+
+    /// Cancels all orders for one outcome token with retry on transient failures.
+    pub(crate) async fn cancel_market_orders(&self, asset_id: &str) -> HttpResult<CancelResponse> {
+        let http_client = self.http_client.clone();
+        let asset_id = asset_id.to_string();
+
+        self.retry_manager
+            .execute_with_retry_with_delay(
+                "cancel_market_orders",
+                || {
+                    let http_client = http_client.clone();
+                    let asset_id = asset_id.clone();
+                    async move {
+                        http_client
+                            .cancel_market_orders(CancelMarketOrdersParams {
+                                market: None,
+                                asset_id: Some(asset_id),
+                            })
+                            .await
+                    }
                 },
                 |e| e.is_retryable(),
                 Error::retry_after,

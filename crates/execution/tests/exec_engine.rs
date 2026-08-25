@@ -44,12 +44,16 @@ use nautilus_common::{
     },
     msgbus::{
         self, MessageBus, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
-        stubs::get_any_saving_handler, switchboard,
+        stubs::{
+            TypedIntoMessageSavingHandler, get_any_saving_handler,
+            get_typed_into_message_saving_handler,
+        },
+        switchboard,
     },
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    UUID4, UnixNanos,
+    Params, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MINUTE, NANOSECONDS_IN_SECOND},
 };
 use nautilus_execution::engine::{
@@ -94,6 +98,7 @@ use nautilus_model::{
 use rstest::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde_json::Value;
 use ustr::Ustr;
 
 #[fixture]
@@ -729,6 +734,211 @@ fn test_external_client_command_publishes_to_client_topic_and_skips_local_routin
         TradingCommand::CancelAllOrders(command),
         "external client command should publish to the client command topic",
     );
+}
+
+#[rstest]
+fn test_cancel_all_orders_fans_out_with_one_resolved_client_and_shared_lineage() {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let instrument_id = audusd_sim().id();
+    let selected_client_id = ClientId::from("SELECTED");
+    let selected_account_id = AccountId::from("SELECTED-ACCOUNT");
+    let other_client_id = ClientId::from("OTHER");
+    let selected_client = StubExecutionClient::new(
+        selected_client_id,
+        selected_account_id,
+        instrument_id.venue,
+        OmsType::Netting,
+        None,
+    );
+    let selected_cancel_all = selected_client.cancel_all_commands();
+    let other_client = StubExecutionClient::new(
+        other_client_id,
+        AccountId::from("OTHER-ACCOUNT"),
+        Venue::from("OTHER"),
+        OmsType::Netting,
+        None,
+    );
+    let other_cancel_all = other_client.cancel_all_commands();
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let mut execution_engine = ExecutionEngine::new(clock, Rc::clone(&cache), None);
+    execution_engine
+        .register_client(Box::new(selected_client))
+        .unwrap();
+    execution_engine.register_default_client(Box::new(other_client));
+
+    let (emulator_handler, emulator_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+        get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+    msgbus::register_trading_command_endpoint(
+        MessagingSwitchboard::order_emulator_execute(),
+        emulator_handler,
+    );
+    let exec_algorithm_id = ExecAlgorithmId::from("ALGO-001");
+    let algorithm_endpoint = format!("{exec_algorithm_id}.execute");
+    let (algorithm_handler, algorithm_messages) =
+        get_any_saving_handler::<TradingCommand>(Some(Ustr::from("ALGO-001.execute")));
+    msgbus::register_any(algorithm_endpoint.into(), algorithm_handler);
+
+    let selected_emulated_id = ClientOrderId::from("O-EMULATED-SELECTED");
+    let selected_emulated = OrderTestBuilder::new(OrderType::StopMarket)
+        .strategy_id(StrategyId::from("SIBLING-EMULATED"))
+        .instrument_id(instrument_id)
+        .client_order_id(selected_emulated_id)
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1.10000"))
+        .quantity(Quantity::from(1))
+        .emulation_trigger(TriggerType::BidAsk)
+        .build();
+    let selected_algorithm_id = ClientOrderId::from("O-ALGORITHM-SELECTED");
+    let selected_algorithm = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(StrategyId::from("SIBLING-ALGORITHM"))
+        .instrument_id(instrument_id)
+        .client_order_id(selected_algorithm_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(selected_algorithm_id)
+        .build();
+    let selected_sell_algorithm_id = ClientOrderId::from("O-ALGORITHM-SELECTED-SELL");
+    let selected_sell_algorithm = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(StrategyId::from("SIBLING-ALGORITHM-SELL"))
+        .instrument_id(instrument_id)
+        .client_order_id(selected_sell_algorithm_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(1))
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(selected_sell_algorithm_id)
+        .build();
+    let selected_accepted_algorithm_id = ClientOrderId::from("O-ALGORITHM-SELECTED-ACCEPTED");
+    let mut selected_accepted_algorithm = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(StrategyId::from("SIBLING-ALGORITHM-ACCEPTED"))
+        .instrument_id(instrument_id)
+        .client_order_id(selected_accepted_algorithm_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(selected_accepted_algorithm_id)
+        .build();
+    selected_accepted_algorithm
+        .apply(TestOrderEventStubs::submitted(
+            &selected_accepted_algorithm,
+            selected_account_id,
+        ))
+        .unwrap();
+    selected_accepted_algorithm
+        .apply(TestOrderEventStubs::accepted(
+            &selected_accepted_algorithm,
+            selected_account_id,
+            VenueOrderId::from("V-ALGORITHM-SELECTED-ACCEPTED"),
+        ))
+        .unwrap();
+    let other_algorithm_id = ClientOrderId::from("O-ALGORITHM-OTHER");
+    let other_algorithm = OrderTestBuilder::new(OrderType::Market)
+        .strategy_id(StrategyId::from("OTHER-ALGORITHM"))
+        .instrument_id(instrument_id)
+        .client_order_id(other_algorithm_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(other_algorithm_id)
+        .build();
+    {
+        let mut cache = cache.borrow_mut();
+        cache
+            .add_order(selected_emulated, None, None, true)
+            .unwrap();
+        cache
+            .add_order(selected_algorithm, None, None, true)
+            .unwrap();
+        cache
+            .add_order(
+                selected_sell_algorithm,
+                None,
+                Some(selected_client_id),
+                true,
+            )
+            .unwrap();
+        cache
+            .add_order(
+                selected_accepted_algorithm,
+                None,
+                Some(selected_client_id),
+                true,
+            )
+            .unwrap();
+        cache
+            .add_order(other_algorithm, None, Some(other_client_id), true)
+            .unwrap();
+        cache.build_index();
+    }
+
+    let mut params = Params::new();
+    params.insert(
+        "routing_hint".to_string(),
+        Value::String("cancel_all".to_string()),
+    );
+    let command_id = UUID4::new();
+    let correlation_id = UUID4::new();
+    execution_engine.execute(TradingCommand::CancelAllOrders(CancelAllOrders::new(
+        TraderId::test_default(),
+        None,
+        StrategyId::from("CALLER-001"),
+        instrument_id,
+        OrderSide::Buy,
+        command_id,
+        UnixNanos::default(),
+        Some(params.clone()),
+        Some(correlation_id),
+    )));
+
+    let selected_cancel_all = selected_cancel_all.borrow();
+    assert_eq!(selected_cancel_all.len(), 1);
+    assert!(other_cancel_all.borrow().is_empty());
+    let venue_command = &selected_cancel_all[0];
+    let emulator_messages = emulator_messages.get_messages();
+    let Some(TradingCommand::CancelAllOrders(emulator_command)) = emulator_messages.first() else {
+        panic!("Expected an emulator CancelAllOrders command, was {emulator_messages:?}");
+    };
+    let algorithm_messages = algorithm_messages.get_messages();
+    let Some(TradingCommand::CancelOrder(algorithm_command)) = algorithm_messages.first() else {
+        panic!("Expected an algorithm CancelOrder command, was {algorithm_messages:?}");
+    };
+
+    assert_eq!(emulator_messages.len(), 1);
+    assert_eq!(algorithm_messages.len(), 1);
+    for child in [venue_command, emulator_command] {
+        assert_eq!(child.client_id, Some(selected_client_id));
+        assert_eq!(child.instrument_id, instrument_id);
+        assert_eq!(child.order_side, OrderSide::Buy);
+        assert_eq!(child.params.as_ref(), Some(&params));
+        assert_eq!(child.correlation_id, Some(correlation_id));
+        assert_eq!(child.causation_id, Some(command_id));
+        assert_ne!(child.command_id, command_id);
+    }
+    assert_ne!(venue_command.command_id, emulator_command.command_id);
+    assert_eq!(algorithm_command.client_id, Some(selected_client_id));
+    assert_eq!(
+        algorithm_command.strategy_id,
+        StrategyId::from("SIBLING-ALGORITHM")
+    );
+    assert_eq!(algorithm_command.client_order_id, selected_algorithm_id);
+    assert_eq!(algorithm_command.params.as_ref(), Some(&params));
+    assert_eq!(algorithm_command.correlation_id, Some(correlation_id));
+    assert_eq!(algorithm_command.causation_id, Some(command_id));
+    assert_ne!(algorithm_command.command_id, command_id);
+    assert_ne!(algorithm_command.command_id, venue_command.command_id);
+    assert_ne!(algorithm_command.command_id, emulator_command.command_id);
+    let cache = cache.borrow();
+    assert_eq!(
+        cache.client_id(&selected_emulated_id),
+        Some(&selected_client_id)
+    );
+    assert_eq!(
+        cache.client_id(&selected_algorithm_id),
+        Some(&selected_client_id)
+    );
+    assert_eq!(cache.client_id(&other_algorithm_id), Some(&other_client_id));
 }
 
 #[rstest]

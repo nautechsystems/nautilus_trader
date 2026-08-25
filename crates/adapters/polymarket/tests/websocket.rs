@@ -1362,6 +1362,24 @@ async fn pool_new_market_discovery_subscribed_once() {
         1,
         "discovery must be sent exactly once across all shards",
     );
+    let payloads = state.received_market_payloads.lock().await;
+    let asset_payloads: Vec<&Value> = payloads
+        .iter()
+        .filter(|payload| {
+            payload
+                .get("assets_ids")
+                .and_then(Value::as_array)
+                .is_some_and(|ids| !ids.is_empty())
+        })
+        .collect();
+    assert_eq!(asset_payloads.len(), 2);
+    assert!(asset_payloads.iter().all(|payload| {
+        payload
+            .get("custom_feature_enabled")
+            .and_then(Value::as_bool)
+            == Some(true)
+    }));
+    drop(payloads);
 
     pool.disconnect().await.expect("disconnect failed");
 }

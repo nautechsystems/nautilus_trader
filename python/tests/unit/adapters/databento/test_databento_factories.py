@@ -19,8 +19,8 @@ import pytest
 from unit.adapters.example_modules import capture_data_tester_main
 from unit.adapters.example_modules import load_example_module
 
+from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoDataClientFactory
-from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
@@ -43,7 +43,7 @@ def test_live_node_builder_accepts_databento_data_factory() -> None:
         .add_data_client(
             None,
             DatabentoDataClientFactory(),
-            DatabentoLiveClientConfig(
+            DatabentoDataClientConfig(
                 api_key=SMOKE_API_KEY,
                 publishers_filepath=publishers_filepath(),
             ),
@@ -55,8 +55,8 @@ def test_live_node_builder_accepts_databento_data_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
-def test_databento_live_config_stores_venue_dataset_map() -> None:
-    config = DatabentoLiveClientConfig(
+def test_databento_data_client_config_stores_venue_dataset_map() -> None:
+    config = DatabentoDataClientConfig(
         api_key=SMOKE_API_KEY,
         publishers_filepath=publishers_filepath(),
         venue_dataset_map={"EQUS": "EQUS.PLUS"},
@@ -68,6 +68,7 @@ def test_databento_live_config_stores_venue_dataset_map() -> None:
 
 
 def test_databento_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABENTO_API_KEY", "test-api-key")
     captured = capture_data_tester_main(monkeypatch, databento_data_tester)
     kwargs = captured["data_tester_kwargs"]
 
@@ -75,6 +76,13 @@ def test_databento_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kwargs["subscribe_trades"] is True
     assert "exec_client_args" not in captured
     assert captured["run_called"] is True
+
+
+def test_databento_data_tester_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DATABENTO_API_KEY", raising=False)
+
+    with pytest.raises(SystemExit, match="DATABENTO_API_KEY must be set"):
+        databento_data_tester.main()
 
 
 def publishers_filepath() -> Path:

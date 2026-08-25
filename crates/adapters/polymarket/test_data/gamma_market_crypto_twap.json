@@ -1,0 +1,36 @@
+{
+  "id": "3763487",
+  "conditionId": "0x2eea28aa905ace2f5cace17ea2b9e0e7b85a27f32ee14ed292f02fa104956bc4",
+  "questionID": "0xe3a10df6f8a162859a9a8a496ea5670f9837f800d78cfe3a5aa2e0fa11d079ba",
+  "clobTokenIds": "[\"113013382422133157315656090194075928009220145127085300671933810669470922115281\", \"38034349155375505476764349018583065542443879908961992019053731521216367745079\"]",
+  "outcomes": "[\"Up\", \"Down\"]",
+  "outcomePrices": "[\"0.555\", \"0.445\"]",
+  "question": "Bitcoin Up or Down - August 22, 12:00PM-12:05PM ET",
+  "startDate": "2026-08-21T16:08:38.248161Z",
+  "eventStartTime": "2026-08-22T16:00:00Z",
+  "endDate": "2026-08-22T16:05:00Z",
+  "active": true,
+  "closed": false,
+  "resolutionSource": "https://data.chain.link/streams/btc-usd-twap-60s-streams",
+  "acceptingOrders": true,
+  "enableOrderBook": true,
+  "orderPriceMinTickSize": 0.01,
+  "orderMinSize": 5,
+  "makerBaseFee": 1000,
+  "takerBaseFee": 1000,
+  "slug": "btc-updown-5m-1787414400",
+  "negRisk": false,
+  "feeSchedule": {
+    "exponent": 1,
+    "rate": 0.07,
+    "takerOnly": true,
+    "rebateRate": 0.2
+  },
+  "cryptoMarketConfig": {
+    "id": "btc-5m-twap-60",
+    "asset": "btc",
+    "duration": "5m",
+    "twapEnabled": true,
+    "twapLookbackSeconds": 60
+  }
+}

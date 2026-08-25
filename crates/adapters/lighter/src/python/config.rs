@@ -15,13 +15,13 @@
 
 //! Python bindings for Lighter configuration.
 
-use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 
 use crate::{
     common::enums::LighterEnvironment,
-    config::{LighterDataClientConfig, LighterExecClientConfig},
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
 };
 
 #[pymethods]
@@ -88,11 +88,10 @@ impl LighterDataClientConfig {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl LighterExecClientConfig {
+impl LighterExecutionClientConfig {
     /// Configuration for the Lighter live execution client.
     #[new]
     #[pyo3(signature = (
-        trader_id,
         account_id,
         account_index = None,
         api_key_index = None,
@@ -110,7 +109,6 @@ impl LighterExecClientConfig {
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
-        trader_id: TraderId,
         account_id: AccountId,
         account_index: Option<u64>,
         api_key_index: Option<u8>,
@@ -126,12 +124,8 @@ impl LighterExecClientConfig {
         sendtx_quota_per_min: Option<u32>,
         transport_backend: Option<TransportBackend>,
     ) -> Self {
-        let defaults = Self::builder()
-            .trader_id(trader_id)
-            .account_id(account_id)
-            .build();
+        let defaults = Self::default();
         Self {
-            trader_id,
             account_id,
             account_index,
             api_key_index,
@@ -156,6 +150,6 @@ impl LighterExecClientConfig {
     }
 
     fn __repr__(&self) -> String {
-        stringify!(LighterExecClientConfig).to_string()
+        stringify!(LighterExecutionClientConfig).to_string()
     }
 }

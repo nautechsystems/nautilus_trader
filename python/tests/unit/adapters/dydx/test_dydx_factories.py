@@ -20,7 +20,7 @@ from unit.adapters.example_modules import load_example_module
 
 from nautilus_trader.adapters.dydx import DydxDataClientConfig
 from nautilus_trader.adapters.dydx import DydxDataClientFactory
-from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.adapters.dydx import DydxExecutionClientConfig
 from nautilus_trader.adapters.dydx import DydxExecutionClientFactory
 from nautilus_trader.adapters.dydx import DydxNetwork
 from nautilus_trader.common import Environment
@@ -74,8 +74,7 @@ def test_live_node_builder_accepts_dydx_exec_factory() -> None:
         .add_exec_client(
             None,
             DydxExecutionClientFactory(),
-            DydxExecClientConfig(
-                trader_id=trader_id,
+            DydxExecutionClientConfig(
                 account_id=account_id,
                 network=DydxNetwork.MAINNET,
                 private_key=SMOKE_PRIVATE_KEY,

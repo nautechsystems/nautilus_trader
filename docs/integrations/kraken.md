@@ -12,7 +12,7 @@ Spot or Futures client through its `product_type`.
 
 The main Python components are:
 
-- `KrakenDataClientConfig` and `KrakenExecClientConfig`: Live client
+- `KrakenDataClientConfig` and `KrakenExecutionClientConfig`: Live client
   configuration.
 - `KrakenDataClientFactory` and `KrakenExecutionClientFactory`: Factories used
   by the trading node builder.
@@ -359,7 +359,7 @@ time rather than silently coercing them.
 The Spot execution client routes order submission, modification, cancellation,
 and batch cancellation through Kraken's authenticated WebSocket v2 trade
 channel by default. It falls back to REST when the WebSocket is inactive. Set
-`use_ws_trade=False` on `KrakenExecClientConfig` to route these operations
+`use_ws_trade=False` on `KrakenExecutionClientConfig` to route these operations
 through REST.
 
 ### Order shapes routed via REST
@@ -406,7 +406,7 @@ latency so ordinary network variation does not trigger timeout recovery.
 
 ### WebSocket order-routing options
 
-`KrakenExecClientConfig` exposes:
+`KrakenExecutionClientConfig` exposes:
 
 | Option                    | Default | Description                                             |
 | ------------------------- | ------- | ------------------------------------------------------- |
@@ -492,13 +492,11 @@ trading).
 **Configuration:**
 
 ```python
-from nautilus_trader.adapters.kraken import KrakenExecClientConfig
+from nautilus_trader.adapters.kraken import KrakenExecutionClientConfig
 from nautilus_trader.model import AccountId
-from nautilus_trader.model import TraderId
 
 
-exec_config = KrakenExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+exec_config = KrakenExecutionClientConfig(
     account_id=AccountId.from_str("KRAKEN-001"),
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
@@ -526,14 +524,12 @@ order submission. Margin trading is enabled per-execution-client via
 ### Configuration
 
 ```python
-from nautilus_trader.adapters.kraken import KrakenExecClientConfig
+from nautilus_trader.adapters.kraken import KrakenExecutionClientConfig
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
-from nautilus_trader.model import TraderId
 
 
-exec_config = KrakenExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+exec_config = KrakenExecutionClientConfig(
     account_id=AccountId.from_str("KRAKEN-001"),
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
@@ -645,7 +641,7 @@ Use conservative intervals as a starting point, especially for a Spot Starter
 account:
 
 ```python
-exec_engine = LiveExecEngineConfig(
+exec_engine = LiveExecutionEngineConfig(
     reconciliation=True,
     open_check_interval_secs=30.0,  # Conservative Spot Starter-tier starting point
     position_check_interval_secs=120.0,
@@ -684,7 +680,6 @@ The product type for each client is specified via the `product_type` option.
 
 | Option                          | Default   | Description                                                           |
 | ------------------------------- | --------- | --------------------------------------------------------------------- |
-| `trader_id`                     | required  | Trader ID for the execution client.                                   |
 | `account_id`                    | required  | Account ID for the Kraken account.                                    |
 | `api_key`                       | required  | Kraken API key.                                                       |
 | `api_secret`                    | required  | Kraken API secret.                                                    |
@@ -719,7 +714,7 @@ To test with Kraken Futures demo (paper trading):
 1. Set environment variables with your demo credentials:
    - `KRAKEN_FUTURES_DEMO_API_KEY`
    - `KRAKEN_FUTURES_DEMO_API_SECRET`
-1. Read the credentials and pass them to `KrakenExecClientConfig`, then set
+1. Read the credentials and pass them to `KrakenExecutionClientConfig`, then set
    `environment=KrakenEnvironment.DEMO` and
    `product_type=KrakenProductType.FUTURES`.
 
@@ -729,7 +724,7 @@ show the complete demo and live `LiveNode` configurations.
 ### Production configuration
 
 Use `KrakenDataClientConfig` with `KrakenDataClientFactory`, and use
-`KrakenExecClientConfig` with `KrakenExecutionClientFactory`. The Python
+`KrakenExecutionClientConfig` with `KrakenExecutionClientFactory`. The Python
 examples show the complete `LiveNode.builder(...)` configuration for data and
 execution clients.
 
@@ -737,7 +732,7 @@ execution clients.
 
 Live-node configuration objects do not read credential environment variables
 automatically. Pass `api_key` and `api_secret` explicitly to
-`KrakenExecClientConfig` and, for Spot L3 data, to `KrakenDataClientConfig`.
+`KrakenExecutionClientConfig` and, for Spot L3 data, to `KrakenDataClientConfig`.
 Public market data does not require credentials.
 
 The lower-level Python HTTP and WebSocket clients load the following variables

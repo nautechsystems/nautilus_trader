@@ -12,11 +12,11 @@ from nautilus_trader import trading
 from nautilus_trader.portfolio import PortfolioConfig
 
 __all__ = [
+    "DataClientConfig",
+    "ExecutionClientConfig",
     "InstrumentProviderConfig",
-    "LiveDataClientConfig",
     "LiveDataEngineConfig",
-    "LiveExecClientConfig",
-    "LiveExecEngineConfig",
+    "LiveExecutionEngineConfig",
     "LiveNode",
     "LiveNodeBuilder",
     "LiveNodeConfig",
@@ -28,6 +28,33 @@ __all__ = [
     "QueueMonitorConfig",
     "RoutingConfig",
 ]
+
+@typing.final
+class DataClientConfig:
+    @property
+    def handle_revised_bars(self) -> bool: ...
+    @property
+    def instrument_provider(self) -> InstrumentProviderConfig: ...
+    @property
+    def routing(self) -> RoutingConfig: ...
+    def __new__(
+        cls,
+        handle_revised_bars: bool | None = None,
+        instrument_provider: InstrumentProviderConfig | None = None,
+        routing: RoutingConfig | None = None,
+    ) -> DataClientConfig: ...
+
+@typing.final
+class ExecutionClientConfig:
+    @property
+    def instrument_provider(self) -> InstrumentProviderConfig: ...
+    @property
+    def routing(self) -> RoutingConfig: ...
+    def __new__(
+        cls,
+        instrument_provider: InstrumentProviderConfig | None = None,
+        routing: RoutingConfig | None = None,
+    ) -> ExecutionClientConfig: ...
 
 @typing.final
 class InstrumentProviderConfig:
@@ -49,21 +76,6 @@ class InstrumentProviderConfig:
         filter_callable: str | None = None,
         log_warnings: bool | None = None,
     ) -> InstrumentProviderConfig: ...
-
-@typing.final
-class LiveDataClientConfig:
-    @property
-    def handle_revised_bars(self) -> bool: ...
-    @property
-    def instrument_provider(self) -> InstrumentProviderConfig: ...
-    @property
-    def routing(self) -> RoutingConfig: ...
-    def __new__(
-        cls,
-        handle_revised_bars: bool | None = None,
-        instrument_provider: InstrumentProviderConfig | None = None,
-        routing: RoutingConfig | None = None,
-    ) -> LiveDataClientConfig: ...
 
 @typing.final
 class LiveDataEngineConfig:
@@ -108,19 +120,7 @@ class LiveDataEngineConfig:
     ) -> LiveDataEngineConfig: ...
 
 @typing.final
-class LiveExecClientConfig:
-    @property
-    def instrument_provider(self) -> InstrumentProviderConfig: ...
-    @property
-    def routing(self) -> RoutingConfig: ...
-    def __new__(
-        cls,
-        instrument_provider: InstrumentProviderConfig | None = None,
-        routing: RoutingConfig | None = None,
-    ) -> LiveExecClientConfig: ...
-
-@typing.final
-class LiveExecEngineConfig:
+class LiveExecutionEngineConfig:
     @property
     def load_cache(self) -> bool: ...
     @property
@@ -228,7 +228,7 @@ class LiveExecEngineConfig:
         purge_account_events_lookback_mins: int | None = None,
         own_books_audit_interval_secs: float | None = None,
         debug: bool | None = None,
-    ) -> LiveExecEngineConfig: ...
+    ) -> LiveExecutionEngineConfig: ...
 
 @typing.final
 class LiveNodeConfig:
@@ -273,7 +273,7 @@ class LiveNodeConfig:
     @property
     def risk_engine(self) -> LiveRiskEngineConfig: ...
     @property
-    def exec_engine(self) -> LiveExecEngineConfig: ...
+    def exec_engine(self) -> LiveExecutionEngineConfig: ...
     @property
     def plugins(self) -> list[PluginConfig]: ...
     @property
@@ -300,7 +300,7 @@ class LiveNodeConfig:
         loop_debug: bool | None = None,
         data_engine: LiveDataEngineConfig | None = None,
         risk_engine: LiveRiskEngineConfig | None = None,
-        exec_engine: LiveExecEngineConfig | None = None,
+        exec_engine: LiveExecutionEngineConfig | None = None,
         controller: trading.ImportableControllerConfig | None = None,
         plugins: typing.Sequence[PluginConfig] | None = None,
     ) -> LiveNodeConfig: ...
@@ -374,7 +374,7 @@ class LiveNode:
     def add_strategy_from_config(self, config: trading.ImportableStrategyConfig) -> None: ...
     def add_exec_algorithm(self, exec_algorithm: typing.Any) -> None: ...
     def add_exec_algorithm_from_config(
-        self, config: trading.ImportableExecAlgorithmConfig
+        self, config: trading.ImportableExecutionAlgorithmConfig
     ) -> None: ...
     def add_plugin(
         self,
@@ -409,7 +409,7 @@ class LiveNodeBuilder:
     def with_portfolio_config(self, config: portfolio.PortfolioConfig) -> LiveNodeBuilder: ...
     def with_data_engine_config(self, config: LiveDataEngineConfig) -> LiveNodeBuilder: ...
     def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> LiveNodeBuilder: ...
-    def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ...
+    def with_exec_engine_config(self, config: LiveExecutionEngineConfig) -> LiveNodeBuilder: ...
     def with_logging(self, logging: common.LoggerConfig) -> LiveNodeBuilder: ...
     def add_data_client(
         self,

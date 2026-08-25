@@ -25,7 +25,7 @@ Supported products:
 
 The adapter exposes these public components:
 
-- `BinanceDataClientConfig` and `BinanceExecClientConfig`: Live client configuration.
+- `BinanceDataClientConfig` and `BinanceExecutionClientConfig`: Live client configuration.
 - `BinanceInstrumentProviderConfig`: Instrument selection, filtering, warning, and fee policy.
 - `BinanceDataClientFactory` and `BinanceExecutionClientFactory`: Trading node client factories.
 - `load_binance_instruments`: Standalone configured instrument discovery.
@@ -248,13 +248,14 @@ then warns and sends `GTC`, while Nautilus cancels the order at its local expiry
 
 #### Cancel all orders behavior
 
-When calling `cancel_all_orders()` from a strategy, the adapter includes
-orders in both open and inflight (SUBMITTED) states so that the adapter also
-cancels orders not yet acknowledged by Binance.
+By default, `Strategy.cancel_all_orders()` sends individual cancels for orders associated with that
+strategy. When `strategy_only=False` is used, the strategy sends a broad `CancelAllOrders` command
+to the adapter. The adapter includes orders in both open and inflight (SUBMITTED) states so that it
+also cancels orders not yet acknowledged by Binance.
 
 **Multi-strategy safety**: When multiple strategies trade the same instrument,
-the adapter compares orders owned by the requesting strategy against all orders
-for that instrument. If the strategy owns all orders, a single cancel-all API
+the adapter compares orders associated with the requesting strategy against all orders
+for that instrument. If all orders are associated with the strategy, a single cancel-all API
 call is used. Otherwise, per-strategy cancels are sent (batch for regular
 orders, individual for algo orders) to avoid affecting other strategies.
 
@@ -345,7 +346,7 @@ adapter estimates commission as `default_taker_fee * qty * price` using
 the quote currency. This applies to USD-M linear contracts only. COIN-M
 inverse contracts use zero commission as a fallback because the linear
 formula does not account for contract size. Configure `default_taker_fee` on
-`BinanceExecClientConfig` to match your fee tier (default: 0.0004 / 0.04%).
+`BinanceExecutionClientConfig` to match your fee tier (default: 0.0004 / 0.04%).
 
 #### Hedge-mode position IDs
 
@@ -1011,7 +1012,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 
 | Option                             | Default   | Description                                                             |
 | ---------------------------------- | --------- | ----------------------------------------------------------------------- |
-| `trader_id` / `account_id`         | Required  | Nautilus execution identity.                                            |
+| `account_id`                       | Required  | Nautilus account identity.                                              |
 | `product_type`                     | `Spot`    | One of `Spot`, `UsdM`, or `CoinM`.                                      |
 | `environment`                      | `Live`    | One of `Live`, `Testnet`, or `Demo`.                                    |
 | `base_url_http`                    | `None`    | Optional HTTP endpoint override.                                        |
@@ -1038,7 +1039,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 
 ### Live node configuration
 
-Use `BinanceDataClientConfig` with `BinanceDataClientFactory` and `BinanceExecClientConfig` with
+Use `BinanceDataClientConfig` with `BinanceDataClientFactory` and `BinanceExecutionClientConfig` with
 `BinanceExecutionClientFactory`. The current Python examples show the complete
 `LiveNode.builder(...)` configuration for data and execution clients.
 
@@ -1228,8 +1229,7 @@ The default environment for live trading with real funds. Uses your main Binance
 account credentials.
 
 ```python
-config = BinanceExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+config = BinanceExecutionClientConfig(
     account_id=AccountId.from_str("BINANCE-001"),
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
@@ -1265,8 +1265,7 @@ virtual balances.
 | COIN-M WS   | `demo-dstream.binance.com` |
 
 ```python
-config = BinanceExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+config = BinanceExecutionClientConfig(
     account_id=AccountId.from_str("BINANCE-001"),
     api_key="YOUR_DEMO_API_KEY",
     api_secret="YOUR_DEMO_API_SECRET",
@@ -1297,8 +1296,7 @@ endpoints may route through the Demo Trading infrastructure.
 continue to work, but new Futures testing should use `BinanceEnvironment.DEMO`.
 
 ```python
-config = BinanceExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+config = BinanceExecutionClientConfig(
     account_id=AccountId.from_str("BINANCE-001"),
     api_key="YOUR_TESTNET_API_KEY",
     api_secret="YOUR_TESTNET_API_SECRET",
@@ -1381,18 +1379,16 @@ Binance Futures Hedge mode allows holding both long and short positions on the
 same instrument simultaneously.
 
 To use hedge mode, configure it on Binance, set
-`oms_type=OmsType.HEDGING` on `BinanceExecClientConfig`, and keep `use_position_ids=True` to track
+`oms_type=OmsType.HEDGING` on `BinanceExecutionClientConfig`, and keep `use_position_ids=True` to track
 both venue position sides:
 
 ```python
-from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance import BinanceExecutionClientConfig
 from nautilus_trader.adapters.binance import BinanceProductType
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import OmsType
-from nautilus_trader.model import TraderId
 
-config = BinanceExecClientConfig(
-    trader_id=TraderId.from_str("TRADER-001"),
+config = BinanceExecutionClientConfig(
     account_id=AccountId.from_str("BINANCE-001"),
     product_type=BinanceProductType.USD_M,
     oms_type=OmsType.HEDGING,

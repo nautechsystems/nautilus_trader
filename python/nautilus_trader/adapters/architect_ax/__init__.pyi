@@ -15,7 +15,7 @@ __all__ = [
     "AxDataClientConfig",
     "AxDataClientFactory",
     "AxEnvironment",
-    "AxExecClientConfig",
+    "AxExecutionClientConfig",
     "AxExecutionClientFactory",
     "AxMarketDataLevel",
 ]
@@ -80,9 +80,7 @@ class AxDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class AxExecClientConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
+class AxExecutionClientConfig:
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -111,7 +109,6 @@ class AxExecClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
-        trader_id: model.TraderId | None = None,
         account_id: model.AccountId | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,

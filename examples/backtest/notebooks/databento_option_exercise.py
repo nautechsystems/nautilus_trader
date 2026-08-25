@@ -14,191 +14,136 @@
 # ---
 
 # %% [markdown]
-# ## imports
-
-# %%
-from nautilus_trader.adapters.databento.data_utils import load_catalog
-from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.common.enums import LogColor
-from nautilus_trader.config import BacktestDataConfig
-from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.config import BacktestRunConfig
-from nautilus_trader.config import BacktestVenueConfig
-from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.config import StrategyConfig
-from nautilus_trader.core.datetime import unix_nanos_to_iso8601
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.trading.strategy import Strategy
-
-
-# %% [markdown]
-# ## parameters
-
-# %%
-catalog_folder = "options_exercise"
-catalog = load_catalog(catalog_folder)
-
-future_symbols = ["ESH6"]
-option_symbols = ["EW2F6 C7000"]
-future_id = InstrumentId.from_str(f"{future_symbols[0]}.XCME")
-option_id = InstrumentId.from_str(f"{option_symbols[0]}.XCME")
-
-backtest_start_time = "2024-05-09T10:00"
-end_time = "2026-01-09T21:05"
-
-# %% [markdown]
-# ## Strategy
+# # Option exercise at expiry
 #
-# Buys one option; at expiry the option leg settles at `settlement_prices`
-# (or intrinsic for cash-settled options, zero for physical settlement).
-
+# Replay the bundled Databento option and futures samples across expiry. The
+# strategy buys one option before expiry. Futures bar closes are converted to
+# trade ticks that supply the underlying price used to determine exercise.
 
 # %%
-class OptionConfig(StrategyConfig, frozen=True):
-    future_id: InstrumentId
-    option_id: InstrumentId
+from pathlib import Path
+
+import pandas as pd
+
+from nautilus_trader.adapters.databento import DatabentoDataLoader
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import AggressorSide
+from nautilus_trader.model import BarType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import TradeId
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import TradeTick
+from nautilus_trader.model import Venue
+from nautilus_trader.trading import Strategy
+from nautilus_trader.trading import StrategyConfig
 
 
-class OptionStrategy(Strategy):
-    """
-    A simplified strategy to test option exercise.
-    """
+class OptionExerciseConfig(StrategyConfig):
+    _CUSTOM_FIELDS = ("future_id", "option_id")
 
-    def __init__(self, config: OptionConfig):
-        super().__init__(config=config)
+    def __new__(cls, *args, **kwargs):
+        for field in cls._CUSTOM_FIELDS:
+            kwargs.pop(field, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(self, future_id: InstrumentId, option_id: InstrumentId, **_kwargs):
+        super().__init__()
+        self.future_id = future_id
+        self.option_id = option_id
+
+
+class OptionExerciseStrategy(Strategy):
+    def __init__(self, config: OptionExerciseConfig):
+        super().__init__(config)
         self.order_submitted = False
+        self.bar_type = BarType.from_str(f"{config.future_id}-1-MINUTE-LAST-EXTERNAL")
 
     def on_start(self):
-        self.request_instrument(self.config.option_id)
-        self.request_instrument(self.config.future_id)
-        self.subscribe_quote_ticks(self.config.option_id)
-
-        self.bar_type = BarType.from_str(f"{self.config.future_id}-1-MINUTE-LAST-EXTERNAL")
+        self.subscribe_quotes(self.config.option_id)
         self.subscribe_bars(self.bar_type)
 
-    def on_bar(self, bar):
-        self.log.warning(
-            f"Bar: {bar}, ts={unix_nanos_to_iso8601(bar.ts_init)}",
-            color=LogColor.RED,
+    def on_quote(self, tick):
+        if tick.instrument_id != self.config.option_id or self.order_submitted:
+            return
+
+        order = self.order_factory.market(
+            instrument_id=self.config.option_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(1),
         )
+        self.submit_order(order)
+        self.order_submitted = True
 
-    def on_quote_tick(self, tick: QuoteTick):
-        if tick.instrument_id == self.config.option_id and not self.order_submitted:
-            self.log.warning(f"Quote received, submitting market order for {self.config.option_id}")
-            order = self.order_factory.market(
-                instrument_id=self.config.option_id,
-                order_side=OrderSide.BUY,
-                quantity=Quantity.from_int(1),
-            )
-            self.submit_order(order)
-            self.order_submitted = True
-
-    def on_order_filled(self, event):
-        self.log.warning(f"Order filled: {event}")
-
-    def on_position_opened(self, event):
-        self.log.warning(f"Position opened: {event}")
-
-    def on_position_closed(self, event):
-        self.log.warning(f"Position closed: {event}")
-
-    def on_position_changed(self, event):
-        self.log.warning(f"Position changed: {event}")
-
-    def on_stop(self):
-        self.unsubscribe_quote_ticks(self.config.option_id)
-
-
-# %% [markdown]
-# ## Backtest node
 
 # %%
-strategies = [
-    ImportableStrategyConfig(
-        strategy_path=OptionStrategy.fully_qualified_name(),
-        config_path=OptionConfig.fully_qualified_name(),
-        config={
-            "future_id": future_id,
-            "option_id": option_id,
-        },
-    ),
-]
+if __name__ == "__main__":
+    repo_root = Path(__file__).resolve().parents[3]
+    data_dir = repo_root / "test_data" / "databento" / "options_exercise" / "databento"
+    loader = DatabentoDataLoader(
+        repo_root / "crates" / "adapters" / "databento" / "publishers.json",
+    )
 
-logging = LoggingConfig(
-    log_level="WARNING",
-    log_level_file="WARNING",
-    log_directory=".",
-    log_file_name="databento_option_exercise",
-    clear_log_file=True,
-)
+    futures = loader.load_instruments(
+        data_dir / "futures_definition.dbn.zst",
+        use_exchange_as_venue=True,
+    )
+    options = loader.load_instruments(
+        data_dir / "options_definition.dbn.zst",
+        use_exchange_as_venue=True,
+    )
+    bars = loader.load_bars(data_dir / "futures_ohlcv-1m_2026-01-09T20-55_2026-01-09T21-05.dbn.zst")
+    quotes = loader.load_bbo_quotes(
+        data_dir / "options_bbo-1m_2026-01-09T20-55_2026-01-09T21-05.dbn.zst",
+    )
+    trades = [
+        TradeTick(
+            instrument_id=bar.bar_type.instrument_id,
+            price=bar.close,
+            size=Quantity.from_int(1),
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId(f"BAR-{index}"),
+            ts_event=bar.ts_event,
+            ts_init=bar.ts_init,
+        )
+        for index, bar in enumerate(bars)
+    ]
 
-# Custom settlement price for the option leg at expiry
-settlement_prices = {option_id: 50.0}
+    future_id = InstrumentId.from_str("ESH6.XCME")
+    option_id = InstrumentId.from_str("EW2F6 C7000.XCME")
+    engine = BacktestEngine(
+        BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
+    )
+    XCME = Venue("XCME")
+    USD = Currency.from_str("USD")
+    engine.add_venue(
+        venue=XCME,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+    )
 
-engine_config = BacktestEngineConfig(
-    logging=logging,
-    strategies=strategies,
-)
+    for instrument in futures + options:
+        engine.add_instrument(instrument)
+    engine.add_data(quotes + bars + trades)
+    engine.add_strategy(
+        OptionExerciseStrategy(
+            OptionExerciseConfig(future_id=future_id, option_id=option_id),
+        ),
+    )
+    engine.run()
 
-# BacktestRunConfig
-data = [
-    BacktestDataConfig(
-        data_cls=QuoteTick,
-        catalog_path=catalog.path,
-        instrument_ids=[option_id, future_id],
-    ),
-    BacktestDataConfig(
-        data_cls=Bar,
-        catalog_path=catalog.path,
-        instrument_ids=[future_id],
-    ),
-]
+    with pd.option_context("display.max_columns", None, "display.width", 300):
+        print(engine.generate_account_report(XCME))
+        print(engine.generate_order_fills_report())
+        print(engine.generate_positions_report())
 
-venues = [
-    BacktestVenueConfig(
-        name="XCME",
-        oms_type="NETTING",
-        account_type="MARGIN",
-        base_currency="USD",
-        starting_balances=["1_000_000 USD"],
-        settlement_prices=settlement_prices,
-    ),
-]
-
-configs = [
-    BacktestRunConfig(
-        engine=engine_config,
-        data=data,
-        venues=venues,
-        start=backtest_start_time,
-        end=end_time,
-    ),
-]
-
-node = BacktestNode(configs=configs)
-
-# %%
-results = node.run()
-
-# %% [markdown]
-# ## Backtest results
-
-# %%
-engine = node.get_engine(configs[0].id)
-engine.trader.generate_order_fills_report()
-
-# %%
-engine.trader.generate_positions_report()
-
-# %%
-engine.trader.generate_account_report(Venue("XCME"))
-
-# %%
-node.dispose()
+    engine.reset()
+    engine.dispose()

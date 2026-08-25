@@ -30,7 +30,7 @@ import pytest
 uvicorn = pytest.importorskip("uvicorn", reason="uvicorn is an optional test dependency")
 
 from nautilus_trader.common import Environment  # noqa: E402 (guarded import above)
-from nautilus_trader.live import LiveExecEngineConfig  # noqa: E402
+from nautilus_trader.live import LiveExecutionEngineConfig  # noqa: E402
 from nautilus_trader.live import LiveNode  # noqa: E402
 from nautilus_trader.live import LiveNodeConfig  # noqa: E402
 from nautilus_trader.live import NodeState  # noqa: E402
@@ -46,7 +46,7 @@ def build_node(trader_id: str) -> LiveNode:
         LiveNodeConfig(
             trader_id=TraderId(trader_id),
             environment=Environment.SANDBOX,
-            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            exec_engine=LiveExecutionEngineConfig(reconciliation=False),
             timeout_connection_secs=0,
             timeout_reconciliation_secs=0,
             timeout_portfolio_secs=0,

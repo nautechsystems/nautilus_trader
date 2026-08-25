@@ -142,8 +142,8 @@ directly on a `TestClock` with manual pumping, this exercises the same fork wrap
 `ExecutionManager` bookkeeping that `LiveNode::run` adds (fill-dedup, post-dispatch close handling),
 at the cost of a wall-clock run loop.
 
-The factory (`MockBetfairExecFactory`) mirrors `BetfairExecutionClientFactory::create` but injects
-the mock HTTP and stream endpoints, because `BetfairExecConfig` has no HTTP base-URL override to
+The factory (`MockBetfairExecutionClientFactory`) mirrors `BetfairExecutionClientFactory::create` but injects
+the mock HTTP and stream endpoints, because `BetfairExecutionClientConfig` has no HTTP base-URL override to
 point at the mock. Everything downstream of the factory (the client, both engines, the run loop, the
 routing fork, the `ExecutionManager`) is the production path. A minimal `SubmitLimitOnStart` strategy
 submits one passive limit order on start and records each terminal order event into a shared

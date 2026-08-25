@@ -17,8 +17,7 @@ __all__ = [
     "HyperliquidDataClientConfig",
     "HyperliquidDataClientFactory",
     "HyperliquidEnvironment",
-    "HyperliquidExecClientConfig",
-    "HyperliquidExecFactoryConfig",
+    "HyperliquidExecutionClientConfig",
     "HyperliquidExecutionClientFactory",
     "HyperliquidOpenInterest",
     "HyperliquidProductType",
@@ -119,7 +118,9 @@ class HyperliquidDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class HyperliquidExecClientConfig:
+class HyperliquidExecutionClientConfig:
+    @property
+    def account_id(self) -> model.AccountId: ...
     @property
     def vault_address(self) -> str | None: ...
     @property
@@ -152,6 +153,7 @@ class HyperliquidExecClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
+        account_id: model.AccountId | None = None,
         private_key: str | None = None,
         vault_address: str | None = None,
         account_address: str | None = None,
@@ -172,21 +174,6 @@ class HyperliquidExecClientConfig:
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
-
-@typing.final
-class HyperliquidExecFactoryConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
-    @property
-    def account_id(self) -> model.AccountId: ...
-    @property
-    def config(self) -> HyperliquidExecClientConfig: ...
-    def __init__(
-        self,
-        trader_id: model.TraderId,
-        account_id: model.AccountId,
-        config: HyperliquidExecClientConfig,
-    ) -> None: ...
 
 @typing.final
 class HyperliquidExecutionClientFactory:

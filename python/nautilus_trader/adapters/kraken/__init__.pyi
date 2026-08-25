@@ -14,7 +14,7 @@ __all__ = [
     "KrakenDataClientConfig",
     "KrakenDataClientFactory",
     "KrakenEnvironment",
-    "KrakenExecClientConfig",
+    "KrakenExecutionClientConfig",
     "KrakenExecutionClientFactory",
     "KrakenProductType",
 ]
@@ -76,9 +76,7 @@ class KrakenDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class KrakenExecClientConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
+class KrakenExecutionClientConfig:
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -113,7 +111,6 @@ class KrakenExecClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
-        trader_id: model.TraderId,
         account_id: model.AccountId,
         api_key: str,
         api_secret: str,

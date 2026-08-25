@@ -506,9 +506,9 @@ class PortfolioMultiVenueProbeStrategy(Strategy):
         }
 
 
-class TestExecAlgorithmConfig(DataActorConfig):
+class TestExecutionAlgorithmConfig(DataActorConfig):
     pass
 
 
-class TestExecAlgorithm(DataActor):
+class TestExecutionAlgorithm(DataActor):
     pass

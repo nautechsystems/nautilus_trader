@@ -68,7 +68,7 @@ use nautilus_trading::examples::{
     },
 };
 use nautilus_trading::{
-    ImportableControllerConfig, ImportableExecAlgorithmConfig, ImportableStrategyConfig,
+    ImportableControllerConfig, ImportableExecutionAlgorithmConfig, ImportableStrategyConfig,
     python::{algorithm::PyExecutionAlgorithm, strategy::PyStrategy},
 };
 use pyo3::{
@@ -85,7 +85,7 @@ pub use crate::node::NodeState;
 use crate::{
     builder::LiveNodeBuilder,
     config::{
-        LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
+        LiveDataEngineConfig, LiveExecutionEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
         PluginConfig,
     },
     node::{LiveNode, LiveNodeHandle, NodeRunMode, config::RoutingConfig},
@@ -1308,7 +1308,7 @@ impl PyLiveNode {
     fn py_add_exec_algorithm_from_config(
         &self,
         _py: Python,
-        config: ImportableExecAlgorithmConfig,
+        config: ImportableExecutionAlgorithmConfig,
     ) -> PyResult<()> {
         if self.node()?.is_running() {
             return Err(to_pyruntime_err(
@@ -1902,7 +1902,7 @@ impl PyLiveNodeBuilder {
     }
 
     #[pyo3(name = "with_exec_engine_config")]
-    fn py_with_exec_engine_config(&self, config: LiveExecEngineConfig) -> PyResult<Self> {
+    fn py_with_exec_engine_config(&self, config: LiveExecutionEngineConfig) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
             *inner_ref = Some(builder.with_exec_engine_config(config));

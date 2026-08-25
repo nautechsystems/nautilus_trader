@@ -265,26 +265,29 @@ secrets in application-owned state if they must be reused.
 
 Betfair configuration moves and flattens in v2:
 
-- `BetfairDataClientConfig` becomes `BetfairDataConfig`, and `BetfairExecClientConfig` becomes `BetfairExecConfig`.
+- `BetfairDataClientConfig` remains the data factory input, while `BetfairExecClientConfig` becomes
+  `BetfairExecutionClientConfig`.
 - `BetfairInstrumentProviderConfig` no longer exists as a separate config. Its
   `account_currency`, `default_min_notional`, `event_type_ids`, `event_type_names`, `event_ids`,
   `market_ids`, `country_codes`, `market_types`, `min_market_start_time`, and
-  `max_market_start_time` fields move directly onto `BetfairDataConfig`.
-- Execution reconciliation uses `BetfairExecConfig.reconcile_market_ids` directly.
+  `max_market_start_time` fields move directly onto `BetfairDataClientConfig`.
+- Execution reconciliation uses `BetfairExecutionClientConfig.reconcile_market_ids` directly.
   `reconcile_market_ids_only` still controls whether the filter applies.
 - `certs_dir` is removed because v2 uses interactive login. The HTTP keepalive interval is fixed
   internally at 36,000 seconds rather than exposed as `keep_alive_secs`.
 
 Databento configuration also changes shape:
 
-- `DatabentoDataClientConfig` becomes `DatabentoLiveClientConfig`. It keeps
+- `DatabentoDataClientConfig` remains the factory input. It keeps
   `use_exchange_as_venue`, `bars_timestamp_on_close`, and `venue_dataset_map`, adds the required
   `publishers_filepath`, and accepts `api_key` as a private constructor value.
 - The v1 startup preload fields `instrument_ids` and `parent_symbols` are removed. V2 handles live
-  subscriptions and historical instrument requests directly instead of configuring an instrument provider preload.
+  subscriptions and historical instrument requests directly instead of configuring an instrument
+  provider preload.
 - `http_gateway`, `live_gateway`, `timeout_initial_load`, `mbo_subscriptions_delay`, and
-  `reconnect_timeout_mins` are not accepted by `DatabentoLiveClientConfig`. Reconnection remains
-  an internal client concern; do not copy those v1 fields into current config construction.
+  `reconnect_timeout_mins` are not accepted by the Python `DatabentoDataClientConfig` constructor.
+  Reconnection remains an internal client concern; do not copy those v1 fields into current config
+  construction.
 
 Interactive Brokers legacy mutation fields have constructor or builder replacements:
 
@@ -318,6 +321,35 @@ The core config names change as follows:
 Import the current names from `nautilus_trader.config`. `ControllerConfig` has no
 direct replacement: define controller fields on a `DataActorConfig` subclass, then refer to that
 class through `ImportableControllerConfig`.
+
+V2 uses `Execution` in project-owned type names and omits `Live` from ordinary client names. This
+changes these public names:
+
+| v1 or earlier v2 name           | v2 name                              |
+| ------------------------------- | ------------------------------------ |
+| `<Venue>ExecClientConfig`       | `<Venue>ExecutionClientConfig`       |
+| `BetfairDataConfig`             | `BetfairDataClientConfig`            |
+| `BetfairExecConfig`             | `BetfairExecutionClientConfig`       |
+| `DatabentoLiveClientConfig`     | `DatabentoDataClientConfig`          |
+| `LiveDataClientConfig`          | `DataClientConfig`                   |
+| `LiveExecClientConfig`          | `ExecutionClientConfig`              |
+| `LiveExecEngineConfig`          | `LiveExecutionEngineConfig`          |
+| `ImportableExecAlgorithmConfig` | `ImportableExecutionAlgorithmConfig` |
+
+`ExecAlgorithmId`, its associated `exec_*` fields, and `ExecTester` retain their established
+names. Venue protocol terms such as `ExecType` also remain unchanged.
+
+Execution factories now consume the corresponding execution client config directly. Remove
+`BitmexExecFactoryConfig`, `DeriveExecFactoryConfig`, and `HyperliquidExecFactoryConfig` wrappers,
+and pass `BitmexExecutionClientConfig`, `DeriveExecutionClientConfig`, or
+`HyperliquidExecutionClientConfig` to `add_exec_client`.
+
+The live node owns the trader identity. Remove `trader_id` from adapter execution client config
+construction; `LiveNodeConfig` or `LiveNode.builder(...)` supplies it to every execution factory.
+Keep the venue-specific `account_id` on the execution client config. The Bybit, Coinbase, and
+Interactive Brokers execution factories now use no-argument constructors. Custom Rust execution
+factories must accept `TraderId` in their `ExecutionClientFactory::create` or
+`SimulatedExecutionClientFactory::create` implementation.
 
 The v1 fill, fee, latency, and simulation-module config and factory wrappers are also removed.
 Construct the current model or module directly, such as `ProbabilisticFillModel`,

@@ -26,12 +26,12 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
     common::consts::{DERIBIT, DERIBIT_VENUE},
-    config::{DeribitDataClientConfig, DeribitExecClientConfig},
+    config::{DeribitDataClientConfig, DeribitExecutionClientConfig},
     data::DeribitDataClient,
     execution::DeribitExecutionClient,
 };
@@ -100,7 +100,7 @@ impl DataClientFactory for DeribitDataClientFactory {
     }
 }
 
-impl ClientConfig for DeribitExecClientConfig {
+impl ClientConfig for DeribitExecutionClientConfig {
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -135,16 +135,17 @@ impl Default for DeribitExecutionClientFactory {
 impl ExecutionClientFactory for DeribitExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let deribit_config = config
             .as_any()
-            .downcast_ref::<DeribitExecClientConfig>()
+            .downcast_ref::<DeribitExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for DeribitExecutionClientFactory. Expected DeribitExecClientConfig, was {config:?}",
+                    "Invalid config type for DeribitExecutionClientFactory. Expected DeribitExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -155,7 +156,7 @@ impl ExecutionClientFactory for DeribitExecutionClientFactory {
 
         let client_id = ClientId::from(name);
         let core = ExecutionClientCore::new(
-            deribit_config.trader_id,
+            trader_id,
             client_id,
             *DERIBIT_VENUE,
             oms_type,
@@ -174,7 +175,7 @@ impl ExecutionClientFactory for DeribitExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        "DeribitExecClientConfig"
+        "DeribitExecutionClientConfig"
     }
 }
 

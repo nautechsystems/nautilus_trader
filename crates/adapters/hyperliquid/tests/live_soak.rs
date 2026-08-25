@@ -24,10 +24,10 @@ use nautilus_hyperliquid::{
     http::{
         HyperliquidHttpClient,
         models::{
-            Cloid, HyperliquidExchangeResponse, HyperliquidExecAction,
-            HyperliquidExecCancelByCloidRequest, HyperliquidExecGrouping,
-            HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest,
-            HyperliquidExecTif, HyperliquidRecentTrade,
+            Cloid, HyperliquidExchangeAction, HyperliquidExchangeCancelByCloidRequest,
+            HyperliquidExchangeGrouping, HyperliquidExchangeLimitParams,
+            HyperliquidExchangeOrderKind, HyperliquidExchangePlaceOrderRequest,
+            HyperliquidExchangeResponse, HyperliquidExchangeTif, HyperliquidRecentTrade,
         },
     },
     websocket::{client::HyperliquidWebSocketClient, messages::NautilusWsMessage},
@@ -447,21 +447,21 @@ async fn soak_testnet_post_only_place_query_cancel() {
     let cloid = Cloid::from_client_order_id(client_order_id);
     let cloid_hex = cloid.to_hex();
 
-    let place = HyperliquidExecAction::Order {
-        orders: vec![HyperliquidExecPlaceOrderRequest {
+    let place = HyperliquidExchangeAction::Order {
+        orders: vec![HyperliquidExchangePlaceOrderRequest {
             asset,
             is_buy: true,
             price,
             size,
             reduce_only: false,
-            kind: HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams {
-                    tif: HyperliquidExecTif::Alo,
+            kind: HyperliquidExchangeOrderKind::Limit {
+                limit: HyperliquidExchangeLimitParams {
+                    tif: HyperliquidExchangeTif::Alo,
                 },
             },
             cloid: Some(cloid),
         }],
-        grouping: HyperliquidExecGrouping::Na,
+        grouping: HyperliquidExchangeGrouping::Na,
         builder: None,
     };
     let placed = client
@@ -506,8 +506,8 @@ async fn soak_testnet_post_only_place_query_cancel() {
         }
     }
 
-    let cancel = HyperliquidExecAction::CancelByCloid {
-        cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
+    let cancel = HyperliquidExchangeAction::CancelByCloid {
+        cancels: vec![HyperliquidExchangeCancelByCloidRequest { asset, cloid }],
         fast: None,
     };
     client.post_action_exec(&cancel).await.expect("cancel");

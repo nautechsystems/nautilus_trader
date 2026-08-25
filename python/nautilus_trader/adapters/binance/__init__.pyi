@@ -22,7 +22,7 @@ __all__ = [
     "BinanceDataClientConfig",
     "BinanceDataClientFactory",
     "BinanceEnvironment",
-    "BinanceExecClientConfig",
+    "BinanceExecutionClientConfig",
     "BinanceExecutionClientFactory",
     "BinanceFuturesLiquidation",
     "BinanceFuturesMarkPriceUpdate",
@@ -128,9 +128,7 @@ class BinanceDataClientFactory:
     def name(self) -> str: ...
 
 @typing.final
-class BinanceExecClientConfig:
-    @property
-    def trader_id(self) -> model.TraderId: ...
+class BinanceExecutionClientConfig:
     @property
     def account_id(self) -> model.AccountId: ...
     @property
@@ -177,7 +175,6 @@ class BinanceExecClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
-        trader_id: model.TraderId,
         account_id: model.AccountId,
         product_type: BinanceProductType | None = None,
         environment: BinanceEnvironment | None = None,

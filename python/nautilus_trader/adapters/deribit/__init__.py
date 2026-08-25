@@ -28,7 +28,7 @@ __all__ = [
     "DeribitDataClientConfig",
     "DeribitDataClientFactory",
     "DeribitEnvironment",
-    "DeribitExecClientConfig",
+    "DeribitExecutionClientConfig",
     "DeribitExecutionClientFactory",
     "DeribitProductType",
     "DeribitUpdateInterval",

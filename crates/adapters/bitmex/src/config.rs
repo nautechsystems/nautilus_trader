@@ -176,7 +176,7 @@ impl BitmexDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bitmex")
 )]
-pub struct BitmexExecClientConfig {
+pub struct BitmexExecutionClientConfig {
     /// API key used for authenticated requests.
     pub api_key: Option<String>,
     /// API secret used for authenticated requests.
@@ -257,7 +257,7 @@ pub struct BitmexExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(BitmexExecClientConfig {
+nautilus_core::impl_pyo3_config_getters!(BitmexExecutionClientConfig {
     base_url_http: Option<String>,
     base_url_ws: Option<String>,
     http_timeout_secs: u64,
@@ -278,13 +278,13 @@ nautilus_core::impl_pyo3_config_getters!(BitmexExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for BitmexExecClientConfig {
+impl Default for BitmexExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl BitmexExecClientConfig {
+impl BitmexExecutionClientConfig {
     /// Creates a configuration with default values.
     #[must_use]
     pub fn new() -> Self {
@@ -350,8 +350,8 @@ max_requests_per_second = 5
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: BitmexExecClientConfig = toml::from_str("").unwrap();
-        let expected = BitmexExecClientConfig::default();
+        let config: BitmexExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = BitmexExecutionClientConfig::default();
 
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
@@ -371,14 +371,17 @@ max_requests_per_second = 5
     #[rstest]
     fn test_config_auth_timeout_secs() {
         assert_eq!(BitmexDataClientConfig::default().auth_timeout_secs, None);
-        assert_eq!(BitmexExecClientConfig::default().auth_timeout_secs, None);
+        assert_eq!(
+            BitmexExecutionClientConfig::default().auth_timeout_secs,
+            None
+        );
 
         let data = BitmexDataClientConfig::builder()
             .auth_timeout_secs(3)
             .build();
         assert_eq!(data.auth_timeout_secs, Some(3));
 
-        let exec = BitmexExecClientConfig::builder()
+        let exec = BitmexExecutionClientConfig::builder()
             .auth_timeout_secs(4)
             .build();
         assert_eq!(exec.auth_timeout_secs, Some(4));
@@ -386,7 +389,7 @@ max_requests_per_second = 5
         let data: BitmexDataClientConfig = toml::from_str("auth_timeout_secs = 7\n").unwrap();
         assert_eq!(data.auth_timeout_secs, Some(7));
 
-        let exec: BitmexExecClientConfig = toml::from_str("auth_timeout_secs = 8\n").unwrap();
+        let exec: BitmexExecutionClientConfig = toml::from_str("auth_timeout_secs = 8\n").unwrap();
         assert_eq!(exec.auth_timeout_secs, Some(8));
     }
 }

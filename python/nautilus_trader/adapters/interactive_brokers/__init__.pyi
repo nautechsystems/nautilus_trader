@@ -13,7 +13,7 @@ __all__ = [
     "HistoricalInteractiveBrokersClient",
     "InteractiveBrokersDataClientConfig",
     "InteractiveBrokersDataClientFactory",
-    "InteractiveBrokersExecClientConfig",
+    "InteractiveBrokersExecutionClientConfig",
     "InteractiveBrokersExecutionClientFactory",
     "InteractiveBrokersInstrumentProvider",
     "InteractiveBrokersInstrumentProviderConfig",
@@ -144,7 +144,7 @@ class InteractiveBrokersDataClientFactory:
     def __init__(self) -> None: ...
     def name(self) -> str: ...
 
-class InteractiveBrokersExecClientConfig:
+class InteractiveBrokersExecutionClientConfig:
     def __init__(
         self,
         host: str | None = None,
@@ -183,7 +183,7 @@ class InteractiveBrokersExecClientConfig:
 
 @typing.final
 class InteractiveBrokersExecutionClientFactory:
-    def __init__(self, trader_id: model.TraderId, account_id: model.AccountId) -> None: ...
+    def __init__(self) -> None: ...
     def name(self) -> str: ...
 
 @typing.final

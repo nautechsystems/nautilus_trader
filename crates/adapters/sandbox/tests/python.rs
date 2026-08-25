@@ -51,7 +51,13 @@ fn setup_exec_event_sender() {
 
 fn register_sandbox_python_module(py: Python<'_>) {
     let module = PyModule::new(py, "sandbox").expect("Sandbox module should be created");
-    python::sandbox(py, &module).expect("Sandbox Python module should register");
+    if let Err(e) = python::sandbox(py, &module) {
+        let message = e.to_string();
+        assert!(
+            message.contains("already registered"),
+            "Sandbox Python module should register: {e}",
+        );
+    }
 }
 
 fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
@@ -63,7 +69,6 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let config = Py::new(
         py,
         SandboxExecutionClientConfig {
-            trader_id,
             account_id,
             venue: Venue::new(SANDBOX),
             starting_balances: vec![Money::from("100_000 USD")],
@@ -86,7 +91,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
-        .create("SANDBOX-EXEC-EXTRACTED", extracted_config.as_ref(), cache)
+        .create(
+            trader_id,
+            "SANDBOX-EXEC-EXTRACTED",
+            extracted_config.as_ref(),
+            cache,
+        )
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), SANDBOX);
@@ -94,8 +104,74 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         extracted_factory.config_type(),
         "SandboxExecutionClientConfig"
     );
-    assert_eq!(sandbox_config.trader_id, trader_id);
     assert_eq!(sandbox_config.account_id, account_id);
     assert_eq!(client.client_id(), ClientId::from("SANDBOX-EXEC-EXTRACTED"));
     assert_eq!(client.account_id(), account_id);
+}
+
+#[rstest]
+fn test_sandbox_python_extract_preserves_matching_knobs() {
+    setup_exec_event_sender();
+    Python::initialize();
+
+    Python::attach(|py| {
+        register_sandbox_python_module(py);
+
+        let trader_id = TraderId::from("TRADER-001");
+        let account_id = AccountId::from("SANDBOX-001");
+        let factory = Py::new(py, SandboxExecutionClientFactory::new())
+            .expect("factory should convert to Python object")
+            .into_any();
+        let config = Py::new(
+            py,
+            SandboxExecutionClientConfig {
+                account_id,
+                venue: Venue::new(SANDBOX),
+                starting_balances: vec![Money::from("100_000 USD")],
+                queue_position: true,
+                liquidity_consumption: true,
+                bar_adaptive_high_low_ordering: true,
+                use_market_order_acks: true,
+                oto_full_trigger: true,
+                price_protection_points: 50,
+                ..SandboxExecutionClientConfig::default()
+            },
+        )
+        .expect("config should convert to Python object")
+        .into_any();
+        let registry = get_global_pyo3_registry();
+        let extracted_config = registry
+            .extract_config(py, config)
+            .expect("exec config should extract");
+        let sandbox_config = extracted_config
+            .as_any()
+            .downcast_ref::<SandboxExecutionClientConfig>()
+            .expect("exec config should downcast");
+        let engine_config = sandbox_config.to_matching_engine_config();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let extracted_factory = registry
+            .extract_sim_exec_factory(py, factory)
+            .expect("simulated exec factory should extract");
+        extracted_factory
+            .create(
+                trader_id,
+                "SANDBOX-EXEC-MATCHING",
+                extracted_config.as_ref(),
+                cache,
+            )
+            .expect("extracted factory should create exec client");
+
+        assert!(sandbox_config.queue_position);
+        assert!(sandbox_config.liquidity_consumption);
+        assert!(sandbox_config.bar_adaptive_high_low_ordering);
+        assert!(sandbox_config.use_market_order_acks);
+        assert!(sandbox_config.oto_full_trigger);
+        assert_eq!(sandbox_config.price_protection_points, 50);
+        assert!(engine_config.queue_position);
+        assert!(engine_config.liquidity_consumption);
+        assert!(engine_config.bar_adaptive_high_low_ordering);
+        assert!(engine_config.use_market_order_acks);
+        assert!(engine_config.oto_full_trigger);
+        assert_eq!(engine_config.price_protection_points, Some(50));
+    });
 }

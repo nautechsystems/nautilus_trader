@@ -26,7 +26,7 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
@@ -34,7 +34,7 @@ use crate::{
         consts::{BINANCE, BINANCE_VENUE},
         enums::BinanceProductType,
     },
-    config::{BinanceDataClientConfig, BinanceExecClientConfig},
+    config::{BinanceDataClientConfig, BinanceExecutionClientConfig},
     futures::{data::BinanceFuturesDataClient, execution::BinanceFuturesExecutionClient},
     spot::{data::BinanceSpotDataClient, execution::BinanceSpotExecutionClient},
 };
@@ -143,16 +143,17 @@ impl Default for BinanceExecutionClientFactory {
 impl ExecutionClientFactory for BinanceExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let binance_config = config
             .as_any()
-            .downcast_ref::<BinanceExecClientConfig>()
+            .downcast_ref::<BinanceExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BinanceExecutionClientFactory. Expected BinanceExecClientConfig, was {config:?}",
+                    "Invalid config type for BinanceExecutionClientFactory. Expected BinanceExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -168,7 +169,7 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
                 let oms_type = OmsType::Hedging;
 
                 let core = ExecutionClientCore::new(
-                    binance_config.trader_id,
+                    trader_id,
                     ClientId::from(name),
                     *BINANCE_VENUE,
                     oms_type,
@@ -186,7 +187,7 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
                 let oms_type = binance_config.oms_type.unwrap_or(OmsType::Netting);
 
                 let core = ExecutionClientCore::new(
-                    binance_config.trader_id,
+                    trader_id,
                     ClientId::from(name),
                     *BINANCE_VENUE,
                     oms_type,
@@ -212,7 +213,7 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        stringify!(BinanceExecClientConfig)
+        stringify!(BinanceExecutionClientConfig)
     }
 }
 
@@ -251,7 +252,7 @@ mod tests {
         #[case] expected: OmsType,
     ) {
         let factory = BinanceExecutionClientFactory::new();
-        let config = BinanceExecClientConfig {
+        let config = BinanceExecutionClientConfig {
             product_type,
             use_ws_trading: false,
             oms_type,
@@ -262,7 +263,12 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
 
         let client = factory
-            .create("BINANCE-TEST", &config, cache.into())
+            .create(
+                TraderId::from("TRADER-001"),
+                "BINANCE-TEST",
+                &config,
+                cache.into(),
+            )
             .unwrap();
 
         assert_eq!(client.oms_type(), expected);

@@ -8310,22 +8310,20 @@ impl Cache {
         self.index.orders_closed.insert(*client_order_id);
     }
 
-    /// Audit all own order books against open and inflight order indexes.
+    /// Audit all own order books against active order indexes.
     ///
-    /// Ensures closed orders are removed from own order books. This includes both
-    /// orders tracked in `orders_open` (`ACCEPTED`, `TRIGGERED`, `PENDING_*`, `PARTIALLY_FILLED`)
-    /// and `orders_inflight` (`INITIALIZED`, `SUBMITTED`) to prevent false positives
-    /// during venue latency windows.
+    /// Ensures orders absent from the open, inflight, and active-local indexes are removed from
+    /// own order books.
     pub fn audit_own_order_books(&mut self) {
         log::debug!("Starting own books audit");
         let start = std::time::Instant::now();
 
-        // Build union of open and inflight orders for audit,
-        // this prevents false positives for SUBMITTED orders during venue latency.
         let valid_order_ids: AHashSet<ClientOrderId> = self
             .index
             .orders_open
-            .union(&self.index.orders_inflight)
+            .iter()
+            .chain(&self.index.orders_inflight)
+            .chain(&self.index.orders_active_local)
             .copied()
             .collect();
 

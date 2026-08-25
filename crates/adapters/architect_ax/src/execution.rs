@@ -68,7 +68,7 @@ use crate::{
         enums::{AxOrderSide, AxTimeInForce},
         parse::{ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id, quantity_to_contracts},
     },
-    config::AxExecClientConfig,
+    config::AxExecutionClientConfig,
     http::{
         client::AxHttpClient,
         error::AxHttpError,
@@ -86,7 +86,7 @@ use crate::{
 pub struct AxExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
-    config: AxExecClientConfig,
+    config: AxExecutionClientConfig,
     emitter: ExecutionEventEmitter,
     http_client: AxHttpClient,
     ws_orders: AxOrdersWebSocketClient,
@@ -101,7 +101,7 @@ impl AxExecutionClient {
     /// # Errors
     ///
     /// Returns an error if the client fails to initialize.
-    pub fn new(core: ExecutionClientCore, config: AxExecClientConfig) -> anyhow::Result<Self> {
+    pub fn new(core: ExecutionClientCore, config: AxExecutionClientConfig) -> anyhow::Result<Self> {
         let http_client = AxHttpClient::with_credentials(
             config.api_key.clone().unwrap_or_default(),
             config.api_secret.clone().unwrap_or_default(),

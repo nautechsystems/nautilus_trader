@@ -4,28 +4,79 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added custom Python fee model support to simulation configs (#4806), thanks for reporting @gtalknitin
+- Added instrument-scoped order fill-voided event topics
+- Added live socket state events and targeted reconnect controls across adapters
+- Added Polymarket quote ticks from `best_bid_ask` market events
+
 ### Breaking Changes
+
+- Removed `BitmexExecFactoryConfig`; pass `BitmexExecutionClientConfig` directly to the factory
+- Removed `DatabentoLiveClientConfig`; pass `DatabentoDataClientConfig` directly to the factory
+- Removed `DeriveExecFactoryConfig`; pass `DeriveExecutionClientConfig` directly to the factory
+- Removed `HyperliquidExecFactoryConfig`; pass `HyperliquidExecutionClientConfig` directly to the factory
+- Removed `trader_id` from adapter execution client configs and factory construction
+- Renamed `ImportableExecAlgorithmConfig` to `ImportableExecutionAlgorithmConfig`
+- Renamed `LiveDataClientConfig` to `DataClientConfig`
+- Renamed `LiveExecClientConfig` to `ExecutionClientConfig`
+- Renamed `LiveExecEngineConfig` to `LiveExecutionEngineConfig`
+- Renamed `ExecFactoryExtractor` to `ExecutionFactoryExtractor`
+- Renamed `SimExecFactoryExtractor` to `SimulatedExecutionFactoryExtractor`
+- Renamed `*ExecClientConfig` types to `*ExecutionClientConfig`
+- Renamed `BetfairDataConfig` to `BetfairDataClientConfig`
+- Renamed `BetfairExecConfig` to `BetfairExecutionClientConfig`
+- Changed `Strategy.cancel_all_orders` to associated orders by default (#4470), thanks for reporting @zurpet
+- Changed `ExecutionClientFactory::create` to receive the node's `TraderId`
+- Changed `SimulatedExecutionClientFactory::create` to receive the node's `TraderId`
+- Changed adapter execution account configs to use `account_id` instead of factory arguments
+- Changed adapter execution factories to use no-argument constructors
 
 ### Security
 
+- Added fail-closed Cargo dependency cooldown checks and transactional repair for both lockfiles,
+  with portable GNU and BSD date handling
+
 ### Fixes
 
+- Fixed active-local order modifications bypassing their execution algorithm (#4793), thanks @folknor
+- Fixed Efficiency Ratio windowing and invalid Python input handling (#4807), thanks for reporting @staffordjh
+- Fixed own order book audits removing active-local orders
+- Fixed rate-limit requests consuming quota before all applicable limits were available
+- Fixed reconnect-buffered socket messages stalling or being overtaken by newer messages
+- Fixed Betfair stream readiness, liveness, subscription replay, and reconnect reconciliation
 - Fixed Betfair modify recovery after ambiguous REST outcomes and instruction failures
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
+- Fixed Hyperliquid execution disconnect cleanup
+- Fixed Lighter testnet orders by omitting mainnet-only integrator attribution (#4834), thanks @Buff2out
+- Fixed OKX WebSocket submissions omitting `reduceOnly` (#4827), thanks for reporting @silarin
+- Fixed OKX ambiguous submissions, subscription recovery, and triggered child reconciliation
+- Fixed Polymarket user WebSocket subscriptions to cover all account orders and trades
+- Fixed Polymarket `CancelAllOrders` handling for empty caches and cross-strategy, instrument, and side scopes
 
 ### Internal Improvements
 
+- Allowed `DataActor` implementations without native `Component` state
+- Optimized Polymarket quote parsing across WebSocket inputs
 - Upgraded Rust (MSRV) to 1.98.0
+- Upgraded Miri to `nightly-2026-08-21`
+- Upgraded `cargo-hawk` to v0.1.13
+- Upgraded `shellcheck-py` pre-commit hook to v0.11.0.1-1
+- Upgraded `arrow` crate to v59.2.0
+- Upgraded `arrow-row` crate to v59.2.0
 - Upgraded `blake3` crate to v1.8.7
+- Upgraded `databento` crate to v0.59.0
+- Upgraded `datafusion` crate to v55.0.0
+- Upgraded `either` crate to v1.18.0
+- Upgraded `parquet` crate to v59.2.0
 - Upgraded `ruff` package (dev) to v0.16.3
 - Upgraded `simplejson` package (visualization) to v4.1.1
 - Upgraded `uvicorn` package (dev) to v0.52.3
-- Upgraded `arrow` and `arrow-row` crates to v59.2.0
-- Upgraded `databento` crate to v0.59.0
-- Upgraded `datafusion` crate to v55.0.0
-- Upgraded `parquet` crate to v59.2.0
 
 ### Documentation Updates
+
+- Updated maintained examples and tutorials for current APIs and removed unsupported variants
+- Documented Lighter testnet account and API key setup
+- Documented Polymarket quote sources and order book feed interaction
 
 ### Deprecations
 

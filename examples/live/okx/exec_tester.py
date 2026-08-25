@@ -33,7 +33,7 @@ from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXDataClientFactory
 from nautilus_trader.adapters.okx import OKXEnvironment
-from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXExecutionClientConfig
 from nautilus_trader.adapters.okx import OKXExecutionClientFactory
 from nautilus_trader.adapters.okx import OKXInstrumentType
 from nautilus_trader.adapters.okx import OKXMarginMode
@@ -79,8 +79,7 @@ def main() -> None:
         .add_exec_client(
             None,
             OKXExecutionClientFactory(),
-            OKXExecClientConfig(
-                trader_id=TRADER_ID,
+            OKXExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 instrument_types=INSTRUMENT_TYPES,
                 environment=OKX_ENVIRONMENT,

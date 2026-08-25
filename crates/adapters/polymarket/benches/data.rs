@@ -30,8 +30,11 @@ use common::{fixtures, instrument_cache, instrument_precisions, yes_instrument};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::OrderBookDeltas, enums::LiquiditySide, identifiers::InstrumentId,
-    instruments::Instrument, types::Currency,
+    data::OrderBookDeltas,
+    enums::LiquiditySide,
+    identifiers::InstrumentId,
+    instruments::Instrument,
+    types::{Currency, Price, Quantity},
 };
 use nautilus_polymarket::{
     common::enums::PolymarketOrderSide,
@@ -40,8 +43,9 @@ use nautilus_polymarket::{
     websocket::{
         messages::{MarketWsMessage, PolymarketQuote, PolymarketQuotes},
         parse::{
-            parse_book_deltas, parse_book_snapshot, parse_quote_from_price_change,
-            parse_quote_from_snapshot, parse_timestamp_ms, parse_trade_tick,
+            parse_book_deltas, parse_book_snapshot, parse_quote_from_best_bid_ask,
+            parse_quote_from_price_change, parse_quote_from_snapshot, parse_timestamp_ms,
+            parse_trade_tick,
         },
     },
 };
@@ -296,6 +300,42 @@ fn bench_quote_from_price_change(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_quote_from_best_bid_ask(c: &mut Criterion) {
+    let instruments = instrument_cache();
+    let (px_prec, sz_prec) = instrument_precisions();
+    let ts_init = UnixNanos::default();
+    let bid_top = Some((Price::from("0.50"), Quantity::from("200.0")));
+    let ask_top = Some((Price::from("0.51"), Quantity::from("150.0")));
+
+    let mut group = c.benchmark_group("inbound_pipeline");
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("quote_from_best_bid_ask", |b| {
+        b.iter(|| {
+            let msg = MarketWsMessage::parse(black_box(fixtures::MARKET_BEST_BID_ASK)).unwrap();
+            let MarketWsMessage::BestBidAsk(bba) = msg else {
+                unreachable!()
+            };
+            let instrument = instruments.get(&bba.asset_id).unwrap();
+            let ts_event = parse_timestamp_ms(&bba.timestamp).unwrap();
+            let quote = parse_quote_from_best_bid_ask(
+                &bba,
+                instrument.id(),
+                px_prec,
+                sz_prec,
+                instrument.price_increment(),
+                true,
+                bid_top,
+                ask_top,
+                ts_event,
+                ts_init,
+            )
+            .unwrap();
+            black_box(quote);
+        });
+    });
+    group.finish();
+}
+
 fn bench_trades(c: &mut Criterion) {
     let instruments = instrument_cache();
     let (px_prec, sz_prec) = instrument_precisions();
@@ -433,6 +473,7 @@ criterion_group!(
     bench_book_snapshot,
     bench_quote_from_snapshot,
     bench_quote_from_price_change,
+    bench_quote_from_best_bid_ask,
     bench_trades,
     bench_order_event,
     bench_order_fill,

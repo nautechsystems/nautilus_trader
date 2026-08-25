@@ -566,8 +566,8 @@ Routing depends on the command and on the state of each order:
 - `cancel_order(...)` goes *firstly* to the `OrderEmulator` when the order is emulated, to the
   relevant `ExecutionAlgorithm` when the order has an `exec_algorithm_id` and is still active within
   the local system, and to the `ExecutionEngine` otherwise.
-- `cancel_all_orders(...)` fans out: open and in-flight orders go to the `ExecutionEngine`, emulated
-  orders go to the `OrderEmulator`, and every execution algorithm order is canceled individually.
+- `cancel_all_orders(...)` cancels each matching order associated with the strategy by default. Each
+  order follows the same routing as `cancel_order(...)`.
 - `cancel_orders(...)` always goes to the `ExecutionEngine` as a single `BatchCancelOrders` command.
 
 :::info
@@ -601,6 +601,17 @@ The following shows how to cancel all orders:
 self.cancel_all_orders(self.instrument_id)
 ```
 
+:::warning
+Pass `strategy_only=False` to use the broad cancellation path. The strategy sends one
+`CancelAllOrders` command even when its cache has no matching order. The execution engine resolves
+one execution client and account, then routes venue, emulated, and execution-algorithm cancellation
+within that boundary. Matching orders associated with other strategies may be canceled, but orders
+assigned to other execution clients remain untouched. Use broad mode only when that cross-strategy
+scope is intended. See
+[Cancel-all routing](execution.md#cancel-all-routing) for the complete flow and client-selection
+rules.
+:::
+
 #### Modifying orders
 
 Orders can be modified individually when emulated, or *open* on a venue (if supported).
@@ -615,10 +626,15 @@ At least one value must differ from the original order for the command to be val
 The component a `ModifyOrder` command will flow to for execution depends on the following:
 
 - If the order is currently emulated, the command will *firstly* be sent to the `OrderEmulator`.
+- Otherwise, if the order has an `exec_algorithm_id` and is still active within the local system, the
+  command will be sent to the relevant `ExecutionAlgorithm`.
 - Otherwise, the order will *firstly* be sent to the `RiskEngine`.
 
 :::info
-Unlike `CancelOrder`, a `ModifyOrder` command never routes to an execution algorithm.
+An `ExecutionAlgorithm` refuses a `ModifyOrder` for a primary order that is still active locally, and
+logs a warning without emitting an event. The algorithm's schedule is keyed to the quantity it
+computed, so applying the modification in place would break that state; the primary order is left
+unchanged.
 :::
 
 The following shows how to modify the size of `LIMIT` BUY order currently *open* on a venue:
@@ -698,6 +714,14 @@ config = StrategyConfig(manage_stop=True)
 
 With this option, calling `stop()` will first perform a market exit, then stop the strategy
 once flat.
+
+:::note
+In a backtest, a managed stop requested at the end of the run cannot complete. `market_exit()`
+schedules its first completion check `market_exit_interval_ms` after the current time, which falls
+beyond the requested end, and the engine has already performed its final timer flush by then. No
+callback runs to observe that the exit is done, so the strategy ends the run still `RUNNING` and is
+reported at `ERROR` even when it is already flat.
+:::
 
 Configuration options in `StrategyConfig`:
 

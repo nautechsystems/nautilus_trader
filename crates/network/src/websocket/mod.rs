@@ -84,7 +84,7 @@ pub use client::{
 };
 pub use config::{TransportBackend, WebSocketConfig};
 pub use consts::{AUTHENTICATION_TIMEOUT_SECS, TEXT_PING, TEXT_PONG};
-pub use subscription::{SubscriptionState, split_topic};
+pub use subscription::{SubscriptionSnapshot, SubscriptionState, split_topic};
 pub use types::{
     EpochMessageHandler, EpochPingHandler, MessageHandler, MessageReader, PingHandler,
     channel_epoch_message_handler, channel_message_handler,

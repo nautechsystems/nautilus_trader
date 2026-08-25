@@ -67,7 +67,7 @@ use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_conn
 use nautilus_live::{
     ExecutionClientCore,
     builder::LiveNodeBuilder,
-    config::{LiveExecEngineConfig, LiveNodeConfig, RoutingConfig},
+    config::{LiveExecutionEngineConfig, LiveNodeConfig, RoutingConfig},
     node::{LiveNode, LiveNodeHandle},
 };
 use nautilus_model::{
@@ -333,7 +333,7 @@ fn build_fork_node(
         timeout_reconciliation: Duration::from_secs(120),
         timeout_disconnection: Duration::from_secs(30),
         delay_post_stop: Duration::from_millis(200),
-        exec_engine: LiveExecEngineConfig {
+        exec_engine: LiveExecutionEngineConfig {
             inflight_check_interval_ms: 0,
             ..Default::default()
         },
@@ -370,7 +370,6 @@ fn execution_config(
     pg_config: PostgresConnectOptions,
 ) -> BlockchainExecutionClientConfig {
     BlockchainExecutionClientConfig::builder()
-        .trader_id(TraderId::from("TRADER-001"))
         .client_id(AccountId::from(EXEC_CLIENT_NAME))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())

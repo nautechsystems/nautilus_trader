@@ -14,30 +14,37 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+import sys
 from decimal import Decimal
 from pathlib import Path
 
-import databento as db
 import pandas as pd
 
 from nautilus_trader.adapters.databento import DatabentoDataLoader
-from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
-from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import OmsType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import PerpetualContract
-from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import AccountType
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import PerpetualContract
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "live" / "architect_ax"))
+
+from strategies import OrderBookImbalance
+from strategies import OrderBookImbalanceConfig
+
+
+USD = Currency.from_str("USD")
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -45,19 +52,14 @@ from nautilus_trader.model.objects import Quantity
 
 if __name__ == "__main__":
     instrument_id = InstrumentId.from_str("XAU-PERP.AX")
-    data_path = Path("gc_gold_mbp1.dbn.zst")
+    data_path = Path(os.environ.get("GC_DBN", "gc_gold_quotes.dbn.zst"))
 
     if not data_path.exists():
-        client = db.Historical()
-        data = client.timeseries.get_range(
-            dataset="GLBX.MDP3",
-            symbols=["GC.v.0"],
-            stype_in="continuous",
-            schema="mbp-1",
-            start="2024-11-15",
-            end="2024-11-16",
+        raise FileNotFoundError(
+            f"Databento GC MBP-1 data file not found: {data_path}\n"
+            "Follow docs/tutorials/gold_book_imbalance_ax.md to download the file, "
+            "or set GC_DBN to its path.",
         )
-        data.to_file(data_path)
 
     XAU_PERP = PerpetualContract(
         instrument_id=instrument_id,
@@ -81,16 +83,21 @@ if __name__ == "__main__":
         ts_init=0,
     )
 
-    loader = DatabentoDataLoader()
-    quotes = loader.from_dbn_file(
-        path=data_path,
+    publishers_path = (
+        Path(__file__).resolve().parents[2]
+        / "crates"
+        / "adapters"
+        / "databento"
+        / "publishers.json"
+    )
+    loader = DatabentoDataLoader(publishers_path)
+    quotes = loader.load_quotes(
+        filepath=data_path,
         instrument_id=instrument_id,
+        price_precision=XAU_PERP.price_precision,
     )
 
-    config = BacktestEngineConfig(
-        trader_id=TraderId("BACKTESTER-001"),
-        logging=LoggingConfig(log_level="INFO"),
-    )
+    config = BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001"))
 
     engine = BacktestEngine(config=config)
 
@@ -100,7 +107,7 @@ if __name__ == "__main__":
         oms_type=OmsType.NETTING,
         account_type=AccountType.MARGIN,
         base_currency=USD,
-        starting_balances=[Money(100_000, USD)],
+        starting_balances=[Money.from_str("100000 USD")],
     )
 
     engine.add_instrument(XAU_PERP)
@@ -109,11 +116,9 @@ if __name__ == "__main__":
     strategy_config = OrderBookImbalanceConfig(
         instrument_id=instrument_id,
         max_trade_size=Decimal(10),
-        trigger_min_size=1.0,
-        trigger_imbalance_ratio=0.10,
+        trigger_min_size=Decimal(1),
+        trigger_imbalance_ratio=Decimal("0.10"),
         min_seconds_between_triggers=5.0,
-        book_type="L1_MBP",
-        use_quote_ticks=True,
     )
 
     strategy = OrderBookImbalance(config=strategy_config)
@@ -129,9 +134,9 @@ if __name__ == "__main__":
         "display.width",
         300,
     ):
-        print(engine.trader.generate_account_report(AX))
-        print(engine.trader.generate_order_fills_report())
-        print(engine.trader.generate_positions_report())
+        print(engine.generate_account_report(venue=AX))
+        print(engine.generate_order_fills_report())
+        print(engine.generate_positions_report())
 
     engine.reset()
     engine.dispose()

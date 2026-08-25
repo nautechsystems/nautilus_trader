@@ -183,7 +183,7 @@ impl CanonicalScenario {
                     "blake3:7702ff4aa9ca1d26061419e9185a5bcfed0418fb0f24725ee36fd7d4323d79f5"
                         .to_string(),
                 result_digest:
-                    "blake3:c755948014039bf492f08c0877f30aa188501743388d156df3f7fd441ab13e56"
+                    "blake3:97d5f435edabf3d67562339a187121d9e9dfd23abac24a0f6290fb3afdefca2a"
                         .to_string(),
             },
             Self::BarEmaCross => CanonicalFingerprint {
@@ -520,7 +520,7 @@ impl DataActor for ScheduledOrders {
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         if matches!(self.kind, ScheduledOrderKind::Passive) {
-            self.cancel_all_orders(self.instrument_id, None, None, None)?;
+            self.cancel_all_orders(self.instrument_id, None, None, true, None)?;
         }
         Ok(())
     }

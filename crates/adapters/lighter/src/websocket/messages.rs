@@ -68,6 +68,7 @@ pub enum NautilusWsMessage {
     PositionUpdate {
         reports: Vec<PositionStatusReport>,
         closed_market_ids: Vec<i16>,
+        skipped_market_ids: Vec<i16>,
     },
     AccountState(Box<AccountState>),
     SendTxAck {

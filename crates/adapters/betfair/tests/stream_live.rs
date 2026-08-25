@@ -129,7 +129,7 @@ async fn live_stream_stays_active_across_heartbeats() {
         let now = Instant::now();
         if now >= next_log || !client.is_active() {
             eprintln!(
-                "betfair stream validation elapsed={}s inbound={} order_heartbeats={} connections={} closed_status={} status_errors={} statuses={} active={}",
+                "betfair stream validation elapsed={}s inbound={} order_heartbeats={} connections={} closed_status={} status_errors={} statuses={} active={} order_ready={}",
                 started.elapsed().as_secs(),
                 stats.inbound.load(Ordering::SeqCst),
                 stats.order_heartbeats.load(Ordering::SeqCst),
@@ -138,6 +138,7 @@ async fn live_stream_stays_active_across_heartbeats() {
                 stats.status_errors.load(Ordering::SeqCst),
                 stats.statuses.load(Ordering::SeqCst),
                 client.is_active(),
+                client.is_order_ready(),
             );
             next_log = now + Duration::from_secs(PROGRESS_SECS);
         }
@@ -163,6 +164,10 @@ async fn live_stream_stays_active_across_heartbeats() {
     assert!(
         client.is_active(),
         "stream not active after {validation_secs}s"
+    );
+    assert!(
+        client.is_order_ready(),
+        "order subscription not current after {validation_secs}s"
     );
     assert!(
         stats.inbound.load(Ordering::SeqCst) > 0,

@@ -36,7 +36,7 @@
 
 use nautilus_bybit::{
     common::{consts::BYBIT_CLIENT_ID, enums::BybitProductType},
-    config::{BybitDataClientConfig, BybitExecClientConfig},
+    config::{BybitDataClientConfig, BybitExecutionClientConfig},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = BybitExecClientConfig {
+    let exec_config = BybitExecutionClientConfig {
         api_key: None,
         api_secret: None,
         product_types: vec![BybitProductType::Option, BybitProductType::Linear],
@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let data_factory = BybitDataClientFactory::new();
-    let exec_factory = BybitExecutionClientFactory::new(trader_id, account_id);
+    let exec_factory = BybitExecutionClientFactory::new();
 
     let hedge_instrument_id = InstrumentId::from(HEDGE_INSTRUMENT_ID);
 

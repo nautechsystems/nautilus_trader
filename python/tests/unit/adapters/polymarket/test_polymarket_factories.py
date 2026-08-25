@@ -23,7 +23,7 @@ from unit.adapters.example_modules import load_example_module
 
 from nautilus_trader.adapters.polymarket import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
-from nautilus_trader.adapters.polymarket import PolymarketExecClientConfig
+from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
 from nautilus_trader.adapters.polymarket import SignatureType
@@ -99,8 +99,7 @@ def test_live_node_builder_accepts_polymarket_exec_factory() -> None:
         .add_exec_client(
             None,
             PolymarketExecutionClientFactory(),
-            PolymarketExecClientConfig(
-                trader_id="TESTER-001",
+            PolymarketExecutionClientConfig(
                 account_id="POLYMARKET-001",
                 private_key=SMOKE_PRIVATE_KEY,
                 api_key=SMOKE_API_KEY,

@@ -57,9 +57,9 @@ let depth = OrderBookDepth10::new(
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookDepth10
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model import BookOrder
+from nautilus_trader.model import OrderBookDepth10
+from nautilus_trader.model import OrderSide
 
 bids = [
     BookOrder(

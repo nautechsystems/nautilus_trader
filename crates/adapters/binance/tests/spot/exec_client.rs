@@ -43,7 +43,7 @@ use nautilus_binance::{
         BINANCE_CLIENT_ID, BINANCE_STATUS_UNKNOWN_CODE, BINANCE_UNEXPECTED_RESPONSE_CODE,
         BINANCE_VENUE,
     },
-    config::BinanceExecClientConfig,
+    config::BinanceExecutionClientConfig,
     spot::{
         execution::BinanceSpotExecutionClient,
         sbe::spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
@@ -1540,7 +1540,7 @@ fn create_test_execution_client_with_transport_and_gtd(
         use_ws_trading,
         base_url_ws_trading,
         use_gtd,
-        BinanceExecClientConfig::default().ws_trading_setup_timeout_ms,
+        BinanceExecutionClientConfig::default().ws_trading_setup_timeout_ms,
     )
 }
 
@@ -1561,10 +1561,8 @@ fn create_test_execution_client_with_transport_and_gtd_and_ws_setup_timeout(
             base_url_http.replacen("http://", "ws://", 1)
         )
     }));
-    let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-001");
-    let config = BinanceExecClientConfig {
-        trader_id,
+    let config = BinanceExecutionClientConfig {
         account_id,
         base_url_http: Some(base_url_http),
         base_url_ws_trading,
@@ -1587,10 +1585,8 @@ fn create_test_execution_client_us(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
-    let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-001");
-    let config = BinanceExecClientConfig {
-        trader_id,
+    let config = BinanceExecutionClientConfig {
         account_id,
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
@@ -1605,7 +1601,7 @@ fn create_test_execution_client_us(
 }
 
 fn create_test_execution_client_from_config(
-    config: BinanceExecClientConfig,
+    config: BinanceExecutionClientConfig,
 ) -> (
     BinanceSpotExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -1613,7 +1609,7 @@ fn create_test_execution_client_from_config(
 ) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let core = ExecutionClientCore::new(
-        config.trader_id,
+        TraderId::from("TESTER-001"),
         *BINANCE_CLIENT_ID,
         *BINANCE_VENUE,
         OmsType::Hedging,

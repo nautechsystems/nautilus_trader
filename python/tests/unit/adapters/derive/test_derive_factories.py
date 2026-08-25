@@ -22,8 +22,7 @@ from nautilus_trader.adapters.derive import DERIVE
 from nautilus_trader.adapters.derive import DeriveDataClientConfig
 from nautilus_trader.adapters.derive import DeriveDataClientFactory
 from nautilus_trader.adapters.derive import DeriveEnvironment
-from nautilus_trader.adapters.derive import DeriveExecClientConfig
-from nautilus_trader.adapters.derive import DeriveExecFactoryConfig
+from nautilus_trader.adapters.derive import DeriveExecutionClientConfig
 from nautilus_trader.adapters.derive import DeriveExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -83,16 +82,13 @@ def test_live_node_builder_accepts_derive_exec_factory() -> None:
         .add_exec_client(
             None,
             DeriveExecutionClientFactory(),
-            DeriveExecFactoryConfig(
-                trader_id=trader_id,
+            DeriveExecutionClientConfig(
                 account_id=account_id,
-                config=DeriveExecClientConfig(
-                    wallet_address=SMOKE_WALLET_ADDRESS,
-                    session_key=SMOKE_SESSION_KEY,
-                    subaccount_id=0,
-                    environment=DeriveEnvironment.TESTNET,
-                    max_fee_per_contract=Decimal(1000),
-                ),
+                wallet_address=SMOKE_WALLET_ADDRESS,
+                session_key=SMOKE_SESSION_KEY,
+                subaccount_id=0,
+                environment=DeriveEnvironment.TESTNET,
+                max_fee_per_contract=Decimal(1000),
             ),
         )
         .build()

@@ -39,7 +39,7 @@ use nautilus_betfair::{
         parse::{make_customer_order_ref, make_instrument_id},
         types::{BetId, Handicap, MarketId, SelectionId},
     },
-    config::BetfairExecConfig,
+    config::BetfairExecutionClientConfig,
     factories::BetfairExecutionClientFactory,
     http::{
         client::BetfairHttpClient,
@@ -58,7 +58,7 @@ use nautilus_common::{
 };
 use nautilus_core::UUID4;
 use nautilus_live::{
-    config::{LiveExecEngineConfig, LiveRiskEngineConfig},
+    config::{LiveExecutionEngineConfig, LiveRiskEngineConfig},
     node::LiveNode,
 };
 use nautilus_model::{
@@ -808,8 +808,7 @@ async fn live_execution_client_replace_via_stream(#[case] scenario: LiveExecutio
 
     let trader_id = TraderId::from("BETFAIR-LIVE-TESTER");
     let account_id = AccountId::from("BETFAIR-001");
-    let exec_config = BetfairExecConfig {
-        trader_id,
+    let exec_config = BetfairExecutionClientConfig {
         account_id,
         account_currency: currency_code.clone(),
         stream_market_ids_filter: Some(vec![market_id.clone()]),
@@ -989,8 +988,7 @@ async fn run_live_execution_stress(
 
     let trader_id = TraderId::from("BETFAIR-LIVE-TESTER");
     let account_id = AccountId::from("BETFAIR-001");
-    let exec_config = BetfairExecConfig {
-        trader_id,
+    let exec_config = BetfairExecutionClientConfig {
         account_id,
         account_currency: currency_code,
         order_request_rate_per_second: order_rate,
@@ -1174,10 +1172,10 @@ async fn run_live_execution_stress(
 fn build_live_execution_node(
     name: &str,
     trader_id: TraderId,
-    exec_config: BetfairExecConfig,
+    exec_config: BetfairExecutionClientConfig,
     instrument: InstrumentAny,
 ) -> anyhow::Result<LiveNode> {
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(5.0),
         position_check_interval_secs: Some(10.0),
         ..Default::default()

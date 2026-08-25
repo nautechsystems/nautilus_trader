@@ -76,6 +76,8 @@ struct SandboxInner {
     cache: Rc<RefCell<Cache>>,
     /// The sandbox configuration.
     config: SandboxExecutionClientConfig,
+    /// Shared fill-model handle for every matching engine on this client.
+    fill_model: FillModelHandle,
     /// Matching engines per instrument.
     matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
     /// Next raw ID assigned to a matching engine.
@@ -176,7 +178,7 @@ impl SandboxInner {
 
         if !self.matching_engines.contains_key(&instrument_id) {
             let engine_config = self.config.to_matching_engine_config();
-            let fill_model = FillModelHandle::default();
+            let fill_model = self.fill_model.clone();
             let fee_model = self
                 .config
                 .fee_model
@@ -468,10 +470,16 @@ impl SandboxExecutionClient {
             balances.insert(money.currency.code.to_string(), *money);
         }
 
+        let fill_model = config
+            .fill_model
+            .clone()
+            .map(FillModelHandle::from)
+            .unwrap_or_default();
         let inner = Rc::new(RefCell::new(SandboxInner {
             clock: clock.clone(),
             cache: cache.clone(),
             config: config.clone(),
+            fill_model,
             matching_engines: AHashMap::new(),
             next_engine_raw_id: 0,
             balances,

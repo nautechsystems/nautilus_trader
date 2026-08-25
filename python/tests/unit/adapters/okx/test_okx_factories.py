@@ -20,7 +20,7 @@ from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx import OKXDataClientFactory
 from nautilus_trader.adapters.okx import OKXEnvironment
-from nautilus_trader.adapters.okx import OKXExecClientConfig
+from nautilus_trader.adapters.okx import OKXExecutionClientConfig
 from nautilus_trader.adapters.okx import OKXExecutionClientFactory
 from nautilus_trader.adapters.okx import OKXInstrumentType
 from nautilus_trader.common import Environment
@@ -89,8 +89,7 @@ def test_live_node_builder_accepts_okx_exec_factory() -> None:
         .add_exec_client(
             None,
             OKXExecutionClientFactory(),
-            OKXExecClientConfig(
-                trader_id=trader_id,
+            OKXExecutionClientConfig(
                 account_id=account_id,
                 instrument_types=[OKXInstrumentType.SPOT],
                 environment=OKXEnvironment.DEMO,

@@ -24,7 +24,7 @@ __all__ = [
     "LighterDataClientConfig",
     "LighterDataClientFactory",
     "LighterEnvironment",
-    "LighterExecClientConfig",
+    "LighterExecutionClientConfig",
     "LighterExecutionClientFactory",
 ]
 

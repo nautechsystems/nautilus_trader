@@ -141,7 +141,6 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         cache.clone(),
     );
     let config = BlockchainExecutionClientConfig::builder()
-        .trader_id(TraderId::from("TRADER-001"))
         .client_id(AccountId::from("BLOCKCHAIN-FORK-001"))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())
@@ -931,7 +930,6 @@ fn fork_client(
         cache,
     );
     let config = BlockchainExecutionClientConfig::builder()
-        .trader_id(TraderId::from("TRADER-001"))
         .client_id(AccountId::from("BLOCKCHAIN-FORK-001"))
         .chain(chains::ARBITRUM.clone())
         .wallet_address(wallet.to_string())

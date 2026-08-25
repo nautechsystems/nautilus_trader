@@ -44,7 +44,7 @@ Nautilus provides two subscription levels:
 Subscribe to venue-provided Greeks for a single option contract from an actor or strategy:
 
 ```python
-from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model import ClientId
 
 client_id = ClientId("DERIBIT")
 self.subscribe_option_greeks(instrument_id, client_id=client_id)

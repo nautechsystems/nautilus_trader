@@ -182,7 +182,7 @@ impl BybitDataClientConfig {
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
 )]
-pub struct BybitExecClientConfig {
+pub struct BybitExecutionClientConfig {
     /// API key for authenticated requests.
     pub api_key: Option<String>,
     /// API secret for authenticated requests.
@@ -244,7 +244,7 @@ pub struct BybitExecClientConfig {
 }
 
 #[cfg(feature = "python")]
-nautilus_core::impl_pyo3_config_getters!(BybitExecClientConfig {
+nautilus_core::impl_pyo3_config_getters!(BybitExecutionClientConfig {
     product_types: Vec<BybitProductType>,
     environment: BybitEnvironment,
     base_url_http: Option<String>,
@@ -264,13 +264,13 @@ nautilus_core::impl_pyo3_config_getters!(BybitExecClientConfig {
     transport_backend: TransportBackend,
 });
 
-impl Default for BybitExecClientConfig {
+impl Default for BybitExecutionClientConfig {
     fn default() -> Self {
         Self::builder().build()
     }
 }
 
-impl BybitExecClientConfig {
+impl BybitExecutionClientConfig {
     /// Creates a configuration with default values.
     #[must_use]
     pub fn new() -> Self {
@@ -427,7 +427,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_default() {
-        let config = BybitExecClientConfig::default();
+        let config = BybitExecutionClientConfig::default();
 
         assert!(!config.has_api_credentials());
         assert_eq!(config.product_types, vec![BybitProductType::Linear]);
@@ -437,7 +437,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_with_credentials() {
-        let config = BybitExecClientConfig {
+        let config = BybitExecutionClientConfig {
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
             ..Default::default()
@@ -448,7 +448,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_urls() {
-        let config = BybitExecClientConfig {
+        let config = BybitExecutionClientConfig {
             environment: BybitEnvironment::Mainnet,
             ..Default::default()
         };
@@ -460,7 +460,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_urls_testnet() {
-        let config = BybitExecClientConfig {
+        let config = BybitExecutionClientConfig {
             environment: BybitEnvironment::Testnet,
             ..Default::default()
         };
@@ -478,7 +478,7 @@ mod tests {
 
     #[rstest]
     fn test_exec_config_custom_urls() {
-        let config = BybitExecClientConfig {
+        let config = BybitExecutionClientConfig {
             base_url_http: Some("https://custom-http.bybit.com".to_string()),
             base_url_ws_private: Some("wss://custom-private.bybit.com".to_string()),
             base_url_ws_trade: Some("wss://custom-trade.bybit.com".to_string()),
@@ -511,8 +511,8 @@ http_timeout_secs = 45
 
     #[rstest]
     fn test_exec_config_toml_empty_uses_defaults() {
-        let config: BybitExecClientConfig = toml::from_str("").unwrap();
-        let expected = BybitExecClientConfig::default();
+        let config: BybitExecutionClientConfig = toml::from_str("").unwrap();
+        let expected = BybitExecutionClientConfig::default();
 
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.product_types, expected.product_types);

@@ -17,8 +17,7 @@
 from nautilus_trader.adapters.bitmex import BitmexDataClientConfig
 from nautilus_trader.adapters.bitmex import BitmexDataClientFactory
 from nautilus_trader.adapters.bitmex import BitmexEnvironment
-from nautilus_trader.adapters.bitmex import BitmexExecClientConfig
-from nautilus_trader.adapters.bitmex import BitmexExecFactoryConfig
+from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
 from nautilus_trader.adapters.bitmex import BitmexExecutionClientFactory
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -69,15 +68,11 @@ def test_live_node_builder_accepts_bitmex_exec_factory() -> None:
         .add_exec_client(
             None,
             BitmexExecutionClientFactory(),
-            BitmexExecFactoryConfig(
-                trader_id,
-                account_id,
-                BitmexExecClientConfig(
-                    api_key=SMOKE_API_KEY,
-                    api_secret=SMOKE_API_SECRET,
-                    environment=BitmexEnvironment.TESTNET,
-                    account_id=account_id,
-                ),
+            BitmexExecutionClientConfig(
+                api_key=SMOKE_API_KEY,
+                api_secret=SMOKE_API_SECRET,
+                environment=BitmexEnvironment.TESTNET,
+                account_id=account_id,
             ),
         )
         .build()

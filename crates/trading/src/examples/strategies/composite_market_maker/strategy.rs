@@ -262,7 +262,7 @@ impl DataActor for CompositeMarketMaker {
     fn on_stop(&mut self) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
         let signal_instrument_id = self.config.signal_instrument_id;
-        self.cancel_all_orders(instrument_id, None, None, None)?;
+        self.cancel_all_orders(instrument_id, None, None, true, None)?;
         self.close_all_positions(instrument_id, None, None, None, None, None, None, None)?;
         self.unsubscribe_quotes(instrument_id, None, None);
         self.unsubscribe_quotes(signal_instrument_id, None, None);
@@ -326,7 +326,7 @@ impl DataActor for CompositeMarketMaker {
             self.pending_self_cancels.extend(ids);
         }
 
-        self.cancel_all_orders(instrument_id, None, None, None)?;
+        self.cancel_all_orders(instrument_id, None, None, true, None)?;
 
         let (net_position, worst_long, worst_short) = {
             let instrument_id = Some(&instrument_id);

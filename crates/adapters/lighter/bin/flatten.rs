@@ -428,6 +428,7 @@ fn apply_position_message(
         NautilusWsMessage::PositionUpdate {
             reports,
             closed_market_ids,
+            ..
         } => {
             let closed: Vec<_> = closed_market_ids
                 .iter()
@@ -566,6 +567,7 @@ mod tests {
             NautilusWsMessage::PositionUpdate {
                 reports: position_reports(vec![("ETH-PERP.LIGHTER", "3.0")]),
                 closed_market_ids: vec![0],
+                skipped_market_ids: Vec::new(),
             },
         );
 

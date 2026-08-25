@@ -25,7 +25,7 @@ use nautilus_common::{
 };
 use nautilus_interactive_brokers::{
     common::consts::IB,
-    config::{InteractiveBrokersDataClientConfig, InteractiveBrokersExecClientConfig},
+    config::{InteractiveBrokersDataClientConfig, InteractiveBrokersExecutionClientConfig},
     factories::{InteractiveBrokersDataClientFactory, InteractiveBrokersExecutionClientFactory},
     python,
 };
@@ -112,17 +112,14 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
 fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let trader_id = TraderId::from("TRADER-001");
     let account_id = AccountId::from("IB-001");
-    let factory = Py::new(
-        py,
-        InteractiveBrokersExecutionClientFactory::new(trader_id, account_id),
-    )
-    .expect("factory should convert to Python object")
-    .into_any();
+    let factory = Py::new(py, InteractiveBrokersExecutionClientFactory::new())
+        .expect("factory should convert to Python object")
+        .into_any();
     let config = Py::new(
         py,
-        InteractiveBrokersExecClientConfig {
+        InteractiveBrokersExecutionClientConfig {
             client_id: 101,
-            ..InteractiveBrokersExecClientConfig::default()
+            ..InteractiveBrokersExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -137,17 +134,22 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let ib_config = extracted_config
         .as_any()
-        .downcast_ref::<InteractiveBrokersExecClientConfig>()
+        .downcast_ref::<InteractiveBrokersExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
-        .create("IB-EXEC-EXTRACTED", extracted_config.as_ref(), cache.into())
+        .create(
+            trader_id,
+            "IB-EXEC-EXTRACTED",
+            extracted_config.as_ref(),
+            cache.into(),
+        )
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), IB);
     assert_eq!(
         extracted_factory.config_type(),
-        "InteractiveBrokersExecClientConfig",
+        "InteractiveBrokersExecutionClientConfig",
     );
     assert_eq!(ib_config.client_id, 101);
     assert_eq!(client.client_id(), ClientId::from("IB-EXEC-EXTRACTED"));

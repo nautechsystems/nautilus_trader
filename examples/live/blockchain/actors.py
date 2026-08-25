@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from dataclasses import dataclass
+from typing import Any
+from typing import Self
 
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import LogColor
@@ -31,37 +32,40 @@ from nautilus_trader.model import PoolLiquidityUpdate
 from nautilus_trader.model import PoolSwap
 
 
-@dataclass
 class BlockchainActorConfig(DataActorConfig):
-    # Inherited fields from DataActorConfig (must be included for now)
-    actor_id: ActorId | None = None
-    log_events: bool = True
-    log_commands: bool = True
+    _CUSTOM_FIELDS = ("actor_id", "chain", "client_id", "pools")
 
-    # Blockchain-specific fields
-    chain: Chain | None = None
-    client_id: ClientId | None = None
-    pools: list[InstrumentId] | None = None
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
 
-    def __post_init__(self):
-        if isinstance(self.actor_id, str):
-            self.actor_id = ActorId(self.actor_id)
-
-        if isinstance(self.client_id, str):
-            self.client_id = ClientId(self.client_id)
-
-        if isinstance(self.pools, list) and self.pools and isinstance(self.pools[0], str):
-            self.pools = [InstrumentId.from_str(pool_str) for pool_str in self.pools]
-
-        if isinstance(self.chain, str):
-            self.chain = Chain.from_chain_name(self.chain)
+    def __init__(
+        self,
+        actor_id: ActorId | str | None = None,
+        log_events: bool = True,
+        log_commands: bool = True,
+        chain: Chain | str | None = None,
+        client_id: ClientId | str | None = None,
+        pools: list[InstrumentId | str] | None = None,
+    ) -> None:
+        self.actor_id = ActorId.from_str(actor_id) if isinstance(actor_id, str) else actor_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+        self.chain = Chain.from_chain_name(chain) if isinstance(chain, str) else chain
+        self.client_id = ClientId.from_str(client_id) if isinstance(client_id, str) else client_id
+        self.pools = (
+            [InstrumentId.from_str(pool) if isinstance(pool, str) else pool for pool in pools]
+            if pools is not None
+            else None
+        )
 
 
 class BlockchainActor(DataActor):
     def __init__(self, config: BlockchainActorConfig | None = None) -> None:
         if config is None:
             config = BlockchainActorConfig()
-        super().__init__()
+        super().__init__(config)
 
         self.chain = config.chain or Chain.ARBITRUM()
         self.client_id = config.client_id or ClientId(f"BLOCKCHAIN-{self.chain.name}")
@@ -150,8 +154,8 @@ class BlockchainActor(DataActor):
         """
         self.log.info(repr(update), LogColor.CYAN)
 
-    def on_pool_flash(self, event: PoolFlash) -> None:
+    def on_pool_flash(self, flash: PoolFlash) -> None:
         """
         Actions to be performed on receiving a pool flash event.
         """
-        self.log.info(repr(event), LogColor.CYAN)
+        self.log.info(repr(flash), LogColor.CYAN)

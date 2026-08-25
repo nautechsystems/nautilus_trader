@@ -523,7 +523,7 @@ mod tests {
     use nautilus_model::{
         data::{DataType, QuoteTick},
         enums::BookType,
-        identifiers::{ClientId, InstrumentId, PositionId, Symbol},
+        identifiers::{ClientId, InstrumentId, PositionId, Symbol, TraderId},
         instruments::{Instrument, InstrumentAny, stubs::binary_option},
         orderbook::OrderBook,
         types::{Currency, Price, Quantity},
@@ -1507,7 +1507,7 @@ mod tests {
             .venue(*POLYMARKET_VENUE)
             .build();
         let core = ExecutionClientCore::new(
-            config.trader_id,
+            TraderId::from("TESTER-001"),
             ClientId::new("SANDBOX"),
             config.venue,
             config.oms_type,

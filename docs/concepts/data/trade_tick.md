@@ -52,7 +52,7 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
-from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model import AggressorSide
 
 trade = TradeTick(
     instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),

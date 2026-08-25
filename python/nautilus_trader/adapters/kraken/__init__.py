@@ -26,7 +26,7 @@ __all__ = [
     "KrakenDataClientConfig",
     "KrakenDataClientFactory",
     "KrakenEnvironment",
-    "KrakenExecClientConfig",
+    "KrakenExecutionClientConfig",
     "KrakenExecutionClientFactory",
     "KrakenProductType",
 ]

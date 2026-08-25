@@ -63,7 +63,7 @@ pub mod websocket;
 pub mod python;
 
 pub use crate::{
-    config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
+    config::{CoinbaseDataClientConfig, CoinbaseExecutionClientConfig},
     data::CoinbaseDataClient,
     execution::CoinbaseExecutionClient,
     factories::{CoinbaseDataClientFactory, CoinbaseExecutionClientFactory},

@@ -22,7 +22,7 @@ use nautilus_bybit::{
         consts::BYBIT,
         enums::{BybitEnvironment, BybitProductType},
     },
-    config::{BybitDataClientConfig, BybitExecClientConfig},
+    config::{BybitDataClientConfig, BybitExecutionClientConfig},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
     python,
 };
@@ -115,18 +115,18 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
 fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let trader_id = TraderId::from("TRADER-001");
     let account_id = AccountId::from("BYBIT-001");
-    let factory = Py::new(py, BybitExecutionClientFactory::new(trader_id, account_id))
+    let factory = Py::new(py, BybitExecutionClientFactory::new())
         .expect("factory should convert to Python object")
         .into_any();
     let config = Py::new(
         py,
-        BybitExecClientConfig {
+        BybitExecutionClientConfig {
             account_id: Some(account_id),
             product_types: vec![BybitProductType::Linear],
             environment: BybitEnvironment::Testnet,
             api_key: Some(SMOKE_API_KEY.to_string()),
             api_secret: Some(SMOKE_API_SECRET.to_string()),
-            ..BybitExecClientConfig::default()
+            ..BybitExecutionClientConfig::default()
         },
     )
     .expect("config should convert to Python object")
@@ -141,11 +141,12 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("exec config should extract");
     let bybit_config = extracted_config
         .as_any()
-        .downcast_ref::<BybitExecClientConfig>()
+        .downcast_ref::<BybitExecutionClientConfig>()
         .expect("exec config should downcast");
     let cache = Rc::new(RefCell::new(Cache::default()));
     let client = extracted_factory
         .create(
+            trader_id,
             "BYBIT-EXEC-EXTRACTED",
             extracted_config.as_ref(),
             cache.into(),
@@ -153,7 +154,10 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         .expect("extracted factory should create exec client");
 
     assert_eq!(extracted_factory.name(), BYBIT);
-    assert_eq!(extracted_factory.config_type(), "BybitExecClientConfig");
+    assert_eq!(
+        extracted_factory.config_type(),
+        "BybitExecutionClientConfig"
+    );
     assert_eq!(bybit_config.account_id, Some(account_id));
     assert_eq!(bybit_config.product_types, [BybitProductType::Linear]);
     assert_eq!(client.client_id(), ClientId::from("BYBIT-EXEC-EXTRACTED"));

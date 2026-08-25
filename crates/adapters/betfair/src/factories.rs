@@ -26,12 +26,12 @@ use nautilus_common::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, OmsType},
-    identifiers::ClientId,
+    identifiers::{ClientId, TraderId},
 };
 
 use crate::{
     common::consts::{BETFAIR, BETFAIR_VENUE},
-    config::{BetfairDataConfig, BetfairExecConfig},
+    config::{BetfairDataClientConfig, BetfairExecutionClientConfig},
     data::BetfairDataClient,
     execution::BetfairExecutionClient,
     http::client::BetfairHttpClient,
@@ -73,10 +73,10 @@ impl DataClientFactory for BetfairDataClientFactory {
     ) -> anyhow::Result<Box<dyn DataClient>> {
         let betfair_config = config
             .as_any()
-            .downcast_ref::<BetfairDataConfig>()
+            .downcast_ref::<BetfairDataClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BetfairDataClientFactory. Expected BetfairDataConfig, was {config:?}",
+                    "Invalid config type for BetfairDataClientFactory. Expected BetfairDataClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -118,7 +118,7 @@ impl DataClientFactory for BetfairDataClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        stringify!(BetfairDataConfig)
+        stringify!(BetfairDataClientConfig)
     }
 }
 
@@ -151,16 +151,17 @@ impl Default for BetfairExecutionClientFactory {
 impl ExecutionClientFactory for BetfairExecutionClientFactory {
     fn create(
         &self,
+        trader_id: TraderId,
         name: &str,
         config: &dyn ClientConfig,
         cache: CacheView,
     ) -> anyhow::Result<Box<dyn ExecutionClient>> {
         let betfair_config = config
             .as_any()
-            .downcast_ref::<BetfairExecConfig>()
+            .downcast_ref::<BetfairExecutionClientConfig>()
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Invalid config type for BetfairExecutionClientFactory. Expected BetfairExecConfig, was {config:?}",
+                    "Invalid config type for BetfairExecutionClientFactory. Expected BetfairExecutionClientConfig, was {config:?}",
                 )
             })?
             .clone();
@@ -182,7 +183,7 @@ impl ExecutionClientFactory for BetfairExecutionClientFactory {
         )?;
 
         let core = ExecutionClientCore::new(
-            betfair_config.trader_id,
+            trader_id,
             ClientId::from(name),
             *BETFAIR_VENUE,
             OmsType::Netting,
@@ -209,7 +210,7 @@ impl ExecutionClientFactory for BetfairExecutionClientFactory {
     }
 
     fn config_type(&self) -> &'static str {
-        stringify!(BetfairExecConfig)
+        stringify!(BetfairExecutionClientConfig)
     }
 }
 
@@ -226,10 +227,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::config::{BetfairDataConfig, BetfairExecConfig};
+    use crate::config::{BetfairDataClientConfig, BetfairExecutionClientConfig};
 
-    fn data_config() -> BetfairDataConfig {
-        BetfairDataConfig {
+    fn data_config() -> BetfairDataClientConfig {
+        BetfairDataClientConfig {
             username: Some("testuser".to_string()),
             password: Some("testpass".to_string()),
             app_key: Some("testappkey".to_string()),
@@ -237,8 +238,8 @@ mod tests {
         }
     }
 
-    fn exec_config() -> BetfairExecConfig {
-        BetfairExecConfig {
+    fn exec_config() -> BetfairExecutionClientConfig {
+        BetfairExecutionClientConfig {
             username: Some("testuser".to_string()),
             password: Some("testpass".to_string()),
             app_key: Some("testappkey".to_string()),
@@ -250,29 +251,33 @@ mod tests {
     fn test_betfair_data_client_factory_creation() {
         let factory = BetfairDataClientFactory::new();
         assert_eq!(factory.name(), BETFAIR);
-        assert_eq!(factory.config_type(), "BetfairDataConfig");
+        assert_eq!(factory.config_type(), "BetfairDataClientConfig");
     }
 
     #[rstest]
     fn test_betfair_execution_client_factory_creation() {
         let factory = BetfairExecutionClientFactory::new();
         assert_eq!(factory.name(), BETFAIR);
-        assert_eq!(factory.config_type(), "BetfairExecConfig");
+        assert_eq!(factory.config_type(), "BetfairExecutionClientConfig");
     }
 
     #[rstest]
     fn test_betfair_data_config_implements_client_config() {
-        let config = BetfairDataConfig::default();
+        let config = BetfairDataClientConfig::default();
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
-        let downcasted = boxed_config.as_any().downcast_ref::<BetfairDataConfig>();
+        let downcasted = boxed_config
+            .as_any()
+            .downcast_ref::<BetfairDataClientConfig>();
         assert!(downcasted.is_some());
     }
 
     #[rstest]
     fn test_betfair_exec_config_implements_client_config() {
-        let config = BetfairExecConfig::default();
+        let config = BetfairExecutionClientConfig::default();
         let boxed_config: Box<dyn ClientConfig> = Box::new(config);
-        let downcasted = boxed_config.as_any().downcast_ref::<BetfairExecConfig>();
+        let downcasted = boxed_config
+            .as_any()
+            .downcast_ref::<BetfairExecutionClientConfig>();
         assert!(downcasted.is_some());
     }
 
@@ -298,7 +303,7 @@ mod tests {
         let config = exec_config();
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create(BETFAIR, &config, cache.into());
+        let result = factory.create(TraderId::from("TRADER-001"), BETFAIR, &config, cache.into());
         assert!(result.is_ok());
 
         let client = result.unwrap();
@@ -311,7 +316,12 @@ mod tests {
         let wrong_config = data_config();
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        let result = factory.create(BETFAIR, &wrong_config, cache.into());
+        let result = factory.create(
+            TraderId::from("TRADER-001"),
+            BETFAIR,
+            &wrong_config,
+            cache.into(),
+        );
         assert!(result.is_err());
         assert!(
             result
@@ -325,7 +335,7 @@ mod tests {
     #[rstest]
     fn test_betfair_data_client_factory_rejects_missing_credentials() {
         let factory = BetfairDataClientFactory::new();
-        let config = BetfairDataConfig {
+        let config = BetfairDataClientConfig {
             username: Some("testuser".to_string()),
             ..Default::default()
         };

@@ -916,35 +916,39 @@ impl OrderEmulator {
     }
 
     fn handle_cancel_all_orders(&mut self, command: &CancelAllOrders) {
-        let instrument_id = command.instrument_id;
-        let Some(matching_core) = self.matching_cores.get(&instrument_id) else {
-            return; // No orders to cancel
-        };
+        let mut ids_to_cancel: Vec<ClientOrderId> = self
+            .matching_cores
+            .values()
+            .flat_map(OrderMatchingCore::iter_orders)
+            .map(|order| order.client_order_id)
+            .collect();
+        ids_to_cancel.sort_unstable();
+        ids_to_cancel.dedup();
 
-        // Borrow the iterator and collect just the IDs (8 bytes each) instead
-        // of full RestingOrder snapshots (72 bytes each). The borrow on
-        // matching_core ends here so the manager mutation can proceed.
-        let ids_to_cancel: Vec<ClientOrderId> = match command.order_side {
-            OrderSide::NoOrderSide => matching_core
-                .iter_orders()
-                .map(|o| o.client_order_id)
-                .collect(),
-            OrderSide::Buy => matching_core
-                .iter_bid_orders()
-                .map(|o| o.client_order_id)
-                .collect(),
-            OrderSide::Sell => matching_core
-                .iter_ask_orders()
-                .map(|o| o.client_order_id)
-                .collect(),
-        };
+        {
+            let cache = self.cache.borrow();
+            ids_to_cancel.retain(|client_order_id| {
+                let Some(order) = cache.order(client_order_id) else {
+                    return false;
+                };
+
+                order.instrument_id() == command.instrument_id
+                    && (command.order_side == OrderSide::NoOrderSide
+                        || order.order_side() == command.order_side)
+                    && command.client_id.is_none_or(|client_id| {
+                        cache
+                            .client_id(client_order_id)
+                            .is_some_and(|order_client_id| *order_client_id == client_id)
+                    })
+            });
+        }
 
         for id in ids_to_cancel {
-            let order = self.cache.borrow().order(&id).map(|o| o.clone());
-            if let Some(order) = order {
-                let actions = self.manager.cancel_order(&order);
-                self.dispatch_manager_actions(actions);
-            }
+            let Some(order) = self.cache.borrow().order_owned(&id) else {
+                continue;
+            };
+            let actions = self.manager.cancel_order(&order);
+            self.dispatch_manager_actions(actions);
         }
     }
 
@@ -1856,9 +1860,12 @@ mod tests {
     use nautilus_model::{
         data::{QuoteTick, TradeTick},
         enums::{AggressorSide, OrderSide, OrderType, TrailingOffsetType, TriggerType},
-        identifiers::{ClientOrderId, OrderListId, StrategyId, TradeId, TraderId},
+        identifiers::{
+            ClientId, ClientOrderId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
+        },
         instruments::{
-            CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
+            CryptoPerpetual, Instrument, InstrumentAny, SyntheticInstrument,
+            stubs::crypto_perpetual_ethusdt,
         },
         orders::{OrderList, OrderTestBuilder},
         types::{Price, Quantity},
@@ -2148,6 +2155,168 @@ mod tests {
             DataCommand::Subscribe(SubscribeCommand::Quotes(command))
                 if command.instrument_id == instrument.id()
         ));
+    }
+
+    #[rstest]
+    fn test_cancel_all_orders_filters_emulated_orders_by_client(instrument: CryptoPerpetual) {
+        let (_clock, cache, emulator) = create_emulator();
+        let _risk_events = register_risk_event_handler("RiskEngine.process.cancel_all_client");
+        let portfolio_events =
+            register_portfolio_event_handler("Portfolio.update_order.cancel_all_client");
+        let _data_commands = register_data_command_handler("DataEngine.queue_execute.cancel_all");
+        add_instrument_to_cache(&cache, &instrument);
+
+        let selected_client = ClientId::from("CLIENT-001");
+        let other_client = ClientId::from("CLIENT-002");
+        let make_order = |client_order_id| {
+            OrderTestBuilder::new(OrderType::StopMarket)
+                .instrument_id(instrument.id())
+                .client_order_id(client_order_id)
+                .side(OrderSide::Buy)
+                .trigger_price(Price::from("5100.00"))
+                .quantity(Quantity::from(1))
+                .emulation_trigger(TriggerType::BidAsk)
+                .build()
+        };
+        let selected_order = make_order(ClientOrderId::from("O-EMULATED-SELECTED"));
+        let other_order = make_order(ClientOrderId::from("O-EMULATED-OTHER"));
+        let unclaimed_order = make_order(ClientOrderId::from("O-EMULATED-UNCLAIMED"));
+        let synthetic_formula = format!("{} * 1.0", instrument.id());
+        let synthetic = SyntheticInstrument::new(
+            Symbol::from("ETH-INDEX"),
+            instrument.price_precision(),
+            vec![instrument.id()],
+            &synthetic_formula,
+            0.into(),
+            0.into(),
+        );
+        let trigger_instrument_id = synthetic.id;
+        let cross_trigger_order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-EMULATED-CROSS-TRIGGER"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("5100.00"))
+            .quantity(Quantity::from(1))
+            .emulation_trigger(TriggerType::BidAsk)
+            .trigger_instrument_id(trigger_instrument_id)
+            .build();
+        let mut selected_submit = create_submit_order(&instrument, &selected_order);
+        selected_submit.client_id = Some(selected_client);
+        let mut other_submit = create_submit_order(&instrument, &other_order);
+        other_submit.client_id = Some(other_client);
+        let unclaimed_submit = create_submit_order(&instrument, &unclaimed_order);
+        let mut cross_trigger_submit = create_submit_order(&instrument, &cross_trigger_order);
+        cross_trigger_submit.client_id = Some(selected_client);
+        {
+            let mut cache = cache.borrow_mut();
+            cache.add_synthetic(synthetic).unwrap();
+            cache
+                .add_order(selected_order.clone(), None, Some(selected_client), false)
+                .unwrap();
+            cache
+                .add_order(other_order.clone(), None, Some(other_client), false)
+                .unwrap();
+            cache
+                .add_order(unclaimed_order.clone(), None, None, false)
+                .unwrap();
+            cache
+                .add_order(
+                    cross_trigger_order.clone(),
+                    None,
+                    Some(selected_client),
+                    false,
+                )
+                .unwrap();
+        }
+        emulator.borrow_mut().handle_submit_order(&selected_submit);
+        emulator.borrow_mut().handle_submit_order(&other_submit);
+        emulator.borrow_mut().handle_submit_order(&unclaimed_submit);
+        emulator
+            .borrow_mut()
+            .handle_submit_order(&cross_trigger_submit);
+
+        emulator
+            .borrow_mut()
+            .execute(TradingCommand::CancelAllOrders(CancelAllOrders::new(
+                TraderId::from("TRADER-001"),
+                Some(selected_client),
+                StrategyId::from("CALLER-001"),
+                trigger_instrument_id,
+                OrderSide::NoOrderSide,
+                UUID4::new(),
+                0.into(),
+                None,
+                None,
+            )));
+
+        assert_eq!(
+            cache
+                .borrow()
+                .order(&cross_trigger_order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Emulated
+        );
+
+        emulator
+            .borrow_mut()
+            .execute(TradingCommand::CancelAllOrders(CancelAllOrders::new(
+                TraderId::from("TRADER-001"),
+                Some(selected_client),
+                StrategyId::from("CALLER-001"),
+                instrument.id(),
+                OrderSide::NoOrderSide,
+                UUID4::new(),
+                0.into(),
+                None,
+                None,
+            )));
+
+        let cache = cache.borrow();
+        assert_eq!(
+            cache
+                .order(&selected_order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Canceled
+        );
+        assert_eq!(
+            cache
+                .order(&other_order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Emulated
+        );
+        assert_eq!(
+            cache
+                .order(&unclaimed_order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Emulated
+        );
+        assert_eq!(
+            cache
+                .order(&cross_trigger_order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Canceled
+        );
+        let portfolio_events = portfolio_events.get_messages();
+        assert_eq!(portfolio_events.len(), 2);
+        let canceled_ids: AHashSet<_> = portfolio_events
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Canceled(event) => Some(event.client_order_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            canceled_ids,
+            AHashSet::from_iter([
+                selected_order.client_order_id(),
+                cross_trigger_order.client_order_id(),
+            ])
+        );
     }
 
     #[rstest]

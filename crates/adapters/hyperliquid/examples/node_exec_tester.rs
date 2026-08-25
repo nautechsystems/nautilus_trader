@@ -25,11 +25,11 @@
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_hyperliquid::{
-    HyperliquidDataClientConfig, HyperliquidDataClientFactory, HyperliquidExecClientConfig,
-    HyperliquidExecFactoryConfig, HyperliquidExecutionClientFactory,
+    HyperliquidDataClientConfig, HyperliquidDataClientFactory, HyperliquidExecutionClientConfig,
+    HyperliquidExecutionClientFactory,
     common::{consts::HYPERLIQUID_CLIENT_ID, enums::HyperliquidEnvironment},
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -62,13 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = HyperliquidExecFactoryConfig {
-        trader_id,
+    let exec_config = HyperliquidExecutionClientConfig {
         account_id,
-        config: HyperliquidExecClientConfig {
-            environment: hl_environment,
-            ..Default::default()
-        },
+        environment: hl_environment,
+        ..Default::default()
     };
 
     let data_factory = HyperliquidDataClientFactory::new();
@@ -78,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stdout_level: LevelFilter::Info,
         ..Default::default()
     };
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()

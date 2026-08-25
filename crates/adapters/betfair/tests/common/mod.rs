@@ -16,7 +16,7 @@
 //! Shared test infrastructure for Betfair integration tests.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     path::PathBuf,
     sync::{
@@ -104,7 +104,7 @@ pub(crate) fn plain_stream_config(port: u16) -> BetfairStreamConfig {
         host: "127.0.0.1".to_string(),
         port,
         heartbeat_secs: None,
-        heartbeat_timeout_secs: 60,
+        heartbeat_timeout_secs: Some(60),
         reconnect_delay_initial_ms: 200,
         reconnect_delay_max_ms: 1_000,
         use_tls: false,
@@ -124,6 +124,7 @@ pub(crate) struct MockState {
     pub keep_alive_count: Arc<AtomicUsize>,
     pub betting_request_count: Arc<AtomicUsize>,
     pub betting_overrides: Arc<Mutex<HashMap<String, Value>>>,
+    pub betting_response_sequences: Arc<Mutex<HashMap<String, VecDeque<Value>>>>,
     /// Forces the betting endpoint to return a complete JSON-RPC error response for a method.
     pub betting_error_overrides: Arc<Mutex<HashMap<String, Value>>>,
     /// Like `betting_error_overrides` but consumed on first hit; subsequent
@@ -295,9 +296,15 @@ async fn handle_betting(State(state): State<MockState>, body: Bytes) -> Response
         return axum::Json(response).into_response();
     }
 
+    let sequence_result = state
+        .betting_response_sequences
+        .lock()
+        .unwrap()
+        .get_mut(method)
+        .and_then(VecDeque::pop_front);
     let override_result = state.betting_overrides.lock().unwrap().get(method).cloned();
 
-    let result = if let Some(value) = override_result {
+    let result = if let Some(value) = sequence_result.or(override_result) {
         value
     } else {
         match method {
@@ -429,6 +436,44 @@ pub(crate) async fn accept_and_auth(
     (reader, write_half)
 }
 
+#[allow(dead_code)]
+pub(crate) async fn accept_and_activate(
+    listener: &TcpListener,
+) -> (
+    BufReader<tokio::net::tcp::OwnedReadHalf>,
+    tokio::net::tcp::OwnedWriteHalf,
+) {
+    let (mut reader, mut write_half) = accept_and_auth(listener).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    if line.is_empty() {
+        return (reader, write_half);
+    }
+
+    let subscription: Value = serde_json::from_str(line.trim()).unwrap();
+    let id = subscription["id"].as_u64().unwrap();
+    let change = match subscription["op"].as_str() {
+        Some("marketSubscription") => {
+            format!("{{\"op\":\"mcm\",\"id\":{id},\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"mc\":[]}}\r\n",)
+        }
+        Some("orderSubscription") => {
+            format!("{{\"op\":\"ocm\",\"id\":{id},\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"oc\":[]}}\r\n",)
+        }
+        other => panic!("unexpected stream subscription: {other:?}"),
+    };
+    write_half
+        .write_all(
+            format!(
+                "{{\"op\":\"status\",\"id\":{id},\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}}\r\n{change}",
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+
+    (reader, write_half)
+}
+
 pub(crate) async fn accept_and_capture_auth(
     listener: &TcpListener,
 ) -> (
@@ -447,6 +492,21 @@ pub(crate) async fn accept_and_capture_auth(
 
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
+    if line.is_empty() {
+        return (reader, write_half, line);
+    }
+    let auth: Value = serde_json::from_str(line.trim()).unwrap();
+    if let Some(id) = auth["id"].as_u64() {
+        write_half
+            .write_all(
+                format!(
+                    "{{\"op\":\"status\",\"id\":{id},\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}}\r\n",
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+    }
 
     (reader, write_half, line)
 }

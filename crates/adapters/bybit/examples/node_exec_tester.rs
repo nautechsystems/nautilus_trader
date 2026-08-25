@@ -28,11 +28,11 @@ use nautilus_bybit::{
         consts::BYBIT_CLIENT_ID,
         enums::{BybitEnvironment, BybitProductType},
     },
-    config::{BybitDataClientConfig, BybitExecClientConfig},
+    config::{BybitDataClientConfig, BybitExecutionClientConfig},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
 };
 use nautilus_common::enums::Environment;
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = BybitExecClientConfig {
+    let exec_config = BybitExecutionClientConfig {
         environment: bybit_environment,
         api_key: None,    // Will use 'BYBIT_API_KEY' env var
         api_secret: None, // Will use 'BYBIT_API_SECRET' env var
@@ -78,8 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let data_factory = BybitDataClientFactory::new();
-    let exec_factory = BybitExecutionClientFactory::new(trader_id, account_id);
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_factory = BybitExecutionClientFactory::new();
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()

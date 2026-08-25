@@ -56,8 +56,12 @@ def test_live_node_builder_accepts_tardis_data_factory() -> None:
 def test_tardis_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = capture_data_tester_main(monkeypatch, tardis_data_tester)
     kwargs = captured["data_tester_kwargs"]
+    _, _, config = captured["data_client_args"]
 
     assert isinstance(kwargs, dict)
+    assert isinstance(config, TardisDataClientConfig)
+    assert config.options == []
+    assert len(config.stream_options) == 1
     assert kwargs["subscribe_funding_rates"] is True
     assert "exec_client_args" not in captured
     assert captured["run_called"] is True

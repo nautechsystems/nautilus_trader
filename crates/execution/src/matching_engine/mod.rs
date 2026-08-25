@@ -3124,7 +3124,7 @@ impl OrderMatchingEngine {
     }
 
     /// Processes a cancel all orders command for an instrument.
-    pub fn process_cancel_all(&mut self, command: &CancelAllOrders, _account_id: AccountId) {
+    pub fn process_cancel_all(&mut self, command: &CancelAllOrders, account_id: AccountId) {
         let instrument_id = command.instrument_id;
         let order_side = if command.order_side == OrderSide::NoOrderSide {
             None
@@ -3132,13 +3132,29 @@ impl OrderMatchingEngine {
             Some(command.order_side)
         };
 
-        let client_order_ids: Vec<ClientOrderId> = self
-            .cache
-            .borrow()
-            .orders_open(None, Some(&instrument_id), None, None, order_side)
-            .iter()
-            .map(|o| o.client_order_id())
-            .collect();
+        let mut client_order_ids: Vec<ClientOrderId> = {
+            let cache = self.cache.borrow();
+            cache
+                .orders_open_refs(
+                    None,
+                    Some(&instrument_id),
+                    None,
+                    Some(&account_id),
+                    order_side,
+                )
+                .into_iter()
+                .chain(cache.orders_inflight_refs(
+                    None,
+                    Some(&instrument_id),
+                    None,
+                    Some(&account_id),
+                    order_side,
+                ))
+                .map(|order| order.client_order_id())
+                .collect()
+        };
+        client_order_ids.sort_unstable();
+        client_order_ids.dedup();
 
         for client_order_id in client_order_ids {
             let order = match self
@@ -3688,12 +3704,20 @@ impl OrderMatchingEngine {
         // where `process_trade_tick` overrides both sides to the trade
         // price; without it the override is undone here.
         if aggressor_side == AggressorSide::NoAggressor && self.last_trade_size.is_none() {
-            if let Some(bid) = self.book.best_bid_price() {
-                self.core.set_bid_raw(bid);
-            }
+            if self.book_type == BookType::L1_MBP {
+                if let Some(bid) = self.book.best_bid_price() {
+                    self.core.set_bid_raw(bid);
+                }
 
-            if let Some(ask) = self.book.best_ask_price() {
-                self.core.set_ask_raw(ask);
+                if let Some(ask) = self.book.best_ask_price() {
+                    self.core.set_ask_raw(ask);
+                }
+            } else {
+                // L2/L3 books are authoritative. Assigning the complete options
+                // propagates an empty side before matching and prevents fills
+                // or triggers from a stale touch.
+                self.core.bid = self.book.best_bid_price();
+                self.core.ask = self.book.best_ask_price();
             }
         }
 
@@ -6410,8 +6434,8 @@ mod tests {
         rc::Rc,
     };
 
-    use nautilus_common::{cache::Cache, clock::TestClock};
-    use nautilus_core::{UnixNanos, correctness::CorrectnessError};
+    use nautilus_common::{cache::Cache, clock::TestClock, messages::execution::CancelAllOrders};
+    use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessError};
     use nautilus_model::{
         data::{
             DEPTH10_LEN, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
@@ -6420,10 +6444,10 @@ mod tests {
         },
         enums::{
             AccountType, AggressorSide, BookAction, BookType, LiquiditySide, OmsType, OrderSide,
-            OrderType, RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
+            OrderStatus, OrderType, RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
         },
         events::OrderEventAny,
-        identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
+        identifiers::{AccountId, ClientOrderId, StrategyId, TradeId, TraderId, VenueOrderId},
         instruments::{
             Instrument, InstrumentAny,
             stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, futures_contract_es},
@@ -6761,6 +6785,109 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(engine.cached_filled_qty_len(), 0);
         assert!(events.borrow().is_empty());
+    }
+
+    #[rstest]
+    fn test_process_cancel_all_includes_submitted_orders_for_selected_account() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut engine = OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            Rc::clone(&cache),
+            Default::default(),
+        );
+        let selected_account = AccountId::from("ACCOUNT-001");
+        let other_account = AccountId::from("ACCOUNT-002");
+        let selected_strategy = StrategyId::from("STRATEGY-001");
+        let other_strategy = StrategyId::from("STRATEGY-002");
+        let selected_order = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(selected_strategy)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-SUBMITTED-SELECTED"))
+            .side(OrderSide::Buy)
+            .price(Price::from("1400.00"))
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let other_order = OrderTestBuilder::new(OrderType::Limit)
+            .strategy_id(other_strategy)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-SUBMITTED-OTHER"))
+            .side(OrderSide::Buy)
+            .price(Price::from("1300.00"))
+            .quantity(Quantity::from("1.000"))
+            .build();
+        {
+            let mut cache = cache.borrow_mut();
+            cache
+                .add_order(selected_order.clone(), None, None, false)
+                .unwrap();
+            cache
+                .add_order(other_order.clone(), None, None, false)
+                .unwrap();
+            cache
+                .update_order(&TestOrderEventStubs::submitted(
+                    &selected_order,
+                    selected_account,
+                ))
+                .unwrap();
+            cache
+                .update_order(&TestOrderEventStubs::submitted(&other_order, other_account))
+                .unwrap();
+        }
+
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        let event_cache = Rc::clone(&cache);
+        engine.set_event_handler(Rc::new(move |event| {
+            event_cache.borrow_mut().update_order(&event).unwrap();
+            events_handler.borrow_mut().push(event);
+        }));
+        let command = CancelAllOrders::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("CALLER-001"),
+            instrument_id,
+            OrderSide::NoOrderSide,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        engine.process_cancel_all(&command, selected_account);
+
+        let events = events.borrow();
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Canceled(canceled) = &events[0] else {
+            panic!("Expected OrderCanceled, was {:?}", events[0]);
+        };
+        assert_eq!(canceled.client_order_id, selected_order.client_order_id());
+        assert_eq!(canceled.strategy_id, selected_strategy);
+        assert_eq!(canceled.account_id, Some(selected_account));
+        let cache = cache.borrow();
+        assert_eq!(
+            cache
+                .order(&selected_order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Canceled
+        );
+        assert_eq!(
+            cache
+                .order(&other_order.client_order_id())
+                .unwrap()
+                .status(),
+            OrderStatus::Submitted
+        );
     }
 
     fn collision_engine() -> (OrderMatchingEngine, Rc<RefCell<Cache>>, VenueOrderId) {

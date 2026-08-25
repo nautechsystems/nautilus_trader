@@ -906,6 +906,23 @@ pub(crate) struct FillBuildDiscards {
     pub untimestamped_trades: usize,
 }
 
+fn admit_selected_trade<'a>(
+    selected_trades: &mut AHashMap<&'a str, &'a PolymarketTradeReport>,
+    trade: &'a PolymarketTradeReport,
+) -> anyhow::Result<bool> {
+    if let Some(previous) = selected_trades.get(trade.id.as_str()) {
+        anyhow::ensure!(
+            *previous == trade,
+            "provider trade {} repeats with contradictory evidence",
+            trade.id,
+        );
+        return Ok(false);
+    }
+
+    selected_trades.insert(trade.id.as_str(), trade);
+    Ok(true)
+}
+
 /// Converts trade reports into fill reports: single implementation of maker/taker
 /// parsing used by both `generate_fill_reports()` and `generate_mass_status()`.
 pub(crate) fn build_fill_reports_from_trades(
@@ -919,7 +936,7 @@ pub(crate) fn build_fill_reports_from_trades(
 ) -> anyhow::Result<(Vec<FillReport>, FillBuildDiscards)> {
     let mut reports = Vec::new();
     let mut discards = FillBuildDiscards::default();
-    let mut selected_trade_ids: AHashSet<&str> = AHashSet::new();
+    let mut selected_trades = AHashMap::new();
 
     for trade in trades {
         if let Some(target_order_id) = scope.venue_order_id {
@@ -935,11 +952,10 @@ pub(crate) fn build_fill_reports_from_trades(
             if matches!(admission.class, TargetTradeClass::Unrelated) {
                 continue;
             }
-            anyhow::ensure!(
-                selected_trade_ids.insert(trade.id.as_str()),
-                "provider trade {} appears more than once in the selected response",
-                trade.id,
-            );
+
+            if !admit_selected_trade(&mut selected_trades, trade)? {
+                continue;
+            }
 
             match admission.class {
                 TargetTradeClass::Unrelated | TargetTradeClass::Failed => continue,
@@ -1025,6 +1041,13 @@ pub(crate) fn build_fill_reports_from_trades(
                     continue;
                 }
 
+                if !instrument_in_load_ids_scope(instrument_id, load_ids) {
+                    log::debug!(
+                        "Dropping loaded out-of-scope historical instrument {instrument_id}",
+                    );
+                    continue;
+                }
+
                 anyhow::ensure!(
                     !selected_maker_orders
                         .iter()
@@ -1066,11 +1089,10 @@ pub(crate) fn build_fill_reports_from_trades(
             ) {
                 continue;
             }
-            anyhow::ensure!(
-                selected_trade_ids.insert(trade.id.as_str()),
-                "provider trade {} appears more than once in the selected response",
-                trade.id,
-            );
+
+            if !admit_selected_trade(&mut selected_trades, trade)? {
+                continue;
+            }
             let ts_event = require_trade_timestamp(ts_event, trade)?;
 
             for (mo, instrument, identifiers, last_px) in selected_maker_orders {
@@ -1140,6 +1162,11 @@ pub(crate) fn build_fill_reports_from_trades(
                 continue;
             }
 
+            if !instrument_in_load_ids_scope(instrument_id, load_ids) {
+                log::debug!("Dropping loaded out-of-scope historical instrument {instrument_id}",);
+                continue;
+            }
+
             let venue_order_id = checked_venue_order_id(&trade.taker_order_id, "taker trade")?;
             let trade_id = checked_trade_id(&trade.id, "taker trade")?;
 
@@ -1163,11 +1190,10 @@ pub(crate) fn build_fill_reports_from_trades(
             ) {
                 continue;
             }
-            anyhow::ensure!(
-                selected_trade_ids.insert(trade.id.as_str()),
-                "provider trade {} appears more than once in the selected response",
-                trade.id,
-            );
+
+            if !admit_selected_trade(&mut selected_trades, trade)? {
+                continue;
+            }
             let ts_event = require_trade_timestamp(ts_event, trade)?;
             let price_prec = last_px.precision;
             let size_prec = instrument.size_precision();
@@ -1210,7 +1236,7 @@ pub(crate) fn build_order_reports_from_orders(
 ) -> anyhow::Result<(Vec<OrderStatusReport>, usize)> {
     let mut reports = Vec::new();
     let mut filtered = 0usize;
-    let mut selected_venue_order_ids = AHashSet::new();
+    let mut selected_orders = AHashMap::new();
 
     for order in orders {
         let result = build_order_report_from_order(
@@ -1223,11 +1249,15 @@ pub(crate) fn build_order_reports_from_orders(
         )?;
 
         if let Some(report) = result.report {
-            anyhow::ensure!(
-                selected_venue_order_ids.insert(report.venue_order_id),
-                "provider venue order {} appears more than once in the selected response",
-                report.venue_order_id,
-            );
+            if let Some(previous) = selected_orders.get(&report.venue_order_id) {
+                anyhow::ensure!(
+                    *previous == order,
+                    "provider venue order {} repeats with contradictory evidence",
+                    report.venue_order_id,
+                );
+                continue;
+            }
+            selected_orders.insert(report.venue_order_id, order);
             reports.push(report);
         } else {
             filtered += usize::from(result.counted_filtered);
@@ -1664,11 +1694,14 @@ mod tests {
             maker_fee: None,
             taker_fee: None,
             start_date: None,
+            event_start_time: None,
             end_date: None,
             active: true,
             closed: false,
             market_slug: None,
             neg_risk: None,
+            resolution_source: None,
+            crypto_market_config: None,
             fee_schedule: None,
             game_id: None,
         };

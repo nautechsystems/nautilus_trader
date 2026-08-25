@@ -24,7 +24,7 @@ Start from these files:
 The Rust and Python paths both use these pieces:
 
 - `LighterDataClientConfig` selects mainnet or testnet and optional transport settings.
-- `LighterExecClientConfig` adds trader/account IDs and resolves credentials.
+- `LighterExecutionClientConfig` adds trader/account IDs and resolves credentials.
 - `LighterDataClientFactory` and `LighterExecutionClientFactory` register clients with `LiveNode`.
 - `DataTester` and `ExecTester` provide smoke-test actors before you write a custom strategy.
 
@@ -61,8 +61,7 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
 After the data path works, add an execution client to the builder before calling `.build()`:
 
 ```rust
-let exec_config = LighterExecClientConfig::builder()
-    .trader_id(trader_id)
+let exec_config = LighterExecutionClientConfig::builder()
     .account_id(account_id)
     .environment(LighterEnvironment::Testnet)
     .build();
@@ -82,11 +81,12 @@ let mut node = LiveNode::builder(trader_id, Environment::Live)?
     .build()?;
 ```
 
-For execution, set the matching environment variables before connecting:
+For execution, follow the [testnet account setup](../integrations/lighter.md#testnet-account-setup),
+then set the matching environment variables before connecting:
 
 ```bash
 export LIGHTER_TESTNET_ACCOUNT_INDEX="123456"
-export LIGHTER_TESTNET_API_KEY_INDEX="0"
+export LIGHTER_TESTNET_API_KEY_INDEX="4"
 export LIGHTER_TESTNET_API_SECRET="your-lighter-api-secret"
 ```
 

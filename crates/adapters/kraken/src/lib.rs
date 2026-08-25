@@ -58,7 +58,7 @@ pub mod websocket;
 #[cfg(feature = "python")]
 pub mod python;
 
-pub use config::{KrakenDataClientConfig, KrakenExecClientConfig};
+pub use config::{KrakenDataClientConfig, KrakenExecutionClientConfig};
 pub use data::{KrakenFuturesDataClient, KrakenSpotDataClient};
 pub use execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient};
 pub use http::{

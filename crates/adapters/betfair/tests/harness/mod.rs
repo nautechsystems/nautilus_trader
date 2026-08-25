@@ -27,7 +27,7 @@ use std::{
 
 use nautilus_betfair::{
     common::consts::{BETFAIR_CLIENT_ID, BETFAIR_VENUE},
-    config::BetfairExecConfig,
+    config::BetfairExecutionClientConfig,
     execution::BetfairExecutionClient,
 };
 use nautilus_common::{
@@ -61,14 +61,14 @@ use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyNative;
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     net::TcpListener,
     sync::mpsc::{UnboundedReceiver, UnboundedSender},
 };
 
 use crate::common::{
-    MockState, accept_and_auth, create_test_http_client, load_fixture, plain_stream_config,
-    start_mock_http, start_mock_stream, test_credential,
+    MockState, accept_and_activate, create_test_http_client, load_fixture, load_json_fixture,
+    plain_stream_config, start_mock_http, start_mock_stream, test_credential,
 };
 
 // Some fields are held to keep engines and the mock alive or for future scenarios.
@@ -153,13 +153,18 @@ impl Harness {
             create_test_http_client(addr),
             test_credential(),
             plain_stream_config(stream_port),
-            BetfairExecConfig::default(),
+            BetfairExecutionClientConfig::default(),
             Currency::GBP(),
         );
         client.start().unwrap();
 
         let feeder = StreamFeeder::spawn(listener);
         client.connect().await.unwrap();
+        nautilus_common::testing::wait_until_async(
+            || async { client.is_connected() },
+            Duration::from_secs(2),
+        )
+        .await;
         exec_engine
             .borrow_mut()
             .register_client(Box::new(client))
@@ -591,10 +596,7 @@ impl StreamFeeder {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
         tokio::spawn(async move {
-            let (mut reader, mut write_half) = accept_and_auth(&listener).await;
-            // Drain the order-subscription line the client sends after auth.
-            let mut line = String::new();
-            reader.read_line(&mut line).await.ok();
+            let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
             while let Some(frame) = rx.recv().await {
                 write_half
@@ -607,6 +609,8 @@ impl StreamFeeder {
     }
 
     pub(crate) fn feed(&self, fixture_rel_path: &str) {
-        self.tx.send(load_fixture(fixture_rel_path)).unwrap();
+        let mut frame = load_json_fixture(fixture_rel_path);
+        frame["id"] = 2.into();
+        self.tx.send(frame.to_string()).unwrap();
     }
 }

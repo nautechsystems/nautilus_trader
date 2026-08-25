@@ -90,7 +90,7 @@ use ustr::Ustr;
 
 use crate::{
     common::consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH,
-    http::models::HyperliquidExecPlaceOrderRequest,
+    http::models::HyperliquidExchangePlaceOrderRequest,
 };
 
 pub const DEDUP_CAPACITY: usize = 10_000;
@@ -117,7 +117,7 @@ pub struct ModifyIntent {
     /// User-intended absolute total quantity for the replacement.
     pub target_qty: Quantity,
     /// Exact venue request sent, used to size a corrective reduce.
-    pub sent_request: Option<HyperliquidExecPlaceOrderRequest>,
+    pub sent_request: Option<HyperliquidExchangePlaceOrderRequest>,
 }
 
 /// Bounded FIFO chain of in-flight modify intents for one order.
@@ -200,7 +200,7 @@ pub struct WsDispatchState {
     pub order_filled_qty: DashMap<ClientOrderId, Quantity>,
     /// Corrective reduce queued by the cancel-replace promotion: client order
     /// id to (new venue order id, reduced request). Drained by the WS loop.
-    pub pending_corrective: DashMap<ClientOrderId, (u64, HyperliquidExecPlaceOrderRequest)>,
+    pub pending_corrective: DashMap<ClientOrderId, (u64, HyperliquidExchangePlaceOrderRequest)>,
     clearing: AtomicBool,
 }
 
@@ -442,7 +442,7 @@ impl WsDispatchState {
     pub fn stash_modify_request(
         &self,
         client_order_id: ClientOrderId,
-        request: HyperliquidExecPlaceOrderRequest,
+        request: HyperliquidExchangePlaceOrderRequest,
     ) {
         if let Some(mut chain) = self.pending_modify_chains.get_mut(&client_order_id)
             && let Some(back) = chain.intents.back_mut()
@@ -460,7 +460,7 @@ impl WsDispatchState {
     pub fn modify_request(
         &self,
         client_order_id: &ClientOrderId,
-    ) -> Option<HyperliquidExecPlaceOrderRequest> {
+    ) -> Option<HyperliquidExchangePlaceOrderRequest> {
         self.pending_modify_chains
             .get(client_order_id)
             .and_then(|chain| chain.intents.front().and_then(|i| i.sent_request.clone()))
@@ -496,7 +496,7 @@ impl WsDispatchState {
         &self,
         client_order_id: ClientOrderId,
         oid: u64,
-        request: HyperliquidExecPlaceOrderRequest,
+        request: HyperliquidExchangePlaceOrderRequest,
     ) {
         self.pending_corrective
             .insert(client_order_id, (oid, request));
@@ -507,7 +507,7 @@ impl WsDispatchState {
     pub fn take_corrective(
         &self,
         client_order_id: &ClientOrderId,
-    ) -> Option<(u64, HyperliquidExecPlaceOrderRequest)> {
+    ) -> Option<(u64, HyperliquidExchangePlaceOrderRequest)> {
         self.pending_corrective
             .remove(client_order_id)
             .map(|(_, v)| v)
@@ -747,7 +747,7 @@ pub fn dispatch_order_fill(
     };
 
     // Set when a fill promotes, so the corrective-reduce runs after the fill applies
-    let mut promoted_corrective: Option<(Quantity, HyperliquidExecPlaceOrderRequest)> = None;
+    let mut promoted_corrective: Option<(Quantity, HyperliquidExchangePlaceOrderRequest)> = None;
 
     // Promote the binding from the fill so a dropped replacement ACCEPTED cannot
     // strand it (see module docs).
@@ -1084,7 +1084,7 @@ fn maybe_queue_corrective_reduce(
     client_order_id: ClientOrderId,
     venue_order_id: VenueOrderId,
     target: Quantity,
-    sent_request: HyperliquidExecPlaceOrderRequest,
+    sent_request: HyperliquidExchangePlaceOrderRequest,
 ) {
     let Ok(new_oid) = venue_order_id.as_str().parse::<u64>() else {
         return;
@@ -1385,7 +1385,7 @@ mod tests {
 
     use super::*;
     use crate::http::models::{
-        HyperliquidExecLimitParams, HyperliquidExecOrderKind, HyperliquidExecTif,
+        HyperliquidExchangeLimitParams, HyperliquidExchangeOrderKind, HyperliquidExchangeTif,
     };
 
     fn make_context(client_order_id: ClientOrderId) -> OrderContext {
@@ -1529,16 +1529,16 @@ mod tests {
         assert!(state.pending_modify(&cid).is_none());
     }
 
-    fn sample_request(size: Decimal) -> HyperliquidExecPlaceOrderRequest {
-        HyperliquidExecPlaceOrderRequest {
+    fn sample_request(size: Decimal) -> HyperliquidExchangePlaceOrderRequest {
+        HyperliquidExchangePlaceOrderRequest {
             asset: 0,
             is_buy: true,
             price: "100".parse::<Decimal>().unwrap(),
             size,
             reduce_only: false,
-            kind: HyperliquidExecOrderKind::Limit {
-                limit: HyperliquidExecLimitParams {
-                    tif: HyperliquidExecTif::Gtc,
+            kind: HyperliquidExchangeOrderKind::Limit {
+                limit: HyperliquidExchangeLimitParams {
+                    tif: HyperliquidExchangeTif::Gtc,
                 },
             },
             cloid: None,

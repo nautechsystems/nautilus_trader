@@ -65,9 +65,9 @@ use crate::{
     websocket::{
         messages::{MarketWsMessage, PolymarketNewMarket, PolymarketQuote, PolymarketWsMessage},
         parse::{
-            parse_book_deltas, parse_book_snapshot, parse_quote_from_price_change,
-            parse_quote_from_snapshot, parse_timestamp_ms, parse_trade_tick,
-            verify_book_snapshot_hash,
+            parse_book_deltas, parse_book_snapshot, parse_quote_from_best_bid_ask,
+            parse_quote_from_price_change, parse_quote_from_snapshot, parse_timestamp_ms,
+            parse_trade_tick, verify_book_snapshot_hash,
         },
     },
 };
@@ -197,9 +197,28 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     return;
                 }
             };
+
             let instrument_id = meta.instrument_id;
             if is_terminal_condition(ctx, instrument_id) {
                 return;
+            }
+
+            if let Some(book) = ctx.order_books.get(&instrument_id) {
+                let ts_event = match parse_timestamp_ms(&snap.timestamp) {
+                    Ok(ts) => ts,
+                    Err(e) => {
+                        log::error!("Failed to parse book snapshot timestamp: {e}");
+                        return;
+                    }
+                };
+
+                if ts_event < book.ts_last {
+                    log::warn!(
+                        "Ignoring stale book snapshot for {instrument_id}: ts_event={ts_event} < ts_last={}",
+                        book.ts_last,
+                    );
+                    return;
+                }
             }
 
             if let Err(e) =
@@ -347,6 +366,17 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 if is_terminal_condition(ctx, instrument_id) {
                     continue;
                 }
+
+                if let Some(book) = ctx.order_books.get(&instrument_id)
+                    && ts_event < book.ts_last
+                {
+                    log::warn!(
+                        "Ignoring stale price change for {instrument_id}: ts_event={ts_event} < ts_last={}",
+                        book.ts_last,
+                    );
+                    continue;
+                }
+
                 let changes = std::mem::take(&mut groups[group_index].1);
 
                 if !changes.is_empty() && ctx.active_delta_subs.contains(&instrument_id) {
@@ -403,6 +433,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         };
                         instrument.price_increment()
                     };
+
                     // Clone and drop guard before emit to avoid DashMap deadlock
                     let last_quote = ctx.last_quotes.get(&instrument_id).map(|r| *r);
 
@@ -438,6 +469,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     return;
                 }
             };
+
             let instrument_id = meta.instrument_id;
             if is_terminal_condition(ctx, instrument_id) {
                 return;
@@ -798,20 +830,98 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
         }
 
         MarketWsMessage::BestBidAsk(bba) => {
-            log::trace!(
-                "best_bid_ask for {}: bid={} ask={}",
-                bba.asset_id,
-                bba.best_bid,
-                bba.best_ask
-            );
+            let token_id = bba.asset_id;
+            let meta = match ctx.token_meta.get(&token_id) {
+                Some(m) => *m,
+                None => {
+                    log::debug!("No instrument for token_id {token_id}");
+                    return;
+                }
+            };
+
+            let instrument_id = meta.instrument_id;
+            if is_terminal_condition(ctx, instrument_id)
+                || !ctx.active_quote_subs.contains(&instrument_id)
+            {
+                return;
+            }
+
+            let ts_init = ctx.clock.get_time_ns();
+            let ts_event = match parse_timestamp_ms(&bba.timestamp) {
+                Ok(ts) => ts,
+                Err(e) => {
+                    log::error!("Failed to parse best bid/ask timestamp: {e}");
+                    return;
+                }
+            };
+
+            let last_quote = ctx.last_quotes.get(&instrument_id).map(|quote| *quote);
+            let price_increment = {
+                let instruments = ctx.instruments.load();
+                let Some(instrument) = instruments.get(&instrument_id) else {
+                    log::error!("No instrument for {instrument_id}");
+                    return;
+                };
+                instrument.price_increment()
+            };
+
+            let last_tops = last_quote.map_or((None, None), |quote| {
+                (
+                    Some((quote.bid_price, quote.bid_size)),
+                    Some((quote.ask_price, quote.ask_size)),
+                )
+            });
+            let (bid_top, ask_top) = match ctx.order_books.get(&instrument_id) {
+                Some(book) if book.ts_last > ts_event => {
+                    log::trace!("Ignoring best bid/ask older than local book for {instrument_id}");
+                    return;
+                }
+                Some(book)
+                    if !ctx
+                        .pending_snapshot_after_tick_change
+                        .contains(&instrument_id) =>
+                {
+                    (
+                        book.best_bid_price().zip(book.best_bid_size()),
+                        book.best_ask_price().zip(book.best_ask_size()),
+                    )
+                }
+                _ => last_tops,
+            };
+
+            match parse_quote_from_best_bid_ask(
+                &bba,
+                instrument_id,
+                meta.price_precision,
+                meta.size_precision,
+                price_increment,
+                ctx.drop_quotes_missing_side,
+                bid_top,
+                ask_top,
+                ts_event,
+                ts_init,
+            ) {
+                Ok(Some(quote)) => emit_quote_if_changed(ctx, instrument_id, quote),
+                Ok(None) => {}
+                Err(e) => log::error!("Failed to parse quote from best bid/ask: {e}"),
+            }
         }
     }
 }
 
 fn emit_quote_if_changed(ctx: &WsMessageContext, instrument_id: InstrumentId, quote: QuoteTick) {
+    let existing = ctx
+        .last_quotes
+        .get(&instrument_id)
+        .map(|existing| *existing);
+    if existing.is_some_and(|existing| existing.ts_event > quote.ts_event) {
+        log::trace!("Ignoring stale quote for {instrument_id}");
+        return;
+    }
+
     // Compare prices and sizes only; timestamps always differ between messages
     let emit = !matches!(
-        ctx.last_quotes.get(&instrument_id),
+        existing,
         Some(existing) if existing.bid_price == quote.bid_price
             && existing.ask_price == quote.ask_price
             && existing.bid_size == quote.bid_size
@@ -900,8 +1010,9 @@ mod tests {
         },
         websocket::{
             messages::{
-                PolymarketBookLevel, PolymarketBookSnapshot, PolymarketMarketResolved,
-                PolymarketQuote, PolymarketQuotes, PolymarketTickSizeChange,
+                PolymarketBestBidAsk, PolymarketBookLevel, PolymarketBookSnapshot,
+                PolymarketMarketResolved, PolymarketQuote, PolymarketQuotes,
+                PolymarketTickSizeChange,
             },
             pool::PolymarketMarketConnectionPool,
         },
@@ -5743,6 +5854,495 @@ mod tests {
         })
     }
 
+    fn make_best_bid_ask(
+        market: &str,
+        asset_id: &str,
+        best_bid: &str,
+        best_ask: &str,
+    ) -> MarketWsMessage {
+        MarketWsMessage::BestBidAsk(PolymarketBestBidAsk {
+            market: Ustr::from(market),
+            asset_id: Ustr::from(asset_id),
+            best_bid: best_bid.to_string(),
+            best_ask: best_ask.to_string(),
+            spread: String::new(),
+            timestamp: "1700000003000".to_string(),
+        })
+    }
+
+    fn emitted_quotes(
+        data_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    ) -> Vec<QuoteTick> {
+        std::iter::from_fn(|| data_rx.try_recv().ok())
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::Quote(quote)) => Some(quote),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn quote_context(
+        asset_id: &str,
+    ) -> (
+        WsMessageContext,
+        tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        InstrumentId,
+    ) {
+        let (ctx, data_rx) = make_ws_ctx();
+        let instrument =
+            seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("0.01"));
+        let instrument_id = instrument.id();
+        ctx.active_quote_subs.insert(instrument_id);
+        (ctx, data_rx, instrument_id)
+    }
+
+    #[rstest]
+    fn best_bid_ask_emits_quote_sized_from_local_book() {
+        let asset_id = "0xTOKEN_BBA1";
+        let market = "0xMARKET";
+        let (mut ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        ctx.compute_effective_deltas = true;
+        ctx.active_delta_subs.insert(instrument_id);
+
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id,
+                &[
+                    ("0.49", "100"),
+                    ("0.50", "200"),
+                    ("0.53", "400"),
+                    ("0.52", "300"),
+                ],
+            ),
+            &ctx,
+        );
+        handle_market_message(make_price_change(market, asset_id, "0.51", "50"), &ctx);
+
+        while data_rx.try_recv().is_ok() {}
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.51", "0.52"), &ctx);
+
+        let quotes = emitted_quotes(&mut data_rx);
+        assert_eq!(quotes.len(), 1, "expected one quote, found: {quotes:?}");
+        let quote = quotes[0];
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("0.51"));
+        assert_eq!(quote.ask_price, Price::from("0.52"));
+        assert_eq!(quote.bid_size, Quantity::from("50.00"));
+        assert_eq!(quote.ask_size, Quantity::from("300.00"));
+        assert_eq!(
+            quote.ts_event,
+            UnixNanos::from(1_700_000_003_000_000_000u64),
+        );
+        assert_eq!(
+            ctx.last_quotes.get(&instrument_id).map(|stored| *stored),
+            Some(quote),
+        );
+    }
+
+    #[rstest]
+    fn best_bid_ask_without_local_book_carries_matching_last_quote_size() {
+        let asset_id = "0xTOKEN_BBA2";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        ctx.last_quotes.insert(
+            instrument_id,
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.49"),
+                Price::from("0.51"),
+                Quantity::from("100.00"),
+                Quantity::from("75.00"),
+                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::default(),
+            ),
+        );
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.49", "0.52"), &ctx);
+
+        let quotes = emitted_quotes(&mut data_rx);
+        assert_eq!(quotes.len(), 1, "expected one quote, found: {quotes:?}");
+        let quote = quotes[0];
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("0.49"));
+        assert_eq!(quote.ask_price, Price::from("0.52"));
+        assert_eq!(quote.bid_size, Quantity::from("100.00"));
+        assert_eq!(quote.ask_size, Quantity::from("0.00"));
+        assert_eq!(
+            quote.ts_event,
+            UnixNanos::from(1_700_000_003_000_000_000u64),
+        );
+    }
+
+    #[rstest]
+    fn best_bid_ask_uses_last_quote_while_snapshot_pending() {
+        let asset_id = "0xTOKEN_BBA3";
+        let market = "0xMARKET";
+        let (mut ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        ctx.compute_effective_deltas = true;
+        ctx.active_delta_subs.insert(instrument_id);
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id,
+                &[
+                    ("0.49", "100"),
+                    ("0.50", "200"),
+                    ("0.53", "400"),
+                    ("0.52", "300"),
+                ],
+            ),
+            &ctx,
+        );
+        ctx.pending_snapshot_after_tick_change.insert(instrument_id);
+        ctx.last_quotes.insert(
+            instrument_id,
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.50"),
+                Price::from("0.51"),
+                Quantity::from("12.00"),
+                Quantity::from("13.00"),
+                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::default(),
+            ),
+        );
+
+        while data_rx.try_recv().is_ok() {}
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.50", "0.52"), &ctx);
+
+        let quotes = emitted_quotes(&mut data_rx);
+        assert_eq!(quotes.len(), 1, "expected one quote, found: {quotes:?}");
+        assert_eq!(quotes[0].bid_size, Quantity::from("12.00"));
+        assert_eq!(quotes[0].ask_size, Quantity::from("0.00"));
+    }
+
+    #[rstest]
+    fn best_bid_ask_older_than_local_book_is_ignored() {
+        let asset_id = "0xTOKEN_BBA8";
+        let market = "0xMARKET";
+        let (mut ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        ctx.compute_effective_deltas = true;
+        ctx.active_delta_subs.insert(instrument_id);
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id,
+                &[
+                    ("0.49", "100"),
+                    ("0.50", "200"),
+                    ("0.53", "400"),
+                    ("0.52", "300"),
+                ],
+            ),
+            &ctx,
+        );
+        ctx.order_books.get_mut(&instrument_id).unwrap().ts_last =
+            UnixNanos::from(1_700_000_004_000_000_000u64);
+        let last_quote = QuoteTick::new(
+            instrument_id,
+            Price::from("0.50"),
+            Price::from("0.51"),
+            Quantity::from("12.00"),
+            Quantity::from("13.00"),
+            UnixNanos::from(1_700_000_002_000_000_000u64),
+            UnixNanos::default(),
+        );
+        ctx.last_quotes.insert(instrument_id, last_quote);
+
+        while data_rx.try_recv().is_ok() {}
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.50", "0.52"), &ctx);
+
+        assert!(emitted_quotes(&mut data_rx).is_empty());
+        assert_eq!(
+            ctx.last_quotes.get(&instrument_id).map(|stored| *stored),
+            Some(last_quote),
+        );
+    }
+
+    #[rstest]
+    #[case::valid(None)]
+    #[case::invalid_hash(Some("invalid"))]
+    fn stale_snapshot_is_ignored_before_book_and_quote_paths(#[case] hash: Option<&str>) {
+        let asset_id = "0xTOKEN_BBA_STALE_BOOK";
+        let market = "0xMARKET";
+        let (mut ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        ctx.compute_effective_deltas = true;
+        ctx.active_delta_subs.insert(instrument_id);
+
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id,
+                &[
+                    ("0.49", "100"),
+                    ("0.50", "200"),
+                    ("0.53", "400"),
+                    ("0.52", "300"),
+                ],
+            ),
+            &ctx,
+        );
+        handle_market_message(make_price_change(market, asset_id, "0.51", "50"), &ctx);
+
+        while data_rx.try_recv().is_ok() {}
+
+        let mut stale = make_snapshot(
+            market,
+            asset_id,
+            &[("0.48", "20"), ("0.51", "5"), ("0.52", "6"), ("0.54", "12")],
+        );
+        let MarketWsMessage::Book(snapshot) = &mut stale else {
+            unreachable!("make_snapshot must return a book message");
+        };
+        snapshot.hash = hash.map(str::to_string);
+        handle_market_message(stale, &ctx);
+        assert!(
+            data_rx.try_recv().is_err(),
+            "stale snapshot must not emit book or quote data",
+        );
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_id),
+            "stale snapshot must not gate later book data",
+        );
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.51", "0.52"), &ctx);
+
+        let quotes = emitted_quotes(&mut data_rx);
+        assert_eq!(quotes.len(), 1, "expected one quote, found: {quotes:?}");
+        assert_eq!(quotes[0].bid_price, Price::from("0.51"));
+        assert_eq!(quotes[0].ask_price, Price::from("0.52"));
+        assert_eq!(quotes[0].bid_size, Quantity::from("50.00"));
+        assert_eq!(quotes[0].ask_size, Quantity::from("300.00"));
+
+        let book = ctx.order_books.get(&instrument_id).unwrap();
+        assert_eq!(book.best_bid_price(), Some(Price::from("0.51")));
+        assert_eq!(book.best_bid_size(), Some(Quantity::from("50.00")));
+        assert_eq!(book.best_ask_price(), Some(Price::from("0.52")));
+        assert_eq!(book.best_ask_size(), Some(Quantity::from("300.00")));
+        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000u64),);
+    }
+
+    #[rstest]
+    fn stale_price_change_is_ignored_before_book_and_quote_paths() {
+        let asset_id = "0xTOKEN_BBA_STALE_CHANGE";
+        let market = "0xMARKET";
+        let (mut ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        ctx.compute_effective_deltas = true;
+        ctx.active_delta_subs.insert(instrument_id);
+
+        handle_market_message(
+            make_snapshot(
+                market,
+                asset_id,
+                &[
+                    ("0.49", "100"),
+                    ("0.50", "200"),
+                    ("0.53", "400"),
+                    ("0.52", "300"),
+                ],
+            ),
+            &ctx,
+        );
+        handle_market_message(
+            MarketWsMessage::PriceChange(PolymarketQuotes {
+                market: Ustr::from(market),
+                price_changes: vec![PolymarketQuote {
+                    asset_id: Ustr::from(asset_id),
+                    price: "0.51".to_string(),
+                    side: PolymarketOrderSide::Buy,
+                    size: "50".to_string(),
+                    hash: String::new(),
+                    best_bid: Some("0.51".to_string()),
+                    best_ask: Some("0.52".to_string()),
+                }],
+                timestamp: "1700000002000".to_string(),
+            }),
+            &ctx,
+        );
+
+        while data_rx.try_recv().is_ok() {}
+
+        handle_market_message(
+            MarketWsMessage::PriceChange(PolymarketQuotes {
+                market: Ustr::from(market),
+                price_changes: vec![PolymarketQuote {
+                    asset_id: Ustr::from(asset_id),
+                    price: "0.51".to_string(),
+                    side: PolymarketOrderSide::Buy,
+                    size: "5".to_string(),
+                    hash: String::new(),
+                    best_bid: Some("0.51".to_string()),
+                    best_ask: Some("0.52".to_string()),
+                }],
+                timestamp: "1700000001000".to_string(),
+            }),
+            &ctx,
+        );
+        assert!(
+            data_rx.try_recv().is_err(),
+            "stale price change must not emit book or quote data",
+        );
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.51", "0.52"), &ctx);
+        assert!(
+            emitted_quotes(&mut data_rx).is_empty(),
+            "unchanged BBA must not expose stale book sizes",
+        );
+
+        let book = ctx.order_books.get(&instrument_id).unwrap();
+        assert_eq!(book.best_bid_price(), Some(Price::from("0.51")));
+        assert_eq!(book.best_bid_size(), Some(Quantity::from("50.00")));
+        assert_eq!(book.best_ask_price(), Some(Price::from("0.52")));
+        assert_eq!(book.best_ask_size(), Some(Quantity::from("300.00")));
+        assert_eq!(book.ts_last, UnixNanos::from(1_700_000_002_000_000_000u64),);
+    }
+
+    #[rstest]
+    fn best_bid_ask_older_than_last_quote_is_ignored() {
+        let asset_id = "0xTOKEN_BBA4";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        let latest = QuoteTick::new(
+            instrument_id,
+            Price::from("0.49"),
+            Price::from("0.51"),
+            Quantity::from("100.00"),
+            Quantity::from("75.00"),
+            UnixNanos::from(1_700_000_004_000_000_000u64),
+            UnixNanos::default(),
+        );
+        ctx.last_quotes.insert(instrument_id, latest);
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.50", "0.52"), &ctx);
+
+        assert!(emitted_quotes(&mut data_rx).is_empty());
+        assert_eq!(
+            ctx.last_quotes.get(&instrument_id).map(|stored| *stored),
+            Some(latest),
+        );
+    }
+
+    #[derive(Clone, Copy)]
+    enum StaleQuoteSource {
+        Snapshot,
+        PriceChange,
+    }
+
+    #[rstest]
+    #[case::snapshot(StaleQuoteSource::Snapshot)]
+    #[case::price_change(StaleQuoteSource::PriceChange)]
+    fn quote_source_older_than_best_bid_ask_is_ignored(#[case] source: StaleQuoteSource) {
+        let asset_id = "0xTOKEN_BBA_STALE";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.50", "0.52"), &ctx);
+        let latest = emitted_quotes(&mut data_rx)
+            .into_iter()
+            .next()
+            .expect("best bid/ask should emit a quote");
+
+        let stale = match source {
+            StaleQuoteSource::Snapshot => make_snapshot(
+                market,
+                asset_id,
+                &[
+                    ("0.48", "20"),
+                    ("0.49", "10"),
+                    ("0.51", "8"),
+                    ("0.53", "12"),
+                ],
+            ),
+            StaleQuoteSource::PriceChange => MarketWsMessage::PriceChange(PolymarketQuotes {
+                market: Ustr::from(market),
+                price_changes: vec![PolymarketQuote {
+                    asset_id: Ustr::from(asset_id),
+                    price: "0.49".to_string(),
+                    side: PolymarketOrderSide::Buy,
+                    size: "10".to_string(),
+                    hash: String::new(),
+                    best_bid: Some("0.49".to_string()),
+                    best_ask: Some("0.51".to_string()),
+                }],
+                timestamp: "1700000002000".to_string(),
+            }),
+        };
+        handle_market_message(stale, &ctx);
+
+        assert!(emitted_quotes(&mut data_rx).is_empty());
+        assert_eq!(
+            ctx.last_quotes.get(&instrument_id).map(|stored| *stored),
+            Some(latest),
+        );
+    }
+
+    #[rstest]
+    fn best_bid_ask_unchanged_quote_is_not_re_emitted() {
+        let asset_id = "0xTOKEN_BBA5";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        ctx.last_quotes.insert(
+            instrument_id,
+            QuoteTick::new(
+                instrument_id,
+                Price::from("0.49"),
+                Price::from("0.51"),
+                Quantity::from("100.00"),
+                Quantity::from("75.00"),
+                UnixNanos::from(1_700_000_002_000_000_000u64),
+                UnixNanos::default(),
+            ),
+        );
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.49", "0.51"), &ctx);
+
+        assert!(emitted_quotes(&mut data_rx).is_empty());
+    }
+
+    #[rstest]
+    fn best_bid_ask_missing_side_drops_by_default() {
+        let asset_id = "0xTOKEN_BBA6";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx, _) = quote_context(asset_id);
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.50", "1"), &ctx);
+
+        assert!(emitted_quotes(&mut data_rx).is_empty());
+    }
+
+    #[rstest]
+    fn best_bid_ask_without_quote_subscription_is_ignored() {
+        let asset_id = "0xTOKEN_BBA7";
+        let market = "0xMARKET";
+        let (ctx, mut data_rx) = make_ws_ctx();
+        seed_instrument(&ctx, asset_id, Price::from("0.01"), Quantity::from("0.01"));
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.50", "0.52"), &ctx);
+
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn best_bid_ask_for_terminal_condition_is_ignored() {
+        let asset_id = "0xCONDITION-token";
+        let market = "0xCONDITION";
+        let (ctx, mut data_rx, instrument_id) = quote_context(asset_id);
+        ctx.closed_condition_ids
+            .lock()
+            .unwrap()
+            .insert(market.to_string());
+
+        handle_market_message(make_best_bid_ask(market, asset_id, "0.50", "0.52"), &ctx);
+
+        assert!(emitted_quotes(&mut data_rx).is_empty());
+        assert!(!ctx.last_quotes.contains_key(&instrument_id));
+    }
+
     #[rstest]
     fn tick_size_change_clears_book_and_marks_pending() {
         let asset_id_str = "0xTOKEN";
@@ -6995,20 +7595,22 @@ mod tests {
 
         while data_rx.try_recv().is_ok() {}
 
-        handle_market_message(
-            make_snapshot(
-                market,
-                asset_id_str,
-                &[("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")],
-            ),
-            &ctx,
+        let mut snapshot = make_snapshot(
+            market,
+            asset_id_str,
+            &[("0.45", "5"), ("0.49", "10"), ("0.51", "8"), ("0.55", "12")],
         );
+        let MarketWsMessage::Book(book_snapshot) = &mut snapshot else {
+            unreachable!("make_snapshot must return a book message");
+        };
+        book_snapshot.timestamp = "1700000003000".to_string();
+        handle_market_message(snapshot, &ctx);
 
         let batches = collect_delta_batches(&mut data_rx);
         assert_eq!(batches.len(), 1);
 
         let batch = &batches[0];
-        let ts_event = UnixNanos::from(1_700_000_000_000_000_000_u64);
+        let ts_event = UnixNanos::from(1_700_000_003_000_000_000_u64);
         let ts_init = batch.ts_init;
         assert!(batch.deltas.iter().all(|delta| {
             delta.instrument_id == instrument_id

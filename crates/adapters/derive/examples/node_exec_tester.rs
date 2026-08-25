@@ -28,10 +28,10 @@
 use nautilus_common::enums::Environment;
 use nautilus_derive::{
     common::{consts::DERIVE_CLIENT_ID, enums::DeriveEnvironment},
-    config::{DeriveDataClientConfig, DeriveExecClientConfig},
-    factories::{DeriveDataClientFactory, DeriveExecFactoryConfig, DeriveExecutionClientFactory},
+    config::{DeriveDataClientConfig, DeriveExecutionClientConfig},
+    factories::{DeriveDataClientFactory, DeriveExecutionClientFactory},
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};
 use nautilus_model::{
     enums::TimeInForce,
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
@@ -69,20 +69,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let exec_config = DeriveExecClientConfig {
+    let exec_config = DeriveExecutionClientConfig {
+        account_id,
         environment: derive_environment,
         max_fee_per_contract: Some(Decimal::from_str_exact(MAX_FEE_PER_CONTRACT)?),
         ..Default::default()
     };
-    let exec_factory_config = DeriveExecFactoryConfig {
-        trader_id,
-        account_id,
-        config: exec_config,
-    };
 
     let data_factory = DeriveDataClientFactory::new();
     let exec_factory = DeriveExecutionClientFactory::new();
-    let exec_engine_config = LiveExecEngineConfig {
+    let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()
@@ -92,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_name(node_name)
         .with_exec_engine_config(exec_engine_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
-        .add_exec_client(None, Box::new(exec_factory), Box::new(exec_factory_config))?
+        .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)
         .with_delay_post_stop_secs(5)
         .build()?;

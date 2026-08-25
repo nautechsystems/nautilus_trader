@@ -41,7 +41,7 @@ use nautilus_common::{
     live::dst,
     messages::{
         execution::{
-            CancelAllOrders, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            CancelOrder, GenerateOrderStatusReport, GenerateOrderStatusReports,
             GeneratePositionStatusReports, QueryOrder,
         },
         system::{QueueStateChanged, ShutdownSystem},
@@ -53,7 +53,7 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{
     builder::LiveNodeBuilder,
-    config::{LiveExecEngineConfig, LiveNodeConfig},
+    config::{LiveExecutionEngineConfig, LiveNodeConfig},
     node::{LiveNode, LiveNodeHandle, NodeState},
 };
 use nautilus_model::{
@@ -163,7 +163,7 @@ impl DataActor for StopOnStartStrategy {
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.stop_count.fetch_add(1, Ordering::Relaxed);
-        self.cancel_all_orders(self.instrument_id, None, None, None)
+        self.cancel_all_orders(self.instrument_id, None, None, true, None)
     }
 }
 
@@ -198,11 +198,11 @@ nautilus_strategy!(ClaimingTestStrategy, {
 });
 
 #[derive(Debug)]
-struct TestExecAlgorithm {
+struct TestExecutionAlgorithm {
     core: ExecutionAlgorithmCore,
 }
 
-impl TestExecAlgorithm {
+impl TestExecutionAlgorithm {
     fn new(config: ExecutionAlgorithmConfig) -> Self {
         Self {
             core: ExecutionAlgorithmCore::new(config),
@@ -210,9 +210,9 @@ impl TestExecAlgorithm {
     }
 }
 
-impl DataActor for TestExecAlgorithm {}
+impl DataActor for TestExecutionAlgorithm {}
 
-nautilus_execution_algorithm!(TestExecAlgorithm, {
+nautilus_execution_algorithm!(TestExecutionAlgorithm, {
     fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
         Ok(())
     }
@@ -301,11 +301,12 @@ mod serial_tests {
     struct StartupMassStatusClientState {
         connected: Arc<AtomicBool>,
         disconnect_attempted: Arc<AtomicBool>,
+        factory_trader_id: Arc<Mutex<Option<TraderId>>>,
         mass_status_requested: Arc<AtomicBool>,
         mass_status: Arc<Mutex<Option<ExecutionMassStatus>>>,
         registered_external_orders: Arc<Mutex<Vec<ClientOrderId>>>,
-        cancel_all_orders_received: Arc<AtomicUsize>,
-        cancel_all_orders_while_connected: Arc<AtomicBool>,
+        cancel_orders_received: Arc<AtomicUsize>,
+        cancel_orders_while_connected: Arc<AtomicBool>,
     }
 
     #[derive(Clone, Debug, Default)]
@@ -505,10 +506,12 @@ mod serial_tests {
     impl ExecutionClientFactory for StartupMassStatusExecutionClientFactory {
         fn create(
             &self,
+            trader_id: TraderId,
             _name: &str,
             _config: &dyn ClientConfig,
             _cache: CacheView,
         ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+            *self.state.factory_trader_id.lock().unwrap() = Some(trader_id);
             Ok(Box::new(StartupMassStatusExecutionClient::new(
                 self.state.clone(),
                 self.behavior,
@@ -576,6 +579,7 @@ mod serial_tests {
     impl ExecutionClientFactory for LifecycleExecutionClientFactory {
         fn create(
             &self,
+            _trader_id: TraderId,
             _name: &str,
             _config: &dyn ClientConfig,
             _cache: CacheView,
@@ -735,6 +739,23 @@ mod serial_tests {
         (node, state)
     }
 
+    #[rstest]
+    fn test_execution_factory_receives_live_node_trader_id() {
+        let trader_id = TraderId::from("NODE-TRADER-001");
+        let config = LiveNodeConfig {
+            trader_id,
+            ..Default::default()
+        };
+
+        let (_node, state) = live_node_with_startup_mass_status_client(
+            "TraderIdentityNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+
+        assert_eq!(*state.factory_trader_id.lock().unwrap(), Some(trader_id));
+    }
+
     #[async_trait(?Send)]
     impl ExecutionClient for StartupMassStatusExecutionClient {
         fn is_connected(&self) -> bool {
@@ -784,11 +805,11 @@ mod serial_tests {
             Ok(())
         }
 
-        fn cancel_all_orders(&self, _cmd: CancelAllOrders) -> anyhow::Result<()> {
+        fn cancel_order(&self, _cmd: CancelOrder) -> anyhow::Result<()> {
             self.state
-                .cancel_all_orders_received
+                .cancel_orders_received
                 .fetch_add(1, Ordering::Relaxed);
-            self.state.cancel_all_orders_while_connected.store(
+            self.state.cancel_orders_while_connected.store(
                 self.state.connected.load(Ordering::Relaxed),
                 Ordering::Relaxed,
             );
@@ -953,7 +974,7 @@ mod serial_tests {
         timeout_connection: Duration,
     ) -> (LiveNode, LifecycleClientState, LifecycleClientState) {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -1135,6 +1156,7 @@ mod serial_tests {
     impl ExecutionClientFactory for BlockingReportExecutionClientFactory {
         fn create(
             &self,
+            _trader_id: TraderId,
             _name: &str,
             _config: &dyn ClientConfig,
             _cache: CacheView,
@@ -1415,7 +1437,7 @@ mod serial_tests {
         venue: Venue,
     ) -> LiveNode {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
@@ -1499,7 +1521,7 @@ mod serial_tests {
     #[rstest]
     fn test_live_node_config_with_disabled_reconciliation() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -1514,7 +1536,7 @@ mod serial_tests {
     #[rstest]
     fn test_live_node_builds_reject_invalid_exec_interval() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 open_check_interval_secs: Some(f64::INFINITY),
                 ..Default::default()
             },
@@ -1532,7 +1554,7 @@ mod serial_tests {
             assert!(
                 error
                     .to_string()
-                    .contains("LiveExecEngineConfig.open_check_interval_secs"),
+                    .contains("LiveExecutionEngineConfig.open_check_interval_secs"),
                 "unexpected error: {error:#}"
             );
         }
@@ -1589,7 +1611,7 @@ mod serial_tests {
             exec_algorithm_id: Some(ExecAlgorithmId::from("TEST_ALGO")),
             ..Default::default()
         };
-        let algo = TestExecAlgorithm::new(config);
+        let algo = TestExecutionAlgorithm::new(config);
 
         let result = node.add_exec_algorithm(algo);
 
@@ -1604,7 +1626,7 @@ mod serial_tests {
             exec_algorithm_id: Some(ExecAlgorithmId::from("MY_ALGO")),
             ..Default::default()
         };
-        let algo = TestExecAlgorithm::new(config);
+        let algo = TestExecutionAlgorithm::new(config);
 
         node.add_exec_algorithm(algo).unwrap();
 
@@ -1840,7 +1862,7 @@ mod serial_tests {
         // connect completes on the first poll. Regression for the pre-stage bail
         // that rejected a zero budget before ever attempting the connect.
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2017,7 +2039,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_start_stop_dispose_releases_resources() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2053,7 +2075,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_start_without_cache_backing_preserves_staged_cache() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2087,7 +2109,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_run_twice_returns_error() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2127,7 +2149,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_handle_stop_triggers_graceful_shutdown() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2162,7 +2184,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_shutdown_system_triggers_graceful_shutdown() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2211,7 +2233,7 @@ mod serial_tests {
     async fn test_error_log_triggers_graceful_shutdown() {
         let config = LiveNodeConfig {
             shutdown_on_error: true,
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2238,7 +2260,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_handle_stop_completes_within_timeout() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2274,7 +2296,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_start_continues_when_mass_status_unavailable() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
@@ -2310,7 +2332,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_startup_mass_status_registers_external_order_with_source_client() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
@@ -2640,7 +2662,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_strategy_start_failure_stops_partial_start_and_disposes_resources() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2690,7 +2712,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_strategy_stop_request_during_start_aborts_running_transition(#[case] run: bool) {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2765,12 +2787,8 @@ mod serial_tests {
         assert!(!state.connected.load(Ordering::Relaxed));
         assert!(node.kernel().trader().borrow().is_stopped());
         assert_eq!(stop_count.load(Ordering::Relaxed), 1);
-        assert_eq!(state.cancel_all_orders_received.load(Ordering::Relaxed), 1);
-        assert!(
-            state
-                .cancel_all_orders_while_connected
-                .load(Ordering::Relaxed)
-        );
+        assert_eq!(state.cancel_orders_received.load(Ordering::Relaxed), 1);
+        assert!(state.cancel_orders_while_connected.load(Ordering::Relaxed));
 
         node.dispose();
 
@@ -2782,7 +2800,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_data_disconnect_failure_still_attempts_execution_disconnect() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -2831,7 +2849,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_run_continues_when_mass_status_unavailable() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
@@ -2868,7 +2886,7 @@ mod serial_tests {
     #[tokio::test]
     async fn test_start_aborts_startup_when_mass_status_errors() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
@@ -2898,7 +2916,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_run_aborts_startup_when_mass_status_errors() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
@@ -2932,7 +2950,7 @@ mod serial_tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_startup_reconciliation_times_out_waiting_for_mass_status() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
@@ -2978,7 +2996,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_maintenance_dispatcher_runs_while_running() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 own_books_audit_interval_secs: Some(0.1),
                 ..Default::default()
@@ -3015,7 +3033,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_queue_monitor_unset_does_not_publish() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 ..Default::default()
             },
@@ -3061,7 +3079,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_continuous_reconciliation_does_not_block_on_report_generation() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 open_check_interval_secs: Some(0.1),
                 ..Default::default()
@@ -3158,7 +3176,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_continuous_report_reconciliation_serializes_open_and_position_requests() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 inflight_check_interval_ms: 0,
                 open_check_interval_secs: Some(0.1),
@@ -3221,7 +3239,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_continuous_report_reconciliation_runs_position_after_open_completes() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 inflight_check_interval_ms: 0,
                 open_check_interval_secs: Some(0.1),
@@ -3291,7 +3309,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_instrument_update_during_open_order_report_does_not_panic() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 open_check_interval_secs: Some(0.1),
                 ..Default::default()
@@ -3402,7 +3420,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_instrument_update_during_position_report_does_not_panic() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 inflight_check_interval_ms: 0,
                 position_check_interval_secs: Some(0.1),
@@ -3477,7 +3495,7 @@ mod serial_tests {
     #[tokio::test(flavor = "current_thread")]
     async fn test_position_only_continuous_reconciliation_requests_reports() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 inflight_check_interval_ms: 0,
                 position_check_interval_secs: Some(0.1),
@@ -3538,7 +3556,7 @@ mod serial_tests {
     #[tokio::test(start_paused = true)]
     async fn test_hung_open_report_task_times_out_and_position_check_starts() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 inflight_check_interval_ms: 0,
                 open_check_interval_secs: Some(0.1),
@@ -3595,7 +3613,7 @@ mod serial_tests {
     #[tokio::test(start_paused = true)]
     async fn test_hung_position_report_task_times_out_and_open_check_starts() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 inflight_check_interval_ms: 0,
                 open_check_interval_secs: Some(0.2),
@@ -3652,7 +3670,7 @@ mod serial_tests {
     #[tokio::test(start_paused = true)]
     async fn test_hung_targeted_report_task_cleans_markers_and_checks_resume() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 inflight_check_interval_ms: 200,
                 inflight_check_threshold_ms: 0,
@@ -3795,7 +3813,7 @@ mod serial_tests {
     #[tokio::test(start_paused = true)]
     async fn test_timed_out_open_report_task_discards_earlier_client_reports() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 inflight_check_interval_ms: 0,
                 open_check_interval_secs: Some(0.1),
@@ -3900,7 +3918,7 @@ mod serial_tests {
     #[tokio::test(start_paused = true)]
     async fn test_timed_out_report_task_flushes_deferred_instrument_update() {
         let config = LiveNodeConfig {
-            exec_engine: LiveExecEngineConfig {
+            exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 inflight_check_interval_ms: 0,
                 open_check_interval_secs: Some(0.1),

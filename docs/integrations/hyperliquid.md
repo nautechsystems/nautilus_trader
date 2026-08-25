@@ -51,9 +51,9 @@ The builder address is omitted from orders in three cases:
   attribute their order flow can disable builder attribution explicitly.
 
 ```python
-from nautilus_trader.adapters.hyperliquid import HyperliquidExecClientConfig
+from nautilus_trader.adapters.hyperliquid import HyperliquidExecutionClientConfig
 
-config = HyperliquidExecClientConfig(
+config = HyperliquidExecutionClientConfig(
     include_builder_attribution=False,
 )
 ```
@@ -978,7 +978,7 @@ Hyperliquid's price constraints before submission. Subscribe to quotes for any i
 intend to trade with market orders: without a cached quote the adapter emits `OrderDenied`
 rather than guessing a price.
 
-The slippage buffer is controlled by `market_order_slippage_bps` on `HyperliquidExecClientConfig`
+The slippage buffer is controlled by `market_order_slippage_bps` on `HyperliquidExecutionClientConfig`
 (default 50 bps) and can be overridden per-order via the `market_order_slippage_bps` key in
 `SubmitOrder.params`.
 :::
@@ -1002,7 +1002,7 @@ By default, the adapter normalizes all outgoing limit and trigger prices to 5 si
 figures and clamps them to the instrument price precision to prevent order rejections. This
 means your submitted prices may shift slightly.
 To disable this and take full control of price formatting, set `normalize_prices=False`
-in your `HyperliquidExecClientConfig`.
+in your `HyperliquidExecutionClientConfig`.
 
 If you disable normalization, you can apply the same rounding in your strategy:
 
@@ -1338,7 +1338,7 @@ value covers both.
 :::tip
 Email-login wallets generate different addresses for mainnet and testnet, so
 the master address may differ. In that case, prefer setting `account_address`
-explicitly in `HyperliquidExecClientConfig` per environment rather than
+explicitly in `HyperliquidExecutionClientConfig` per environment rather than
 relying on the shared environment variable.
 :::
 
@@ -1404,6 +1404,7 @@ effect yet. See [Instrument loading](#instrument-loading) for how to refresh the
 
 | Option                         | Default   | Description                                                                                                                                      |
 | ------------------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `account_id`                   | `Venue`   | Nautilus account identifier; defaults to `HYPERLIQUID-001`.                                                                                      |
 | `private_key`                  | `None`    | EVM private key; loaded from `HYPERLIQUID_PK` or `HYPERLIQUID_TESTNET_PK` when omitted.                                                          |
 | `vault_address`                | `None`    | Vault address; loaded from `HYPERLIQUID_VAULT` or `HYPERLIQUID_TESTNET_VAULT` if omitted.                                                        |
 | `account_address`              | `None`    | Main account address for agent wallet trading; loaded from `HYPERLIQUID_ACCOUNT_ADDRESS`.                                                        |
@@ -1425,7 +1426,7 @@ effect yet. See [Instrument loading](#instrument-loading) for how to refresh the
 
 :::note
 `outcome_settlement_poll_secs` is the only Rust-only option: it is not exposed on the
-`HyperliquidExecClientConfig` Python constructor and always uses its default. The
+`HyperliquidExecutionClientConfig` Python constructor and always uses its default. The
 `max_retries`, `retry_delay_initial_ms`, and `retry_delay_max_ms` fields are accepted on
 both the Rust and Python config but are not yet consumed by the execution client (its HTTP
 client is constructed with only the request timeout and proxy).
@@ -1434,9 +1435,8 @@ client is constructed with only the request timeout and proxy).
 ### Live node configuration
 
 Register `HyperliquidDataClientConfig` with `HyperliquidDataClientFactory` on the node builder.
-The execution side takes `HyperliquidExecFactoryConfig`, which wraps `HyperliquidExecClientConfig`
-with the `TraderId` and `AccountId` the execution client runs under, and registers with
-`HyperliquidExecutionClientFactory`. The
+Register `HyperliquidExecutionClientConfig` directly with `HyperliquidExecutionClientFactory`.
+The node supplies the `TraderId`, while the execution client config supplies the `AccountId`. The
 [Python examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/hyperliquid/)
 show the complete `LiveNode.builder(...)` wiring for both clients.
 

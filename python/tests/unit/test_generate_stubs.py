@@ -1611,7 +1611,7 @@ WRITABLE_CONFIG_PROPERTIES = {
     ("nautilus_trader.adapters.interactive_brokers", "InteractiveBrokersDataClientConfig"): {
         "instrument_provider",
     },
-    ("nautilus_trader.adapters.interactive_brokers", "InteractiveBrokersExecClientConfig"): {
+    ("nautilus_trader.adapters.interactive_brokers", "InteractiveBrokersExecutionClientConfig"): {
         "instrument_provider",
     },
     (
@@ -1697,7 +1697,7 @@ ADAPTER_CONFIG_CONSTRUCTOR_ONLY_FIELDS = {
     ),
     (
         "nautilus_trader.adapters.interactive_brokers",
-        "InteractiveBrokersExecClientConfig",
+        "InteractiveBrokersExecutionClientConfig",
         "dockerized_gateway",
     ),
 }
@@ -1785,7 +1785,7 @@ def test_live_stub_exposes_builder_engine_config_methods():
         in live_stub
     )
     assert (
-        "def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ..."
+        "def with_exec_engine_config(self, config: LiveExecutionEngineConfig) -> LiveNodeBuilder: ..."
         in live_stub
     )
 
@@ -2398,20 +2398,18 @@ def test_adapter_config_constructors_have_runtime_readback():
 
 def test_adapter_config_readback_returns_constructor_values(tmp_path):
     from nautilus_trader.adapters.architect_ax import AxDataClientConfig
-    from nautilus_trader.adapters.betfair import BetfairDataConfig
-    from nautilus_trader.adapters.bitmex import BitmexExecClientConfig
-    from nautilus_trader.adapters.bitmex import BitmexExecFactoryConfig
+    from nautilus_trader.adapters.betfair import BetfairDataClientConfig
+    from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.bybit import BybitDataClientConfig
-    from nautilus_trader.adapters.databento import DatabentoLiveClientConfig
+    from nautilus_trader.adapters.databento import DatabentoDataClientConfig
     from nautilus_trader.model import AccountId
-    from nautilus_trader.model import TraderId
 
     ax_config = AxDataClientConfig(
         base_url_http="https://ax.example.test",
         proxy_url="http://user:password@proxy.example.test",
         http_timeout_secs=17,
     )
-    betfair_config = BetfairDataConfig(
+    betfair_config = BetfairDataClientConfig(
         username="readback-user",
         password="readback-password",
         app_key="readback-app-key",
@@ -2419,23 +2417,19 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path):
         event_type_ids=[7, 9],
         stream_heartbeat_secs=43,
     )
-    bitmex_config = BitmexExecClientConfig(
+    bitmex_config = BitmexExecutionClientConfig(
+        account_id=AccountId("BITMEX-001"),
         submitter_proxy_urls=["http://submitter.example.test"],
         canceller_proxy_urls=["http://canceller.example.test"],
         deadmans_switch_timeout_secs=45,
     )
     bybit_config = BybitDataClientConfig(instrument_status_poll_secs=23)
-    databento_config = DatabentoLiveClientConfig(
+    databento_config = DatabentoDataClientConfig(
         api_key="readback-api-key",
         publishers_filepath=tmp_path / "publishers.json",
         use_exchange_as_venue=True,
         bars_timestamp_on_close=False,
         venue_dataset_map={"XNAS": "XNAS.ITCH"},
-    )
-    factory_config = BitmexExecFactoryConfig(
-        trader_id=TraderId("TRADER-001"),
-        account_id=AccountId("BITMEX-001"),
-        config=bitmex_config,
     )
 
     assert ax_config.base_url_http == "https://ax.example.test"
@@ -2453,16 +2447,14 @@ def test_adapter_config_readback_returns_constructor_values(tmp_path):
     assert databento_config.use_exchange_as_venue is True
     assert databento_config.bars_timestamp_on_close is False
     assert databento_config.venue_dataset_map == {"XNAS": "XNAS.ITCH"}
-    assert factory_config.trader_id == TraderId("TRADER-001")
-    assert factory_config.account_id == AccountId("BITMEX-001")
-    assert factory_config.config.deadmans_switch_timeout_secs == 45
+    assert bitmex_config.account_id == AccountId("BITMEX-001")
 
 
 def test_adapter_config_runtime_setter_policy(tmp_path):
     from nautilus_trader.adapters.architect_ax import AxDataClientConfig
     from nautilus_trader.adapters.interactive_brokers import DockerizedIBGatewayConfig
     from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersDataClientConfig
-    from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecClientConfig
+    from nautilus_trader.adapters.interactive_brokers import InteractiveBrokersExecutionClientConfig
     from nautilus_trader.adapters.interactive_brokers import (
         InteractiveBrokersInstrumentProviderConfig,
     )
@@ -2471,11 +2463,14 @@ def test_adapter_config_runtime_setter_policy(tmp_path):
     gateway_config = DockerizedIBGatewayConfig()
     provider_config = InteractiveBrokersInstrumentProviderConfig()
     data_config = InteractiveBrokersDataClientConfig()
-    exec_config = InteractiveBrokersExecClientConfig()
+    exec_config = InteractiveBrokersExecutionClientConfig()
 
     with pytest.raises(AttributeError):
         readonly_config.base_url_http = "https://changed.example.test"
-    for config_class in (InteractiveBrokersDataClientConfig, InteractiveBrokersExecClientConfig):
+    for config_class in (
+        InteractiveBrokersDataClientConfig,
+        InteractiveBrokersExecutionClientConfig,
+    ):
         with pytest.raises(ValueError, match="is not wired into the Rust/PyO3 IB"):
             config_class(dockerized_gateway=gateway_config)
 
@@ -2547,7 +2542,7 @@ def test_adapter_config_secret_values_are_not_exposed(tmp_path):
 
 
 def test_adapter_config_sensitive_readback_values_are_not_represented():
-    from nautilus_trader.adapters.bitmex import BitmexExecClientConfig
+    from nautilus_trader.adapters.bitmex import BitmexExecutionClientConfig
     from nautilus_trader.adapters.blockchain import BlockchainDataClientConfig
     from nautilus_trader.adapters.derive import DeriveDataClientConfig
     from nautilus_trader.adapters.dydx import DydxDataClientConfig
@@ -2557,7 +2552,7 @@ def test_adapter_config_sensitive_readback_values_are_not_represented():
 
     sentinel = "raw-sensitive-value"
     configs = [
-        BitmexExecClientConfig(
+        BitmexExecutionClientConfig(
             submitter_proxy_urls=[f"http://{sentinel}@submitter.example.test"],
             canceller_proxy_urls=[f"http://{sentinel}@canceller.example.test"],
         ),

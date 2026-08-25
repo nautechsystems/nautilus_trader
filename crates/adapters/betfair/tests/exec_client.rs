@@ -19,7 +19,7 @@ mod common;
 
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     net::SocketAddr,
     rc::Rc,
     sync::{
@@ -37,7 +37,7 @@ use nautilus_betfair::{
         },
         parse::make_customer_order_ref,
     },
-    config::BetfairExecConfig,
+    config::BetfairExecutionClientConfig,
     execution::BetfairExecutionClient,
     stream::config::BetfairStreamConfig,
 };
@@ -64,7 +64,7 @@ use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnec
 use nautilus_model::{
     data::Data,
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{OrderDeniedReason, OrderEventAny, OrderUpdated},
+    events::{OrderAccepted, OrderDeniedReason, OrderEventAny, OrderUpdated},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
     },
@@ -73,6 +73,7 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use serde_json::Value;
+use tokio::io::AsyncWriteExt;
 use ustr::Ustr;
 
 use crate::common::*;
@@ -80,7 +81,7 @@ use crate::common::*;
 fn create_test_execution_client_with_config(
     addr: SocketAddr,
     stream_port: u16,
-    config: BetfairExecConfig,
+    config: BetfairExecutionClientConfig,
 ) -> (
     BetfairExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -93,7 +94,7 @@ fn create_test_execution_client_with_config(
 fn create_test_execution_client_with_configs(
     addr: SocketAddr,
     stream_config: BetfairStreamConfig,
-    config: BetfairExecConfig,
+    config: BetfairExecutionClientConfig,
 ) -> (
     BetfairExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -147,7 +148,17 @@ fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     Rc<RefCell<Cache>>,
 ) {
-    create_test_execution_client_with_config(addr, stream_port, BetfairExecConfig::default())
+    create_test_execution_client_with_config(
+        addr,
+        stream_port,
+        BetfairExecutionClientConfig::default(),
+    )
+}
+
+async fn connect_execution_ready(client: &mut BetfairExecutionClient) {
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    assert!(client.is_connected());
 }
 
 #[rstest]
@@ -176,7 +187,7 @@ async fn test_exec_client_connect_disconnect() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (mut reader, write_half) = accept_and_auth(&listener).await;
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
 
         // Capture the order subscription sent after the initial auth handshake
         let mut line = String::new();
@@ -187,12 +198,25 @@ async fn test_exec_client_connect_disconnect() {
         let json: Value = serde_json::from_str(line.trim()).unwrap();
         assert_eq!(json["op"], "orderSubscription");
         subscription_received_server.store(true, Ordering::Relaxed);
+        let id = json["id"].as_u64().unwrap();
+        write_half
+            .write_all(
+                format!(
+                    "{{\"op\":\"status\",\"id\":{id},\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}}\r\n\
+                     {{\"op\":\"ocm\",\"id\":{id},\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"oc\":[]}}\r\n",
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
 
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
     client.connect().await.unwrap();
+
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
 
     assert!(client.is_connected());
     assert!(state.login_count.load(std::sync::atomic::Ordering::Relaxed) > 0);
@@ -348,12 +372,12 @@ async fn test_exec_client_connect_emits_account_state() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     let mut found_account_state = false;
 
@@ -511,12 +535,12 @@ async fn test_cancel_order_bet_taken_or_lapsed_treated_as_success() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -578,12 +602,12 @@ async fn test_cancel_order_instruction_failure_emits_rejected() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -627,12 +651,12 @@ async fn test_cancel_order_definitive_result_failure_without_instructions_emits_
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -689,12 +713,12 @@ async fn test_cancel_order_ambiguous_5xx_emits_no_rejected() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -757,12 +781,12 @@ async fn test_cancel_order_timeout_status_emits_no_rejected() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -825,12 +849,12 @@ async fn test_cancel_order_success_no_rejected_event() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -866,6 +890,31 @@ fn make_test_order(
         .quantity(Quantity::from(quantity))
         .time_in_force(TimeInForce::Gtc)
         .build()
+}
+
+fn make_accepted_test_order(
+    instrument_id: &str,
+    client_order_id: &str,
+    venue_order_id: &str,
+    price: &str,
+    quantity: &str,
+) -> OrderAny {
+    let mut order = make_test_order(instrument_id, client_order_id, price, quantity);
+    order
+        .apply(OrderEventAny::Accepted(OrderAccepted::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("S-001"),
+            InstrumentId::from(instrument_id),
+            ClientOrderId::from(client_order_id),
+            VenueOrderId::from(venue_order_id),
+            AccountId::from("BETFAIR-001"),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            false,
+        )))
+        .unwrap();
+    order
 }
 
 fn assert_valid_customer_ref(params: &Value) -> &str {
@@ -998,6 +1047,16 @@ fn order_updates(events: &[ExecutionEvent]) -> Vec<&OrderUpdated> {
         .collect()
 }
 
+fn assert_no_accept_or_modify_reject(events: &[ExecutionEvent]) {
+    assert!(
+        !events.iter().any(|event| matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Accepted(_) | OrderEventAny::ModifyRejected(_))
+        )),
+        "startup-restored modify must not emit acceptance or rejection: {events:?}",
+    );
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_submit_order_success_emits_accepted() {
@@ -1008,12 +1067,12 @@ async fn test_submit_order_success_emits_accepted() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1067,12 +1126,12 @@ async fn test_submit_order_retry_reuses_customer_ref() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1155,12 +1214,12 @@ async fn test_submit_retry_preserves_earlier_ambiguity_before_no_session() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1240,12 +1299,12 @@ async fn test_concurrent_submit_retry_state_is_request_local() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1344,12 +1403,12 @@ async fn test_submit_order_timeout_report_stays_submitted() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1404,12 +1463,12 @@ async fn test_submit_order_error_emits_rejected() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1455,12 +1514,12 @@ async fn test_modify_order_price_and_quantity_rejects() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1519,12 +1578,12 @@ async fn test_modify_order_no_effective_change_rejects() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1580,12 +1639,12 @@ async fn test_cancel_all_orders_sends_request() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1650,12 +1709,12 @@ async fn test_cancel_all_orders_invalid_instrument_emits_no_rejected_locally() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1710,12 +1769,12 @@ async fn test_cancel_all_orders_ambiguous_5xx_emits_no_rejected() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -1882,7 +1941,8 @@ async fn test_ocm_handler_handles_full_image() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
 
-    let ocm_fixture = load_fixture("stream/ocm_FULL_IMAGE.json");
+    let mut ocm_fixture = load_json_fixture("stream/ocm_FULL_IMAGE.json");
+    ocm_fixture["id"] = Value::from(2);
 
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
@@ -1896,7 +1956,7 @@ async fn test_ocm_handler_handles_full_image() {
 
         tokio::io::AsyncWriteExt::write_all(
             &mut write_half,
-            format!("{}\r\n", ocm_fixture.trim()).as_bytes(),
+            format!("{ocm_fixture}\r\n").as_bytes(),
         )
         .await
         .unwrap();
@@ -2071,12 +2131,12 @@ async fn test_submit_order_registers_customer_order_ref() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2098,6 +2158,150 @@ async fn test_submit_order_registers_customer_order_ref() {
         .iter()
         .any(|m| m == METHOD_PLACE_ORDERS);
     assert!(has_place_orders, "Expected placeOrders call");
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_denies_active_customer_order_ref_collision() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+    let suffix = "12345678901234567890123456789012";
+    let active_id = format!("ACTIVE-{suffix}");
+    let colliding_id = format!("COLLIDING-{suffix}");
+    let instrument_id = "1.181005744-86362-0.BETFAIR";
+    let active = make_accepted_test_order(instrument_id, &active_id, "228302937743", "2.58", "10");
+    let colliding = make_test_order(instrument_id, &colliding_id, "2.58", "10");
+    add_order_to_cache(&cache, active);
+    add_order_to_cache(&cache, colliding.clone());
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    client
+        .submit_order(make_submit_order_cmd(&colliding))
+        .unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .expect("timeout waiting for collision denial")
+        .expect("execution event channel closed");
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("customerOrderRef collision must emit OrderDenied: {event:?}");
+    };
+    assert_eq!(denied.client_order_id, ClientOrderId::from(colliding_id));
+    assert_eq!(
+        denied.reason.as_str(),
+        OrderDeniedReason::ValidationFailed {
+            detail: format!("customerOrderRef {suffix} collides with another active order"),
+        }
+        .to_string(),
+    );
+    let settled = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        !settled.iter().any(|event| matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Submitted(_) | OrderEventAny::Accepted(_))
+        )),
+        "colliding submission advanced before denial: {settled:?}",
+    );
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denies_only_customer_order_ref_collision() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+    let suffix = "12345678901234567890123456789012";
+    let active_id = format!("ACTIVE-{suffix}");
+    let colliding_id = format!("COLLIDING-{suffix}");
+    let valid_id = "O-LIST-COLLISION-VALID";
+    let instrument_id = "1.181005744-86362-0.BETFAIR";
+    let active = make_accepted_test_order(instrument_id, &active_id, "228302937700", "2.58", "10");
+    let colliding = make_test_order(instrument_id, &colliding_id, "2.58", "10");
+    let valid = make_test_order(instrument_id, valid_id, "3.00", "5");
+    for order in [&active, &colliding, &valid] {
+        add_order_to_cache(&cache, order.clone());
+    }
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    let (cmd, _) = make_submit_order_list_cmd(instrument_id, &[colliding.clone(), valid.clone()]);
+    client.submit_order_list(cmd).unwrap();
+
+    let events = drain_events(&mut rx, Duration::from_millis(500)).await;
+    let denied = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Denied(denied)) => Some(denied.client_order_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let submitted = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) => {
+                Some(submitted.client_order_id)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let accepted = events
+        .iter()
+        .filter_map(|event| match event {
+            ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) => {
+                Some(accepted.client_order_id)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(denied, vec![ClientOrderId::from(colliding_id)]);
+    assert_eq!(submitted, vec![ClientOrderId::from(valid_id)]);
+    assert_eq!(accepted, vec![ClientOrderId::from(valid_id)]);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 1);
+    let params = state
+        .betting_request_params
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(method, _)| method == METHOD_PLACE_ORDERS)
+        .cloned()
+        .expect("valid order list leg must reach placeOrders")
+        .1;
+    let instructions = params["instructions"].as_array().unwrap();
+    assert_eq!(instructions.len(), 1);
+    let expected_customer_order_ref = make_customer_order_ref(valid_id);
+    assert_eq!(
+        instructions[0]["customerOrderRef"].as_str(),
+        Some(expected_customer_order_ref.as_str()),
+    );
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -2182,12 +2386,12 @@ async fn test_generate_order_status_reports() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2234,12 +2438,12 @@ async fn test_generate_fill_reports() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2295,12 +2499,12 @@ async fn test_query_order_emits_order_status_report() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     // Drain connection events (account state, subscription acks)
     while tokio::time::timeout(Duration::from_millis(200), rx.recv())
@@ -2365,12 +2569,12 @@ async fn test_query_order_no_match_emits_nothing() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while tokio::time::timeout(Duration::from_millis(200), rx.recv())
         .await
@@ -2462,12 +2666,12 @@ async fn test_submit_order_list_success_emits_accepted_for_each_leg() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2568,12 +2772,12 @@ async fn test_submit_order_list_partial_failure_emits_mixed_events() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2692,12 +2896,12 @@ async fn test_batch_cancel_orders_success_no_rejected_events() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2770,12 +2974,12 @@ async fn test_batch_cancel_orders_partial_failure_emits_rejected_for_failing_leg
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2837,12 +3041,12 @@ async fn test_batch_cancel_missing_instruction_report_stays_ambiguous() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2898,12 +3102,12 @@ async fn test_batch_cancel_orders_definitive_failure_rejects_each_instruction_on
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2974,12 +3178,12 @@ async fn test_batch_cancel_orders_ambiguous_5xx_emits_no_rejections() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -3042,12 +3246,12 @@ async fn test_batch_cancel_orders_missing_venue_id_emits_no_rejected_locally() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -3103,12 +3307,12 @@ async fn test_modify_order_quantity_reduction_does_not_reject() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -3190,12 +3394,12 @@ async fn test_modify_order_without_venue_id_returns_error() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     let order = make_test_order("1.179082386-235-0.BETFAIR", "O-MOD-NOID", "2.58", "10");
     add_order_to_cache(&cache, order.clone());
@@ -3420,7 +3624,7 @@ async fn test_ocm_ignore_external_orders_skips_orders_without_rfo() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
 
-    let config = BetfairExecConfig::builder()
+    let config = BetfairExecutionClientConfig::builder()
         .ignore_external_orders(true)
         .build();
     let (mut client, mut rx, _data_rx, _cache) =
@@ -3512,7 +3716,7 @@ async fn test_ocm_ignore_external_orders_skips_empty_string_rfo() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
 
-    let config = BetfairExecConfig::builder()
+    let config = BetfairExecutionClientConfig::builder()
         .ignore_external_orders(true)
         .build();
     let (mut client, mut rx, _data_rx, _cache) =
@@ -3603,7 +3807,7 @@ async fn test_ocm_market_ids_filter_skips_unrelated_markets() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
 
-    let config = BetfairExecConfig::builder()
+    let config = BetfairExecutionClientConfig::builder()
         .stream_market_ids_filter(vec!["1.OTHER".to_string()])
         .build();
     let (mut client, mut rx, _data_rx, _cache) =
@@ -3662,12 +3866,12 @@ async fn test_cancel_order_without_venue_id_emits_no_rejected_locally() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -3724,12 +3928,12 @@ async fn test_modify_order_quantity_increase_rejects() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -3788,12 +3992,12 @@ async fn test_submit_order_with_handicap_includes_handicap_in_instruction() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -3850,12 +4054,12 @@ async fn test_modify_price_dispatches_replace_orders_with_new_price() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -3937,12 +4141,12 @@ async fn test_modify_price_cancelled_not_placed_emits_canceled_once() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -3995,7 +4199,7 @@ async fn test_modify_price_cancelled_not_placed_emits_canceled_once() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_price_ambiguous_5xx_resolves_from_reconciliation() {
+async fn test_startup_restored_modify_price_ambiguous_5xx_resolves_from_http_reconciliation() {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -4003,23 +4207,22 @@ async fn test_modify_price_ambiguous_5xx_resolves_from_reconciliation() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
-
-    client.connect().await.unwrap();
-
-    while rx.try_recv().is_ok() {}
 
     let instrument_id = "1.179082386-235-0.BETFAIR";
     let client_order_id = "O-MOD-PX-RECON";
     let old_bet_id = "228302937743";
     let new_bet_id = "240808766933";
     let unrelated_bet_id = "228059760965";
-    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
-    add_order_to_cache(&cache, order.clone());
-    submit_and_await_accept(&client, &mut rx, &order, old_bet_id).await;
+    let order = make_accepted_test_order(instrument_id, client_order_id, old_bet_id, "2.58", "10");
+    add_order_to_cache(&cache, order);
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
 
     state
         .betting_status_overrides
@@ -4113,6 +4316,7 @@ async fn test_modify_price_ambiguous_5xx_resolves_from_reconciliation() {
     );
 
     let events = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert_no_accept_or_modify_reject(&events);
     let updates = order_updates(&events);
     assert_eq!(
         updates.len(),
@@ -4148,6 +4352,7 @@ async fn test_modify_price_ambiguous_5xx_resolves_from_reconciliation() {
     );
 
     let settled = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert_no_accept_or_modify_reject(&settled);
     assert!(
         settled.is_empty(),
         "a resolved replace must not be promoted twice, found: {settled:?}",
@@ -4174,12 +4379,12 @@ async fn test_modify_price_reconciliation_keeps_in_flight_request_pending() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -4267,7 +4472,7 @@ async fn test_modify_price_reconciliation_keeps_in_flight_request_pending() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_quantity_ambiguous_5xx_resolves_from_reconciliation() {
+async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_http_reconciliation() {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -4275,21 +4480,20 @@ async fn test_modify_quantity_ambiguous_5xx_resolves_from_reconciliation() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
-
-    while rx.try_recv().is_ok() {}
-
     let instrument_id = "1.179082386-235-0.BETFAIR";
     let client_order_id = "O-MOD-QTY-RECON";
     let bet_id = "228302937743";
-    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
-    add_order_to_cache(&cache, order.clone());
-    submit_and_await_accept(&client, &mut rx, &order, bet_id).await;
+    let order = make_accepted_test_order(instrument_id, client_order_id, bet_id, "2.58", "10");
+    add_order_to_cache(&cache, order);
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
 
     state
         .betting_status_overrides
@@ -4360,6 +4564,7 @@ async fn test_modify_quantity_ambiguous_5xx_resolves_from_reconciliation() {
     );
 
     let events = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert_no_accept_or_modify_reject(&events);
     let updates = order_updates(&events);
     assert_eq!(
         updates.len(),
@@ -4394,6 +4599,7 @@ async fn test_modify_quantity_ambiguous_5xx_resolves_from_reconciliation() {
     assert_eq!(repeated[0].price, Some(Price::from("2.58")));
 
     let settled = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert_no_accept_or_modify_reject(&settled);
     assert!(
         settled.is_empty(),
         "a resolved reduction must not update twice, found: {settled:?}",
@@ -4406,18 +4612,14 @@ async fn test_modify_quantity_ambiguous_5xx_resolves_from_reconciliation() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_quantity_ambiguous_5xx_resolves_from_ocm() {
+async fn test_startup_restored_modify_quantity_ambiguous_5xx_resolves_from_ocm() {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
     let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     let server = tokio::spawn(async move {
-        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
-        let mut subscription = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut subscription)
-            .await
-            .unwrap();
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         while let Some(line) = ocm_rx.recv().await {
             tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
@@ -4426,16 +4628,15 @@ async fn test_modify_quantity_ambiguous_5xx_resolves_from_ocm() {
         }
     });
 
-    client.connect().await.unwrap();
-
-    while rx.try_recv().is_ok() {}
-
     let instrument_id = "1.179082386-235-0.BETFAIR";
     let client_order_id = "O-MOD-QTY-OCM";
     let bet_id = "228302937743";
-    let order = make_test_order(instrument_id, client_order_id, "2.58", "10");
-    add_order_to_cache(&cache, order.clone());
-    submit_and_await_accept(&client, &mut rx, &order, bet_id).await;
+    let order = make_accepted_test_order(instrument_id, client_order_id, bet_id, "2.58", "10");
+    add_order_to_cache(&cache, order);
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
 
     state
         .betting_status_overrides
@@ -4468,6 +4669,7 @@ async fn test_modify_quantity_ambiguous_5xx_resolves_from_ocm() {
     );
 
     let mut ocm = load_json_fixture("stream/ocm_harness_open.json");
+    ocm["id"] = Value::from(2);
     ocm["oc"][0]["id"] = Value::from("1.179082386");
     ocm["oc"][0]["orc"][0]["id"] = Value::from(235);
     let unmatched = &mut ocm["oc"][0]["orc"][0]["uo"][0];
@@ -4480,6 +4682,7 @@ async fn test_modify_quantity_ambiguous_5xx_resolves_from_ocm() {
     ocm_tx.send(ocm.to_string()).unwrap();
 
     let events = drain_events(&mut rx, Duration::from_millis(500)).await;
+    assert_no_accept_or_modify_reject(&events);
     let updates = order_updates(&events);
     assert_eq!(
         updates.len(),
@@ -4494,6 +4697,15 @@ async fn test_modify_quantity_ambiguous_5xx_resolves_from_ocm() {
     assert_eq!(updated.venue_order_id, Some(VenueOrderId::from(bet_id)));
     assert_eq!(updated.quantity, Quantity::from("4"));
     assert_eq!(updated.price, None);
+
+    ocm["id"] = Value::from(3);
+    ocm_tx.send(ocm.to_string()).unwrap();
+    let settled = drain_events(&mut rx, Duration::from_millis(300)).await;
+    assert_no_accept_or_modify_reject(&settled);
+    assert!(
+        order_updates(&settled).is_empty(),
+        "repeated OCM must not apply the reduction twice, found: {settled:?}",
+    );
 
     drop(ocm_tx);
     client.disconnect().await.unwrap();
@@ -4530,12 +4742,12 @@ async fn test_modify_price_instruction_failure_rejects() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -4607,12 +4819,12 @@ async fn test_modify_quantity_instruction_failure_rejects() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -4684,11 +4896,7 @@ async fn test_reduction_success_after_a_terminal_stream_update_stays_silent() {
     let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     let server = tokio::spawn(async move {
-        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
-        let mut subscription = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut subscription)
-            .await
-            .unwrap();
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         while let Some(line) = ocm_rx.recv().await {
             tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
@@ -4697,7 +4905,7 @@ async fn test_reduction_success_after_a_terminal_stream_update_stays_silent() {
         }
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -4784,11 +4992,7 @@ async fn test_modify_quantity_reduction_survives_a_terminal_report() {
     let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     let server = tokio::spawn(async move {
-        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
-        let mut subscription = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut subscription)
-            .await
-            .unwrap();
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         while let Some(line) = ocm_rx.recv().await {
             tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
@@ -4797,7 +5001,7 @@ async fn test_modify_quantity_reduction_survives_a_terminal_report() {
         }
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -4927,11 +5131,7 @@ async fn test_reduction_stream_before_rest_emits_updated_once() {
     let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     let server = tokio::spawn(async move {
-        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
-        let mut subscription = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut subscription)
-            .await
-            .unwrap();
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         while let Some(line) = ocm_rx.recv().await {
             tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
@@ -4940,7 +5140,7 @@ async fn test_reduction_stream_before_rest_emits_updated_once() {
         }
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -4979,6 +5179,7 @@ async fn test_reduction_stream_before_rest_emits_updated_once() {
     .await;
 
     let mut ocm = load_json_fixture("stream/ocm_harness_open.json");
+    ocm["id"] = Value::from(2);
     ocm["oc"][0]["id"] = Value::from("1.179082386");
     ocm["oc"][0]["orc"][0]["id"] = Value::from(235);
     let unmatched = &mut ocm["oc"][0]["orc"][0]["uo"][0];
@@ -5030,12 +5231,12 @@ async fn test_modify_quantity_rejection_discards_the_pending_reduction() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -5282,12 +5483,12 @@ async fn test_generate_fill_reports_recovers_from_no_session() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -5358,12 +5559,12 @@ async fn test_query_order_recovers_from_no_session() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while tokio::time::timeout(Duration::from_millis(200), rx.recv())
         .await
@@ -5451,13 +5652,7 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
     let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     let server = tokio::spawn(async move {
-        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
-
-        // Drain the order subscription line.
-        let mut sub_line = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut sub_line)
-            .await
-            .unwrap();
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         // Forward OCM frames pushed by the test until the test drops `ocm_tx`.
         while let Some(line) = ocm_rx.recv().await {
@@ -5467,7 +5662,7 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
         }
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -5628,18 +5823,14 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
 
 #[rstest]
 #[tokio::test]
-async fn test_replace_stream_before_rest_emits_updated_once() {
+async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
     let (addr, state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
     let (ocm_tx, mut ocm_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
     let server = tokio::spawn(async move {
-        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
-        let mut sub_line = String::new();
-        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut sub_line)
-            .await
-            .unwrap();
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
 
         while let Some(line) = ocm_rx.recv().await {
             tokio::io::AsyncWriteExt::write_all(&mut write_half, format!("{line}\r\n").as_bytes())
@@ -5648,24 +5839,18 @@ async fn test_replace_stream_before_rest_emits_updated_once() {
         }
     });
 
-    client.connect().await.unwrap();
+    let order = make_accepted_test_order(
+        "1.181005744-86362-0.BETFAIR",
+        "O-RPL-RACE",
+        "228302937743",
+        "2.58",
+        "10",
+    );
+    add_order_to_cache(&cache, order);
+
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
-
-    let order = make_test_order("1.181005744-86362-0.BETFAIR", "O-RPL-RACE", "2.58", "10");
-    add_order_to_cache(&cache, order.clone());
-    client.submit_order(make_submit_order_cmd(&order)).unwrap();
-
-    loop {
-        match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::Accepted(accepted)))) => {
-                assert_eq!(accepted.venue_order_id, VenueOrderId::from("228302937743"));
-                break;
-            }
-            Ok(Some(_)) => {}
-            other => panic!("order was not accepted before modify: {other:?}"),
-        }
-    }
 
     let waiters = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
@@ -5704,6 +5889,7 @@ async fn test_replace_stream_before_rest_emits_updated_once() {
     assert_eq!(waiters.load(Ordering::Relaxed), 1);
 
     let mut replace_open = load_json_fixture("stream/ocm_harness_replace_open.json");
+    replace_open["id"] = Value::from(2);
     replace_open["oc"][0]["id"] = Value::from("1.181005744");
     replace_open["oc"][0]["orc"][0]["id"] = Value::from(86362);
     replace_open["oc"][0]["orc"][0]["uo"][0]["p"] = Value::from(3.0);
@@ -5714,6 +5900,9 @@ async fn test_replace_stream_before_rest_emits_updated_once() {
     let updated = loop {
         match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
             Ok(Some(ExecutionEvent::Order(OrderEventAny::Updated(updated)))) => break updated,
+            Ok(Some(ExecutionEvent::Order(
+                OrderEventAny::Accepted(_) | OrderEventAny::ModifyRejected(_),
+            ))) => panic!("startup-restored replace emitted acceptance or rejection"),
             Ok(Some(_)) => {}
             other => panic!("replacement OCM did not emit OrderUpdated: {other:?}"),
         }
@@ -5730,14 +5919,24 @@ async fn test_replace_stream_before_rest_emits_updated_once() {
     let settle = tokio::time::sleep(Duration::from_millis(500));
     tokio::pin!(settle);
     let mut duplicate_update = None;
+    let mut unexpected_event = false;
 
     loop {
         tokio::select! {
             () = &mut settle => break,
             event = rx.recv() => {
-                if let Some(ExecutionEvent::Order(OrderEventAny::Updated(updated))) = event {
-                    duplicate_update = Some(updated);
-                    break;
+                match event {
+                    Some(ExecutionEvent::Order(OrderEventAny::Updated(updated))) => {
+                        duplicate_update = Some(updated);
+                        break;
+                    }
+                    Some(ExecutionEvent::Order(
+                        OrderEventAny::Accepted(_) | OrderEventAny::ModifyRejected(_),
+                    )) => {
+                        unexpected_event = true;
+                        break;
+                    }
+                    _ => {}
                 }
             }
         }
@@ -5745,6 +5944,10 @@ async fn test_replace_stream_before_rest_emits_updated_once() {
     assert!(
         duplicate_update.is_none(),
         "REST success duplicated the stream-first OrderUpdated: {duplicate_update:?}"
+    );
+    assert!(
+        !unexpected_event,
+        "startup-restored replace emitted acceptance or rejection: {unexpected_event:?}",
     );
 
     drop(ocm_tx);
@@ -5765,12 +5968,12 @@ async fn test_submit_order_fok_sends_fill_or_kill_payload() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -5837,12 +6040,12 @@ async fn test_submit_limit_at_the_close_sends_limit_on_close_payload() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -5907,12 +6110,12 @@ async fn test_submit_order_market_on_close_sends_bsp_instruction() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -5987,12 +6190,12 @@ async fn test_submit_order_ambiguous_5xx_does_not_emit_rejected() {
     let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
-        let (_reader, write_half) = accept_and_auth(&listener).await;
+        let (_reader, write_half) = accept_and_activate(&listener).await;
         let _ = server_done_rx.await;
         drop(write_half);
     });
 
-    client.connect().await.unwrap();
+    connect_execution_ready(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -6168,7 +6371,10 @@ async fn test_ocm_duplicate_terminal_event_is_deduped() {
 }
 
 const RECONNECT_CONNECTION_MSG: &[u8] =
-    b"{\"op\":\"connection\",\"connectionId\":\"reconnect\"}\r\n";
+    b"{\"op\":\"connection\",\"connectionId\":\"reconnect\"}\r\n\
+      {\"op\":\"status\",\"id\":1,\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}\r\n\
+      {\"op\":\"status\",\"id\":2,\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}\r\n\
+      {\"op\":\"ocm\",\"id\":2,\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"oc\":[]}\r\n";
 const STREAM_CLOSED_MSG: &[u8] =
     b"{\"op\":\"status\",\"id\":1,\"statusCode\":\"FAILURE\",\"connectionClosed\":true}\r\n";
 
@@ -6256,7 +6462,6 @@ async fn test_transport_loss_denies_submit_before_reconnect() {
     });
 
     client.connect().await.unwrap();
-    while rx.try_recv().is_ok() {}
     closed_rx.await.unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -6295,7 +6500,7 @@ async fn test_active_replacement_stream_denies_submit_before_connection_message(
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client_with_configs(
         addr,
         stream_config,
-        BetfairExecConfig::default(),
+        BetfairExecutionClientConfig::default(),
     );
     let (replacement_active_tx, replacement_active_rx) = tokio::sync::oneshot::channel();
     let (send_connection_tx, send_connection_rx) = tokio::sync::oneshot::channel();
@@ -6434,6 +6639,91 @@ async fn test_stream_closed_status_denies_submit_before_reconnect() {
 
 #[rstest]
 #[tokio::test]
+async fn test_degraded_order_stream_denies_submit_until_current_heartbeat() {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        response["result"].clone(),
+    );
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (stream_tx, mut stream_rx) = tokio::sync::mpsc::unbounded_channel::<&'static [u8]>();
+
+    let server = tokio::spawn(async move {
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
+        while let Some(message) = stream_rx.recv().await {
+            tokio::io::AsyncWriteExt::write_all(&mut write_half, message)
+                .await
+                .unwrap();
+        }
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    while rx.try_recv().is_ok() {}
+
+    stream_tx
+        .send(b"{\"op\":\"ocm\",\"id\":2,\"pt\":1001,\"ct\":\"HEARTBEAT\",\"status\":503}\r\n")
+        .unwrap();
+    wait_until_async(
+        || {
+            let connected = client.is_connected();
+            async move { !connected }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let denied = make_test_order(
+        "1.181005744-86362-0.BETFAIR",
+        "O-DEGRADED-DENIED",
+        "2.58",
+        "10",
+    );
+    add_order_to_cache(&cache, denied.clone());
+    client.submit_order(make_submit_order_cmd(&denied)).unwrap();
+    assert_eq!(
+        stream_reconciling_denials(&mut rx, 1).await,
+        vec![denied.client_order_id()],
+    );
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+    assert!(client.is_reconciling());
+
+    stream_tx
+        .send(b"{\"op\":\"ocm\",\"id\":2,\"pt\":1002,\"ct\":\"HEARTBEAT\"}\r\n")
+        .unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    let allowed = make_test_order(
+        "1.181005744-86362-0.BETFAIR",
+        "O-DEGRADED-ALLOWED",
+        "2.58",
+        "10",
+    );
+    add_order_to_cache(&cache, allowed.clone());
+    client
+        .submit_order(make_submit_order_cmd(&allowed))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_PLACE_ORDERS) == 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert!(client.is_connected());
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 1);
+    client.disconnect().await.unwrap();
+    drop(stream_tx);
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_post_reconnect_dispatches_mass_status() {
     let (addr, state) = start_mock_http().await;
 
@@ -6493,6 +6783,321 @@ async fn test_post_reconnect_dispatches_mass_status() {
     )
     .await;
     assert!(!client.is_reconciling());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_command_before_reconnect_image_keeps_recovery_pending() {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        response["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (reconnect_tx, reconnect_rx) = tokio::sync::oneshot::channel();
+    let (image_tx, image_rx) = tokio::sync::oneshot::channel();
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, mut write_half) = accept_and_activate(&listener).await;
+        reconnect_rx.await.unwrap();
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            b"{\"op\":\"connection\",\"connectionId\":\"reconnect\"}\r\n\
+              {\"op\":\"status\",\"id\":1,\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}\r\n\
+              {\"op\":\"status\",\"id\":2,\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}\r\n",
+        )
+        .await
+        .unwrap();
+        image_rx.await.unwrap();
+        tokio::io::AsyncWriteExt::write_all(
+            &mut write_half,
+            b"{\"op\":\"ocm\",\"id\":2,\"pt\":1001,\"ct\":\"SUB_IMAGE\",\"oc\":[]}\r\n",
+        )
+        .await
+        .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    connect_execution_ready(&mut client).await;
+    reconnect_tx.send(()).unwrap();
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let order = make_test_order(
+        "1.181005744-86362-0.BETFAIR",
+        "O-BEFORE-IMAGE",
+        "2.58",
+        "10",
+    );
+    add_order_to_cache(&cache, order.clone());
+    client.submit_order(make_submit_order_cmd(&order)).unwrap();
+    assert_eq!(
+        stream_reconciling_denials(&mut rx, 1).await,
+        vec![order.client_order_id()],
+    );
+
+    image_tx.send(()).unwrap();
+    let mass_status = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status))) =
+                rx.recv().await
+            {
+                break status;
+            }
+        }
+    })
+    .await
+    .expect("recovery was not queued after the replacement image");
+
+    assert!(mass_status.order_reports().is_empty());
+    wait_until_async(
+        || {
+            let halted = client.is_reconciling();
+            async move { !halted }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(!client.is_reconciling());
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_post_reconnect_paginates_match_time_fill_recovery() {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    let orders = response["result"]["currentOrders"]
+        .as_array()
+        .expect("currentOrders must be an array");
+
+    let order_page = response["result"].clone();
+    let mut fill_page1 = response["result"].clone();
+    fill_page1["currentOrders"] = Value::Array(vec![orders[1].clone()]);
+    fill_page1["moreAvailable"] = Value::Bool(true);
+    let mut fill_page2 = response["result"].clone();
+    fill_page2["currentOrders"] = Value::Array(vec![orders[2].clone()]);
+    fill_page2["moreAvailable"] = Value::Bool(false);
+    state.betting_response_sequences.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        VecDeque::from([order_page, fill_page1, fill_page2]),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    client.connect().await.unwrap();
+
+    let mass_status = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status))) =
+                rx.recv().await
+            {
+                break status;
+            }
+        }
+    })
+    .await
+    .expect("paginated recovery did not publish mass status");
+
+    let fill_count = mass_status
+        .fill_reports()
+        .values()
+        .map(Vec::len)
+        .sum::<usize>();
+    assert_eq!(mass_status.order_reports().len(), 3);
+    assert_eq!(fill_count, 2);
+    assert!(!client.is_reconciling());
+
+    let list_params = state
+        .betting_request_params
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(list_params.len(), 3);
+    assert!(list_params[0].get("dateRange").is_none());
+    for params in &list_params[1..] {
+        assert_eq!(params["orderProjection"], "ALL");
+        assert_eq!(params["orderBy"], "BY_MATCH_TIME");
+        assert_eq!(params["sortDir"], "EARLIEST_TO_LATEST");
+        assert!(params["dateRange"]["from"].is_string());
+        assert!(params["dateRange"]["to"].is_string());
+    }
+    assert!(list_params[1].get("fromRecord").is_none());
+    assert_eq!(list_params[2]["fromRecord"], 1);
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_post_reconnect_retries_transient_mass_status_failure() {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/list_current_orders_execution_complete.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        response["result"].clone(),
+    );
+    state
+        .betting_error_one_shot_overrides
+        .lock()
+        .unwrap()
+        .insert(
+            METHOD_LIST_CURRENT_ORDERS.to_string(),
+            jsonrpc_error(-32603, "Internal error"),
+        );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    client.connect().await.unwrap();
+
+    let mut mass_status_counts = None;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status)))) =
+            tokio::time::timeout(Duration::from_millis(250), rx.recv()).await
+        {
+            mass_status_counts = Some((
+                status.order_reports().len(),
+                status.fill_reports().values().map(Vec::len).sum::<usize>(),
+            ));
+            break;
+        }
+    }
+
+    assert_eq!(mass_status_counts, Some((3, 2)));
+    assert!(!client.is_reconciling());
+    assert_eq!(
+        betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS),
+        3,
+        "one failed order query plus the successful order and fill queries",
+    );
+    let fill_params = state
+        .betting_request_params
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(method, params)| {
+            method == METHOD_LIST_CURRENT_ORDERS && params.get("dateRange").is_some()
+        })
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(fill_params.len(), 1);
+    assert_eq!(fill_params[0]["orderProjection"], "ALL");
+    assert_eq!(fill_params[0]["orderBy"], "BY_MATCH_TIME");
+    assert_eq!(fill_params[0]["sortDir"], "EARLIEST_TO_LATEST");
+    assert!(fill_params[0]["dateRange"]["from"].is_string());
+    assert!(fill_params[0]["dateRange"]["to"].is_string());
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_post_reconnect_retry_exhaustion_keeps_submissions_halted() {
+    let (addr, state) = start_mock_http().await;
+    state.betting_error_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        jsonrpc_error(-32603, "Internal error"),
+    );
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    client.connect().await.unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS) == 4 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let expected = submit_single_and_list(&client, &cache, "RETRY-EXHAUSTED");
+    let denied = stream_reconciling_denials(&mut rx, expected.len()).await;
+    assert_eq!(denied, expected);
+    assert!(client.is_reconciling());
+    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 4);
+    assert_eq!(betting_method_count(&state, METHOD_PLACE_ORDERS), 0);
+    let mut saw_mass_status = false;
+    while let Ok(event) = rx.try_recv() {
+        saw_mass_status |= matches!(
+            event,
+            ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+        );
+    }
+    assert!(
+        !saw_mass_status,
+        "an exhausted recovery must not publish mass status"
+    );
 
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
@@ -6776,14 +7381,10 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
-    state
-        .betting_error_one_shot_overrides
-        .lock()
-        .unwrap()
-        .insert(
-            METHOD_LIST_CURRENT_ORDERS.to_string(),
-            jsonrpc_error(-32603, "Internal error"),
-        );
+    state.betting_error_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        jsonrpc_error(-32603, "Internal error"),
+    );
 
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
@@ -6800,12 +7401,12 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
             .await
             .unwrap();
         retry_rx.await.unwrap();
-        tokio::io::AsyncWriteExt::write_all(
-            &mut write_half,
-            b"{\"op\":\"connection\",\"connectionId\":\"reconnect-after-failure\"}\r\n",
-        )
-        .await
-        .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, STREAM_CLOSED_MSG)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
         let _ = server_done_rx.await;
         drop(write_half);
     });
@@ -6852,6 +7453,11 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
     };
     *state.betting_response_gate.lock().unwrap() = Some(response_gate.clone());
+    state
+        .betting_error_overrides
+        .lock()
+        .unwrap()
+        .remove(METHOD_LIST_CURRENT_ORDERS);
     retry_tx.send(()).unwrap();
 
     wait_until_async(
@@ -6985,6 +7591,8 @@ async fn test_submit_denied_during_reconciliation() {
 
     client.connect().await.unwrap();
 
+    while rx.try_recv().is_ok() {}
+
     wait_until_async(
         || {
             let waiters = Arc::clone(&response_gate.waiters);
@@ -7110,12 +7718,12 @@ async fn test_queued_reconnect_generation_stays_halted() {
         )
         .await;
 
-        tokio::io::AsyncWriteExt::write_all(
-            &mut write_half,
-            b"{\"op\":\"connection\",\"connectionId\":\"reconnect-2\"}\r\n",
-        )
-        .await
-        .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, STREAM_CLOSED_MSG)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
 
         server_gate.semaphore.add_permits(1);
         wait_until_async(
@@ -7137,15 +7745,6 @@ async fn test_queued_reconnect_generation_stays_halted() {
         .await;
         release_second_rx.await.unwrap();
         server_gate.semaphore.add_permits(1);
-        wait_until_async(
-            || {
-                let waiters = Arc::clone(&server_gate.waiters);
-                async move { waiters.load(Ordering::Relaxed) == 4 }
-            },
-            Duration::from_secs(2),
-        )
-        .await;
-        server_gate.semaphore.add_permits(1);
 
         let _ = server_done_rx.await;
         drop(write_half);
@@ -7153,43 +7752,51 @@ async fn test_queued_reconnect_generation_stays_halted() {
 
     client.connect().await.unwrap();
 
-    let mut mass_status_count = 0usize;
-    let mut iter1_dispatched_at_halt_state: Option<bool> = None;
-    let mut release_second_tx = Some(release_second_tx);
+    while rx.try_recv().is_ok() {}
 
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    while mass_status_count < 2 && tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some(ExecutionEvent::Report(ExecutionReport::MassStatus(_)))) => {
-                mass_status_count += 1;
-                if mass_status_count == 1 {
-                    wait_until_async(
-                        || {
-                            let waiters = Arc::clone(&response_gate.waiters);
-                            async move { waiters.load(Ordering::Relaxed) == 3 }
-                        },
-                        Duration::from_secs(2),
-                    )
-                    .await;
-                    iter1_dispatched_at_halt_state = Some(client.is_reconciling());
-                    release_second_tx.take().unwrap().send(()).unwrap();
-                }
-            }
-            Ok(Some(_)) => {}
-            _ => {}
-        }
+    wait_until_async(
+        || {
+            let waiters = Arc::clone(&response_gate.waiters);
+            async move { waiters.load(Ordering::Relaxed) == 3 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(client.is_reconciling());
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let mut saw_stale_mass_status = false;
+    let mut saw_stale_account_state = false;
+
+    while let Ok(event) = rx.try_recv() {
+        saw_stale_mass_status |= matches!(
+            event,
+            ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+        );
+        saw_stale_account_state |= matches!(event, ExecutionEvent::Account(_));
     }
+    assert!(
+        !saw_stale_mass_status,
+        "the stale generation must not publish mass status",
+    );
+    assert!(
+        !saw_stale_account_state,
+        "the stale generation must not publish account state",
+    );
+    release_second_tx.send(()).unwrap();
 
-    assert_eq!(
-        mass_status_count, 2,
-        "expected one MassStatus per queued reconnect signal, found {mass_status_count}",
-    );
-    assert_eq!(
-        iter1_dispatched_at_halt_state,
-        Some(true),
-        "expected the first generation to leave the newer reconnect halted",
-    );
-    assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 4);
+    let mass_status = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(ExecutionEvent::Report(ExecutionReport::MassStatus(status))) =
+                rx.recv().await
+            {
+                break status;
+            }
+        }
+    })
+    .await
+    .expect("current generation did not publish mass status");
+    assert!(mass_status.order_reports().is_empty());
+    assert_eq!(response_gate.waiters.load(Ordering::Relaxed), 3);
 
     wait_until_async(
         || {
@@ -7372,6 +7979,71 @@ async fn test_disconnect_during_reconciliation_clears_halt() {
         !client.is_reconciling(),
         "is_reconciling must be cleared on disconnect even when reconnect task is aborted",
     );
+
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_stop_during_reconciliation_cancels_recovery() {
+    let (addr, state) = start_mock_http().await;
+    let fixture = load_fixture("rest/list_current_orders_empty.json");
+    let response: Value = serde_json::from_str(&fixture).unwrap();
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        response["result"].clone(),
+    );
+    let response_gate = BettingResponseGate {
+        method: METHOD_LIST_CURRENT_ORDERS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    *state.betting_response_gate.lock().unwrap() = Some(response_gate.clone());
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, mut rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        tokio::io::AsyncWriteExt::write_all(&mut write_half, RECONNECT_CONNECTION_MSG)
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    client.connect().await.unwrap();
+    wait_until_async(
+        || {
+            let waiters = Arc::clone(&response_gate.waiters);
+            async move { waiters.load(Ordering::Relaxed) == 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(client.is_reconciling());
+
+    while rx.try_recv().is_ok() {}
+
+    client.stop().unwrap();
+    assert!(!client.is_reconciling());
+    assert!(!client.is_connected());
+
+    response_gate.semaphore.add_permits(1);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let published_mass_status = std::iter::from_fn(|| rx.try_recv().ok()).any(|event| {
+        matches!(
+            event,
+            ExecutionEvent::Report(ExecutionReport::MassStatus(_))
+        )
+    });
+    assert!(!published_mass_status);
+    assert_eq!(betting_method_count(&state, METHOD_LIST_CURRENT_ORDERS), 1);
 
     let _ = server_done_tx.send(());
     server.await.unwrap();

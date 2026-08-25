@@ -40,10 +40,10 @@ use std::{error::Error, io, path::PathBuf, str::FromStr};
 
 use nautilus_common::enums::Environment;
 use nautilus_core::env::get_env_var;
-use nautilus_databento::factories::{DatabentoDataClientFactory, DatabentoLiveClientConfig};
+use nautilus_databento::{data::DatabentoDataClientConfig, factories::DatabentoDataClientFactory};
 use nautilus_lighter::{
     common::enums::LighterEnvironment,
-    config::{LighterDataClientConfig, LighterExecClientConfig},
+    config::{LighterDataClientConfig, LighterExecutionClientConfig},
     factories::{LighterDataClientFactory, LighterExecutionClientFactory},
 };
 use nautilus_live::node::LiveNode;
@@ -86,8 +86,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let instrument_id = InstrumentId::from(INSTRUMENT_ID);
     let signal_instrument_id = InstrumentId::from(SIGNAL_INSTRUMENT_ID);
 
-    let databento_api_key = get_env_var("DATABENTO_API_KEY")?;
-    if databento_api_key.trim().is_empty() {
+    let api_key = get_env_var("DATABENTO_API_KEY")?;
+    if api_key.trim().is_empty() {
         return Err(invalid_input_error(
             "DATABENTO_API_KEY must not be empty".to_string(),
         ));
@@ -95,13 +95,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let publishers_filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../crates/adapters/databento/publishers.json");
-    let databento_config =
-        DatabentoLiveClientConfig::new(databento_api_key, publishers_filepath, true, true);
+    let databento_config = DatabentoDataClientConfig::new(api_key, publishers_filepath, true, true);
     let lighter_data_config = LighterDataClientConfig::builder()
         .environment(lighter_environment)
         .build();
-    let lighter_exec_config = LighterExecClientConfig::builder()
-        .trader_id(trader_id)
+    let lighter_exec_config = LighterExecutionClientConfig::builder()
         .account_id(account_id)
         .environment(lighter_environment)
         .build();

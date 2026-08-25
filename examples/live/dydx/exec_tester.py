@@ -30,7 +30,7 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.dydx import DydxDataClientConfig
 from nautilus_trader.adapters.dydx import DydxDataClientFactory
-from nautilus_trader.adapters.dydx import DydxExecClientConfig
+from nautilus_trader.adapters.dydx import DydxExecutionClientConfig
 from nautilus_trader.adapters.dydx import DydxExecutionClientFactory
 from nautilus_trader.adapters.dydx import DydxNetwork
 from nautilus_trader.common import Environment
@@ -68,8 +68,7 @@ def main() -> None:
         .add_exec_client(
             None,
             DydxExecutionClientFactory(),
-            DydxExecClientConfig(
-                trader_id=TRADER_ID,
+            DydxExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 network=DydxNetwork.MAINNET,
             ),
