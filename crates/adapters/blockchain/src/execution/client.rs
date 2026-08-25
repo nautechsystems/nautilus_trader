@@ -66,6 +66,8 @@ use nautilus_model::{
 };
 use zeroize::Zeroizing;
 
+#[cfg(test)]
+use crate::config::{BlockchainCallEdgeManifest, BlockchainContractProbe};
 use crate::{
     cache::{
         BlockchainCache,
@@ -113,9 +115,6 @@ use crate::{
         },
     },
 };
-
-#[cfg(test)]
-use crate::config::{BlockchainCallEdgeManifest, BlockchainContractProbe};
 
 /// Interval between receipt polls while awaiting transaction finality.
 const RECEIPT_POLL_INTERVAL: Duration = Duration::from_secs(1);

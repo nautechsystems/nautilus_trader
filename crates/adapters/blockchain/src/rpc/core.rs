@@ -369,10 +369,7 @@ impl CoreBlockchainRpcClient {
 
     /// Waits for and returns the next available message from the WebSocket channel.
     pub async fn wait_on_rpc_channel(&mut self) -> Option<Message> {
-        match &mut self.wss_consumer_rx {
-            Some(rx) => rx.recv().await,
-            None => None,
-        }
+        self.wss_consumer_rx.as_mut()?.recv().await
     }
 
     /// Retrieves, parses, and returns the next blockchain RPC message as a structured `BlockchainRpcMessage` type.

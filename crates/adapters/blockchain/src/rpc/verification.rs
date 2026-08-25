@@ -875,7 +875,7 @@ impl VerificationCoordinator {
         decode: F,
     ) -> VerificationOutcome<T>
     where
-        T: Clone + Debug + Eq + NormalizedValue,
+        T: Eq + NormalizedValue,
         F: Fn(&[u8]) -> anyhow::Result<T> + Copy,
     {
         let (a, b, c) = tokio::join!(
@@ -904,7 +904,7 @@ impl VerificationCoordinator {
         decode: F,
     ) -> VerificationOutcome<VerifiedSimulation<T>>
     where
-        T: Clone + Debug + Eq + NormalizedValue,
+        T: Eq + NormalizedValue,
         F: Fn(&[u8]) -> anyhow::Result<T> + Copy,
     {
         let (a, b, c) = tokio::join!(
@@ -1144,9 +1144,7 @@ impl VerificationCoordinator {
     }
 
     fn provider_ids(&self) -> [String; VERIFICATION_SOURCE_COUNT] {
-        self.sources
-            .each_ref()
-            .map(|source| source.identity.provider_id.clone())
+        source_provider_ids(&self.sources)
     }
 
     fn failure(&self, read: VerificationRead) -> VerificationFailure {
@@ -1480,14 +1478,12 @@ fn decode_simulation<T>(
     }
 }
 
-fn classify_exact<T: Clone + Debug + Eq + NormalizedValue>(
+fn classify_exact<T: Eq + NormalizedValue>(
     read: VerificationRead,
     results: [anyhow::Result<T>; VERIFICATION_SOURCE_COUNT],
     sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
 ) -> VerificationOutcome<T> {
-    let provider_ids = sources
-        .each_ref()
-        .map(|source| source.identity.provider_id.clone());
+    let provider_ids = source_provider_ids(sources);
     let failure = || VerificationFailure {
         read,
         provider_ids: provider_ids.clone(),
@@ -1521,15 +1517,13 @@ fn classify_exact<T: Clone + Debug + Eq + NormalizedValue>(
     })
 }
 
-fn classify_all<T, U: Debug + NormalizedValue>(
+fn classify_all<T, U: NormalizedValue>(
     read: VerificationRead,
     results: [anyhow::Result<T>; VERIFICATION_SOURCE_COUNT],
     sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
     select: impl FnOnce([T; VERIFICATION_SOURCE_COUNT]) -> U,
 ) -> VerificationOutcome<U> {
-    let provider_ids = sources
-        .each_ref()
-        .map(|source| source.identity.provider_id.clone());
+    let provider_ids = source_provider_ids(sources);
     let failure = || VerificationFailure {
         read,
         provider_ids: provider_ids.clone(),
@@ -1551,14 +1545,12 @@ fn classify_all<T, U: Debug + NormalizedValue>(
     })
 }
 
-fn classify_propagating<T: Clone + Debug + Eq + NormalizedValue>(
+fn classify_propagating<T: Clone + Eq + NormalizedValue>(
     read: VerificationRead,
     results: [anyhow::Result<Option<T>>; VERIFICATION_SOURCE_COUNT],
     sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
 ) -> VerificationOutcome<T> {
-    let provider_ids = sources
-        .each_ref()
-        .map(|source| source.identity.provider_id.clone());
+    let provider_ids = source_provider_ids(sources);
     let failure = || VerificationFailure {
         read,
         provider_ids: provider_ids.clone(),
@@ -1596,22 +1588,12 @@ fn classify_receipts(
     sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
 ) -> VerificationOutcome<RpcTransactionReceipt> {
     let read = VerificationRead::Receipt;
-    let provider_ids = sources
-        .each_ref()
-        .map(|source| source.identity.provider_id.clone());
+    let provider_ids = source_provider_ids(sources);
     let failure = || VerificationFailure {
         read,
         provider_ids: provider_ids.clone(),
     };
-    let normalized = results
-        .iter()
-        .map(|result| {
-            result
-                .as_ref()
-                .map_err(|e| anyhow::anyhow!(e.to_string()))
-                .and_then(|receipt| receipt.clone().map(TryInto::try_into).transpose())
-        })
-        .collect::<Vec<anyhow::Result<Option<VerifiedReceipt>>>>();
+    let normalized = normalize_receipts(&results);
     let present = normalized
         .iter()
         .filter_map(|result| result.as_ref().ok().and_then(Option::as_ref))
@@ -1647,22 +1629,12 @@ fn classify_receipt_absence(
     sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
 ) -> VerificationOutcome<bool> {
     let read = VerificationRead::Receipt;
-    let provider_ids = sources
-        .each_ref()
-        .map(|source| source.identity.provider_id.clone());
+    let provider_ids = source_provider_ids(sources);
     let failure = || VerificationFailure {
         read,
         provider_ids: provider_ids.clone(),
     };
-    let normalized = results
-        .iter()
-        .map(|result| {
-            result
-                .as_ref()
-                .map_err(|e| anyhow::anyhow!(e.to_string()))
-                .and_then(|receipt| receipt.clone().map(TryInto::try_into).transpose())
-        })
-        .collect::<Vec<anyhow::Result<Option<VerifiedReceipt>>>>();
+    let normalized = normalize_receipts(&results);
     let present = normalized
         .iter()
         .filter_map(|result| result.as_ref().ok().and_then(Option::as_ref))
@@ -1711,9 +1683,7 @@ fn collect_values<T>(
 ) -> Result<[T; VERIFICATION_SOURCE_COUNT], VerificationOutcome<VerifiedBlockHeader>> {
     let failure = VerificationFailure {
         read,
-        provider_ids: sources
-            .each_ref()
-            .map(|source| source.identity.provider_id.clone()),
+        provider_ids: source_provider_ids(sources),
     };
 
     if results.iter().any(is_permanent_capability_error) {
@@ -1724,6 +1694,25 @@ fn collect_values<T>(
         return Err(VerificationOutcome::Unavailable(failure));
     }
     Ok(results.map(Result::unwrap))
+}
+
+fn source_provider_ids(
+    sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
+) -> [String; VERIFICATION_SOURCE_COUNT] {
+    sources
+        .each_ref()
+        .map(|source| source.identity.provider_id.clone())
+}
+
+fn normalize_receipts(
+    results: &[anyhow::Result<Option<RpcTransactionReceipt>>; VERIFICATION_SOURCE_COUNT],
+) -> [anyhow::Result<Option<VerifiedReceipt>>; VERIFICATION_SOURCE_COUNT] {
+    results.each_ref().map(|result| {
+        result
+            .as_ref()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))
+            .and_then(|receipt| receipt.clone().map(TryInto::try_into).transpose())
+    })
 }
 
 fn is_permanent_capability_error<T>(result: &anyhow::Result<T>) -> bool {

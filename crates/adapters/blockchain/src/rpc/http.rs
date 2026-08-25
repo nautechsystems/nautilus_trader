@@ -154,45 +154,32 @@ impl BlockchainHttpRpcClient {
         rpc_request: serde_json::Value,
         timeout_secs: Option<u64>,
     ) -> anyhow::Result<T> {
-        match self.send_rpc_request(rpc_request, timeout_secs).await {
-            Ok(bytes) => match serde_json::from_slice::<RpcNodeHttpResponse<T>>(bytes.as_ref()) {
-                Ok(parsed) => {
-                    // Check for non-standard rate limit error (e.g., Infura)
-                    // These responses have code/message at top level without jsonrpc field
-                    if parsed.jsonrpc.is_none()
-                        && let (Some(code), Some(message)) = (parsed.code, parsed.message)
-                    {
-                        anyhow::bail!("RPC provider error {code}: {message}");
-                    }
+        let bytes = self
+            .send_rpc_request(rpc_request, timeout_secs)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to execute eth call RPC request: {e}"))?;
+        let parsed =
+            serde_json::from_slice::<RpcNodeHttpResponse<T>>(bytes.as_ref()).map_err(|e| {
+                let raw_response = String::from_utf8_lossy(bytes.as_ref());
+                let preview = rpc_response_preview(&raw_response);
+                anyhow::anyhow!("Failed to parse eth call response: {e}\nRaw response: {preview}")
+            })?;
 
-                    if let Some(error) = parsed.error {
-                        Err(anyhow::anyhow!(
-                            "RPC error {}: {}",
-                            error.code,
-                            error.message
-                        ))
-                    } else if let Some(result) = parsed.result {
-                        Ok(result)
-                    } else {
-                        Err(anyhow::anyhow!(
-                            "Response missing both result and error fields"
-                        ))
-                    }
-                }
-                Err(e) => {
-                    // Try to convert bytes to string for better error reporting
-                    let raw_response = String::from_utf8_lossy(bytes.as_ref());
-                    let preview = rpc_response_preview(&raw_response);
-
-                    Err(anyhow::anyhow!(
-                        "Failed to parse eth call response: {e}\nRaw response: {preview}"
-                    ))
-                }
-            },
-            Err(e) => Err(anyhow::anyhow!(
-                "Failed to execute eth call RPC request: {e}"
-            )),
+        // Check for non-standard rate limit error (e.g., Infura)
+        // These responses have code/message at top level without jsonrpc field
+        if parsed.jsonrpc.is_none()
+            && let (Some(code), Some(message)) = (parsed.code, parsed.message)
+        {
+            anyhow::bail!("RPC provider error {code}: {message}");
         }
+
+        if let Some(error) = parsed.error {
+            anyhow::bail!("RPC error {}: {}", error.code, error.message);
+        }
+
+        parsed
+            .result
+            .ok_or_else(|| anyhow::anyhow!("Response missing both result and error fields"))
     }
 
     /// Creates a properly formatted `eth_call` JSON-RPC request object targeting a specific contract address with encoded function data.

@@ -192,6 +192,7 @@ impl Debug for BlockchainVerificationProviderConfig {
 
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(BlockchainVerificationProviderConfig {
+    http_rpc_url: String,
     identity: BlockchainProviderIdentity,
 });
 

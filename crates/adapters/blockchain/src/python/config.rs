@@ -158,6 +158,11 @@ impl BlockchainVerificationConfig {
             .deployment_manifest(deployment_manifest)
             .build())
     }
+
+    #[getter]
+    fn deployment_manifest_json(&self) -> PyResult<String> {
+        serde_json::to_string(&self.deployment_manifest).map_err(to_pyvalue_err)
+    }
 }
 
 #[pymethods]
