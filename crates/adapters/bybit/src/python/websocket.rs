@@ -49,10 +49,11 @@ use crate::{
         consts::BYBIT_VENUE,
         enums::{BybitEnvironment, BybitPositionIdx, BybitProductType},
         parse::{make_bybit_symbol, parse_bbo_level, parse_bbo_side_type},
+        rate_limit::batch_send_limit,
     },
     python::params::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
     websocket::{
-        client::{BATCH_PROCESSING_LIMIT, BybitWebSocketClient, PendingPyRequest},
+        client::{BybitWebSocketClient, PendingPyRequest},
         dispatch::PendingOperation,
         messages::{BybitWebSocketError, BybitWsMessage},
         parse::{
@@ -931,8 +932,8 @@ impl BybitWebSocketClient {
         }
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let req_id = client
-                .submit_order(
+            let params = client
+                .build_place_order_params(
                     product_type,
                     instrument_id,
                     client_order_id,
@@ -947,14 +948,16 @@ impl BybitWebSocketClient {
                     post_only,
                     reduce_only,
                     is_leverage,
+                    None,
+                    None,
                     position_idx,
                     bbo_side_type,
                     bbo_level,
                 )
-                .await
                 .map_err(to_pyruntime_err)?;
+            let req_id = UUID4::new().to_string();
             pending_py_requests.insert(
-                req_id,
+                req_id.clone(),
                 vec![PendingPyRequest {
                     client_order_id,
                     operation: PendingOperation::Place,
@@ -964,6 +967,11 @@ impl BybitWebSocketClient {
                     venue_order_id: None,
                 }],
             );
+
+            if let Err(e) = client.place_order_with_id(params, req_id.clone()).await {
+                pending_py_requests.remove(&req_id);
+                return Err(to_pyruntime_err(e));
+            }
             Ok(())
         })
     }
@@ -1001,19 +1009,19 @@ impl BybitWebSocketClient {
         let pending_py_requests = Arc::clone(self.pending_py_requests());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let req_id = client
-                .modify_order(
+            let params = client
+                .build_amend_order_params(
                     product_type,
                     instrument_id,
-                    client_order_id,
                     venue_order_id,
+                    Some(client_order_id),
                     quantity,
                     price,
                 )
-                .await
                 .map_err(to_pyruntime_err)?;
+            let req_id = UUID4::new().to_string();
             pending_py_requests.insert(
-                req_id,
+                req_id.clone(),
                 vec![PendingPyRequest {
                     client_order_id,
                     operation: PendingOperation::Amend,
@@ -1023,6 +1031,11 @@ impl BybitWebSocketClient {
                     venue_order_id,
                 }],
             );
+
+            if let Err(e) = client.amend_order_with_id(params, req_id.clone()).await {
+                pending_py_requests.remove(&req_id);
+                return Err(to_pyruntime_err(e));
+            }
             Ok(())
         })
     }
@@ -1056,12 +1069,17 @@ impl BybitWebSocketClient {
         let pending_py_requests = Arc::clone(self.pending_py_requests());
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let req_id = client
-                .cancel_order_by_id(product_type, instrument_id, client_order_id, venue_order_id)
-                .await
+            let params = client
+                .build_cancel_order_params(
+                    product_type,
+                    instrument_id,
+                    venue_order_id,
+                    Some(client_order_id),
+                )
                 .map_err(to_pyruntime_err)?;
+            let req_id = UUID4::new().to_string();
             pending_py_requests.insert(
-                req_id,
+                req_id.clone(),
                 vec![PendingPyRequest {
                     client_order_id,
                     operation: PendingOperation::Cancel,
@@ -1071,6 +1089,11 @@ impl BybitWebSocketClient {
                     venue_order_id,
                 }],
             );
+
+            if let Err(e) = client.cancel_order_with_id(params, req_id.clone()).await {
+                pending_py_requests.remove(&req_id);
+                return Err(to_pyruntime_err(e));
+            }
             Ok(())
         })
     }
@@ -1191,12 +1214,19 @@ impl BybitWebSocketClient {
                 strategy_id,
             );
 
-            let req_ids = client
-                .batch_cancel_orders(order_params)
+            if order_params.is_empty() {
+                return Ok(());
+            }
+            let category = order_params[0].category;
+            let req_ids = Self::batch_request_ids(category, order_params.len());
+            register_batch_pending(&req_ids, &per_order, category, &pending_py_requests);
+            if let Err(e) = client
+                .batch_cancel_orders_with_ids(order_params, req_ids.clone())
                 .await
-                .map_err(to_pyruntime_err)?;
-
-            register_batch_pending(req_ids, &per_order, &pending_py_requests);
+            {
+                remove_batch_pending(&req_ids, &pending_py_requests);
+                return Err(to_pyruntime_err(e));
+            }
             Ok(())
         })
     }
@@ -1270,12 +1300,19 @@ impl BybitWebSocketClient {
                 strategy_id,
             );
 
-            let req_ids = client
-                .batch_amend_orders(order_params)
+            if order_params.is_empty() {
+                return Ok(());
+            }
+            let category = order_params[0].category;
+            let req_ids = Self::batch_request_ids(category, order_params.len());
+            register_batch_pending(&req_ids, &per_order, category, &pending_py_requests);
+            if let Err(e) = client
+                .batch_amend_orders_with_ids(order_params, req_ids.clone())
                 .await
-                .map_err(to_pyruntime_err)?;
-
-            register_batch_pending(req_ids, &per_order, &pending_py_requests);
+            {
+                remove_batch_pending(&req_ids, &pending_py_requests);
+                return Err(to_pyruntime_err(e));
+            }
             Ok(())
         })
     }
@@ -1310,12 +1347,19 @@ impl BybitWebSocketClient {
                 strategy_id,
             );
 
-            let req_ids = client
-                .batch_place_orders(order_params)
+            if order_params.is_empty() {
+                return Ok(());
+            }
+            let category = order_params[0].category;
+            let req_ids = Self::batch_request_ids(category, order_params.len());
+            register_batch_pending(&req_ids, &per_order, category, &pending_py_requests);
+            if let Err(e) = client
+                .batch_place_orders_with_ids(order_params, req_ids.clone())
                 .await
-                .map_err(to_pyruntime_err)?;
-
-            register_batch_pending(req_ids, &per_order, &pending_py_requests);
+            {
+                remove_batch_pending(&req_ids, &pending_py_requests);
+                return Err(to_pyruntime_err(e));
+            }
             Ok(())
         })
     }
@@ -1399,15 +1443,25 @@ fn build_pending_entries<P: BatchOrderParams>(
 }
 
 fn register_batch_pending(
-    req_ids: Vec<String>,
+    req_ids: &[String],
     per_order: &[PendingPyRequest],
+    category: BybitProductType,
     pending_py_requests: &DashMap<String, Vec<PendingPyRequest>>,
 ) {
     for (req_id, chunk) in req_ids
-        .into_iter()
-        .zip(per_order.chunks(BATCH_PROCESSING_LIMIT))
+        .iter()
+        .zip(per_order.chunks(batch_send_limit(category)))
     {
-        pending_py_requests.insert(req_id, chunk.to_vec());
+        pending_py_requests.insert(req_id.clone(), chunk.to_vec());
+    }
+}
+
+fn remove_batch_pending(
+    req_ids: &[String],
+    pending_py_requests: &DashMap<String, Vec<PendingPyRequest>>,
+) {
+    for req_id in req_ids {
+        pending_py_requests.remove(req_id);
     }
 }
 

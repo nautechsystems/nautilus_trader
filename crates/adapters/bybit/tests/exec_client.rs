@@ -83,6 +83,9 @@ struct TestServerState {
     ws_connection_count: Arc<tokio::sync::Mutex<usize>>,
     private_ws_connections: Arc<AtomicUsize>,
     trade_ws_connections: Arc<AtomicUsize>,
+    trade_order_ret_code: Arc<AtomicUsize>,
+    trade_order_requests: Arc<AtomicUsize>,
+    trade_order_req_id_present: Arc<AtomicBool>,
     authenticated: Arc<AtomicBool>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     disconnect_trigger: Arc<AtomicBool>,
@@ -101,6 +104,9 @@ impl Default for TestServerState {
             ws_connection_count: Arc::new(tokio::sync::Mutex::new(0)),
             private_ws_connections: Arc::new(AtomicUsize::new(0)),
             trade_ws_connections: Arc::new(AtomicUsize::new(0)),
+            trade_order_ret_code: Arc::new(AtomicUsize::new(0)),
+            trade_order_requests: Arc::new(AtomicUsize::new(0)),
+            trade_order_req_id_present: Arc::new(AtomicBool::new(false)),
             authenticated: Arc::new(AtomicBool::new(false)),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
@@ -562,13 +568,26 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             break;
                         }
                     }
-                    Some("order.place" | "order.amend" | "order.cancel") => {
-                        let req_id = value.get("req_id").and_then(|v| v.as_str());
+                    Some("order.create" | "order.amend" | "order.cancel") => {
+                        state.trade_order_requests.fetch_add(1, Ordering::Relaxed);
+                        let req_id = value.get("reqId").and_then(|v| v.as_str());
+                        state.trade_order_req_id_present.store(
+                            req_id.is_some_and(|req_id| !req_id.is_empty()),
+                            Ordering::Relaxed,
+                        );
+                        let ret_code = state.trade_order_ret_code.load(Ordering::Relaxed);
+                        let ret_msg = if ret_code == 0 {
+                            "OK"
+                        } else {
+                            "Too many visits."
+                        };
                         let response = json!({
-                            "success": true,
-                            "ret_msg": "",
-                            "conn_id": "test-conn-id",
-                            "req_id": req_id.unwrap_or(""),
+                            "retCode": ret_code,
+                            "retMsg": ret_msg,
+                            "data": {},
+                            "retExtInfo": {},
+                            "connId": "test-conn-id",
+                            "reqId": req_id.unwrap_or(""),
                             "op": op.unwrap()
                         });
 
@@ -642,7 +661,6 @@ async fn start_test_server()
         Duration::from_secs(5),
     )
     .await;
-
     Ok((addr, state))
 }
 
@@ -1175,6 +1193,99 @@ async fn test_exec_client_query_order() {
         }
         other => panic!("Expected OrderStatusReport, was {other:?}"),
     }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_trade_rate_limit_emits_order_rejected() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+    drain_execution_events(&mut rx).await;
+    state.trade_order_ret_code.store(10006, Ordering::Relaxed);
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("S-001");
+    let client_id = *BYBIT_CLIENT_ID;
+    let instrument_id = InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE);
+    let client_order_id = ClientOrderId::from("test-ws-rate-limit-reject");
+    let order = OrderAny::Market(MarketOrder::new(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("0.01"),
+        TimeInForce::Gtc,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let init = order.init_event().clone();
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(client_id), false)
+        .unwrap();
+    let command = SubmitOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        init,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order(command).unwrap();
+
+    let submitted = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for OrderSubmitted")
+        .expect("channel closed");
+    assert!(
+        matches!(submitted, ExecutionEvent::Order(OrderEventAny::Submitted(ref event))
+            if event.client_order_id == client_order_id),
+        "Expected OrderSubmitted for {client_order_id}, was {submitted:?}",
+    );
+    wait_until_async(
+        || async { state.trade_order_requests.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(state.trade_order_req_id_present.load(Ordering::Relaxed));
+    let rejected = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timed out waiting for OrderRejected")
+        .expect("channel closed");
+    let ExecutionEvent::Order(OrderEventAny::Rejected(event)) = rejected else {
+        panic!("Expected OrderRejected, was {rejected:?}");
+    };
+    assert_eq!(event.client_order_id, client_order_id);
+    assert_eq!(event.reason.to_string(), "Too many visits.");
 
     client.disconnect().await.unwrap();
 }

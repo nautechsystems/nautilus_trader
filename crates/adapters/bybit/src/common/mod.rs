@@ -26,5 +26,7 @@ pub mod symbol;
 pub mod types;
 pub mod urls;
 
+pub(crate) mod rate_limit;
+
 #[cfg(test)]
 pub mod testing;

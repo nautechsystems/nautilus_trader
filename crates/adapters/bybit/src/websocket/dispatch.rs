@@ -913,13 +913,52 @@ fn dispatch_order_response(
         || pending.as_ref().is_some_and(|(cids, _, _)| cids.len() > 1);
 
     if is_batch_response {
-        let order_count = pending.as_ref().map_or(0, |(cids, _, _)| cids.len());
-        log::warn!(
-            "Ambiguous batch order response failure for {order_count} orders: op={}, ret_code={}, ret_msg={}; awaiting reconciliation",
-            resp.op,
-            resp.ret_code,
-            resp.ret_msg,
-        );
+        if is_bybit_ambiguous_order_error_code(resp.ret_code) {
+            let order_count = pending.as_ref().map_or(0, |(cids, _, _)| cids.len());
+            log::warn!(
+                "Ambiguous batch order response failure for {order_count} orders: op={}, ret_code={}, ret_msg={}; awaiting reconciliation",
+                resp.op,
+                resp.ret_code,
+                resp.ret_msg,
+            );
+            return;
+        }
+
+        let Some((client_order_ids, venue_order_ids, pending_op)) = pending else {
+            log::warn!(
+                "Batch order response error without correlation: op={}, ret_code={}, ret_msg={}, req_id={:?}",
+                resp.op,
+                resp.ret_code,
+                resp.ret_msg,
+                resp.req_id,
+            );
+            return;
+        };
+
+        for (index, client_order_id) in client_order_ids.into_iter().enumerate() {
+            let Some(identity) = state
+                .order_identities
+                .get(&client_order_id)
+                .map(|identity| identity.clone())
+            else {
+                log::warn!(
+                    "Batch order response error for untracked order: op={}, client_order_id={client_order_id}, ret_msg={}",
+                    resp.op,
+                    resp.ret_msg,
+                );
+                continue;
+            };
+            emit_rejection_for_op(
+                &pending_op,
+                client_order_id,
+                &identity,
+                venue_order_ids.get(index).copied().flatten(),
+                &resp.ret_msg,
+                emitter,
+                state,
+                ts_init,
+            );
+        }
         return;
     }
 
@@ -963,7 +1002,6 @@ fn dispatch_order_response(
         );
         return;
     };
-
     let Some(identity) = state
         .order_identities
         .get(&client_order_id)
@@ -2152,6 +2190,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_dispatch_local_not_sent_emits_order_rejected() {
+        let mut ctx = DispatchTestContext::new();
+        let cid = ClientOrderId::from("not-sent-1");
+        ctx.state.order_identities.insert(cid, default_identity());
+        ctx.state.pending_requests.insert(
+            "req-not-sent".to_string(),
+            (vec![cid], vec![None], PendingOperation::Place),
+        );
+        let response = order_response(
+            BYBIT_OP_ORDER_CREATE,
+            -1,
+            "Order command was not written",
+            "req-not-sent",
+            serde_json::json!({}),
+            None,
+        );
+
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+
+        let event = ctx.rx.try_recv().expect("expected OrderRejected event");
+        assert!(
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Rejected(ref rejected))
+                if rejected.client_order_id == cid
+                    && rejected.reason.as_str() == "Order command was not written"),
+            "Expected OrderRejected for {cid}, found {event:?}"
+        );
+        assert!(!ctx.state.order_identities.contains_key(&cid));
+        assert!(!ctx.state.pending_requests.contains_key("req-not-sent"));
+    }
+
+    #[rstest]
     fn test_dispatch_single_cancel_rejection_emits_cancel_rejected() {
         let mut ctx = DispatchTestContext::new();
         let cid = ClientOrderId::from("cancel-reject-1");
@@ -2232,7 +2301,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_single_cancel_rate_limit_keeps_outcome_unresolved() {
+    fn test_dispatch_single_cancel_rate_limit_emits_cancel_rejected() {
         let mut ctx = DispatchTestContext::new();
         let cid = ClientOrderId::from("cancel-rate-limit-1");
         let venue_order_id = VenueOrderId::from("venue-cancel-rate-limit-1");
@@ -2260,9 +2329,11 @@ mod tests {
 
         dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
+        let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            ctx.rx.try_recv().is_err(),
-            "Expected no CancelRejected event for rate-limit response"
+            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
+                if rejected.client_order_id == cid && rejected.venue_order_id == Some(venue_order_id)),
+            "Expected CancelRejected for {cid}, found {event:?}"
         );
         assert!(ctx.state.order_identities.contains_key(&cid));
     }
@@ -2374,6 +2445,47 @@ mod tests {
     }
 
     #[rstest]
+    fn test_dispatch_batch_cancel_top_level_rate_limit_emits_cancel_rejected() {
+        let mut ctx = DispatchTestContext::new();
+        let cid_1 = ClientOrderId::from("batch-rate-1");
+        let cid_2 = ClientOrderId::from("batch-rate-2");
+        let venue_1 = VenueOrderId::from("venue-rate-1");
+        let venue_2 = VenueOrderId::from("venue-rate-2");
+        ctx.state.order_identities.insert(cid_1, default_identity());
+        ctx.state.order_identities.insert(cid_2, default_identity());
+        ctx.state.pending_requests.insert(
+            "req-batch-rate".to_string(),
+            (
+                vec![cid_1, cid_2],
+                vec![Some(venue_1), Some(venue_2)],
+                PendingOperation::Cancel,
+            ),
+        );
+
+        let response = order_response(
+            BYBIT_OP_ORDER_CANCEL_BATCH,
+            10006,
+            "Too many visits.",
+            "req-batch-rate",
+            serde_json::json!({}),
+            None,
+        );
+
+        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
+
+        let first = ctx.rx.try_recv().expect("expected first CancelRejected");
+        let second = ctx.rx.try_recv().expect("expected second CancelRejected");
+        assert!(
+            matches!(first, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
+                if rejected.client_order_id == cid_1 && rejected.venue_order_id == Some(venue_1))
+        );
+        assert!(
+            matches!(second, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
+                if rejected.client_order_id == cid_2 && rejected.venue_order_id == Some(venue_2))
+        );
+    }
+
+    #[rstest]
     fn test_dispatch_batch_cancel_per_item_error_emits_only_failed_item() {
         let mut ctx = DispatchTestContext::new();
         let cid_1 = ClientOrderId::from("batch-cancel-ok");
@@ -2425,7 +2537,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_batch_cancel_per_item_rate_limit_keeps_outcome_unresolved() {
+    fn test_dispatch_batch_cancel_per_item_rate_limit_emits_cancel_rejected() {
         let mut ctx = DispatchTestContext::new();
         let cid = ClientOrderId::from("batch-cancel-rate-limit");
         let venue_order_id = VenueOrderId::from("venue-batch-rate-limit");
@@ -2458,9 +2570,11 @@ mod tests {
 
         dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
+        let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            ctx.rx.try_recv().is_err(),
-            "Expected no CancelRejected event for per-item rate-limit response"
+            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
+                if rejected.client_order_id == cid && rejected.venue_order_id == Some(venue_order_id)),
+            "Expected CancelRejected for {cid}, found {event:?}"
         );
         assert!(ctx.state.order_identities.contains_key(&cid));
     }

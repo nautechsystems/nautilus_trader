@@ -15,25 +15,82 @@
 
 //! WebSocket message handler for Bybit.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::VecDeque,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
 };
 
+use dashmap::DashMap;
 use nautilus_network::{
+    error::SendError,
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
 };
+use serde::Serialize;
+use serde_json::Value;
 use tokio_tungstenite::tungstenite::Message;
+use ustr::Ustr;
 
 use super::{
     enums::BybitWsOperation,
     error::{BybitWsError, create_bybit_timeout_error, should_retry_bybit_error},
     messages::{
-        BybitWebSocketError, BybitWsFrame, BybitWsMessage, BybitWsResponse, BybitWsSubscriptionMsg,
+        BybitWebSocketError, BybitWsFrame, BybitWsMessage, BybitWsOrderResponse, BybitWsResponse,
+        BybitWsSubscriptionMsg,
     },
     parse::parse_bybit_ws_frame,
 };
+use crate::common::{
+    enums::{BybitProductType, BybitWsOrderRequestOp},
+    rate_limit::{
+        BYBIT_RATE_LIMIT_HEADER, BYBIT_RATE_LIMIT_RESET_HEADER, BYBIT_RATE_LIMIT_STATUS_HEADER,
+        BybitRateLimiter,
+    },
+};
+
+/// Semantic order command whose time-sensitive header is built at send time.
+#[derive(Debug)]
+pub struct BybitWsOrderCommand {
+    pub(crate) req_id: String,
+    pub(crate) op: BybitWsOrderRequestOp,
+    pub(crate) category: BybitProductType,
+    pub(crate) weight: u32,
+    pub(crate) referer: Option<String>,
+    pub(crate) args: Vec<Value>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BybitWsSignedOrderRequest {
+    req_id: String,
+    op: BybitWsOrderRequestOp,
+    header: BybitWsSignedOrderHeader,
+    args: Vec<Value>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "SCREAMING-KEBAB-CASE")]
+struct BybitWsSignedOrderHeader {
+    x_bapi_timestamp: String,
+    x_bapi_recv_window: String,
+    #[serde(rename = "Referer", skip_serializing_if = "Option::is_none")]
+    referer: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PendingRate {
+    endpoint: &'static str,
+    category: BybitProductType,
+}
+
+#[derive(Debug)]
+enum OrderSendFailure {
+    NotSent(BybitWsError),
+    Ambiguous(BybitWsError),
+}
 
 /// Commands sent from the outer client to the inner message handler.
 #[derive(Debug)]
@@ -43,7 +100,8 @@ pub enum HandlerCommand {
     Authenticate { payload: String },
     Subscribe { topics: Vec<String> },
     Unsubscribe { topics: Vec<String> },
-    SendText { payload: String },
+    SendOrder { command: BybitWsOrderCommand },
+    SendOrders { commands: Vec<BybitWsOrderCommand> },
 }
 
 pub(super) struct BybitWsFeedHandler {
@@ -53,6 +111,10 @@ pub(super) struct BybitWsFeedHandler {
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     auth_tracker: AuthTracker,
     subscriptions: SubscriptionState,
+    rate_limiter: BybitRateLimiter,
+    recv_window_ms: Arc<AtomicU64>,
+    pending_rates: DashMap<String, PendingRate>,
+    pending_orders: VecDeque<BybitWsOrderCommand>,
     retry_manager: RetryManager<BybitWsError>,
 }
 
@@ -64,6 +126,8 @@ impl BybitWsFeedHandler {
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         auth_tracker: AuthTracker,
         subscriptions: SubscriptionState,
+        rate_limiter: BybitRateLimiter,
+        recv_window_ms: Arc<AtomicU64>,
     ) -> Self {
         Self {
             signal,
@@ -72,6 +136,10 @@ impl BybitWsFeedHandler {
             raw_rx,
             auth_tracker,
             subscriptions,
+            rate_limiter,
+            recv_window_ms,
+            pending_rates: DashMap::new(),
+            pending_orders: VecDeque::new(),
             retry_manager: create_websocket_retry_manager(),
         }
     }
@@ -106,8 +174,109 @@ impl BybitWsFeedHandler {
         }
     }
 
+    async fn send_order(&self, command: &BybitWsOrderCommand) -> Result<bool, OrderSendFailure> {
+        if !self.auth_tracker.is_authenticated() {
+            return Ok(false);
+        }
+
+        let client = self.inner.as_ref().ok_or_else(|| {
+            OrderSendFailure::NotSent(BybitWsError::ClientError(
+                "No active WebSocket client".to_string(),
+            ))
+        })?;
+        let (endpoint, _) = order_operation(command.op);
+
+        self.rate_limiter
+            .acquire_ws_order(endpoint, command.category, command.weight)
+            .await
+            .map_err(|e| OrderSendFailure::NotSent(BybitWsError::ClientError(e)))?;
+
+        if !self.auth_tracker.is_authenticated() {
+            return Ok(false);
+        }
+
+        let connection_epoch = client.connection_epoch();
+        let recv_window_ms = self.recv_window_ms.load(Ordering::Acquire);
+        let request = BybitWsSignedOrderRequest {
+            req_id: command.req_id.clone(),
+            op: command.op,
+            header: BybitWsSignedOrderHeader {
+                x_bapi_timestamp: nautilus_core::time::get_atomic_clock_realtime()
+                    .get_time_ms()
+                    .to_string(),
+                x_bapi_recv_window: recv_window_ms.to_string(),
+                referer: command.referer.clone(),
+            },
+            args: command.args.clone(),
+        };
+        let payload = serde_json::to_string(&request)
+            .map_err(|e| OrderSendFailure::NotSent(BybitWsError::Json(e.to_string())))?;
+        self.pending_rates.insert(
+            command.req_id.clone(),
+            PendingRate {
+                endpoint,
+                category: command.category,
+            },
+        );
+
+        match client
+            .send_text_on_connection(payload, None, connection_epoch)
+            .await
+        {
+            Ok(()) => Ok(true),
+            Err(e) => self.classify_order_send_error(&command.req_id, e),
+        }
+    }
+
+    fn classify_order_send_error(
+        &self,
+        req_id: &str,
+        error: SendError,
+    ) -> Result<bool, OrderSendFailure> {
+        match error {
+            SendError::ConnectionChanged => {
+                self.pending_rates.remove(req_id);
+                self.auth_tracker.invalidate();
+                Ok(false)
+            }
+            SendError::Timeout => {
+                self.pending_rates.remove(req_id);
+                self.auth_tracker.invalidate();
+                Err(OrderSendFailure::NotSent(BybitWsError::ClientError(
+                    "Order command was not written".to_string(),
+                )))
+            }
+            SendError::InvalidInput(_) | SendError::Closed => {
+                self.pending_rates.remove(req_id);
+                Err(OrderSendFailure::NotSent(BybitWsError::ClientError(
+                    "Order command was not written".to_string(),
+                )))
+            }
+            error => Err(OrderSendFailure::Ambiguous(BybitWsError::Send(
+                error.to_string(),
+            ))),
+        }
+    }
+
     pub(super) async fn next(&mut self) -> Option<BybitWsMessage> {
         loop {
+            if self.auth_tracker.is_authenticated()
+                && let Some(command) = self.pending_orders.pop_front()
+            {
+                let req_id = command.req_id.clone();
+                match self.send_order(&command).await {
+                    Ok(true) => {}
+                    Ok(false) => self.pending_orders.push_front(command),
+                    Err(OrderSendFailure::NotSent(error)) => {
+                        return Some(order_not_sent_message(&command, &error));
+                    }
+                    Err(OrderSendFailure::Ambiguous(error)) => {
+                        log::error!("Ambiguous order send failure: req_id={req_id}, error={error}");
+                    }
+                }
+                continue;
+            }
+
             tokio::select! {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
@@ -145,10 +314,23 @@ impl BybitWsFeedHandler {
                                 }
                             }
                         }
-                        HandlerCommand::SendText { payload } => {
-                            if let Err(e) = self.send_with_retry(payload).await {
-                                log::error!("Error sending text with retry: {e}");
+                        HandlerCommand::SendOrder { command } => {
+                            let req_id = command.req_id.clone();
+                            match self.send_order(&command).await {
+                                Ok(true) => {}
+                                Ok(false) => self.pending_orders.push_back(command),
+                                Err(OrderSendFailure::NotSent(error)) => {
+                                    return Some(order_not_sent_message(&command, &error));
+                                }
+                                Err(OrderSendFailure::Ambiguous(error)) => {
+                                    log::error!(
+                                        "Ambiguous order send failure: req_id={req_id}, error={error}"
+                                    );
+                                }
                             }
+                        }
+                        HandlerCommand::SendOrders { commands } => {
+                            self.pending_orders.extend(commands);
                         }
                     }
                 }
@@ -231,6 +413,7 @@ impl BybitWsFeedHandler {
                             }
                         }
                         BybitWsFrame::OrderResponse(resp) => {
+                            self.observe_order_rate_limit(&resp);
                             return Some(BybitWsMessage::OrderResponse(resp));
                         }
                         BybitWsFrame::Orderbook(msg) => {
@@ -274,6 +457,44 @@ impl BybitWsFeedHandler {
                 }
             }
         }
+    }
+
+    fn observe_order_rate_limit(&self, response: &super::messages::BybitWsOrderResponse) {
+        let Some(req_id) = response.req_id.as_deref() else {
+            return;
+        };
+        let Some((_, pending)) = self.pending_rates.remove(req_id) else {
+            return;
+        };
+        let Some(header) = response.header.as_ref() else {
+            return;
+        };
+        let parse_u32 = |key: &str| {
+            header.get(key).and_then(|value| {
+                value
+                    .as_u64()
+                    .and_then(|value| u32::try_from(value).ok())
+                    .or_else(|| value.as_str()?.parse::<u32>().ok())
+            })
+        };
+        let Some(limit) = parse_u32(BYBIT_RATE_LIMIT_HEADER) else {
+            return;
+        };
+        let Some(remaining) = parse_u32(BYBIT_RATE_LIMIT_STATUS_HEADER) else {
+            return;
+        };
+        let reset_timestamp_ms = header.get(BYBIT_RATE_LIMIT_RESET_HEADER).and_then(|value| {
+            value
+                .as_i64()
+                .or_else(|| value.as_str()?.parse::<i64>().ok())
+        });
+        self.rate_limiter.observe_account(
+            pending.endpoint,
+            Some(pending.category),
+            limit,
+            remaining,
+            reset_timestamp_ms,
+        );
     }
 
     fn handle_subscription_ack(&self, sub_msg: &BybitWsSubscriptionMsg) {
@@ -407,6 +628,31 @@ impl BybitWsFeedHandler {
     }
 }
 
+fn order_operation(op: BybitWsOrderRequestOp) -> (&'static str, &'static str) {
+    match op {
+        BybitWsOrderRequestOp::Create => ("/v5/order/create", "order.create"),
+        BybitWsOrderRequestOp::Amend => ("/v5/order/amend", "order.amend"),
+        BybitWsOrderRequestOp::Cancel => ("/v5/order/cancel", "order.cancel"),
+        BybitWsOrderRequestOp::CreateBatch => ("/v5/order/create-batch", "order.create-batch"),
+        BybitWsOrderRequestOp::AmendBatch => ("/v5/order/amend-batch", "order.amend-batch"),
+        BybitWsOrderRequestOp::CancelBatch => ("/v5/order/cancel-batch", "order.cancel-batch"),
+    }
+}
+
+fn order_not_sent_message(command: &BybitWsOrderCommand, error: &BybitWsError) -> BybitWsMessage {
+    let (_, op) = order_operation(command.op);
+    BybitWsMessage::OrderResponse(BybitWsOrderResponse {
+        op: Ustr::from(op),
+        conn_id: None,
+        ret_code: -1,
+        ret_msg: error.to_string(),
+        data: Value::Object(serde_json::Map::new()),
+        req_id: Some(command.req_id.clone()),
+        header: None,
+        ret_ext_info: None,
+    })
+}
+
 fn is_already_subscribed_error(error_msg: &str) -> bool {
     error_msg
         .to_ascii_lowercase()
@@ -419,7 +665,9 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::{consts::BYBIT_WS_TOPIC_DELIMITER, testing::load_test_json};
+    use crate::common::{
+        consts::BYBIT_WS_TOPIC_DELIMITER, rate_limit::BybitRateLimiter, testing::load_test_json,
+    };
 
     fn create_test_handler() -> BybitWsFeedHandler {
         let signal = Arc::new(AtomicBool::new(false));
@@ -428,7 +676,19 @@ mod tests {
         let auth_tracker = AuthTracker::new();
         let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER);
 
-        BybitWsFeedHandler::new(signal, cmd_rx, raw_rx, auth_tracker, subscriptions)
+        BybitWsFeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            auth_tracker,
+            subscriptions,
+            BybitRateLimiter::for_websocket(
+                "wss://bybit-handler-test.invalid",
+                Some("test-key"),
+                None,
+            ),
+            Arc::new(AtomicU64::new(5_000)),
+        )
     }
 
     fn load_value(fixture: &str) -> serde_json::Value {
@@ -439,6 +699,76 @@ mod tests {
     #[rstest]
     fn test_handler_initializes() {
         let _handler = create_test_handler();
+    }
+
+    #[tokio::test]
+    async fn order_without_writer_produces_correlated_terminal_response() {
+        let handler = create_test_handler();
+        handler.auth_tracker.succeed();
+        let command = BybitWsOrderCommand {
+            req_id: "not-sent-request".to_string(),
+            op: BybitWsOrderRequestOp::Create,
+            category: BybitProductType::Linear,
+            weight: 1,
+            referer: None,
+            args: vec![serde_json::json!({"category": "linear"})],
+        };
+
+        let failure = handler.send_order(&command).await.unwrap_err();
+        let OrderSendFailure::NotSent(error) = failure else {
+            panic!("Expected definitive not-sent failure, was {failure:?}");
+        };
+        let BybitWsMessage::OrderResponse(response) = order_not_sent_message(&command, &error)
+        else {
+            panic!("Expected order response");
+        };
+
+        assert_eq!(response.op.as_str(), "order.create");
+        assert_eq!(response.ret_code, -1);
+        assert_eq!(response.req_id.as_deref(), Some("not-sent-request"));
+        assert_eq!(response.ret_msg, "Client error: No active WebSocket client");
+    }
+
+    #[rstest]
+    fn connection_change_invalidates_authentication_before_requeue() {
+        let handler = create_test_handler();
+        handler.auth_tracker.succeed();
+        handler.pending_rates.insert(
+            "reconnect-request".to_string(),
+            PendingRate {
+                endpoint: "/v5/order/create",
+                category: BybitProductType::Linear,
+            },
+        );
+
+        let result = handler
+            .classify_order_send_error("reconnect-request", SendError::ConnectionChanged)
+            .unwrap();
+
+        assert!(!result);
+        assert!(!handler.auth_tracker.is_authenticated());
+        assert!(!handler.pending_rates.contains_key("reconnect-request"));
+    }
+
+    #[rstest]
+    fn pre_active_timeout_is_terminal_not_sent() {
+        let handler = create_test_handler();
+        handler.auth_tracker.succeed();
+        handler.pending_rates.insert(
+            "timeout-request".to_string(),
+            PendingRate {
+                endpoint: "/v5/order/create",
+                category: BybitProductType::Linear,
+            },
+        );
+
+        let failure = handler
+            .classify_order_send_error("timeout-request", SendError::Timeout)
+            .unwrap_err();
+
+        assert!(matches!(failure, OrderSendFailure::NotSent(_)));
+        assert!(!handler.auth_tracker.is_authenticated());
+        assert!(!handler.pending_rates.contains_key("timeout-request"));
     }
 
     #[rstest]

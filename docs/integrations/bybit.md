@@ -261,6 +261,12 @@ Batch submit and batch cancel use the trade WebSocket on mainnet and testnet. In
 adapter falls back to individual HTTP requests, because the demo environment has no trade
 WebSocket.
 
+Bybit accepts at most 10 Spot orders or 20 Linear, Inverse, or Option orders in one batch
+request. Linear, Inverse, and Spot batches consume UID quota per order, while an Option batch
+consumes one request. The adapter splits Spot, Linear, and Inverse batches into groups of 10 by
+default so one request cannot exceed the standard rolling UID allowance. Option batches use the
+20-order endpoint maximum.
+
 ### Position management
 
 | Feature          | Spot | Linear | Inverse | Option | Notes                                                       |
@@ -610,24 +616,46 @@ so its interval is unset.
 
 ## Rate limiting
 
-Every HTTP call consumes the global token bucket as well as its per-endpoint bucket. When usage
-exceeds a bucket, requests are queued automatically, so manual throttling is rarely required.
+The adapter queues requests against exact rolling windows before it creates an authentication
+timestamp or signature. HTTP clients and the trade WebSocket share UID state for the same API key
+and environment. Data and execution clients also share IP state when they use the same origin and
+proxy.
 
-| Key                                  | Limit (requests/sec) | Applies to                                |
-| ------------------------------------ | -------------------- | ----------------------------------------- |
-| `bybit:global`                       | 10                   | Every HTTP request, across all endpoints. |
-| `bybit:/v5/account/repay`            | 1                    | Converting spot margin repayment.         |
-| `bybit:/v5/account/no-convert-repay` | 1                    | No-convert spot margin repayment.         |
-| `bybit:<endpoint>`                   | 10                   | Default bucket for every other endpoint.  |
+| Scope                         | Bybit limit                           | Adapter behavior                              |
+| ----------------------------- | ------------------------------------- | --------------------------------------------- |
+| HTTP IP                       | 600 requests per 5 seconds            | Shared by origin and proxy                    |
+| HTTP and trade WebSocket UID  | Varies by endpoint and product        | Shared by API key and environment             |
+| Trade WebSocket IP            | 3,000 requests per second             | Shared by WebSocket origin and proxy          |
+| WebSocket connection attempts | 500 attempts per 5 minutes per domain | Shared across initial connects and reconnects |
+| Option subscriptions          | 2,000 arguments per connection        | Rejected before subscription state changes    |
 
-The global bucket is the binding constraint: the adapter never issues more than 10 requests per
-second in total, well below Bybit's IP ceiling.
+The UID limiter includes the documented lower-rate account and user routes, 50-request read
+routes, product-specific order routes, cancel-all limits, and weighted batch operations. HTTP and
+trade WebSocket responses update the configured UID limit from `X-Bapi-Limit`, track
+`X-Bapi-Limit-Status`, and honor a future `X-Bapi-Limit-Reset-Timestamp` when the remaining count
+reaches zero.
+
+The execution client's `recv_window_ms` applies to signed REST requests and trade WebSocket order
+commands. A queued WebSocket order gets its timestamp and receive-window header only after all
+applicable quotas allow the send. A reconnect retry rebuilds the command with a fresh header and
+uses a connection-bound write, so the transport cannot replay a stale order payload.
 
 :::warning
 Bybit returns `retCode` `10006` ("Too many visits") when the API rate limit is exceeded.
 Exceeding the IP ceiling of 600 requests per 5 seconds returns HTTP 403 and bans the IP for at
-least 10 minutes.
+least 10 minutes. A matching 403 discards the affected pooled HTTP session and starts a shared
+10-minute cooldown. Other 403 responses do not activate the cooldown.
 :::
+
+:::warning
+Coordination is process-local. Another process or host using the same API key or public IP can
+consume venue quota that this adapter cannot reserve in advance. Response headers reduce this
+gap for UID limits, but separate processes still require operational coordination.
+:::
+
+Explicit venue rate-limit responses are terminal rejections for the affected order operation.
+Transport timeouts, service restarts, and duplicate request identifiers remain subject to order
+reconciliation because they do not prove whether the venue accepted the order.
 
 :::info
 For more details on rate limiting, see the official documentation: <https://bybit-exchange.github.io/docs/v5/rate-limit>.
@@ -763,7 +791,7 @@ The product types for each client must be specified in the configurations.
 | `retry_delay_max_ms`        | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
 | `heartbeat_interval_secs`   | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                             |
 | `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                            |
-| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST requests.                                                         |
+| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                     |
 | `account_id`                | `None`     | Optional account ID associated with this client.                                                                |
 | `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions when `True`.                                                           |
 | `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill.                                    |

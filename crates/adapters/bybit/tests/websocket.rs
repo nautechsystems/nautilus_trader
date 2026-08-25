@@ -33,6 +33,7 @@ use axum::{
     response::Response,
     routing::get,
 };
+use futures_util::StreamExt;
 use nautilus_bybit::{
     common::enums::{
         BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
@@ -40,7 +41,10 @@ use nautilus_bybit::{
     },
     websocket::{
         client::BybitWebSocketClient,
-        messages::{BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsPlaceOrderParams},
+        messages::{
+            BybitWsAmendOrderParams, BybitWsCancelOrderParams, BybitWsMessage,
+            BybitWsPlaceOrderParams,
+        },
     },
 };
 use nautilus_common::testing::wait_until_async;
@@ -373,15 +377,16 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             break;
                         }
                     }
-                    Some("order.place") => {
+                    Some("order.create") => {
                         state.captured_messages.lock().await.push(value.clone());
-                        let req_id = value.get("req_id").and_then(|v| v.as_str());
+                        let req_id = value.get("reqId").and_then(|v| v.as_str());
                         let response = json!({
-                            "success": true,
-                            "ret_msg": "",
-                            "conn_id": "test-conn-id",
-                            "req_id": req_id.unwrap_or(""),
-                            "op": "order.place"
+                            "retCode": 0,
+                            "retMsg": "OK",
+                            "data": {},
+                            "connId": "test-conn-id",
+                            "reqId": req_id.unwrap_or(""),
+                            "op": "order.create"
                         });
 
                         if socket
@@ -394,12 +399,13 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     }
                     Some("order.amend") => {
                         state.captured_messages.lock().await.push(value.clone());
-                        let req_id = value.get("req_id").and_then(|v| v.as_str());
+                        let req_id = value.get("reqId").and_then(|v| v.as_str());
                         let response = json!({
-                            "success": true,
-                            "ret_msg": "",
-                            "conn_id": "test-conn-id",
-                            "req_id": req_id.unwrap_or(""),
+                            "retCode": 0,
+                            "retMsg": "OK",
+                            "data": {},
+                            "connId": "test-conn-id",
+                            "reqId": req_id.unwrap_or(""),
                             "op": "order.amend"
                         });
 
@@ -412,12 +418,14 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                         }
                     }
                     Some("order.cancel") => {
-                        let req_id = value.get("req_id").and_then(|v| v.as_str());
+                        state.captured_messages.lock().await.push(value.clone());
+                        let req_id = value.get("reqId").and_then(|v| v.as_str());
                         let response = json!({
-                            "success": true,
-                            "ret_msg": "",
-                            "conn_id": "test-conn-id",
-                            "req_id": req_id.unwrap_or(""),
+                            "retCode": 0,
+                            "retMsg": "OK",
+                            "data": {},
+                            "connId": "test-conn-id",
+                            "reqId": req_id.unwrap_or(""),
                             "op": "order.cancel"
                         });
 
@@ -431,12 +439,13 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     }
                     Some("order.create-batch") => {
                         state.captured_messages.lock().await.push(value.clone());
-                        let req_id = value.get("req_id").and_then(|v| v.as_str());
+                        let req_id = value.get("reqId").and_then(|v| v.as_str());
                         let response = json!({
-                            "success": true,
-                            "ret_msg": "",
-                            "conn_id": "test-conn-id",
-                            "req_id": req_id.unwrap_or(""),
+                            "retCode": 0,
+                            "retMsg": "OK",
+                            "data": {},
+                            "connId": "test-conn-id",
+                            "reqId": req_id.unwrap_or(""),
                             "op": "order.create-batch"
                         });
 
@@ -450,13 +459,34 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     }
                     Some("order.amend-batch") => {
                         state.captured_messages.lock().await.push(value.clone());
-                        let req_id = value.get("req_id").and_then(|v| v.as_str());
+                        let req_id = value.get("reqId").and_then(|v| v.as_str());
                         let response = json!({
-                            "success": true,
-                            "ret_msg": "",
-                            "conn_id": "test-conn-id",
-                            "req_id": req_id.unwrap_or(""),
+                            "retCode": 0,
+                            "retMsg": "OK",
+                            "data": {},
+                            "connId": "test-conn-id",
+                            "reqId": req_id.unwrap_or(""),
                             "op": "order.amend-batch"
+                        });
+
+                        if socket
+                            .send(Message::Text(response.to_string().into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Some("order.cancel-batch") => {
+                        state.captured_messages.lock().await.push(value.clone());
+                        let req_id = value.get("reqId").and_then(|v| v.as_str());
+                        let response = json!({
+                            "retCode": 0,
+                            "retMsg": "OK",
+                            "data": {},
+                            "connId": "test-conn-id",
+                            "reqId": req_id.unwrap_or(""),
+                            "op": "order.cancel-batch"
                         });
 
                         if socket
@@ -2415,6 +2445,127 @@ async fn test_batch_amend_orders() {
 
 #[rstest]
 #[tokio::test]
+async fn test_order_rate_wait_precedes_fresh_websocket_header() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/private");
+    let mut client = BybitWebSocketClient::new_trade(
+        BybitEnvironment::Mainnet,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(ws_url),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    client.set_recv_window_ms(250);
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    for index in 0..11 {
+        client
+            .amend_order(BybitWsAmendOrderParams {
+                category: BybitProductType::Linear,
+                symbol: Ustr::from("BTCUSDT"),
+                order_id: None,
+                order_link_id: Some(format!("fresh-header-{index}")),
+                qty: Some("0.002".to_string()),
+                price: Some("51000.0".to_string()),
+                trigger_price: None,
+                take_profit: None,
+                stop_loss: None,
+                tp_trigger_by: None,
+                sl_trigger_by: None,
+                order_iv: None,
+            })
+            .await
+            .unwrap();
+    }
+
+    wait_until_async(
+        || async { state.captured_messages.lock().await.len() == 11 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let messages = state.captured_messages.lock().await;
+    let timestamps = messages
+        .iter()
+        .map(|message| {
+            let header = message["header"].as_object().unwrap();
+            assert_eq!(header["X-BAPI-RECV-WINDOW"], "250");
+            header["X-BAPI-TIMESTAMP"]
+                .as_str()
+                .unwrap()
+                .parse::<i64>()
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert!(timestamps[10] - timestamps[0] >= 1_000);
+    drop(messages);
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_trade_order_response_preserves_request_id() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v5/private");
+    let mut client = BybitWebSocketClient::new_trade(
+        BybitEnvironment::Mainnet,
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(ws_url),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(5),
+    )
+    .await;
+    let stream = client.stream();
+    tokio::pin!(stream);
+    let request_id = client
+        .amend_order(BybitWsAmendOrderParams {
+            category: BybitProductType::Linear,
+            symbol: Ustr::from("BTCUSDT"),
+            order_id: Some("venue-order-1".to_string()),
+            order_link_id: Some("client-order-1".to_string()),
+            qty: Some("0.002".to_string()),
+            price: Some("51000.0".to_string()),
+            trigger_price: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            order_iv: None,
+        })
+        .await
+        .unwrap();
+
+    let response = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(BybitWsMessage::OrderResponse(response)) = stream.next().await {
+                break response;
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for order response");
+
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.req_id.as_deref(), Some(request_id.as_str()));
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_batch_cancel_orders() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/v5/private");
@@ -2483,7 +2634,7 @@ async fn test_batch_cancel_orders_chunking_over_20() {
     )
     .await;
 
-    // 25 orders forces chunking into batches of 20 + 5
+    // Linear batches split at the default weighted UID quota: 10 + 10 + 5
     let orders: Vec<BybitWsCancelOrderParams> = (0..25)
         .map(|i| BybitWsCancelOrderParams {
             category: BybitProductType::Linear,
@@ -2495,7 +2646,7 @@ async fn test_batch_cancel_orders_chunking_over_20() {
 
     let result = client.batch_cancel_orders(orders).await;
 
-    assert!(result.is_ok(), "Batch cancel with chunking should succeed");
+    assert_eq!(result.unwrap().len(), 3);
 
     client.close().await.unwrap();
 }
@@ -2533,6 +2684,27 @@ async fn test_batch_cancel_orders_empty_list() {
     );
 
     client.close().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_option_subscription_limit_rejects_before_state_change() {
+    let client = BybitWebSocketClient::new_public_with(
+        BybitProductType::Option,
+        BybitEnvironment::Mainnet,
+        Some("ws://option-limit.invalid/v5/public/option".to_string()),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+    let topics = (0..2_001)
+        .map(|index| format!("tickers.OPTION-{index}"))
+        .collect();
+
+    let error = client.subscribe(topics).await.unwrap_err();
+
+    assert!(error.to_string().contains("2000 arguments"));
+    assert_eq!(client.subscription_count(), 0);
 }
 
 #[rstest]
