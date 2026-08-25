@@ -177,6 +177,9 @@ Startup:
 4. Generate startup mass status from `listCurrentOrders`.
 5. Reconcile order and fill reports into the execution engine.
 
+Cached open orders with venue identity are restored as already accepted, so startup or resync does
+not emit another `OrderAccepted`.
+
 On every stream reconnect, the adapter repeats the order-and-fill mass-status fetch over a recent
 window. It halts new-order submissions after transport loss or a server `connectionClosed` status
 until the latest recovery generation dispatches its mass status.
@@ -356,6 +359,19 @@ Betfair provides separate values for logical order correlation and request dedup
 | ------------------ | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `customerOrderRef` | One logical order | Derived from `client_order_id`, returned as OCM `rfo`, and retained across replacement Bet IDs.                              |
 | `customerRef`      | One REST command  | Generated for each place, replace, or cancel request and reused unchanged for every retry, including batches and reductions. |
+
+:::warning
+Client order IDs longer than 32 characters use their last 32 characters as `customerOrderRef`.
+Keep those suffixes distinct across tracked orders. A new submission whose reference matches
+another tracked order emits `OrderDenied` before `OrderSubmitted` or HTTP dispatch with
+`VALIDATION_FAILED: customerOrderRef <ref> collides with another active order`; in an order list,
+only the colliding leg is denied.
+:::
+
+When OCM state is synchronized from cached orders, the adapter also recognizes the legacy
+first-32-character format. If either truncation identifies more than one tracked order, OCM and
+reconciliation order status and fill reports omit `client_order_id` and retain the Bet ID so
+reconciliation can match by venue identity.
 
 ### Retry and ambiguity
 

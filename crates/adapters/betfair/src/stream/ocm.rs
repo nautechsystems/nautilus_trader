@@ -19,7 +19,7 @@ use std::collections::VecDeque;
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_model::{
-    identifiers::{ClientOrderId, StrategyId},
+    identifiers::{ClientOrderId, StrategyId, VenueOrderId},
     types::Quantity,
 };
 use rust_decimal::Decimal;
@@ -46,6 +46,29 @@ struct PendingReductionState {
     confirmed_quantity: Option<Quantity>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CustomerOrderRefResolution {
+    Unique(ClientOrderId),
+    Ambiguous,
+}
+
+impl CustomerOrderRefResolution {
+    pub(crate) fn client_order_id(self) -> Option<ClientOrderId> {
+        match self {
+            Self::Unique(client_order_id) => Some(client_order_id),
+            Self::Ambiguous => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct OrderCorrelation {
+    customer_order_refs: AHashSet<String>,
+    strategy_id: Option<StrategyId>,
+    venue_order_id: Option<VenueOrderId>,
+    accepted: bool,
+}
+
 /// Shared mutable state for the OCM stream handler.
 ///
 /// Accessed by both the TCP reader closure and the execution client methods
@@ -59,14 +82,8 @@ struct PendingReductionState {
 pub struct OcmState {
     /// Tracks cumulative per-bet fill and void state for deduplication and reconciliation.
     pub fill_tracker: FillTracker,
-    /// Maps customer_order_ref (rfo) to ClientOrderId for stream resolution.
-    pub customer_order_refs: AHashMap<String, ClientOrderId>,
-    /// Maps client_order_id to submitting strategy. Captured at submit so the stream task
-    /// builds direct events for tracked orders without cache access.
-    pub order_strategies: AHashMap<ClientOrderId, StrategyId>,
-    /// Client order IDs that already had an `OrderAccepted` emitted (via the HTTP
-    /// place response or stream synthesis), so acceptance is applied exactly once.
-    pub accepted_orders: AHashSet<ClientOrderId>,
+    order_correlations: AHashMap<ClientOrderId, OrderCorrelation>,
+    pub(crate) customer_order_refs: AHashMap<String, CustomerOrderRefResolution>,
     /// Client order IDs that already received an OCM order status update.
     pub stream_reported_client_orders: AHashSet<ClientOrderId>,
     stream_reported_order_queue: VecDeque<ClientOrderId>,
@@ -86,24 +103,26 @@ impl OcmState {
     /// Bounds dedup memory while retaining recent delayed stream and REST overlap.
     const DEDUP_RETENTION: usize = 10_000;
 
+    pub(crate) fn register_submission(
+        &mut self,
+        client_order_id: ClientOrderId,
+        strategy_id: StrategyId,
+    ) -> Result<(), String> {
+        self.register_order_ref(client_order_id)?;
+        self.register_order_identity(client_order_id, strategy_id);
+        Ok(())
+    }
+
     /// Registers a customer_order_ref mapping for a new order.
     pub fn register_customer_order_ref(&mut self, client_order_id: ClientOrderId) {
-        let rfo = make_customer_order_ref(client_order_id.as_str());
-        self.customer_order_refs.insert(rfo, client_order_id);
+        let _ = self.register_order_ref(client_order_id);
     }
 
     /// Registers both current and legacy customer_order_ref truncations.
-    ///
-    /// Used during reconnect sync for pre-existing orders that may
-    /// have been placed with either truncation format.
     pub fn register_customer_order_ref_with_legacy(&mut self, client_order_id: ClientOrderId) {
-        let rfo = make_customer_order_ref(client_order_id.as_str());
-        let rfo_legacy = make_customer_order_ref_legacy(client_order_id.as_str());
-        self.customer_order_refs.insert(rfo, client_order_id);
-
-        if rfo_legacy != client_order_id.as_str() {
-            self.customer_order_refs.insert(rfo_legacy, client_order_id);
-        }
+        let current = make_customer_order_ref(client_order_id.as_str());
+        let legacy = make_customer_order_ref_legacy(client_order_id.as_str());
+        self.upsert_order_correlation(client_order_id, None, None, false, [current, legacy]);
     }
 
     /// Records the submitting strategy for a tracked order.
@@ -112,12 +131,127 @@ impl OcmState {
         client_order_id: ClientOrderId,
         strategy_id: StrategyId,
     ) {
-        self.order_strategies.insert(client_order_id, strategy_id);
+        self.order_correlations
+            .entry(client_order_id)
+            .or_default()
+            .strategy_id = Some(strategy_id);
+    }
+
+    pub(crate) fn register_order_ref(
+        &mut self,
+        client_order_id: ClientOrderId,
+    ) -> Result<(), String> {
+        let customer_order_ref = make_customer_order_ref(client_order_id.as_str());
+
+        if self
+            .customer_order_refs
+            .get(&customer_order_ref)
+            .is_some_and(|resolution| {
+                *resolution != CustomerOrderRefResolution::Unique(client_order_id)
+            })
+        {
+            return Err(customer_order_ref);
+        }
+
+        self.upsert_order_correlation(client_order_id, None, None, false, [customer_order_ref]);
+        Ok(())
+    }
+
+    pub(crate) fn restore_order(
+        &mut self,
+        client_order_id: ClientOrderId,
+        strategy_id: StrategyId,
+        venue_order_id: VenueOrderId,
+    ) {
+        let current = make_customer_order_ref(client_order_id.as_str());
+        let legacy = make_customer_order_ref_legacy(client_order_id.as_str());
+        self.upsert_order_correlation(
+            client_order_id,
+            Some(strategy_id),
+            Some(venue_order_id),
+            true,
+            [current, legacy],
+        );
+    }
+
+    fn upsert_order_correlation(
+        &mut self,
+        client_order_id: ClientOrderId,
+        strategy_id: Option<StrategyId>,
+        venue_order_id: Option<VenueOrderId>,
+        accepted: bool,
+        customer_order_refs: impl IntoIterator<Item = String>,
+    ) {
+        let correlation = self.order_correlations.entry(client_order_id).or_default();
+        if let Some(strategy_id) = strategy_id {
+            correlation.strategy_id = Some(strategy_id);
+        }
+
+        if let Some(venue_order_id) = venue_order_id {
+            correlation.venue_order_id = Some(venue_order_id);
+        }
+        correlation.accepted |= accepted;
+
+        let mut affected = Vec::new();
+
+        for customer_order_ref in customer_order_refs {
+            if correlation
+                .customer_order_refs
+                .insert(customer_order_ref.clone())
+            {
+                affected.push(customer_order_ref);
+            }
+        }
+
+        for customer_order_ref in affected {
+            self.add_customer_order_ref(client_order_id, customer_order_ref);
+        }
+    }
+
+    fn add_customer_order_ref(
+        &mut self,
+        client_order_id: ClientOrderId,
+        customer_order_ref: String,
+    ) {
+        match self.customer_order_refs.get(&customer_order_ref).copied() {
+            None => {
+                self.customer_order_refs.insert(
+                    customer_order_ref,
+                    CustomerOrderRefResolution::Unique(client_order_id),
+                );
+            }
+            Some(CustomerOrderRefResolution::Unique(owner)) if owner != client_order_id => {
+                self.customer_order_refs
+                    .insert(customer_order_ref, CustomerOrderRefResolution::Ambiguous);
+            }
+            Some(_) => {}
+        }
     }
 
     /// Returns the submitting strategy for a tracked order, if known.
     pub fn order_strategy_id(&self, client_order_id: &ClientOrderId) -> Option<StrategyId> {
-        self.order_strategies.get(client_order_id).copied()
+        self.order_correlations
+            .get(client_order_id)
+            .and_then(|correlation| correlation.strategy_id)
+    }
+
+    pub(crate) fn bind_venue_order_id(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) {
+        self.order_correlations
+            .entry(*client_order_id)
+            .or_default()
+            .venue_order_id = Some(venue_order_id);
+    }
+
+    pub(crate) fn replace_venue_order_id(
+        &mut self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) {
+        self.bind_venue_order_id(client_order_id, venue_order_id);
     }
 
     /// Records that acceptance has been emitted for a tracked order.
@@ -125,7 +259,26 @@ impl OcmState {
     /// Returns `true` when this call newly marks the order accepted (the caller
     /// should emit `OrderAccepted`), or `false` when acceptance was already emitted.
     pub fn mark_accepted(&mut self, client_order_id: ClientOrderId) -> bool {
-        self.accepted_orders.insert(client_order_id)
+        let correlation = self.order_correlations.entry(client_order_id).or_default();
+        if correlation.accepted {
+            return false;
+        }
+
+        correlation.accepted = true;
+        true
+    }
+
+    pub(crate) fn claim_acceptance(
+        &mut self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> bool {
+        if !self.mark_accepted(client_order_id) {
+            return false;
+        }
+
+        self.bind_venue_order_id(&client_order_id, venue_order_id);
+        true
     }
 
     pub(crate) fn mark_stream_reported(&mut self, client_order_id: ClientOrderId) {
@@ -142,22 +295,72 @@ impl OcmState {
         }
     }
 
-    /// Removes customer_order_ref mappings for a client_order_id.
-    pub fn remove_customer_order_refs(&mut self, client_order_id: &ClientOrderId) {
-        let rfo = make_customer_order_ref(client_order_id.as_str());
-        let rfo_legacy = make_customer_order_ref_legacy(client_order_id.as_str());
-        self.customer_order_refs.remove(&rfo);
-        self.customer_order_refs.remove(&rfo_legacy);
-        self.order_strategies.remove(client_order_id);
-        self.accepted_orders.remove(client_order_id);
+    pub(crate) fn remove_order_correlation(&mut self, client_order_id: &ClientOrderId) {
+        let affected = self
+            .order_correlations
+            .remove(client_order_id)
+            .map(|correlation| correlation.customer_order_refs)
+            .unwrap_or_default();
+
+        for customer_order_ref in affected {
+            if self
+                .customer_order_refs
+                .get(&customer_order_ref)
+                .is_some_and(|resolution| {
+                    *resolution == CustomerOrderRefResolution::Unique(*client_order_id)
+                })
+            {
+                self.customer_order_refs.remove(&customer_order_ref);
+            } else {
+                self.rebuild_customer_order_ref(&customer_order_ref);
+            }
+        }
+
         self.pending_reductions.retain(|_, pending| {
             pending.client_order_id != *client_order_id || pending.confirmed_quantity.is_some()
         });
     }
 
+    /// Removes customer_order_ref mappings for a client_order_id.
+    pub fn remove_customer_order_refs(&mut self, client_order_id: &ClientOrderId) {
+        self.remove_order_correlation(client_order_id);
+    }
+
+    fn rebuild_customer_order_ref(&mut self, customer_order_ref: &str) {
+        let mut owners = self
+            .order_correlations
+            .iter()
+            .filter(|(_, correlation)| correlation.customer_order_refs.contains(customer_order_ref))
+            .map(|(client_order_id, _)| *client_order_id);
+        let resolution = owners.next().map(|client_order_id| {
+            if owners.next().is_some() {
+                CustomerOrderRefResolution::Ambiguous
+            } else {
+                CustomerOrderRefResolution::Unique(client_order_id)
+            }
+        });
+
+        if let Some(resolution) = resolution {
+            self.customer_order_refs
+                .insert(customer_order_ref.to_string(), resolution);
+        } else {
+            self.customer_order_refs.remove(customer_order_ref);
+        }
+    }
+
+    pub(crate) fn customer_order_ref_resolution(
+        &self,
+        customer_order_ref: &str,
+    ) -> Option<CustomerOrderRefResolution> {
+        self.customer_order_refs.get(customer_order_ref).copied()
+    }
+
     /// Resolves a client_order_id from the unmatched order's rfo field.
     pub fn resolve_client_order_id(&self, rfo: Option<&str>) -> Option<ClientOrderId> {
-        rfo.and_then(|r| self.customer_order_refs.get(r).copied())
+        rfo.and_then(|customer_order_ref| {
+            self.customer_order_ref_resolution(customer_order_ref)
+                .and_then(CustomerOrderRefResolution::client_order_id)
+        })
     }
 
     /// Returns `true` if a cancel/lapse for this bet should be suppressed
@@ -266,6 +469,7 @@ impl OcmState {
         self.pending_replace_state
             .retain(|(candidate, _), _| candidate != client_order_id);
         self.replaced_venue_order_ids.extend(old_bet_ids);
+        self.replace_venue_order_id(client_order_id, VenueOrderId::from(new_bet_id));
         Some(total_quantity)
     }
 
@@ -354,7 +558,7 @@ impl OcmState {
             .any(|(cid, _)| cid == client_order_id);
 
         if !has_pending {
-            self.remove_customer_order_refs(client_order_id);
+            self.remove_order_correlation(client_order_id);
         }
     }
 
@@ -384,7 +588,15 @@ impl OcmState {
             if entry.is_closed {
                 self.mark_terminal_order(entry.bet_id.clone());
             } else {
-                self.register_customer_order_ref_with_legacy(entry.client_order_id);
+                let current = make_customer_order_ref(entry.client_order_id.as_str());
+                let legacy = make_customer_order_ref_legacy(entry.client_order_id.as_str());
+                self.upsert_order_correlation(
+                    entry.client_order_id,
+                    None,
+                    Some(VenueOrderId::from(entry.bet_id.as_str())),
+                    true,
+                    [current, legacy],
+                );
             }
 
             if entry.filled_qty > Decimal::ZERO {
@@ -466,9 +678,146 @@ mod tests {
     }
 
     #[rstest]
+    fn active_submission_collision_is_rejected() {
+        let suffix = "12345678901234567890123456789012";
+        let first = ClientOrderId::from(format!("FIRST-{suffix}"));
+        let second = ClientOrderId::from(format!("SECOND-{suffix}"));
+        let strategy_id = StrategyId::from("S-001");
+        let mut state = OcmState::default();
+
+        state.register_submission(first, strategy_id).unwrap();
+        let collision = state.register_submission(second, strategy_id);
+
+        assert_eq!(collision, Err(suffix.to_string()));
+        assert_eq!(state.resolve_client_order_id(Some(suffix)), Some(first));
+        assert_eq!(state.order_strategy_id(&second), None);
+    }
+
+    #[rstest]
+    fn submission_collision_with_restored_legacy_reference_is_rejected() {
+        let reference = "12345678901234567890123456789012";
+        let restored = ClientOrderId::from(format!("{reference}-RESTORED"));
+        let fresh = ClientOrderId::from(format!("FRESH-{reference}"));
+        let strategy_id = StrategyId::from("S-001");
+        let mut state = OcmState::default();
+
+        state.restore_order(restored, strategy_id, VenueOrderId::from("bet-restored"));
+        let collision = state.register_submission(fresh, strategy_id);
+
+        assert_eq!(collision, Err(reference.to_string()));
+        assert_eq!(
+            state.resolve_client_order_id(Some(reference)),
+            Some(restored),
+        );
+        assert_eq!(state.order_strategy_id(&fresh), None);
+    }
+
+    #[rstest]
+    fn restored_current_reference_ambiguity_recovers_after_cleanup() {
+        let suffix = "12345678901234567890123456789012";
+        let first = ClientOrderId::from(format!("FIRST-{suffix}"));
+        let second = ClientOrderId::from(format!("SECOND-{suffix}"));
+        let strategy_id = StrategyId::from("S-001");
+        let mut state = OcmState::default();
+
+        state.restore_order(first, strategy_id, VenueOrderId::from("bet-1"));
+        state.restore_order(second, strategy_id, VenueOrderId::from("bet-2"));
+
+        assert_eq!(
+            state.customer_order_ref_resolution(suffix),
+            Some(CustomerOrderRefResolution::Ambiguous),
+        );
+        assert_eq!(state.resolve_client_order_id(Some(suffix)), None);
+        state.remove_order_correlation(&first);
+        assert_eq!(state.resolve_client_order_id(Some(suffix)), Some(second));
+        assert_eq!(
+            state
+                .order_correlations
+                .get(&second)
+                .and_then(|correlation| correlation.venue_order_id),
+            Some(VenueOrderId::from("bet-2")),
+        );
+        assert!(!state.mark_accepted(second));
+    }
+
+    #[rstest]
+    fn restored_legacy_reference_ambiguity_recovers_after_cleanup() {
+        let prefix = "12345678901234567890123456789012";
+        let first = ClientOrderId::from(format!("{prefix}-FIRST"));
+        let second = ClientOrderId::from(format!("{prefix}-SECOND"));
+        let strategy_id = StrategyId::from("S-001");
+        let mut state = OcmState::default();
+
+        state.restore_order(first, strategy_id, VenueOrderId::from("bet-1"));
+        state.restore_order(second, strategy_id, VenueOrderId::from("bet-2"));
+
+        assert_eq!(
+            state.customer_order_ref_resolution(prefix),
+            Some(CustomerOrderRefResolution::Ambiguous),
+        );
+        assert_eq!(state.resolve_client_order_id(Some(prefix)), None);
+        state.remove_order_correlation(&second);
+        assert_eq!(state.resolve_client_order_id(Some(prefix)), Some(first));
+    }
+
+    #[rstest]
+    fn venue_identity_can_be_bound_and_replaced() {
+        let client_order_id = ClientOrderId::from("O-1");
+        let mut state = OcmState::default();
+        state
+            .register_submission(client_order_id, StrategyId::from("S-001"))
+            .unwrap();
+
+        state.bind_venue_order_id(&client_order_id, VenueOrderId::from("bet-1"));
+        assert_eq!(
+            state
+                .order_correlations
+                .get(&client_order_id)
+                .and_then(|correlation| correlation.venue_order_id),
+            Some(VenueOrderId::from("bet-1")),
+        );
+
+        state.replace_venue_order_id(&client_order_id, VenueOrderId::from("bet-2"));
+        assert_eq!(
+            state
+                .order_correlations
+                .get(&client_order_id)
+                .and_then(|correlation| correlation.venue_order_id),
+            Some(VenueOrderId::from("bet-2")),
+        );
+    }
+
+    #[rstest]
+    fn claimed_acceptance_does_not_replace_restored_venue_identity() {
+        let client_order_id = ClientOrderId::from("O-1");
+        let mut state = OcmState::default();
+        state.restore_order(
+            client_order_id,
+            StrategyId::from("S-001"),
+            VenueOrderId::from("bet-current"),
+        );
+
+        let claimed = state.claim_acceptance(client_order_id, VenueOrderId::from("bet-stale"));
+
+        assert!(!claimed);
+        assert_eq!(
+            state
+                .order_correlations
+                .get(&client_order_id)
+                .and_then(|correlation| correlation.venue_order_id),
+            Some(VenueOrderId::from("bet-current")),
+        );
+    }
+
+    #[rstest]
     fn pending_replace_promotes_only_a_different_bet() {
         let client_order_id = ClientOrderId::from("O-1");
         let mut state = OcmState::default();
+        state.restore_order(
+            client_order_id,
+            StrategyId::from("S-001"),
+            VenueOrderId::from("old-bet"),
+        );
         state.register_pending_replace(
             client_order_id,
             "old-bet".to_string(),
@@ -485,6 +834,13 @@ mod tests {
         );
         assert!(state.pending_update_keys.is_empty());
         assert!(state.replaced_venue_order_ids.contains("old-bet"));
+        assert_eq!(
+            state
+                .order_correlations
+                .get(&client_order_id)
+                .and_then(|correlation| correlation.venue_order_id),
+            Some(VenueOrderId::from("new-bet")),
+        );
         assert_eq!(
             state.promote_pending_replace(&client_order_id, "newer-bet", Quantity::from(8)),
             None,
