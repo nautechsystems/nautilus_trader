@@ -237,10 +237,6 @@ impl InteractiveBrokersExecutionClient {
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?
             .insert(cmd.client_order_id, ib_order_id);
-        venue_order_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?
-            .insert(ib_order_id, cmd.client_order_id);
         instrument_id_map
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?
@@ -253,6 +249,10 @@ impl InteractiveBrokersExecutionClient {
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock strategy ID map"))?
             .insert(ib_order_id, cmd.strategy_id);
+        venue_order_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?
+            .insert(ib_order_id, cmd.client_order_id);
 
         Ok(())
     }

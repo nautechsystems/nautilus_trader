@@ -1996,6 +1996,7 @@ async fn test_cancel_order_recovery_tracks_resolved_order_identity() {
         None,
         None,
     );
+    // Raw order ID returned after resolving PERM-456.
     let resolved_order_id = 7001;
 
     InteractiveBrokersExecutionClient::cache_cancel_order_tracking(
