@@ -6,9 +6,7 @@ permissions: # Principle of least privilege
 
 on:
   push:
-    branches: [develop, nightly, test-performance]
-  pull_request:
-    branches: [develop]
+    branches: [nightly, test-performance]
 
 jobs:
   performance-benchmarks:
