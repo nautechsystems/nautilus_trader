@@ -15,10 +15,10 @@
 
 //! Python bindings for latency model types.
 
-use nautilus_core::UnixNanos;
-use pyo3::prelude::*;
+use nautilus_core::{UnixNanos, python::to_pytype_err};
+use pyo3::{IntoPyObjectExt, prelude::*};
 
-use crate::models::latency::StaticLatencyModel;
+use crate::models::latency::{LatencyModelAny, StaticLatencyModel};
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -54,5 +54,35 @@ impl StaticLatencyModel {
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+}
+
+/// Extracts a Python latency model object into a Rust [`LatencyModelAny`].
+///
+/// # Errors
+///
+/// Returns an error if `obj` is not a supported latency model binding.
+pub fn pyobject_to_latency_model_any(obj: &Bound<'_, PyAny>) -> PyResult<LatencyModelAny> {
+    if let Ok(m) = obj.extract::<StaticLatencyModel>() {
+        return Ok(LatencyModelAny::Static(m));
+    }
+
+    let type_name = obj.get_type().name()?;
+    Err(to_pytype_err(format!(
+        "Cannot convert {type_name} to LatencyModel"
+    )))
+}
+
+/// Converts a Rust [`LatencyModelAny`] into its Python binding object.
+///
+/// # Errors
+///
+/// Returns an error if conversion to a Python object fails.
+pub fn latency_model_any_to_pyobject(
+    py: Python<'_>,
+    model: &LatencyModelAny,
+) -> PyResult<Py<PyAny>> {
+    match model {
+        LatencyModelAny::Static(model) => model.clone().into_py_any(py),
     }
 }
