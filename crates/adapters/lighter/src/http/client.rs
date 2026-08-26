@@ -216,14 +216,12 @@ impl LighterRawHttpClient {
         Ok(Self {
             base_url,
             environment,
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(default_quota),
-                Some(timeout_secs),
-                proxy_url,
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .default_quota(default_quota)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()?,
             retry_manager: create_http_retry_manager(),
             tx_rate_limiter,
         })

@@ -204,15 +204,12 @@ impl CoreBlockchainRpcClient {
             proxy_url: self.proxy_url.clone(),
         };
 
-        let client = WebSocketClient::connect_with_state_sink(
-            config,
-            Some(handler),
-            None,
-            vec![],
-            None,
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await?;
         let reconnect_handle = client.reconnect_handle();
         if let Some(control) = &self.socket_control {
             control.register(move || reconnect_handle.request_reconnect());

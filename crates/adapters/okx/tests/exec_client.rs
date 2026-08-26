@@ -3129,8 +3129,7 @@ async fn start_exec_test_server() -> SocketAddr {
     });
 
     let health_url = format!("http://{addr}/api/v5/account/balance");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -3167,8 +3166,7 @@ async fn start_exec_submit_timeout_test_server() -> (SocketAddr, Arc<AtomicUsize
     });
 
     let health_url = format!("http://{addr}/api/v5/account/balance");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -3194,8 +3192,7 @@ async fn start_exec_report_test_server(state: Arc<ReportRouteState>) -> SocketAd
     });
 
     let health_url = format!("http://{addr}/health");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

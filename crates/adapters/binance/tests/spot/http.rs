@@ -617,8 +617,7 @@ fn has_auth_headers(headers: &HeaderMap) -> bool {
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

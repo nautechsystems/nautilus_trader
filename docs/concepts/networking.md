@@ -209,7 +209,7 @@ window are never delayed, so a single drop still recovers immediately.
 
 ### State reporting and explicit reconnect
 
-Constructors that accept a `SocketStateSink` publish ordered `Connected` and `Disconnected`
+Clients configured with a `SocketStateSink` publish ordered `Connected` and `Disconnected`
 availability edges. A successful initial connection publishes `Connected`; transport loss or an
 accepted explicit reconnect publishes `Disconnected`; and a successful replacement publishes
 `Connected`. Initial connection failure, individual retry attempts, retry exhaustion, deliberate

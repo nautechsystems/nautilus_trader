@@ -296,16 +296,14 @@ impl KrakenSpotWebSocketClient {
             ),
         ];
 
-        let ws_client = WebSocketClient::connect_with_state_sink(
-            ws_config,
-            Some(raw_handler),
-            None, // ping_handler
-            keyed_quotas,
-            None,
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await
-        .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
+        let ws_client = WebSocketClient::builder()
+            .config(ws_config)
+            .message_handler(raw_handler)
+            .keyed_quotas(keyed_quotas)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
 
         // Share connection state across clones via ArcSwap
         self.connection_mode

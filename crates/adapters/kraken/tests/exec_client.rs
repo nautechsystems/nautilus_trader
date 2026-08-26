@@ -17,7 +17,6 @@
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
     net::SocketAddr,
     path::PathBuf,
     rc::Rc,
@@ -508,8 +507,7 @@ async fn start_test_server()
 
 async fn wait_for_server(addr: SocketAddr) {
     let health_url = format!("http://{addr}/health");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

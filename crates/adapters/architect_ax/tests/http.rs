@@ -17,7 +17,7 @@
 
 mod common;
 
-use std::{collections::HashMap, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{net::SocketAddr, path::PathBuf, time::Duration};
 
 use axum::{Router, extract::Query, http::StatusCode, response::Json, routing::get};
 use jiff::civil::Date;
@@ -201,8 +201,7 @@ async fn request_report_instrument_ids(
 /// Wait for the test server to be ready by polling a health endpoint.
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

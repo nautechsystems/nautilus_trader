@@ -291,7 +291,7 @@ pub(crate) async fn anvil_mine(anvil_url: &str, blocks: u64) {
 }
 
 async fn anvil_rpc(anvil_url: &str, method: &str, params: serde_json::Value) -> serde_json::Value {
-    let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(10), None).unwrap();
+    let client = HttpClient::builder().timeout_secs(10).build().unwrap();
     let mut headers = HashMap::new();
     headers.insert("Content-Type".to_string(), "application/json".to_string());
     let body = serde_json::to_vec(&serde_json::json!({

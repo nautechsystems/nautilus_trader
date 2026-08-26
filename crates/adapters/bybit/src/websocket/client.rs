@@ -459,16 +459,15 @@ impl BybitWebSocketClient {
         let client = loop {
             attempt += 1;
 
-            match WebSocketClient::connect_with_rate_limiters_and_state_sink(
-                config.clone(),
-                Some(raw_handler.clone()),
-                None,
-                Arc::clone(&message_rate_limiter),
-                Arc::clone(&connection_rate_limiter),
-                Arc::clone(&connection_rate_keys),
-                self.socket_control.as_ref().map(SocketControl::sink),
-            )
-            .await
+            match WebSocketClient::builder()
+                .config(config.clone())
+                .message_handler(raw_handler.clone())
+                .rate_limiter(Arc::clone(&message_rate_limiter))
+                .connection_rate_limiter(Arc::clone(&connection_rate_limiter))
+                .connection_rate_keys(Arc::clone(&connection_rate_keys))
+                .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+                .connect()
+                .await
             {
                 Ok(client) => {
                     if attempt > 1 {

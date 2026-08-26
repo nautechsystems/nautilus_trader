@@ -25,7 +25,6 @@ use nautilus_live::SocketControl;
 use nautilus_network::{
     SocketStateSink,
     mode::ConnectionMode,
-    ratelimiter::RateLimiter,
     websocket::{
         AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
         channel_epoch_message_handler, proxy::ProxyUrl,
@@ -250,17 +249,17 @@ impl PolymarketWebSocketClient {
         let (message_handler, raw_rx) = channel_epoch_message_handler();
         let cfg = self.websocket_config();
 
-        let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler_and_state_sink(
-            cfg,
-            message_handler,
-            None,
-            Arc::new(RateLimiter::new_with_quota(None, vec![])),
-            self.socket_control
-                .as_ref()
-                .map(SocketControl::sink)
-                .or_else(|| self.socket_sink.clone()),
-        )
-        .await?;
+        let client = WebSocketClient::epoch_builder()
+            .config(cfg)
+            .epoch_handler(message_handler)
+            .maybe_state_sink(
+                self.socket_control
+                    .as_ref()
+                    .map(SocketControl::sink)
+                    .or_else(|| self.socket_sink.clone()),
+            )
+            .connect()
+            .await?;
 
         if let Some(control) = &self.socket_control {
             let handle = client.reconnect_handle();

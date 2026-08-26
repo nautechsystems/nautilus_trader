@@ -439,16 +439,16 @@ impl BinanceSpotPublicJsonWebSocketClient {
                 };
                 factory.control(endpoint)
             });
-        let client = WebSocketClient::connect_with_state_sink(
-            config,
-            Some(raw_handler),
-            Some(ping_handler),
-            keyed_quotas,
-            Some(*BINANCE_WS_CONNECTION_QUOTA),
-            socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to connect Spot public JSON WS: {e}"))?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(raw_handler)
+            .ping_handler(ping_handler)
+            .keyed_quotas(keyed_quotas)
+            .default_quota(*BINANCE_WS_CONNECTION_QUOTA)
+            .maybe_state_sink(socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to connect Spot public JSON WS: {e}"))?;
 
         let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();

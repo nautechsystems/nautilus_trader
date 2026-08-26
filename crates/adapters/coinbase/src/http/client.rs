@@ -168,14 +168,12 @@ impl CoinbaseRawHttpClient {
         retry_config: Option<RetryConfig>,
     ) -> std::result::Result<Self, HttpClientError> {
         Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(*COINBASE_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .default_quota(*COINBASE_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()?,
             credential: None,
             base_url: ArcSwap::from_pointee(urls::rest_url(environment).to_string()),
             environment,
@@ -197,14 +195,12 @@ impl CoinbaseRawHttpClient {
         retry_config: Option<RetryConfig>,
     ) -> std::result::Result<Self, HttpClientError> {
         Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(*COINBASE_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .default_quota(*COINBASE_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()?,
             credential: Some(credential),
             base_url: ArcSwap::from_pointee(urls::rest_url(environment).to_string()),
             environment,

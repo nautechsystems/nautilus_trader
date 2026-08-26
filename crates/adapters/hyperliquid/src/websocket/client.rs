@@ -278,18 +278,17 @@ impl HyperliquidWebSocketClient {
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
-        let client = WebSocketClient::connect_with_state_sink(
-            cfg,
-            Some(message_handler),
-            None,
-            vec![],
-            None,
-            self.socket_control
-                .as_ref()
-                .map(SocketControl::sink)
-                .or_else(|| self.socket_sink.clone()),
-        )
-        .await?;
+        let client = WebSocketClient::builder()
+            .config(cfg)
+            .message_handler(message_handler)
+            .maybe_state_sink(
+                self.socket_control
+                    .as_ref()
+                    .map(SocketControl::sink)
+                    .or_else(|| self.socket_sink.clone()),
+            )
+            .connect()
+            .await?;
 
         if let Some(control) = &self.socket_control {
             let handle = client.reconnect_handle();

@@ -535,16 +535,14 @@ impl BitmexWebSocketClient {
         };
 
         let keyed_quotas = vec![];
-        let client = WebSocketClient::connect_with_state_sink(
-            config,
-            Some(message_handler),
-            None,
-            keyed_quotas,
-            None, // default_quota
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await
-        .map_err(|e| BitmexWsError::ClientError(e.to_string()))?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .keyed_quotas(keyed_quotas)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| BitmexWsError::ClientError(e.to_string()))?;
 
         Ok((client, rx))
     }

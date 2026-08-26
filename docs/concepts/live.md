@@ -345,9 +345,9 @@ the window means something only when it sits below the heartbeat interval.
 
 ### Adapter and actor integration
 
-Adapter integrations construct a `SocketStateSink` and pass it through `connect_with_state_sink` or
-`connect_stream_with_state_sink`. Publication requires the `LiveNode` runner; the standalone
-`AsyncRunner` does not publish these events.
+Adapter integrations construct a `SocketStateSink` and set it through the network client's
+`state_sink` builder option. Publication requires the `LiveNode` runner; the standalone `AsyncRunner`
+does not publish these events.
 
 Actors subscribe with `subscribe_socket_state(...)` and receive events through
 `on_socket_state(...)`. The Python API exposes `SocketState` and `SocketStateChanged` from

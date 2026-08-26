@@ -214,17 +214,19 @@ impl BitmexRawHttpClient {
 
         Ok(Self {
             base_url: base_url.unwrap_or(BITMEX_HTTP_URL.to_string()),
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(max_requests_per_second, max_requests_per_minute)?,
-                Some(Self::default_quota(max_requests_per_second)?),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| {
-                BitmexHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
-            })?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .keyed_quotas(Self::rate_limiter_quotas(
+                    max_requests_per_second,
+                    max_requests_per_minute,
+                )?)
+                .default_quota(Self::default_quota(max_requests_per_second)?)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| {
+                    BitmexHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+                })?,
             credential: None,
             recv_window_ms,
             retry_manager,
@@ -267,17 +269,19 @@ impl BitmexRawHttpClient {
 
         Ok(Self {
             base_url,
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(max_requests_per_second, max_requests_per_minute)?,
-                Some(Self::default_quota(max_requests_per_second)?),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| {
-                BitmexHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
-            })?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .keyed_quotas(Self::rate_limiter_quotas(
+                    max_requests_per_second,
+                    max_requests_per_minute,
+                )?)
+                .default_quota(Self::default_quota(max_requests_per_second)?)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| {
+                    BitmexHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+                })?,
             credential: Some(Credential::new(api_key, api_secret)),
             recv_window_ms,
             retry_manager,

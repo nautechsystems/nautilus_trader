@@ -105,7 +105,9 @@ async fn live_send_accounts_parses_api_exception() {
 }
 
 async fn logout_live_session(app_key: &str, session_token: &str) {
-    let http = HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, Some(5), None)
+    let http = HttpClient::builder()
+        .timeout_secs(5)
+        .build()
         .expect("logout HTTP client");
     let headers = HashMap::from([
         (HEADER_X_APPLICATION.to_string(), app_key.to_string()),

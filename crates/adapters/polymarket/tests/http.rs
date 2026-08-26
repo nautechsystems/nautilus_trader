@@ -759,7 +759,8 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
 
     wait_until_async(
         || async move {
-            HttpClient::new(HashMap::new(), vec![], vec![], None, None, None)
+            HttpClient::builder()
+                .build()
                 .unwrap()
                 .get(format!("http://{addr}/health"), None, None, Some(1), None)
                 .await

@@ -230,13 +230,13 @@ impl BinanceRawFuturesHttpClient {
         let api_path = Self::resolve_api_path(product_type);
         let headers = Self::default_headers(&credential);
 
-        let client = HttpClient::new_with_rate_limiters(
-            headers,
-            vec![BINANCE_API_KEY_HEADER.to_string()],
-            timeout_secs,
-            proxy_url,
-            rate_limiters,
-        )?;
+        let client = HttpClient::builder()
+            .headers(headers)
+            .header_keys(vec![BINANCE_API_KEY_HEADER.to_string()])
+            .maybe_timeout_secs(timeout_secs)
+            .maybe_proxy_url(proxy_url)
+            .rate_limiters(rate_limiters)
+            .build()?;
 
         Ok(Self {
             client,

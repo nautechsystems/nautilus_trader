@@ -17,7 +17,7 @@
 //!
 //! [`WebSocketConfig`] selects the endpoint, upgrade headers, heartbeat and idle detection,
 //! reconnect policy, transport backend, and optional proxy. Runtime handlers and rate limiting are
-//! supplied to the client constructors instead.
+//! supplied through the client builders instead.
 //!
 //! # Reconnection strategy
 //!
@@ -76,13 +76,13 @@ pub enum TransportBackend {
 
 /// Static configuration for WebSocket client connections.
 ///
-/// Runtime handlers and rate limiters are passed separately to the client constructors.
+/// Runtime handlers and rate limiters are passed separately through the client builders.
 ///
 /// # Connection modes
 ///
 /// ## Handler mode
 ///
-/// - Uses [`WebSocketClient::connect`](crate::websocket::WebSocketClient::connect).
+/// - Uses [`WebSocketClient::builder`](crate::websocket::WebSocketClient::builder).
 /// - Delivers messages through the supplied callback.
 /// - Runs the reader in an internal task.
 /// - Supports automatic reconnection with exponential backoff.
@@ -91,7 +91,7 @@ pub enum TransportBackend {
 ///
 /// ## Stream mode
 ///
-/// - Uses [`WebSocketClient::connect_stream`](crate::websocket::WebSocketClient::connect_stream).
+/// - Uses [`WebSocketClient::stream_builder`](crate::websocket::WebSocketClient::stream_builder).
 /// - Returns a [`MessageReader`](super::types::MessageReader) owned by the caller.
 /// - Does not support automatic reconnection because the client cannot replace the caller's reader.
 /// - Ignores `reconnect_*`, `heartbeat_timeout_secs`, and `idle_timeout_ms` settings.

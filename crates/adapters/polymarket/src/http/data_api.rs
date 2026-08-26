@@ -246,17 +246,14 @@ impl PolymarketDataApiHttpClient {
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
-            client: HttpClient::new(
-                HashMap::from([
+            client: HttpClient::builder()
+                .headers(HashMap::from([
                     (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
                     ("Content-Type".to_string(), "application/json".to_string()),
-                ]),
-                vec![],
-                vec![],
-                None,
-                Some(timeout_secs),
-                proxy_url.map(|url| url.expose().to_string()),
-            )?,
+                ]))
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
+                .build()?,
             base_url: base_url
                 .unwrap_or_else(|| POLYMARKET_DATA_API_URL.to_string())
                 .trim_end_matches('/')

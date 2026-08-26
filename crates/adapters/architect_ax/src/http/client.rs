@@ -204,15 +204,16 @@ impl AxRawHttpClient {
         Ok(Self {
             base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
             orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(),
-                Some(*AX_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .keyed_quotas(Self::rate_limiter_quotas())
+                .default_quota(*AX_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| {
+                    AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+                })?,
             credential: None,
             session_token: RwLock::new(None),
             retry_manager,
@@ -253,15 +254,16 @@ impl AxRawHttpClient {
         Ok(Self {
             base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
             orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(),
-                Some(*AX_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .keyed_quotas(Self::rate_limiter_quotas())
+                .default_quota(*AX_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| {
+                    AxHttpError::NetworkError(format!("Failed to create HTTP client: {e}"))
+                })?,
             credential: Some(Credential::new(api_key, api_secret)),
             session_token: RwLock::new(None),
             retry_manager,

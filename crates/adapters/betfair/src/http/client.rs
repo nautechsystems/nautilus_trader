@@ -140,18 +140,16 @@ impl BetfairHttpClient {
         };
 
         Ok(Self {
-            client: HttpClient::new(
-                HashMap::new(),
-                Vec::new(),
-                Self::rate_limiter_quotas(
+            client: HttpClient::builder()
+                .keyed_quotas(Self::rate_limiter_quotas(
                     request_rate_per_second.unwrap_or(5),
                     order_request_rate_per_second.unwrap_or(20),
-                )?,
-                Self::default_quota(request_rate_per_second.unwrap_or(5))?,
-                timeout_secs,
-                proxy_url,
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
+                )?)
+                .maybe_default_quota(Self::default_quota(request_rate_per_second.unwrap_or(5))?)
+                .maybe_timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential,
             session_token: Arc::new(tokio::sync::RwLock::new(None)),
             retry_manager: RetryManager::new(retry_config),

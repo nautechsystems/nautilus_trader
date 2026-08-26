@@ -1057,63 +1057,22 @@ impl Debug for SocketClient {
     }
 }
 
+#[bon::bon]
 impl SocketClient {
-    /// Connects to the server.
+    /// Returns a builder for a new [`SocketClient`] connection.
     ///
     /// After a successful reconnect, `post_reconnection` runs after the replacement writer is
     /// installed, buffered messages are drained, and the replacement reader is started. The
     /// callback does not run after the initial connection.
     ///
-    /// # Errors
-    ///
-    /// Returns any error connecting to the server.
-    pub async fn connect(
-        config: SocketConfig,
-        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
-    ) -> anyhow::Result<Self> {
-        Self::connect_with_options(config, post_reconnection, None, None).await
-    }
-
-    /// Connects and sends protocol replay before messages buffered during each reconnect.
+    /// `state_sink` receives connection state changes. `reconnect_replay` produces protocol setup
+    /// messages that the client sends before buffered application messages after a reconnect.
     ///
     /// # Errors
     ///
     /// Returns any error connecting to the server.
-    pub async fn connect_with_reconnect_replay(
-        config: SocketConfig,
-        reconnect_replay: SocketReconnectReplay,
-    ) -> anyhow::Result<Self> {
-        Self::connect_with_options(config, None, None, Some(reconnect_replay)).await
-    }
-
-    /// Connects, reports semantic transport availability changes, and sends protocol replay before
-    /// messages buffered during each reconnect.
-    ///
-    /// # Errors
-    ///
-    /// Returns any error connecting to the server.
-    pub async fn connect_with_state_sink_and_reconnect_replay(
-        config: SocketConfig,
-        state_sink: Option<SocketStateSink>,
-        reconnect_replay: SocketReconnectReplay,
-    ) -> anyhow::Result<Self> {
-        Self::connect_with_options(config, None, state_sink, Some(reconnect_replay)).await
-    }
-
-    /// Connects to the server and reports semantic transport availability changes.
-    ///
-    /// # Errors
-    ///
-    /// Returns any error connecting to the server.
-    pub async fn connect_with_state_sink(
-        config: SocketConfig,
-        post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
-        state_sink: Option<SocketStateSink>,
-    ) -> anyhow::Result<Self> {
-        Self::connect_with_options(config, post_reconnection, state_sink, None).await
-    }
-
-    async fn connect_with_options(
+    #[builder(finish_fn = connect)]
+    pub async fn builder(
         config: SocketConfig,
         post_reconnection: Option<Arc<dyn Fn() + Send + Sync>>,
         state_sink: Option<SocketStateSink>,
@@ -1655,7 +1614,9 @@ mod tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .expect("Client connect failed unexpectedly");
 
@@ -1703,7 +1664,7 @@ mod tests {
             certs_dir: None,
         };
 
-        let client_res = SocketClient::connect(config, None).await;
+        let client_res = SocketClient::builder().config(config).connect().await;
         assert!(
             client_res.is_err(),
             "Should fail quickly with no server listening"
@@ -1740,7 +1701,11 @@ mod tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
 
         client.close().await;
         assert!(client.is_closed());
@@ -1777,7 +1742,11 @@ mod tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
 
         wait_until_async(|| async { client.is_closed() }, Duration::from_secs(5)).await;
 
@@ -1848,7 +1817,11 @@ mod tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
 
         // Wait ~3 seconds to collect some heartbeats
         sleep(Duration::from_secs(3)).await;
@@ -1909,7 +1882,9 @@ mod tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None)
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
             .await
             .expect("Client connect failed unexpectedly");
 
@@ -1963,7 +1938,10 @@ mod tests {
             states_callback.lock().unwrap().push(state);
         });
 
-        let client = SocketClient::connect_with_state_sink(config, None, Some(sink))
+        let client = SocketClient::builder()
+            .config(config)
+            .state_sink(sink)
+            .connect()
             .await
             .unwrap();
 
@@ -2018,7 +1996,11 @@ mod tests {
             states_callback.lock().unwrap().push(state);
         });
 
-        let result = SocketClient::connect_with_state_sink(config, None, Some(sink)).await;
+        let result = SocketClient::builder()
+            .config(config)
+            .state_sink(sink)
+            .connect()
+            .await;
 
         assert!(result.is_err());
         assert_eq!(*states.lock().unwrap(), Vec::new());
@@ -2506,13 +2488,13 @@ mod rust_tests {
         let post_reconnection = Arc::new(move || {
             callback_count_clone.fetch_add(1, Ordering::SeqCst);
         });
-        let client = SocketClient::connect_with_state_sink(
-            reconnect_test_config(port),
-            Some(post_reconnection),
-            Some(sink),
-        )
-        .await
-        .unwrap();
+        let client = SocketClient::builder()
+            .config(reconnect_test_config(port))
+            .post_reconnection(post_reconnection)
+            .state_sink(sink)
+            .connect()
+            .await
+            .unwrap();
         first_accepted_rx.await.unwrap();
         let handle = client.reconnect_handle();
 
@@ -2630,7 +2612,10 @@ mod rust_tests {
         let sink = SocketStateSink::new(move |state| {
             states_callback.lock().unwrap().push(state);
         });
-        let client = SocketClient::connect_with_state_sink(config, None, Some(sink))
+        let client = SocketClient::builder()
+            .config(config)
+            .state_sink(sink)
+            .connect()
             .await
             .unwrap();
         accepted_rx.await.unwrap();
@@ -2683,7 +2668,10 @@ mod rust_tests {
         let sink = SocketStateSink::new(move |state| {
             states_callback.lock().unwrap().push(state);
         });
-        let client = SocketClient::connect_with_state_sink(config, None, Some(sink))
+        let client = SocketClient::builder()
+            .config(config)
+            .state_sink(sink)
+            .connect()
             .await
             .unwrap();
         accepted_rx.await.unwrap();
@@ -2723,7 +2711,11 @@ mod rust_tests {
             heartbeat_timeout_secs: None,
             certs_dir: None,
         };
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
         accepted_rx.await.unwrap();
 
         client.close().await;
@@ -3273,7 +3265,11 @@ mod rust_tests {
         };
 
         // Connect client (handler=None)
-        let client = SocketClient::connect(config.clone(), None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config.clone())
+            .connect()
+            .await
+            .unwrap();
 
         // Wait for client to detect dropped connection and enter reconnect state
         wait_until_async(
@@ -3320,7 +3316,11 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
 
         wait_until_async(
             || async { client.is_reconnecting() },
@@ -3443,7 +3443,7 @@ mod rust_tests {
         };
 
         // Should successfully connect with raw socket address
-        let client = SocketClient::connect(config, None).await;
+        let client = SocketClient::builder().config(config).connect().await;
         assert!(
             client.is_ok(),
             "Client should connect with raw socket address format"
@@ -3487,7 +3487,7 @@ mod rust_tests {
         };
 
         // Should successfully connect with URL format
-        let client = SocketClient::connect(config, None).await;
+        let client = SocketClient::builder().config(config).connect().await;
         assert!(
             client.is_ok(),
             "Client should connect with URL scheme format"
@@ -3554,7 +3554,7 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await;
+        let client = SocketClient::builder().config(config).connect().await;
         assert!(
             client.is_ok(),
             "Client should connect to IPv6 loopback address"
@@ -3617,7 +3617,11 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
 
         // Wait for reconnection to trigger
         wait_until_async(
@@ -3679,7 +3683,11 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
 
         // Wait for client to enter RECONNECT state
         wait_until_async(
@@ -3743,7 +3751,11 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
 
         assert!(client.is_active());
 
@@ -3798,7 +3810,11 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
 
         assert!(client.is_active());
 
@@ -3849,7 +3865,11 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let client = SocketClient::connect(config, None).await.unwrap();
+        let client = SocketClient::builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
 
         // Wait for client to enter reconnect
         wait_until_async(
@@ -3896,7 +3916,7 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let result = SocketClient::connect(config, None).await;
+        let result = SocketClient::builder().config(config).connect().await;
 
         assert!(result.is_err(), "Zero heartbeat timeout should be rejected");
         let err_msg = result.unwrap_err().to_string();
@@ -3926,7 +3946,7 @@ mod rust_tests {
             certs_dir: None,
         };
 
-        let result = SocketClient::connect(config, None).await;
+        let result = SocketClient::builder().config(config).connect().await;
 
         assert!(
             result.is_err(),

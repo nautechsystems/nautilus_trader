@@ -212,7 +212,9 @@ fn test_turmoil_real_socket_basic_connect(socket_config: SocketConfig) {
     sim.host("server", echo_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -291,7 +293,10 @@ fn test_turmoil_real_socket_reconnection(mut socket_config: SocketConfig) {
     });
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, Some(post_reconnection))
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .post_reconnection(post_reconnection)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -359,7 +364,9 @@ fn test_turmoil_socket_unstable_reconnects_exhaust_attempts(mut socket_config: S
     });
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Initial socket connection should succeed");
         let started_at = tokio::time::Instant::now();
@@ -402,7 +409,9 @@ fn test_turmoil_socket_stable_reconnect_resets_attempts(mut socket_config: Socke
     });
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Initial socket connection should succeed");
 
@@ -447,7 +456,9 @@ fn test_turmoil_socket_reconnect_storm_attempts_are_floored(mut socket_config: S
     });
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Initial socket connection should succeed");
 
@@ -490,7 +501,9 @@ fn test_turmoil_real_socket_network_partition(mut socket_config: SocketConfig) {
     sim.host("server", echo_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -545,7 +558,9 @@ fn test_turmoil_real_socket_close_during_reconnect(mut socket_config: SocketConf
     sim.host("server", echo_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -585,7 +600,9 @@ fn test_turmoil_real_socket_disconnect_during_backoff(mut socket_config: SocketC
     sim.host("server", echo_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 
@@ -635,7 +652,9 @@ fn test_turmoil_socket_repeated_drops_preserve_message_order(
     sim.host("server", echo_once_then_drop_server);
 
     sim.client("client", async move {
-        let client = SocketClient::connect(socket_config, None)
+        let client = SocketClient::builder()
+            .config(socket_config)
+            .connect()
             .await
             .expect("Should connect");
 

@@ -204,14 +204,12 @@ impl HyperliquidRawHttpClient {
         proxy_url: Option<String>,
     ) -> std::result::Result<Self, HttpClientError> {
         Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(*HYPERLIQUID_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .default_quota(*HYPERLIQUID_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()?,
             environment,
             base_info: info_url(environment).to_string(),
             base_exchange: exchange_url(environment).to_string(),
@@ -241,14 +239,12 @@ impl HyperliquidRawHttpClient {
         let nonce_manager = Arc::new(NonceManager::new());
 
         Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                vec![],
-                Some(*HYPERLIQUID_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .default_quota(*HYPERLIQUID_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()?,
             environment: secrets.environment,
             base_info: info_url(secrets.environment).to_string(),
             base_exchange: exchange_url(secrets.environment).to_string(),

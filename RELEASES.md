@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Removed `HyperliquidExecFactoryConfig`; pass `HyperliquidExecutionClientConfig` directly to the factory
 - Removed `trader_id` from adapter execution client configs and factory construction
 - Removed backtest `settlement_prices` configuration and setters; use `InstrumentClose` expiry data
+- Replaced Rust `HttpClient`, `WebSocketClient`, and `SocketClient` constructor overloads with builder APIs
 - Renamed `ImportableExecAlgorithmConfig` to `ImportableExecutionAlgorithmConfig`
 - Renamed `LiveDataClientConfig` to `DataClientConfig`
 - Renamed `LiveExecClientConfig` to `ExecutionClientConfig`

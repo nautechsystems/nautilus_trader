@@ -569,15 +569,14 @@ impl DeribitWebSocketClient {
         ];
 
         // Connect the WebSocket
-        let ws_client = WebSocketClient::connect_with_state_sink(
-            config,
-            Some(message_handler),
-            None,
-            keyed_quotas,
-            Some(*DERIBIT_WS_SUBSCRIPTION_QUOTA), // Default quota for non-order operations
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await?;
+        let ws_client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .keyed_quotas(keyed_quotas)
+            .default_quota(*DERIBIT_WS_SUBSCRIPTION_QUOTA)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await?;
 
         // Store connection mode
         self.connection_mode

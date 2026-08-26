@@ -397,15 +397,10 @@ pub(crate) async fn start_mock_http() -> (SocketAddr, MockState) {
         axum::serve(listener, router).await.unwrap();
     });
 
-    let health_client = HttpClient::new(
-        std::collections::HashMap::new(),
-        Vec::new(),
-        Vec::new(),
-        None,
-        None,
-        None,
-    )
-    .unwrap();
+    let health_client = HttpClient::builder()
+        .headers(std::collections::HashMap::new())
+        .build()
+        .unwrap();
 
     wait_until_async(
         || {

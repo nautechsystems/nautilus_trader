@@ -734,13 +734,13 @@ impl BetfairStreamClient {
             certs_dir: None,
         };
 
-        let socket = SocketClient::connect_with_state_sink_and_reconnect_replay(
-            socket_config,
-            Some(state_sink),
-            reconnect_replay,
-        )
-        .await
-        .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+        let socket = SocketClient::builder()
+            .config(socket_config)
+            .state_sink(state_sink)
+            .reconnect_replay(reconnect_replay)
+            .connect()
+            .await
+            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
         writer_tx_h
             .set(socket.writer_tx.clone())
             .expect("Betfair stream writer must only be initialized once");
@@ -1280,13 +1280,13 @@ impl BetfairRaceStreamClient {
             certs_dir: None,
         };
 
-        let socket = SocketClient::connect_with_state_sink_and_reconnect_replay(
-            socket_config,
-            state_sink,
-            reconnect_replay,
-        )
-        .await
-        .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+        let socket = SocketClient::builder()
+            .config(socket_config)
+            .maybe_state_sink(state_sink)
+            .reconnect_replay(reconnect_replay)
+            .connect()
+            .await
+            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
         reconnect_auth.set_handle(socket.reconnect_handle());
 
         let mut combined = Vec::with_capacity(auth_bytes_vec.len() + 2 + sub_bytes.len());

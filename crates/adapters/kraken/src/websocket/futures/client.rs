@@ -321,16 +321,14 @@ impl KrakenFuturesWebSocketClient {
             *KRAKEN_FUTURES_WS_SUBSCRIPTION_QUOTA,
         )];
 
-        let ws_client = WebSocketClient::connect_with_state_sink(
-            ws_config,
-            Some(raw_handler),
-            None,
-            keyed_quotas,
-            None,
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await
-        .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
+        let ws_client = WebSocketClient::builder()
+            .config(ws_config)
+            .message_handler(raw_handler)
+            .keyed_quotas(keyed_quotas)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| KrakenWsError::ConnectionError(e.to_string()))?;
 
         self.connection_mode
             .store(ws_client.connection_mode_atomic());

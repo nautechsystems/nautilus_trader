@@ -15,7 +15,7 @@
 
 //! Integration tests for Deribit public HTTP API using a mock Axum server.
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     Router,
@@ -87,8 +87,7 @@ async fn start_test_server(state: TestServerState) -> SocketAddr {
 
 async fn wait_for_server(addr: SocketAddr) {
     let health_url = format!("http://{addr}/health");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, Some(1), None).unwrap();
+    let http_client = HttpClient::builder().timeout_secs(1).build().unwrap();
 
     wait_until_async(
         || {

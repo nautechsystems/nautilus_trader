@@ -164,15 +164,14 @@ impl KrakenFuturesRawHttpClient {
 
         Ok(Self {
             base_url,
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(max_requests_per_second)?,
-                Some(Self::default_quota(max_requests_per_second)?),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .keyed_quotas(Self::rate_limiter_quotas(max_requests_per_second)?)
+                .default_quota(Self::default_quota(max_requests_per_second)?)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential: None,
             retry_manager,
             cancellation_token: RwLock::new(CancellationToken::new()),
@@ -213,15 +212,14 @@ impl KrakenFuturesRawHttpClient {
 
         Ok(Self {
             base_url,
-            client: HttpClient::new(
-                Self::default_headers(),
-                vec![],
-                Self::rate_limiter_quotas(max_requests_per_second)?,
-                Some(Self::default_quota(max_requests_per_second)?),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .keyed_quotas(Self::rate_limiter_quotas(max_requests_per_second)?)
+                .default_quota(Self::default_quota(max_requests_per_second)?)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential: Some(KrakenCredential::new(api_key, api_secret)),
             retry_manager,
             cancellation_token: RwLock::new(CancellationToken::new()),

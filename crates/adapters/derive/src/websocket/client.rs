@@ -368,16 +368,13 @@ impl DeriveWebSocketClient {
         // Rate limiting runs caller-side via `self.rate_limiter` before frames
         // are enqueued, so the network client's own limiter is left unconfigured
         // and never sleeps inside the single feed-handler task.
-        let client = WebSocketClient::connect_with_state_sink(
-            cfg,
-            Some(message_handler),
-            None,
-            vec![],
-            None,
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await
-        .map_err(|e| DeriveWsError::transport(e.to_string()))?;
+        let client = WebSocketClient::builder()
+            .config(cfg)
+            .message_handler(message_handler)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| DeriveWsError::transport(e.to_string()))?;
 
         // Register the tracker so the network controller clears
         // `is_authenticated()` on dead-socket detection, not just on the

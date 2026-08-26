@@ -449,14 +449,12 @@ impl AxOrdersWebSocketClient {
 
             match tokio::time::timeout(
                 Duration::from_secs(CONNECTION_TIMEOUT_SECS),
-                WebSocketClient::connect_with_state_sink(
-                    config.clone(),
-                    Some(raw_handler.clone()),
-                    Some(ping_handler.clone()),
-                    vec![],
-                    None,
-                    self.socket_control.as_ref().map(SocketControl::sink),
-                ),
+                WebSocketClient::builder()
+                    .config(config.clone())
+                    .message_handler(raw_handler.clone())
+                    .ping_handler(ping_handler.clone())
+                    .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+                    .connect(),
             )
             .await
             {

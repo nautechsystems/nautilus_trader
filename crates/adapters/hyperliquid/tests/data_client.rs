@@ -185,8 +185,7 @@ fn spot_meta_fixture() -> Value {
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
     let health_url = format!("http://{addr}{path}");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -339,15 +338,13 @@ struct TestHttpClient {
 
 impl TestHttpClient {
     fn new(base_url: String) -> Self {
-        let client = HttpClient::new(
-            HashMap::from([("Content-Type".to_string(), "application/json".to_string())]),
-            vec![],
-            vec![],
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let client = HttpClient::builder()
+            .headers(HashMap::from([(
+                "Content-Type".to_string(),
+                "application/json".to_string(),
+            )]))
+            .build()
+            .unwrap();
 
         Self { client, base_url }
     }

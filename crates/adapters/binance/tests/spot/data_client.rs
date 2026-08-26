@@ -804,8 +804,7 @@ async fn start_data_test_server_with_config(config: DataTestServerConfig) -> Soc
     });
 
     let health_url = format!("http://{addr}/api/v3/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

@@ -250,15 +250,14 @@ impl CoinbaseWebSocketClient {
             *COINBASE_WS_SUBSCRIPTION_QUOTA,
         )];
 
-        let client = WebSocketClient::connect_with_state_sink(
-            cfg,
-            Some(message_handler),
-            None,
-            keyed_quotas,
-            Some(*COINBASE_WS_CONNECTION_QUOTA),
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await?;
+        let client = WebSocketClient::builder()
+            .config(cfg)
+            .message_handler(message_handler)
+            .keyed_quotas(keyed_quotas)
+            .default_quota(*COINBASE_WS_CONNECTION_QUOTA)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await?;
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();

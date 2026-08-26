@@ -1386,8 +1386,7 @@ async fn start_exec_test_server_with_order_query_signal(
 
     // Wait for server to be ready
     let health_url = format!("http://{addr}/api/v3/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -1437,8 +1436,7 @@ async fn start_exec_test_server_with_command_responses(
     });
 
     let health_url = format!("http://{addr}/api/v3/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

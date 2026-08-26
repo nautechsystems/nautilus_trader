@@ -386,18 +386,18 @@ impl BybitRawHttpClient {
         timeout_secs: u64,
         proxy_url: Option<String>,
     ) -> Result<HttpClient, BybitHttpError> {
-        HttpClient::new_with_rate_limiters(
-            Self::default_headers(),
-            vec![
+        HttpClient::builder()
+            .headers(Self::default_headers())
+            .header_keys(vec![
                 BYBIT_RATE_LIMIT_HEADER.to_string(),
                 BYBIT_RATE_LIMIT_STATUS_HEADER.to_string(),
                 BYBIT_RATE_LIMIT_RESET_HEADER.to_string(),
-            ],
-            Some(timeout_secs),
-            proxy_url,
-            Vec::new(),
-        )
-        .map_err(|e| BybitHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))
+            ])
+            .timeout_secs(timeout_secs)
+            .maybe_proxy_url(proxy_url)
+            .rate_limiters(Vec::new())
+            .build()
+            .map_err(|e| BybitHttpError::NetworkError(format!("Failed to create HTTP client: {e}")))
     }
 
     fn refresh_http_session(&self, generation: u64) -> Result<(), BybitHttpError> {

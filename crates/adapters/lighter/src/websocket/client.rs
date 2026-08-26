@@ -311,7 +311,7 @@ impl LighterWebSocketClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying [`WebSocketClient::connect`] fails
+    /// Returns an error if the underlying [`WebSocketClient::epoch_builder`] connection fails
     /// or the handler cannot be initialized.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         if self.is_active() {
@@ -336,17 +336,18 @@ impl LighterWebSocketClient {
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
-        let client = WebSocketClient::connect_with_rate_limiter_and_epoch_handler_and_state_sink(
-            cfg,
-            message_handler,
-            None,
-            ws_message_rate_limiter(&self.url),
-            self.socket_control
-                .as_ref()
-                .map(SocketControl::sink)
-                .or_else(|| self.socket_sink.clone()),
-        )
-        .await?;
+        let client = WebSocketClient::epoch_builder()
+            .config(cfg)
+            .epoch_handler(message_handler)
+            .rate_limiter(ws_message_rate_limiter(&self.url))
+            .maybe_state_sink(
+                self.socket_control
+                    .as_ref()
+                    .map(SocketControl::sink)
+                    .or_else(|| self.socket_sink.clone()),
+            )
+            .connect()
+            .await?;
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();

@@ -678,18 +678,18 @@ impl DydxWebSocketClient {
                 factory.control(format!("{endpoint}-{slot_index}"))
             }
         });
-        let client = WebSocketClient::connect_with_state_sink(
-            cfg,
-            Some(message_handler),
-            None,
-            vec![],
-            Some(*DYDX_WS_SUBSCRIPTION_QUOTA),
-            socket_control
-                .as_ref()
-                .map(nautilus_live::SocketControl::sink),
-        )
-        .await
-        .map_err(|e| DydxWsError::Transport(e.to_string()))?;
+        let client = WebSocketClient::builder()
+            .config(cfg)
+            .message_handler(message_handler)
+            .default_quota(*DYDX_WS_SUBSCRIPTION_QUOTA)
+            .maybe_state_sink(
+                socket_control
+                    .as_ref()
+                    .map(nautilus_live::SocketControl::sink),
+            )
+            .connect()
+            .await
+            .map_err(|e| DydxWsError::Transport(e.to_string()))?;
 
         let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();

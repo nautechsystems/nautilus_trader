@@ -636,15 +636,14 @@ impl OKXWebSocketClient {
             ),
         ];
 
-        let client = WebSocketClient::connect_with_state_sink(
-            config,
-            Some(message_handler),
-            None,
-            keyed_quotas,
-            Some(*OKX_WS_CONNECTION_QUOTA), // Default quota for connection operations
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .keyed_quotas(keyed_quotas)
+            .default_quota(*OKX_WS_CONNECTION_QUOTA)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await?;
 
         // Replace connection state so all clones see the underlying WebSocketClient's state
         self.connection_mode.store(client.connection_mode_atomic());

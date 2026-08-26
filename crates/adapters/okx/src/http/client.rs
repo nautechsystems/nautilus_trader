@@ -719,17 +719,16 @@ impl OKXRawHttpClient {
 
         Ok(Self {
             base_url: base_url.unwrap_or(OKX_HTTP_URL.to_string()),
-            client: HttpClient::new(
-                Self::default_headers(environment),
-                vec![],
-                Self::rate_limiter_quotas(),
-                Some(*OKX_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| {
-                OKXHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
-            })?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers(environment))
+                .keyed_quotas(Self::rate_limiter_quotas())
+                .default_quota(*OKX_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| {
+                    OKXHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
+                })?,
             credential: None,
             retry_manager,
             cancellation_token: CancellationToken::new(),
@@ -771,17 +770,16 @@ impl OKXRawHttpClient {
 
         Ok(Self {
             base_url,
-            client: HttpClient::new(
-                Self::default_headers(environment),
-                vec![],
-                Self::rate_limiter_quotas(),
-                Some(*OKX_REST_QUOTA),
-                Some(timeout_secs),
-                proxy_url,
-            )
-            .map_err(|e| {
-                OKXHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
-            })?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers(environment))
+                .keyed_quotas(Self::rate_limiter_quotas())
+                .default_quota(*OKX_REST_QUOTA)
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url)
+                .build()
+                .map_err(|e| {
+                    OKXHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
+                })?,
             credential: Some(Credential::new(api_key, api_secret, api_passphrase)),
             retry_manager,
             cancellation_token: CancellationToken::new(),

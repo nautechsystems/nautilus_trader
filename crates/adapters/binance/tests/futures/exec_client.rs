@@ -844,8 +844,7 @@ async fn start_exec_test_server() -> SocketAddr {
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -885,8 +884,7 @@ async fn start_exec_test_server_with_leverage_reject() -> SocketAddr {
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -922,8 +920,7 @@ async fn start_exec_test_server_with_command_responses(
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -968,8 +965,7 @@ async fn start_exec_test_server_with_query_capture_and_responses(
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -1010,8 +1006,7 @@ async fn start_exec_test_server_with_ws_trading_capture_and_hedge_mode(
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -1051,8 +1046,7 @@ async fn start_exec_test_server_with_algo_capture_and_hedge_mode(
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -1121,8 +1115,7 @@ async fn start_exec_test_server_with_gtd_algo_and_ws_capture() -> (
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -1247,8 +1240,7 @@ async fn start_exec_test_server_with_order_capture_and_hedge_mode(
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -5945,8 +5937,7 @@ async fn start_injectable_test_server() -> (SocketAddr, WsInjector) {
     });
 
     let health_url = format!("http://{addr}/fapi/v1/ping");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

@@ -229,16 +229,16 @@ impl BinanceFuturesWsTradingClient {
             binance_futures_ws_order_quota(),
         )];
 
-        let client = WebSocketClient::connect_with_state_sink(
-            config,
-            Some(raw_handler),
-            Some(ping_handler),
-            keyed_quotas,
-            Some(binance_futures_ws_order_quota()),
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await
-        .map_err(|e| BinanceFuturesWsApiError::ConnectionError(e.to_string()))?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(raw_handler)
+            .ping_handler(ping_handler)
+            .keyed_quotas(keyed_quotas)
+            .default_quota(binance_futures_ws_order_quota())
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| BinanceFuturesWsApiError::ConnectionError(e.to_string()))?;
 
         self.connection_mode.store(client.connection_mode_atomic());
         let reconnect_handle = client.reconnect_handle();

@@ -545,7 +545,10 @@ mod tests {
             .build()
             .expect("valid websocket config");
         let (message_handler, _message_rx) = channel_message_handler();
-        WebSocketClient::connect(config, Some(message_handler), None, vec![], None)
+        WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .connect()
             .await
             .expect("connect websocket client")
     }

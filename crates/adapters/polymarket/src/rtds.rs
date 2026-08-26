@@ -638,20 +638,19 @@ impl PolymarketRtdsFeed {
         let config = self.websocket_config();
 
         let ws = Arc::new(
-            WebSocketClient::connect_with_state_sink(
-                config,
-                Some(handler),
-                None,
-                vec![],
-                None,
-                self.inner
-                    .socket_control
-                    .as_ref()
-                    .map(SocketControl::sink)
-                    .or_else(|| self.inner.socket_sink.clone()),
-            )
-            .await
-            .context("failed to connect Polymarket RTDS WebSocket")?,
+            WebSocketClient::builder()
+                .config(config)
+                .message_handler(handler)
+                .maybe_state_sink(
+                    self.inner
+                        .socket_control
+                        .as_ref()
+                        .map(SocketControl::sink)
+                        .or_else(|| self.inner.socket_sink.clone()),
+                )
+                .connect()
+                .await
+                .context("failed to connect Polymarket RTDS WebSocket")?,
         );
 
         if let Some(control) = &self.inner.socket_control {
@@ -1586,8 +1585,8 @@ mod tests {
     async fn connect_test_ws(url: String) -> Arc<WebSocketClient> {
         let (handler, _raw_rx) = channel_message_handler();
         Arc::new(
-            WebSocketClient::connect(
-                WebSocketConfig {
+            WebSocketClient::builder()
+                .config(WebSocketConfig {
                     url,
                     headers: vec![],
                     heartbeat_interval_secs: Some(POLYMARKET_RTDS_HEARTBEAT_SECS),
@@ -1602,14 +1601,11 @@ mod tests {
                     idle_timeout_ms: None,
                     backend: TransportBackend::default(),
                     proxy_url: None,
-                },
-                Some(handler),
-                None,
-                vec![],
-                None,
-            )
-            .await
-            .expect("connect test ws"),
+                })
+                .message_handler(handler)
+                .connect()
+                .await
+                .expect("connect test ws"),
         )
     }
 

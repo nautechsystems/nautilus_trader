@@ -489,8 +489,7 @@ async fn start_test_server()
 
     // Wait for server to be ready
     let health_url = format!("http://{addr}/instrument/active");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();
@@ -1137,8 +1136,7 @@ async fn test_http_500_internal_server_error() {
 
     // Wait for server to be ready
     let health_url = format!("http://{addr}/instrument");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

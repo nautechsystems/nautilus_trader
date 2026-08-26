@@ -54,76 +54,50 @@ pub struct HttpClient {
     pub(crate) rate_limiters: Arc<[Arc<RateLimiter<Ustr, MonotonicClock>>]>,
 }
 
+#[bon::bon]
 impl HttpClient {
-    /// Creates a new [`HttpClient`] instance.
+    /// Returns a builder for a new [`HttpClient`] instance.
+    ///
+    /// Set `rate_limiters` to share quota state across clients. When omitted, the client creates
+    /// one rate limiter from `default_quota` and `keyed_quotas`. An explicit empty vector disables
+    /// rate limiting. Each request awaits every configured limiter with the same keys. A limiter
+    /// without a default quota ignores keys it does not own, allowing independent scopes such as
+    /// per-IP and per-account limits to apply to one request.
     ///
     /// # Errors
     ///
-    /// - Returns `InvalidProxy` if the proxy URL is malformed.
-    /// - Returns `ClientBuildError` if building the underlying `reqwest::Client` fails.
-    pub fn new(
-        headers: HashMap<String, String>,
-        header_keys: Vec<String>,
-        keyed_quotas: Vec<(String, Quota)>,
+    /// Returns an error if:
+    /// - Shared rate limiters are combined with quota configuration.
+    /// - The proxy URL is malformed.
+    /// - Building the underlying `reqwest::Client` fails.
+    #[builder(finish_fn = build)]
+    pub fn builder(
+        #[builder(default)] headers: HashMap<String, String>,
+        #[builder(default)] header_keys: Vec<String>,
+        #[builder(default)] keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
+        rate_limiters: Option<Vec<Arc<RateLimiter<Ustr, MonotonicClock>>>>,
     ) -> Result<Self, HttpClientError> {
-        let keyed_quotas = keyed_quotas
-            .into_iter()
-            .map(|(key, quota)| (Ustr::from(&key), quota))
-            .collect();
+        let rate_limiters = if let Some(rate_limiters) = rate_limiters {
+            if default_quota.is_some() || !keyed_quotas.is_empty() {
+                return Err(HttpClientError::Error(
+                    "Cannot combine shared rate limiters with quota configuration".to_string(),
+                ));
+            }
+            rate_limiters
+        } else {
+            let keyed_quotas = keyed_quotas
+                .into_iter()
+                .map(|(key, quota)| (Ustr::from(&key), quota))
+                .collect();
+            vec![Arc::new(RateLimiter::new_with_quota(
+                default_quota,
+                keyed_quotas,
+            ))]
+        };
 
-        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
-
-        Self::new_with_rate_limiter(headers, header_keys, timeout_secs, proxy_url, rate_limiter)
-    }
-
-    /// Creates a new [`HttpClient`] instance sharing an externally-owned rate limiter.
-    ///
-    /// Use this constructor to share a single [`RateLimiter`] across multiple
-    /// [`HttpClient`] instances (for example, the HTTP clients owned by an
-    /// exchange adapter's data and execution clients). All quota state lives
-    /// inside the limiter, so passing the same `Arc` produces a single shared
-    /// bucket.
-    ///
-    /// # Errors
-    ///
-    /// - Returns `InvalidProxy` if the proxy URL is malformed.
-    /// - Returns `ClientBuildError` if building the underlying `reqwest::Client` fails.
-    pub fn new_with_rate_limiter(
-        headers: HashMap<String, String>,
-        header_keys: Vec<String>,
-        timeout_secs: Option<u64>,
-        proxy_url: Option<String>,
-        rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
-    ) -> Result<Self, HttpClientError> {
-        Self::new_with_rate_limiters(
-            headers,
-            header_keys,
-            timeout_secs,
-            proxy_url,
-            vec![rate_limiter],
-        )
-    }
-
-    /// Creates a new [`HttpClient`] instance sharing multiple externally-owned rate limiters.
-    ///
-    /// Each request awaits every limiter with the same keys. A limiter with no default quota
-    /// ignores keys it does not own, allowing independent quota scopes such as per-IP and
-    /// per-account limits to apply to one request.
-    ///
-    /// # Errors
-    ///
-    /// - Returns `InvalidProxy` if the proxy URL is malformed.
-    /// - Returns `ClientBuildError` if building the underlying `reqwest::Client` fails.
-    pub fn new_with_rate_limiters(
-        headers: HashMap<String, String>,
-        header_keys: Vec<String>,
-        timeout_secs: Option<u64>,
-        proxy_url: Option<String>,
-        rate_limiters: Vec<Arc<RateLimiter<Ustr, MonotonicClock>>>,
-    ) -> Result<Self, HttpClientError> {
         install_cryptographic_provider();
 
         // Build default headers
@@ -917,14 +891,13 @@ mod tests {
             vec![(request_key, quota)],
         ));
         let order_limiter = Arc::new(RateLimiter::new_with_quota(None, vec![(order_key, quota)]));
-        let client = HttpClient::new_with_rate_limiters(
-            HashMap::new(),
-            Vec::new(),
-            None,
-            None,
-            vec![Arc::clone(&request_limiter), Arc::clone(&order_limiter)],
-        )
-        .unwrap();
+        let client = HttpClient::builder()
+            .rate_limiters(vec![
+                Arc::clone(&request_limiter),
+                Arc::clone(&order_limiter),
+            ])
+            .build()
+            .unwrap();
 
         client
             .await_rate_limits(Some(&[request_key, order_key]))
@@ -958,14 +931,13 @@ mod tests {
         ));
         order_limiter.check_key(&order_key).unwrap();
 
-        let client = HttpClient::new_with_rate_limiters(
-            HashMap::new(),
-            Vec::new(),
-            None,
-            None,
-            vec![Arc::clone(&global_limiter), Arc::clone(&order_limiter)],
-        )
-        .unwrap();
+        let client = HttpClient::builder()
+            .rate_limiters(vec![
+                Arc::clone(&global_limiter),
+                Arc::clone(&order_limiter),
+            ])
+            .build()
+            .unwrap();
 
         let request = test_task::spawn(async move {
             client
@@ -1033,15 +1005,11 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let mut default_headers = HashMap::new();
         default_headers.insert("x-default".to_string(), "default-a".to_string());
-        let client = HttpClient::new(
-            default_headers,
-            vec!["x-response-id".to_string()],
-            vec![],
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let client = HttpClient::builder()
+            .headers(default_headers)
+            .header_keys(vec!["x-response-id".to_string()])
+            .build()
+            .unwrap();
         let mut params = HashMap::new();
         params.insert(
             "tag".to_string(),
@@ -1085,15 +1053,11 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let mut default_headers = HashMap::new();
         default_headers.insert("x-default".to_string(), "default-d".to_string());
-        let client = HttpClient::new(
-            default_headers,
-            vec!["x-response-id".to_string()],
-            vec![],
-            None,
-            None,
-            None,
-        )
-        .unwrap();
+        let client = HttpClient::builder()
+            .headers(default_headers)
+            .header_keys(vec!["x-response-id".to_string()])
+            .build()
+            .unwrap();
         let mut request_headers = HashMap::new();
         request_headers.insert("x-request".to_string(), "request-e".to_string());
         let params = Query {
@@ -1314,22 +1278,40 @@ mod tests {
     #[rstest]
     fn test_http_client_without_proxy() {
         // Create client with no proxy
-        let result = HttpClient::new(
-            HashMap::new(),
-            vec![],
-            vec![],
-            None,
-            None,
-            None, // No proxy
-        );
+        let result = HttpClient::builder().build();
 
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_http_client_builder_preserves_empty_rate_limiters() {
+        let client = HttpClient::builder()
+            .rate_limiters(Vec::new())
+            .build()
+            .unwrap();
+
+        assert!(client.rate_limiters.is_empty());
+    }
+
+    #[rstest]
+    fn test_http_client_builder_rejects_shared_rate_limiters_with_quotas() {
+        let quota = Quota::with_period(Duration::from_secs(1)).unwrap();
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(None, Vec::new()));
+        let result = HttpClient::builder()
+            .default_quota(quota)
+            .rate_limiters(vec![rate_limiter])
+            .build();
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "HTTP error occurred: Cannot combine shared rate limiters with quota configuration"
+        );
     }
 
     #[tokio::test]
     async fn test_http_client_without_proxy_requests_directly() {
         let addr = start_test_server().await.unwrap();
-        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(2), None).unwrap();
+        let client = HttpClient::builder().timeout_secs(2).build().unwrap();
         let response = client
             .request(
                 Method::GET,
@@ -1350,7 +1332,7 @@ mod tests {
     #[tokio::test]
     async fn test_http_client_redacted_url_request_preserves_response() {
         let addr = start_test_server().await.unwrap();
-        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(2), None).unwrap();
+        let client = HttpClient::builder().timeout_secs(2).build().unwrap();
         let response = client
             .request_with_url_redacted(
                 Method::GET,
@@ -1379,7 +1361,7 @@ mod tests {
         let url = format!(
             "http://rpc-user:{USERINFO_SECRET}@{addr}/{PATH_SECRET}?api_key={QUERY_SECRET}"
         );
-        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(1), None).unwrap();
+        let client = HttpClient::builder().timeout_secs(1).build().unwrap();
 
         let error = client
             .request_with_url_redacted(Method::GET, url.clone(), None, None, None, None, None)
@@ -1406,7 +1388,7 @@ mod tests {
         let url = format!(
             "http://rpc-user:{USERINFO_SECRET}@{addr}/{PATH_SECRET}?api_key={QUERY_SECRET}"
         );
-        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, Some(2), None).unwrap();
+        let client = HttpClient::builder().timeout_secs(2).build().unwrap();
 
         let response = client
             .request_with_url_redacted(Method::GET, url.clone(), None, None, None, None, None)
@@ -1436,15 +1418,11 @@ mod tests {
         const USERNAME: &str = "proxytest";
         const PASSWORD: &str = "fixture42";
         let (proxy_addr, request_rx) = spawn_rejecting_connect_proxy().await;
-        let client = HttpClient::new(
-            HashMap::new(),
-            vec![],
-            vec![],
-            None,
-            Some(2),
-            Some(format!("http://{USERNAME}:{PASSWORD}@{proxy_addr}")),
-        )
-        .unwrap();
+        let client = HttpClient::builder()
+            .timeout_secs(2)
+            .proxy_url(format!("http://{USERNAME}:{PASSWORD}@{proxy_addr}"))
+            .build()
+            .unwrap();
         let error = client
             .request(
                 Method::GET,
@@ -1483,15 +1461,11 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_addr = listener.local_addr().unwrap();
         drop(listener);
-        let client = HttpClient::new(
-            HashMap::new(),
-            vec![],
-            vec![],
-            None,
-            Some(1),
-            Some(format!("http://{USERNAME}:{SECRET}@{proxy_addr}")),
-        )
-        .unwrap();
+        let client = HttpClient::builder()
+            .timeout_secs(1)
+            .proxy_url(format!("http://{USERNAME}:{SECRET}@{proxy_addr}"))
+            .build()
+            .unwrap();
         let error = client
             .request(
                 Method::GET,
@@ -1517,14 +1491,9 @@ mod tests {
     #[rstest]
     fn test_http_client_with_valid_proxy() {
         // Create client with a valid proxy URL
-        let result = HttpClient::new(
-            HashMap::new(),
-            vec![],
-            vec![],
-            None,
-            None,
-            Some("http://proxy.example.com:8080".to_string()),
-        );
+        let result = HttpClient::builder()
+            .proxy_url("http://proxy.example.com:8080".to_string())
+            .build();
 
         assert!(result.is_ok());
     }
@@ -1532,14 +1501,9 @@ mod tests {
     #[rstest]
     fn test_http_client_with_socks5_proxy() {
         // Create client with a SOCKS5 proxy URL
-        let result = HttpClient::new(
-            HashMap::new(),
-            vec![],
-            vec![],
-            None,
-            None,
-            Some("socks5://127.0.0.1:1080".to_string()),
-        );
+        let result = HttpClient::builder()
+            .proxy_url("socks5://127.0.0.1:1080".to_string())
+            .build();
 
         assert!(result.is_ok());
     }
@@ -1549,14 +1513,9 @@ mod tests {
         // Note: reqwest::Proxy::all() is lenient and accepts most strings.
         // It only fails on obviously malformed URLs like "://invalid" or "http://".
         // More subtle issues (like "not-a-valid-url") are caught when connecting.
-        let result = HttpClient::new(
-            HashMap::new(),
-            vec![],
-            vec![],
-            None,
-            None,
-            Some("://invalid".to_string()),
-        );
+        let result = HttpClient::builder()
+            .proxy_url("://invalid".to_string())
+            .build();
 
         assert!(result.is_err());
         assert!(matches!(result, Err(HttpClientError::InvalidProxy(_))));
@@ -1565,14 +1524,9 @@ mod tests {
     #[rstest]
     fn test_http_client_invalid_proxy_error_redacts_credentials() {
         const SECRET: &str = "unique-proxy-secret";
-        let result = HttpClient::new(
-            HashMap::new(),
-            vec![],
-            vec![],
-            None,
-            None,
-            Some(format!("http://proxytest:{SECRET}@[::1")),
-        );
+        let result = HttpClient::builder()
+            .proxy_url(format!("http://proxytest:{SECRET}@[::1"))
+            .build();
         let error = result.expect_err("malformed proxy URL should fail");
 
         assert_eq!(
@@ -1585,14 +1539,7 @@ mod tests {
     #[rstest]
     fn test_http_client_with_empty_proxy_string() {
         // Create client with an empty proxy URL string
-        let result = HttpClient::new(
-            HashMap::new(),
-            vec![],
-            vec![],
-            None,
-            None,
-            Some(String::new()),
-        );
+        let result = HttpClient::builder().proxy_url(String::new()).build();
 
         assert!(result.is_err());
         assert!(matches!(result, Err(HttpClientError::InvalidProxy(_))));
@@ -1603,7 +1550,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}/get");
 
-        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
+        let client = HttpClient::builder().build().unwrap();
         let response = client.get(url, None, None, None, None).await.unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());
@@ -1615,7 +1562,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}/post");
 
-        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
+        let client = HttpClient::builder().build().unwrap();
         let response = client
             .post(url, None, None, None, None, None)
             .await
@@ -1629,7 +1576,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}/patch");
 
-        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
+        let client = HttpClient::builder().build().unwrap();
         let response = client
             .patch(url, None, None, None, None, None)
             .await
@@ -1643,7 +1590,7 @@ mod tests {
         let addr = start_test_server().await.unwrap();
         let url = format!("http://{addr}/delete");
 
-        let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None).unwrap();
+        let client = HttpClient::builder().build().unwrap();
         let response = client.delete(url, None, None, None, None).await.unwrap();
 
         assert_eq!(response.status.as_u16(), StatusCode::OK.as_u16());

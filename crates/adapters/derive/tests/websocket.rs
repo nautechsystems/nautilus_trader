@@ -349,8 +349,7 @@ async fn start_server(state: ServerState) -> SocketAddr {
 
 async fn wait_for_http_health(addr: SocketAddr) {
     let health_url = format!("http://{addr}/health");
-    let http_client =
-        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    let http_client = HttpClient::builder().build().unwrap();
     wait_until_async(
         || {
             let url = health_url.clone();

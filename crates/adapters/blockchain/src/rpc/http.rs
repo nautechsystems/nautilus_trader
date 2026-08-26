@@ -69,15 +69,11 @@ impl BlockchainHttpRpcClient {
     ) -> Self {
         let default_quota =
             rpc_request_per_second.and_then(|rps| Quota::per_second(NonZeroU32::new(rps)?));
-        let http_client = HttpClient::new(
-            HashMap::new(),
-            vec![],
-            Vec::new(),
-            default_quota,
-            None, // timeout_secs
-            proxy_url,
-        )
-        .expect("Failed to create HTTP client");
+        let http_client = HttpClient::builder()
+            .maybe_default_quota(default_quota)
+            .maybe_proxy_url(proxy_url)
+            .build()
+            .expect("Failed to create HTTP client");
         Self {
             http_rpc_url,
             http_client,

@@ -241,16 +241,15 @@ impl DydxRawHttpClient {
         let mut headers = HashMap::new();
         headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
-        let client = HttpClient::new_with_rate_limiter(
-            headers,
-            vec![],
-            Some(timeout_secs),
-            proxy_url,
-            rest_rate_limiter(&base_url),
-        )
-        .map_err(|e| {
-            DydxHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
-        })?;
+        let client = HttpClient::builder()
+            .headers(headers)
+            .timeout_secs(timeout_secs)
+            .maybe_proxy_url(proxy_url)
+            .rate_limiters(vec![rest_rate_limiter(&base_url)])
+            .build()
+            .map_err(|e| {
+                DydxHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
+            })?;
 
         Ok(Self {
             base_url,
@@ -1916,8 +1915,7 @@ mod tests {
         // accepting before starting the clock: binding the listener makes the port
         // connectable before the serve task has reached its accept loop.
         let ready_url = format!("{base_url}/health");
-        let probe =
-            HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+        let probe = HttpClient::builder().build().unwrap();
         wait_until_async(
             || {
                 let url = ready_url.clone();

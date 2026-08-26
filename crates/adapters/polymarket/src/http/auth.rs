@@ -123,7 +123,8 @@ fn prepare_l1_request(
         (get_atomic_clock_realtime().get_time_ns().as_u64() / 1_000_000_000).to_string();
     let (address, signature) = sign_clob_auth(private_key, &timestamp, nonce)?;
     let headers = l1_headers(&address, &signature, &timestamp, nonce);
-    let client = HttpClient::new(HashMap::new(), vec![], vec![], None, None, None)
+    let client = HttpClient::builder()
+        .build()
         .map_err(Error::from_http_client)?;
     Ok((client, headers, base))
 }

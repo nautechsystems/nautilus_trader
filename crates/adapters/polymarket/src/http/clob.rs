@@ -160,14 +160,12 @@ impl PolymarketClobHttpClient {
     ) -> StdResult<Self, HttpClientError> {
         let rate_limiter = PolymarketRateLimiter::for_signer(&address);
         Ok(Self {
-            client: HttpClient::new(
-                Self::default_headers(),
-                RateLimitHeaders::names(),
-                vec![],
-                None,
-                Some(timeout_secs),
-                proxy_url.map(|url| url.expose().to_string()),
-            )?,
+            client: HttpClient::builder()
+                .headers(Self::default_headers())
+                .header_keys(RateLimitHeaders::names())
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
+                .build()?,
             rate_limiter,
             base_url: base_url
                 .unwrap_or_else(|| clob_http_url().to_string())
@@ -696,17 +694,14 @@ impl PolymarketClobPublicClient {
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
         Ok(Self {
-            client: HttpClient::new(
-                HashMap::from([
+            client: HttpClient::builder()
+                .headers(HashMap::from([
                     (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
                     ("Content-Type".to_string(), "application/json".to_string()),
-                ]),
-                vec![],
-                vec![],
-                None,
-                Some(timeout_secs),
-                proxy_url.map(|url| url.expose().to_string()),
-            )?,
+                ]))
+                .timeout_secs(timeout_secs)
+                .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
+                .build()?,
             base_url: base_url
                 .unwrap_or_else(|| clob_http_url().to_string())
                 .trim_end_matches('/')

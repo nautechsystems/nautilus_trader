@@ -292,16 +292,16 @@ impl BinanceSpotWsTradingClient {
             binance_ws_order_quota(),
         )];
 
-        let client = WebSocketClient::connect_with_state_sink(
-            config,
-            Some(raw_handler),
-            Some(ping_handler),
-            keyed_quotas,
-            Some(binance_ws_order_quota()), // Default quota for all operations
-            self.socket_control.as_ref().map(SocketControl::sink),
-        )
-        .await
-        .map_err(|e| BinanceWsApiError::ConnectionError(e.to_string()))?;
+        let client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(raw_handler)
+            .ping_handler(ping_handler)
+            .keyed_quotas(keyed_quotas)
+            .default_quota(binance_ws_order_quota())
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| BinanceWsApiError::ConnectionError(e.to_string()))?;
 
         client.set_auth_tracker(self.user_data_tracker.clone(), true);
         self.connection_mode.store(client.connection_mode_atomic());

@@ -108,14 +108,13 @@ impl TardisHttpClient {
         }
 
         let keyed_quotas = vec![(TARDIS_REST_RATE_KEY.to_string(), *TARDIS_REST_QUOTA)];
-        let client = HttpClient::new(
-            headers,
-            vec![],
-            keyed_quotas,
-            Some(*TARDIS_REST_QUOTA),
-            timeout_secs.or(Some(60)),
-            proxy_url,
-        )?;
+        let client = HttpClient::builder()
+            .headers(headers)
+            .keyed_quotas(keyed_quotas)
+            .default_quota(*TARDIS_REST_QUOTA)
+            .maybe_timeout_secs(timeout_secs.or(Some(60)))
+            .maybe_proxy_url(proxy_url)
+            .build()?;
 
         Ok(Self {
             base_url,
