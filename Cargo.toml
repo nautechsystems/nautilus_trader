@@ -17,6 +17,7 @@ members = [
   "crates/adapters/interactive_brokers",
   "crates/adapters/kraken",
   "crates/adapters/lighter",
+  "crates/adapters/massive",
   "crates/adapters/okx",
   "crates/adapters/polymarket",
   "crates/adapters/sandbox",
@@ -112,6 +113,7 @@ nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.63.0
 nautilus-interactive-brokers = { path = "crates/adapters/interactive_brokers", version = "0.63.0" }
 nautilus-kraken = { path = "crates/adapters/kraken", version = "0.63.0", default-features = false }
 nautilus-lighter = { path = "crates/adapters/lighter", version = "0.63.0", default-features = false }
+nautilus-massive = { path = "crates/adapters/massive", version = "0.63.0", default-features = false }
 nautilus-okx = { path = "crates/adapters/okx", version = "0.63.0", default-features = false }
 nautilus-polymarket = { path = "crates/adapters/polymarket", version = "0.63.0", default-features = false }
 nautilus-sandbox = { path = "crates/adapters/sandbox", version = "0.63.0", default-features = false }

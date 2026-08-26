@@ -6390,6 +6390,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-massive"
+version = "0.63.0"
+dependencies = [
+ "ahash 0.8.12",
+ "anyhow",
+ "arc-swap",
+ "async-trait",
+ "bon",
+ "dotenvy",
+ "jiff",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-system",
+ "nautilus-testkit",
+ "pyo3",
+ "pyo3-stub-gen",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "strum 0.28.0",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
+ "toml 1.1.4+spec-1.1.0",
+ "url",
+ "ustr",
+ "zeroize",
+]
+
+[[package]]
 name = "nautilus-model"
 version = "0.63.0"
 dependencies = [
@@ -6678,6 +6715,7 @@ dependencies = [
  "nautilus-kraken",
  "nautilus-lighter",
  "nautilus-live",
+ "nautilus-massive",
  "nautilus-model",
  "nautilus-network",
  "nautilus-okx",

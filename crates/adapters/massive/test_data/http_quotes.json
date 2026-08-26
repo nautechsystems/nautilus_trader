@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "ask_exchange": 12,
+      "ask_price": 102.71,
+      "ask_size": 60,
+      "bid_exchange": 11,
+      "bid_price": 102.7,
+      "bid_size": 60,
+      "participant_timestamp": 1517562000065321200,
+      "sequence_number": 2060,
+      "sip_timestamp": 1517562000065700400,
+      "tape": 3
+    },
+    {
+      "ask_exchange": 12,
+      "ask_price": 120.0048,
+      "ask_size": 3,
+      "bid_exchange": 12,
+      "bid_price": 119.99,
+      "bid_size": 8,
+      "indicators": [604],
+      "participant_timestamp": 1517562000065408300,
+      "sequence_number": 2061,
+      "sip_timestamp": 1517562000065791500,
+      "tape": 3
+    }
+  ],
+  "status": "OK",
+  "request_id": "cd63dcb478ec4a769cd0a9a1cb262a2f",
+  "next_url": "https://api.massive.com/v3/quotes/AAPL?cursor=YXA9OTIzNTM3Nzc"
+}

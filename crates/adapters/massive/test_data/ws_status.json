@@ -1,0 +1,12 @@
+[
+  {
+    "ev": "status",
+    "status": "connected",
+    "message": "Connected Successfully"
+  },
+  {
+    "ev": "status",
+    "status": "auth_success",
+    "message": "authenticated"
+  }
+]

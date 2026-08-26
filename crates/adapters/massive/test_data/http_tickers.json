@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "ticker": "AAPL",
+      "name": "Apple Inc.",
+      "market": "stocks",
+      "locale": "us",
+      "primary_exchange": "XNAS",
+      "type": "CS",
+      "active": true,
+      "currency_name": "usd",
+      "cik": "0000320193",
+      "composite_figi": "BBG000B9XRY4",
+      "share_class_figi": "BBG001S5N8V8",
+      "last_updated_utc": "2026-08-22T06:04:59.504046976Z"
+    },
+    {
+      "ticker": "BRK.A",
+      "name": "Berkshire Hathaway Inc.",
+      "market": "stocks",
+      "locale": "us",
+      "primary_exchange": "XNYS",
+      "type": "CS",
+      "active": true,
+      "currency_name": "usd",
+      "cik": "0001067983",
+      "composite_figi": "BBG000DWG505",
+      "last_updated_utc": "2026-08-22T06:04:59.504046976Z"
+    }
+  ],
+  "status": "OK",
+  "request_id": "e70013d92930de90e089dc8fa098888e",
+  "count": 2,
+  "next_url": "https://api.massive.com/v3/reference/tickers?cursor=YWN0aXZlPXRydWUmZGF0ZT0yMDIx"
+}

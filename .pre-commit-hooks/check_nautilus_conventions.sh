@@ -386,6 +386,7 @@ interactive_brokers nautilus_interactive_brokers::python::interactive_brokers
 kraken nautilus_kraken::python::kraken
 lighter nautilus_lighter::python::lighter
 live nautilus_live::python::live
+massive nautilus_massive::python::massive
 model nautilus_model::python::model
 network nautilus_network::python::network
 okx nautilus_okx::python::okx

@@ -1,0 +1,110 @@
+[package]
+name = "nautilus-massive"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Massive (formerly Polygon.io) market data integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_massive"
+crate-type = ["rlib"]
+
+[features]
+default = ["high-precision"]
+extension-module = [
+  "nautilus-common/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-live/extension-module",
+  "nautilus-model/extension-module",
+  "nautilus-network/extension-module",
+  "pyo3/extension-module",
+  "python",
+]
+python = [
+  "dep:nautilus-system",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-live/python",
+  "nautilus-model/python",
+  "nautilus-network/python",
+  "nautilus-system/python",
+  "pyo3",
+  "pyo3-stub-gen",
+]
+high-precision = ["nautilus-model/high-precision"]
+examples = [
+  "nautilus-live/node",
+  "nautilus-network/transport-sockudo",
+]
+
+[package.metadata.cargo-machete]
+ignored = [
+  "nautilus-system",
+] # Optional dep activated only via the python feature
+
+[package.metadata.docs.rs]
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = ["high-precision"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
+nautilus-live = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
+
+ahash = { workspace = true }
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+async-trait = { workspace = true }
+bon = { workspace = true }
+jiff = { workspace = true }
+log = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
+url = { workspace = true }
+ustr = { workspace = true }
+zeroize = { workspace = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-testkit = { workspace = true, default-features = false, features = [
+  "testers",
+] }
+
+dotenvy = { workspace = true }
+rstest = { workspace = true }
+rust_decimal_macros = { workspace = true }
+toml = { workspace = true }
+
+[[example]]
+name = "massive-data-tester"
+path = "examples/node_data_tester.rs"
+doc = false
+required-features = ["examples"]
+
+[[test]]
+name = "python"
+path = "tests/python.rs"
+required-features = ["python"]
