@@ -617,34 +617,25 @@ mod tests {
     ) -> InstrumentAny {
         let price_precision = price_increment.precision;
         let size_precision = size_increment.precision;
-        InstrumentAny::BinaryOption(BinaryOption::new(
-            InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str()),
-            Symbol::new(raw_symbol),
-            AssetClass::Alternative,
-            Currency::pUSD(),
-            UnixNanos::default(),
-            UnixNanos::from(u64::MAX),
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::BinaryOption(
+            BinaryOption::builder()
+                .instrument_id(InstrumentId::from(
+                    format!("{raw_symbol}.POLYMARKET").as_str(),
+                ))
+                .raw_symbol(Symbol::new(raw_symbol))
+                .asset_class(AssetClass::Alternative)
+                .currency(Currency::pUSD())
+                .activation_ns(UnixNanos::default())
+                .expiration_ns(UnixNanos::from(u64::MAX))
+                .price_precision(price_precision)
+                .size_precision(size_precision)
+                .price_increment(price_increment)
+                .size_increment(size_increment)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]

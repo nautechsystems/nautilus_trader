@@ -272,45 +272,44 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = BettingInstrument::new(
-            id,
-            raw_symbol,
-            event_type_id,
-            event_type_name,
-            competition_id,
-            competition_name,
-            event_id,
-            event_name,
-            event_country_code,
-            event_open_date,
-            betting_type,
-            market_id,
-            market_name,
-            market_type,
-            market_start_time,
-            selection_id,
-            selection_name,
-            selection_handicap,
-            currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = BettingInstrument::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .event_type_id(event_type_id)
+            .event_type_name(event_type_name)
+            .competition_id(competition_id)
+            .competition_name(competition_name)
+            .event_id(event_id)
+            .event_name(event_name)
+            .event_country_code(event_country_code)
+            .event_open_date(event_open_date)
+            .betting_type(betting_type)
+            .market_id(market_id)
+            .market_name(market_name)
+            .market_type(market_type)
+            .market_start_time(market_start_time)
+            .selection_id(selection_id)
+            .selection_name(selection_name)
+            .selection_handicap(selection_handicap)
+            .currency(currency)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -386,34 +385,33 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = BinaryOption::new(
-            id,
-            raw_symbol,
-            asset_class,
-            currency,
-            activation_ns,
-            expiration_ns,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            outcome,
-            description,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = BinaryOption::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .currency(currency)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_outcome(outcome)
+            .maybe_description(description)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -489,36 +487,35 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = CryptoFuture::new(
-            id,
-            raw_symbol,
-            underlying,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            activation_ns,
-            expiration_ns,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            Some(multiplier),
-            Some(lot_size),
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = CryptoFuture::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .underlying(underlying)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -604,38 +601,37 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = CryptoOption::new(
-            id,
-            raw_symbol,
-            underlying,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            option_kind,
-            strike_price,
-            activation_ns,
-            expiration_ns,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            Some(multiplier),
-            Some(lot_size),
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = CryptoOption::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .underlying(underlying)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .option_kind(option_kind)
+            .strike_price(strike_price)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -708,34 +704,33 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = CryptoPerpetual::new(
-            id,
-            raw_symbol,
-            base_currency,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            Some(multiplier),
-            Some(lot_size),
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = CryptoPerpetual::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -805,32 +800,31 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = CurrencyPair::new(
-            id,
-            raw_symbol,
-            base_currency,
-            quote_currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = CurrencyPair::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_multiplier(multiplier)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -883,27 +877,26 @@ impl<'r> FromRow<'r, PgRow> for EquityRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = Equity::new(
-            id,
-            raw_symbol,
-            isin,
-            currency,
-            price_precision,
-            price_increment,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = Equity::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .maybe_isin(isin)
+            .currency(currency)
+            .price_precision(price_precision)
+            .price_increment(price_increment)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -971,32 +964,31 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = FuturesContract::new(
-            id,
-            raw_symbol,
-            asset_class,
-            exchange,
-            underlying,
-            activation_ns,
-            expiration_ns,
-            currency,
-            price_precision,
-            price_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = FuturesContract::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .maybe_exchange(exchange)
+            .underlying(underlying)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .currency(currency)
+            .price_precision(price_precision)
+            .price_increment(price_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -1077,34 +1069,33 @@ impl<'r> FromRow<'r, PgRow> for OptionContractRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = OptionContract::new(
-            id,
-            raw_symbol,
-            asset_class,
-            exchange,
-            underlying,
-            option_kind,
-            strike_price,
-            currency,
-            activation_ns,
-            expiration_ns,
-            price_precision,
-            price_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = OptionContract::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .maybe_exchange(exchange)
+            .underlying(underlying)
+            .option_kind(option_kind)
+            .strike_price(strike_price)
+            .currency(currency)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(price_precision)
+            .price_increment(price_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -1170,31 +1161,30 @@ impl<'r> FromRow<'r, PgRow> for CommodityRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = Commodity::new(
-            id,
-            raw_symbol,
-            asset_class,
-            quote_currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = Commodity::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .quote_currency(quote_currency)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -1217,19 +1207,18 @@ impl<'r> FromRow<'r, PgRow> for IndexInstrumentRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = IndexInstrument::new(
-            id,
-            raw_symbol,
-            currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = IndexInstrument::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .currency(currency)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -1299,32 +1288,31 @@ impl<'r> FromRow<'r, PgRow> for CfdRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = Cfd::new(
-            id,
-            raw_symbol,
-            asset_class,
-            base_currency,
-            quote_currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = Cfd::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .maybe_base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -1407,36 +1395,35 @@ impl<'r> FromRow<'r, PgRow> for PerpetualContractRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = PerpetualContract::new(
-            id,
-            raw_symbol,
-            underlying,
-            asset_class,
-            base_currency,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            Some(multiplier),
-            Some(lot_size),
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = PerpetualContract::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .underlying(underlying)
+            .asset_class(asset_class)
+            .maybe_base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -1525,37 +1512,36 @@ impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = CryptoFuturesSpread::new(
-            id,
-            raw_symbol,
-            underlying,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            strategy_type,
-            activation_ns,
-            expiration_ns,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            Some(multiplier),
-            Some(lot_size),
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = CryptoFuturesSpread::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .underlying(underlying)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .strategy_type(strategy_type)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -1638,37 +1624,36 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = CryptoOptionSpread::new(
-            id,
-            raw_symbol,
-            underlying,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            strategy_type,
-            activation_ns,
-            expiration_ns,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            Some(multiplier),
-            Some(lot_size),
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = CryptoOptionSpread::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .underlying(underlying)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .strategy_type(strategy_type)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }
@@ -1749,34 +1734,33 @@ impl<'r> FromRow<'r, PgRow> for TokenizedAssetRow {
         let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
-        let inst = TokenizedAsset::new(
-            id,
-            raw_symbol,
-            asset_class,
-            base_currency,
-            quote_currency,
-            isin,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let inst = TokenizedAsset::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .maybe_isin(isin)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_multiplier(multiplier)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(Self(inst))
     }
 }

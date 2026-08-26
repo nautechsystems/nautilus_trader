@@ -8343,34 +8343,24 @@ fn add_instrument_to_cache_with_values(
         .expect("valid test instrument metadata")
     });
 
-    let instrument = BinaryOption::new(
-        instrument_id,
-        raw_symbol,
-        AssetClass::Alternative,
-        Currency::pUSD(),
-        UnixNanos::default(), // activation_ns
-        UnixNanos::default(), // expiration_ns
-        price_increment.precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        outcome,
-        None, // description
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        Some(taker_fee),
-        None, // tick_scheme
-        info,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let instrument = BinaryOption::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .asset_class(AssetClass::Alternative)
+        .currency(Currency::pUSD())
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(price_increment.precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_outcome(outcome)
+        .taker_fee(taker_fee)
+        .maybe_info(info)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     cache
         .borrow_mut()
         .add_instrument(InstrumentAny::BinaryOption(instrument))

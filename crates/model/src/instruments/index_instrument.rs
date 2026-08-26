@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8},
+    correctness::{CorrectnessResult, check_equal_u8},
 };
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -74,17 +74,8 @@ pub struct IndexInstrument {
 
 #[bon::bon]
 impl IndexInstrument {
-    /// Creates a new [`IndexInstrument`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
-    pub fn new_checked(
+    fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         currency: Currency,
@@ -128,51 +119,14 @@ impl IndexInstrument {
         })
     }
 
-    /// Creates a new [`IndexInstrument`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any parameter is invalid (see `new_checked`).
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        raw_symbol: Symbol,
-        currency: Currency,
-        price_precision: u8,
-        size_precision: u8,
-        price_increment: Price,
-        size_increment: Quantity,
-        tick_scheme: Option<Ustr>,
-        info: Option<Params>,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .expect_display(FAILED)
-    }
-
     /// Returns a fluent builder for a [`IndexInstrument`] instance.
     ///
-    /// Required fields are enforced at compile time; optional fields can be omitted and default
-    /// the same way they do in [`IndexInstrument::new_checked`], which the builder calls so the same
-    /// correctness checks run on `build`.
+    /// Required fields are enforced at compile time; optional fields can be omitted and use the
+    /// same defaults as checked construction. The same correctness checks run on `build`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails (see [`IndexInstrument::new_checked`]).
+    /// Returns an error if any input validation fails.
     #[builder(start_fn = builder, finish_fn = build)]
     pub fn build_checked(
         instrument_id: InstrumentId,

@@ -954,32 +954,19 @@ fn test_query_instruments_filtered_non_ascii_instrument_id() {
     let (_temp_dir, catalog) = create_temp_catalog();
 
     let instrument_id = InstrumentId::from("CAFÉ.SIM");
-    let currency_pair = CurrencyPair::new(
-        instrument_id,
-        Symbol::from("CAFÉ"),
-        Currency::from("AUD"),
-        Currency::from("USD"),
-        5,
-        0,
-        Price::new(0.00001, 5),
-        Quantity::new(1.0, 0),
-        None, // multiplier
-        None, // lot_size
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let currency_pair = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from("CAFÉ"))
+        .base_currency(Currency::from("AUD"))
+        .quote_currency(Currency::from("USD"))
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::new(0.00001, 5))
+        .size_increment(Quantity::new(1.0, 0))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
     catalog
         .write_instruments(vec![InstrumentAny::CurrencyPair(currency_pair)])
         .unwrap();
@@ -5023,32 +5010,24 @@ fn test_instrument_roundtrip_with_info_params() {
     info.insert("enabled".to_string(), json!(true));
 
     let instrument_id = InstrumentId::from("AUD/USD.SIM");
-    let currency_pair = CurrencyPair::new(
-        instrument_id,
-        Symbol::from("AUD/USD"),
-        Currency::from("AUD"),
-        Currency::from("USD"),
-        5,
-        0,
-        Price::new(0.00001, 5),
-        Quantity::new(1.0, 0),
-        None, // multiplier
-        None, // lot_size
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        Some(Decimal::from(3) / Decimal::from(100)),
-        Some(Decimal::from(3) / Decimal::from(100)),
-        Some(Decimal::from(2) / Decimal::from(100_000)),
-        Some(Decimal::from(2) / Decimal::from(100_000)),
-        None,
-        Some(info.clone()),
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let currency_pair = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from("AUD/USD"))
+        .base_currency(Currency::from("AUD"))
+        .quote_currency(Currency::from("USD"))
+        .price_precision(5)
+        .size_precision(0)
+        .price_increment(Price::new(0.00001, 5))
+        .size_increment(Quantity::new(1.0, 0))
+        .margin_init(Decimal::from(3) / Decimal::from(100))
+        .margin_maint(Decimal::from(3) / Decimal::from(100))
+        .maker_fee(Decimal::from(2) / Decimal::from(100_000))
+        .taker_fee(Decimal::from(2) / Decimal::from(100_000))
+        .info(info.clone())
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
 
     let instrument_any = InstrumentAny::CurrencyPair(currency_pair);
     let id_str = Instrument::id(&instrument_any).to_string();
@@ -5185,34 +5164,24 @@ fn test_instrument_roundtrip_with_unregistered_base_currency() {
     let quote_currency = Currency::from("USDT");
 
     let instrument_id = InstrumentId::from("XUNREG1USDT-PERP.BINANCE");
-    let perp = CryptoPerpetual::new(
-        instrument_id,
-        Symbol::from("XUNREG1USDT"),
-        base_currency,
-        quote_currency,
-        quote_currency,
-        false,
-        4,
-        0,
-        Price::from("0.0001"),
-        Quantity::from("1"),
-        None,
-        None,
-        None,
-        Some(Quantity::from("1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(Decimal::from(2) / Decimal::from(10_000)),
-        Some(Decimal::from(4) / Decimal::from(10_000)),
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let perp = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from("XUNREG1USDT"))
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(quote_currency)
+        .is_inverse(false)
+        .price_precision(4)
+        .size_precision(0)
+        .price_increment(Price::from("0.0001"))
+        .size_increment(Quantity::from("1"))
+        .min_quantity(Quantity::from("1"))
+        .maker_fee(Decimal::from(2) / Decimal::from(10_000))
+        .taker_fee(Decimal::from(4) / Decimal::from(10_000))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
 
     let (_temp_dir, catalog) = create_temp_catalog();
     catalog

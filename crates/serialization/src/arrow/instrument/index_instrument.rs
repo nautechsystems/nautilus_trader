@@ -239,20 +239,20 @@ pub fn decode_index_instrument_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let index_instrument = IndexInstrument::new_checked(
-            id,
-            raw_symbol,
-            currency,
-            price_prec,
-            size_prec,
-            price_increment,
-            size_increment,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .map_err(|e| super::instrument_validation_error::<IndexInstrument>(i, e))?;
+        let index_instrument = IndexInstrument::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .currency(currency)
+            .price_precision(price_prec)
+            .size_precision(size_prec)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_tick_scheme(tick_scheme)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .map_err(|e| super::instrument_validation_error::<IndexInstrument>(i, e))?;
 
         result.push(index_instrument);
     }

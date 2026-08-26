@@ -1141,33 +1141,24 @@ fn create_pending_combo_fill(
 }
 
 fn create_test_option_spread() -> OptionSpread {
-    OptionSpread::new(
-        create_test_spread_instrument(),
-        Symbol::from("(1)SPY C400_((1))SPY C410"),
-        AssetClass::Equity,
-        Some(Ustr::from("SMART")),
-        Ustr::from("SPY"),
-        Ustr::from("VERTICAL"),
-        UnixNanos::new(0),
-        UnixNanos::new(0),
-        Currency::USD(),
-        2,
-        Price::from("0.01"),
-        Quantity::from(100),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::new(0),
-        UnixNanos::new(0),
-    )
+    OptionSpread::builder()
+        .instrument_id(create_test_spread_instrument())
+        .raw_symbol(Symbol::from("(1)SPY C400_((1))SPY C410"))
+        .asset_class(AssetClass::Equity)
+        .exchange(Ustr::from("SMART"))
+        .underlying(Ustr::from("SPY"))
+        .strategy_type(Ustr::from("VERTICAL"))
+        .activation_ns(UnixNanos::new(0))
+        .expiration_ns(UnixNanos::new(0))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(100))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::new(0))
+        .ts_init(UnixNanos::new(0))
+        .build()
+        .unwrap()
 }
 
 fn create_test_order_status(order_id: i32, status: &str) -> IBOrderStatus {

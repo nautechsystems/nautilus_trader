@@ -1423,32 +1423,21 @@ impl HyperliquidHttpClient {
             let price_increment = Price::from("0.00000001");
             let size_increment = Quantity::from("0.00000001");
 
-            let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-                instrument_id,
-                symbol,
-                base_currency,
-                quote_currency,
-                8, // price_precision
-                8, // size_precision
-                price_increment,
-                size_increment,
-                None, // multiplier
-                None, // lot_size
-                None, // max_quantity
-                None, // min_quantity
-                None, // max_notional
-                None, // min_notional
-                None, // max_price
-                None, // min_price
-                None, // margin_init
-                None, // margin_maint
-                None, // maker_fee
-                None, // taker_fee
-                None, // tick_scheme
-                None, // info
-                ts_event,
-                ts_event,
-            ));
+            let instrument = InstrumentAny::CurrencyPair(
+                CurrencyPair::builder()
+                    .instrument_id(instrument_id)
+                    .raw_symbol(symbol)
+                    .base_currency(base_currency)
+                    .quote_currency(quote_currency)
+                    .price_precision(8)
+                    .size_precision(8)
+                    .price_increment(price_increment)
+                    .size_increment(size_increment)
+                    .ts_event(ts_event)
+                    .ts_init(ts_event)
+                    .build()
+                    .unwrap(),
+            );
 
             self.cache_instrument(&instrument);
 
@@ -3780,34 +3769,26 @@ mod tests {
         let usdc = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
-        let perp = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::new(Symbol::new("ARB-USD-PERP"), *HYPERLIQUID_VENUE),
-            Symbol::new("ARB"),
-            base,
-            usd,
-            usdc,
-            false,
-            5,
-            2,
-            Price::from("0.00001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let perp = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("ARB-USD-PERP"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("ARB"))
+                .base_currency(base)
+                .quote_currency(usd)
+                .settlement_currency(usdc)
+                .is_inverse(false)
+                .price_precision(5)
+                .size_precision(2)
+                .price_increment(Price::from("0.00001"))
+                .size_increment(Quantity::from("0.01"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
         client.cache_instrument(&perp);
 
         let response: HyperliquidExchangeResponse = serde_json::from_value(json!({
@@ -4139,32 +4120,21 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
 
-        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            raw_symbol,
-            base_currency,
-            quote_currency,
-            8,
-            8,
-            Price::from("0.00000001"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // maker_fee
-            None, // taker_fee
-            None, // tick_scheme
-            None, // info
-            ts,
-            ts,
-        ));
+        let instrument = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .base_currency(base_currency)
+                .quote_currency(quote_currency)
+                .price_precision(8)
+                .size_precision(8)
+                .price_increment(Price::from("0.00000001"))
+                .size_increment(Quantity::from("0.00000001"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
         // Cache the instrument
         client.cache_instrument(&instrument);
@@ -4241,34 +4211,23 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
 
-        let binary = InstrumentAny::BinaryOption(BinaryOption::new(
-            instrument_id,
-            raw_symbol,
-            AssetClass::Alternative,
-            usdh,
-            Default::default(),
-            Default::default(),
-            4,
-            2,
-            Price::from("0.0001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let binary = InstrumentAny::BinaryOption(
+            BinaryOption::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .asset_class(AssetClass::Alternative)
+                .currency(usdh)
+                .activation_ns(Default::default())
+                .expiration_ns(Default::default())
+                .price_precision(4)
+                .size_precision(2)
+                .price_increment(Price::from("0.0001"))
+                .size_increment(Quantity::from("0.01"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
         client.cache_instrument(&binary);
 
@@ -4301,59 +4260,43 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
 
-        let canonical = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            InstrumentId::new(Symbol::new("HYPE-USDC-SPOT"), *HYPERLIQUID_VENUE),
-            Symbol::new("@107"),
-            hype,
-            usdc,
-            5,
-            2,
-            Price::from("0.00001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let canonical = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("HYPE-USDC-SPOT"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("@107"))
+                .base_currency(hype)
+                .quote_currency(usdc)
+                .price_precision(5)
+                .size_precision(2)
+                .price_increment(Price::from("0.00001"))
+                .size_increment(Quantity::from("0.01"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
-        let non_canonical = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            InstrumentId::new(Symbol::new("HYPE-USDC-SPOT"), *HYPERLIQUID_VENUE),
-            Symbol::new("@999"),
-            hype,
-            usdc,
-            5,
-            2,
-            Price::from("0.00001"),
-            Quantity::from("0.01"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let non_canonical = InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("HYPE-USDC-SPOT"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("@999"))
+                .base_currency(hype)
+                .quote_currency(usdc)
+                .price_precision(5)
+                .size_precision(2)
+                .price_increment(Price::from("0.00001"))
+                .size_increment(Quantity::from("0.01"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
         client.cache_instrument(&canonical);
         client.cache_instrument(&non_canonical);
@@ -4390,37 +4333,26 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let ts = clock.get_time_ns();
 
-        let hip3 = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::new(
-                Symbol::new("dex:STREAMABCDxxxx-USD-PERP"),
-                *HYPERLIQUID_VENUE,
-            ),
-            Symbol::new("dex:STREAMABCD****"),
-            base_currency,
-            usd,
-            usdc,
-            false,
-            6,
-            3,
-            Price::from("0.000001"),
-            Quantity::from("0.001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            ts,
-            ts,
-        ));
+        let hip3 = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::new(
+                    Symbol::new("dex:STREAMABCDxxxx-USD-PERP"),
+                    *HYPERLIQUID_VENUE,
+                ))
+                .raw_symbol(Symbol::new("dex:STREAMABCD****"))
+                .base_currency(base_currency)
+                .quote_currency(usd)
+                .settlement_currency(usdc)
+                .is_inverse(false)
+                .price_precision(6)
+                .size_precision(3)
+                .price_increment(Price::from("0.000001"))
+                .size_increment(Quantity::from("0.001"))
+                .ts_event(ts)
+                .ts_init(ts)
+                .build()
+                .unwrap(),
+        );
 
         client.cache_instrument(&hip3);
 

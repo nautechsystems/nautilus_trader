@@ -286,32 +286,19 @@ impl TryFrom<&Pool> for CurrencyPair {
         )?;
         let taker_fee = p.fee.map(|fee| Decimal::new(i64::from(fee), 6));
 
-        let pair = Self::new_checked(
-            p.instrument_id,
-            p.instrument_id.symbol,
-            base_currency,
-            quote_currency,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            None, // multiplier
-            None, // lot_size
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_notional
-            None, // min_notional
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            taker_fee,
-            None, // tick_scheme
-            None, // info
-            p.ts_event,
-            p.ts_init,
-        )?;
+        let pair = Self::builder()
+            .instrument_id(p.instrument_id)
+            .raw_symbol(p.instrument_id.symbol)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .price_precision(price_precision)
+            .size_precision(size_precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(p.ts_event)
+            .ts_init(p.ts_init)
+            .build()?;
 
         for currency in [base_currency, quote_currency] {
             if let Err(e) = Currency::register(currency, false) {

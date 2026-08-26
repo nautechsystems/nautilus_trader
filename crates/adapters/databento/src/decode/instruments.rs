@@ -112,32 +112,22 @@ fn decode_currency_pair(
     let ts_event = UnixNanos::from(msg.ts_recv);
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    Ok(Some(CurrencyPair::new_checked(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        Some(multiplier),
-        Some(lot_size),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        ts_event,
-        ts_init,
-    )?))
+    Ok(Some(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .price_precision(price_increment.precision)
+            .size_precision(size_increment.precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()?,
+    ))
 }
 
 fn parse_fx_pair(raw_symbol: &str, asset: &str, currency: &str) -> Option<(Currency, Currency)> {
@@ -173,6 +163,10 @@ fn parse_fx_pair_from_asset_currency(asset: &str, currency: &str) -> Option<(Cur
 /// # Errors
 ///
 /// Returns an error if parsing or constructing `Equity` fails.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn decode_equity(
     msg: &dbn::InstrumentDefMsg,
     instrument_id: InstrumentId,
@@ -184,27 +178,18 @@ pub fn decode_equity(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    Ok(Equity::new(
-        instrument_id,
-        instrument_id.symbol,
-        None, // No ISIN available yet
-        currency,
-        price_increment.precision,
-        price_increment,
-        Some(lot_size),
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_event,
-        ts_init,
-    ))
+    Ok(Equity::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(instrument_id.symbol)
+        // No ISIN available yet
+        .currency(currency)
+        .price_precision(price_increment.precision)
+        .price_increment(price_increment)
+        .lot_size(lot_size)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap())
 }
 
 /// Decodes a Databento instrument definition message into a `FuturesContract` instrument.
@@ -227,32 +212,22 @@ pub fn decode_futures_contract(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    Ok(FuturesContract::new_checked(
-        instrument_id,
-        instrument_id.symbol,
-        asset_class.unwrap_or(AssetClass::Commodity),
-        Some(exchange),
-        underlying,
-        decode_optional_timestamp(msg.activation).unwrap_or_default(),
-        decode_timestamp(msg.expiration, "expiration")?,
-        currency,
-        price_increment.precision,
-        price_increment,
-        multiplier,
-        lot_size,
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_event,
-        ts_init,
-    )?)
+    Ok(FuturesContract::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(instrument_id.symbol)
+        .asset_class(asset_class.unwrap_or(AssetClass::Commodity))
+        .exchange(exchange)
+        .underlying(underlying)
+        .activation_ns(decode_optional_timestamp(msg.activation).unwrap_or_default())
+        .expiration_ns(decode_timestamp(msg.expiration, "expiration")?)
+        .currency(currency)
+        .price_precision(price_increment.precision)
+        .price_increment(price_increment)
+        .multiplier(multiplier)
+        .lot_size(lot_size)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()?)
 }
 
 /// Decodes a Databento instrument definition message into a `FuturesSpread` instrument.
@@ -276,33 +251,23 @@ pub fn decode_futures_spread(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    Ok(FuturesSpread::new_checked(
-        instrument_id,
-        instrument_id.symbol,
-        asset_class.unwrap_or(AssetClass::Commodity),
-        Some(exchange),
-        underlying,
-        strategy_type,
-        decode_optional_timestamp(msg.activation).unwrap_or_default(),
-        decode_timestamp(msg.expiration, "expiration")?,
-        currency,
-        price_increment.precision,
-        price_increment,
-        multiplier,
-        lot_size,
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_event,
-        ts_init,
-    )?)
+    Ok(FuturesSpread::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(instrument_id.symbol)
+        .asset_class(asset_class.unwrap_or(AssetClass::Commodity))
+        .exchange(exchange)
+        .underlying(underlying)
+        .strategy_type(strategy_type)
+        .activation_ns(decode_optional_timestamp(msg.activation).unwrap_or_default())
+        .expiration_ns(decode_timestamp(msg.expiration, "expiration")?)
+        .currency(currency)
+        .price_precision(price_increment.precision)
+        .price_increment(price_increment)
+        .multiplier(multiplier)
+        .lot_size(lot_size)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()?)
 }
 
 /// Decodes a Databento instrument definition message into an `OptionContract` instrument.
@@ -346,34 +311,24 @@ pub fn decode_option_contract(
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    Ok(OptionContract::new_checked(
-        instrument_id,
-        instrument_id.symbol,
-        asset_class_opt.unwrap_or(AssetClass::Commodity),
-        Some(exchange),
-        underlying,
-        option_kind,
-        strike_price,
-        currency,
-        decode_optional_timestamp(msg.activation).unwrap_or_default(),
-        expiration,
-        price_increment.precision,
-        price_increment,
-        multiplier,
-        lot_size,
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_event,
-        ts_init,
-    )?)
+    Ok(OptionContract::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(instrument_id.symbol)
+        .asset_class(asset_class_opt.unwrap_or(AssetClass::Commodity))
+        .exchange(exchange)
+        .underlying(underlying)
+        .option_kind(option_kind)
+        .strike_price(strike_price)
+        .currency(currency)
+        .activation_ns(decode_optional_timestamp(msg.activation).unwrap_or_default())
+        .expiration_ns(expiration)
+        .price_precision(price_increment.precision)
+        .price_increment(price_increment)
+        .multiplier(multiplier)
+        .lot_size(lot_size)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()?)
 }
 
 fn decode_option_multiplier(
@@ -426,31 +381,21 @@ pub fn decode_option_spread(
     let ts_event = msg.ts_recv.into(); // More accurate and reliable timestamp
     let ts_init = ts_init.unwrap_or(ts_event);
 
-    Ok(OptionSpread::new_checked(
-        instrument_id,
-        instrument_id.symbol,
-        asset_class_opt.unwrap_or(AssetClass::Commodity),
-        Some(exchange),
-        underlying,
-        strategy_type,
-        decode_optional_timestamp(msg.activation).unwrap_or_default(),
-        expiration,
-        currency,
-        price_increment.precision,
-        price_increment,
-        multiplier,
-        lot_size,
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_event,
-        ts_init,
-    )?)
+    Ok(OptionSpread::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(instrument_id.symbol)
+        .asset_class(asset_class_opt.unwrap_or(AssetClass::Commodity))
+        .exchange(exchange)
+        .underlying(underlying)
+        .strategy_type(strategy_type)
+        .activation_ns(decode_optional_timestamp(msg.activation).unwrap_or_default())
+        .expiration_ns(expiration)
+        .currency(currency)
+        .price_precision(price_increment.precision)
+        .price_increment(price_increment)
+        .multiplier(multiplier)
+        .lot_size(lot_size)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()?)
 }

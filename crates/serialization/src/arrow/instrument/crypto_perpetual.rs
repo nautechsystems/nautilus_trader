@@ -512,35 +512,35 @@ pub fn decode_crypto_perpetual_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let crypto_perp = CryptoPerpetual::new_checked(
-            id,
-            raw_symbol,
-            base_currency,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            price_prec,
-            size_prec,
-            price_increment,
-            size_increment,
-            Some(multiplier),
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            Some(margin_init),
-            Some(margin_maint),
-            Some(maker_fee),
-            Some(taker_fee),
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .map_err(|e| super::instrument_validation_error::<CryptoPerpetual>(i, e))?;
+        let crypto_perp = CryptoPerpetual::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .price_precision(price_prec)
+            .size_precision(size_prec)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .multiplier(multiplier)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_tick_scheme(tick_scheme)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .map_err(|e| super::instrument_validation_error::<CryptoPerpetual>(i, e))?;
 
         result.push(crypto_perp);
     }

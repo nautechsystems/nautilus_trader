@@ -541,34 +541,31 @@ fn instrument_commodity(commodity_gold: Commodity) -> InstrumentAny {
 
 #[fixture]
 pub fn instrument_xbtusd_with_high_size_precision() -> InstrumentAny {
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        InstrumentId::from("BTCUSDT.BITMEX"),
-        Symbol::from("XBTUSD"),
-        Currency::BTC(),
-        Currency::USD(),
-        Currency::BTC(),
-        true,
-        1,
-        2,
-        Price::from("0.5"),
-        Quantity::from("0.01"),
-        None,
-        None,
-        None,
-        None,
-        Some(Money::from("10000000 USD")),
-        Some(Money::from("1 USD")),
-        Some(Price::from("10000000")),
-        Some(Price::from("0.01")),
-        Some(dec!(0.01)),
-        Some(dec!(0.0035)),
-        Some(dec!(-0.00025)),
-        Some(dec!(0.00075)),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(InstrumentId::from("BTCUSDT.BITMEX"))
+            .raw_symbol(Symbol::from("XBTUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::BTC())
+            .is_inverse(true)
+            .price_precision(1)
+            .size_precision(2)
+            .price_increment(Price::from("0.5"))
+            .size_increment(Quantity::from("0.01"))
+            .max_notional(Money::from("10000000 USD"))
+            .min_notional(Money::from("1 USD"))
+            .max_price(Price::from("10000000"))
+            .min_price(Price::from("0.01"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.0035))
+            .maker_fee(dec!(-0.00025))
+            .taker_fee(dec!(0.00075))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 // Helpers
@@ -6820,32 +6817,32 @@ fn test_submit_order_with_quote_quantity_skips_min_max_quantity_check(
     mut simple_cache: Cache,
 ) {
     // Create a BTCUSDT spot instrument with max_quantity = 83 BTC
-    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
-        InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
-        Symbol::from("BTCUSDT"),
-        Currency::BTC(),
-        Currency::USDT(),
-        1,
-        6,
-        Price::from("0.1"),
-        Quantity::from("0.000001"),
-        Some(Quantity::from("1")),         // multiplier
-        Some(Quantity::from("0.000001")),  // lot_size
-        Some(Quantity::from("83")),        // max_quantity = 83 BTC
-        Some(Quantity::from("0.000011")),  // min_quantity
-        Some(Money::from("8000000 USDT")), // max_notional
-        Some(Money::from("5 USDT")),       // min_notional
-        None,
-        None,
-        Some(dec!(0.1)),      // margin_init
-        Some(dec!(0.1)),      // margin_maint
-        Some(dec!(-0.00005)), // maker_fee
-        Some(dec!(0.00015)),  // taker_fee
-        None,                 // tick_scheme
-        None,                 // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ));
+    let btc_usdt = InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("BTCUSDT-SPOT.BYBIT"))
+            .raw_symbol(Symbol::from("BTCUSDT"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .price_precision(1)
+            .size_precision(6)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.000001"))
+            .multiplier(Quantity::from("1"))
+            .lot_size(Quantity::from("0.000001"))
+            // max_quantity = 83 BTC
+            .max_quantity(Quantity::from("83"))
+            .min_quantity(Quantity::from("0.000011"))
+            .max_notional(Money::from("8000000 USDT"))
+            .min_notional(Money::from("5 USDT"))
+            .margin_init(dec!(0.1))
+            .margin_maint(dec!(0.1))
+            .maker_fee(dec!(-0.00005))
+            .taker_fee(dec!(0.00015))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
 
     simple_cache.add_instrument(btc_usdt.clone()).unwrap();
 
@@ -6942,32 +6939,32 @@ fn test_submit_order_with_quote_quantity_does_not_deny_on_base_max_quantity(
 ) {
     // Base-quantity bounds do not apply to quote-denominated orders, so a
     // converted base quantity that would exceed `max_quantity` must still pass.
-    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
-        InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
-        Symbol::from("BTCUSDT"),
-        Currency::BTC(),
-        Currency::USDT(),
-        1,
-        6,
-        Price::from("0.1"),
-        Quantity::from("0.000001"),
-        Some(Quantity::from("1")),        // multiplier
-        Some(Quantity::from("0.000001")), // lot_size
-        Some(Quantity::from("0.5")),      // max_quantity = 0.5 BTC
-        Some(Quantity::from("0.000011")), // min_quantity
-        Some(Money::from("8000000 USDT")),
-        Some(Money::from("5 USDT")),
-        None,
-        None,
-        Some(dec!(0.1)),
-        Some(dec!(0.1)),
-        Some(dec!(-0.00005)),
-        Some(dec!(0.00015)),
-        None,
-        None, // info
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ));
+    let btc_usdt = InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("BTCUSDT-SPOT.BYBIT"))
+            .raw_symbol(Symbol::from("BTCUSDT"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .price_precision(1)
+            .size_precision(6)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.000001"))
+            .multiplier(Quantity::from("1"))
+            .lot_size(Quantity::from("0.000001"))
+            // max_quantity = 0.5 BTC
+            .max_quantity(Quantity::from("0.5"))
+            .min_quantity(Quantity::from("0.000011"))
+            .max_notional(Money::from("8000000 USDT"))
+            .min_notional(Money::from("5 USDT"))
+            .margin_init(dec!(0.1))
+            .margin_maint(dec!(0.1))
+            .maker_fee(dec!(-0.00005))
+            .taker_fee(dec!(0.00015))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
 
     simple_cache.add_instrument(btc_usdt.clone()).unwrap();
 
@@ -7055,32 +7052,30 @@ fn test_submit_order_with_quote_quantity_does_not_deny_on_base_min_quantity(
 ) {
     // Mirrors the Polymarket scenario from #3874: a quote-denominated order whose
     // converted base quantity falls below a large `min_quantity` must still pass.
-    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
-        InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
-        Symbol::from("BTCUSDT"),
-        Currency::BTC(),
-        Currency::USDT(),
-        1,
-        6,
-        Price::from("0.1"),
-        Quantity::from("0.000001"),
-        Some(Quantity::from("1")),
-        Some(Quantity::from("0.000001")),
-        None,                      // max_quantity
-        Some(Quantity::from("5")), // min_quantity = 5 base units
-        None,                      // max_notional
-        Some(Money::from("1 USDT")),
-        None,
-        None,
-        Some(dec!(0.1)),
-        Some(dec!(0.1)),
-        Some(dec!(-0.00005)),
-        Some(dec!(0.00015)),
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ));
+    let btc_usdt = InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("BTCUSDT-SPOT.BYBIT"))
+            .raw_symbol(Symbol::from("BTCUSDT"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .price_precision(1)
+            .size_precision(6)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.000001"))
+            .multiplier(Quantity::from("1"))
+            .lot_size(Quantity::from("0.000001"))
+            // min_quantity = 5 base units
+            .min_quantity(Quantity::from("5"))
+            .min_notional(Money::from("1 USDT"))
+            .margin_init(dec!(0.1))
+            .margin_maint(dec!(0.1))
+            .maker_fee(dec!(-0.00005))
+            .taker_fee(dec!(0.00015))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
 
     simple_cache.add_instrument(btc_usdt.clone()).unwrap();
 
@@ -7168,32 +7163,28 @@ fn test_submit_order_with_quote_quantity_still_enforces_min_notional(
 ) {
     // Base-quantity bounds are skipped for quote-denominated orders, but
     // `min_notional` still applies and must deny sub-minimum notionals.
-    let btc_usdt = InstrumentAny::CurrencyPair(CurrencyPair::new(
-        InstrumentId::from("BTCUSDT-SPOT.BYBIT"),
-        Symbol::from("BTCUSDT"),
-        Currency::BTC(),
-        Currency::USDT(),
-        1,
-        6,
-        Price::from("0.1"),
-        Quantity::from("0.000001"),
-        Some(Quantity::from("1")),
-        Some(Quantity::from("0.000001")),
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_notional
-        Some(Money::from("10 USDT")),
-        None,
-        None,
-        Some(dec!(0.1)),
-        Some(dec!(0.1)),
-        Some(dec!(-0.00005)),
-        Some(dec!(0.00015)),
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ));
+    let btc_usdt = InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("BTCUSDT-SPOT.BYBIT"))
+            .raw_symbol(Symbol::from("BTCUSDT"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .price_precision(1)
+            .size_precision(6)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.000001"))
+            .multiplier(Quantity::from("1"))
+            .lot_size(Quantity::from("0.000001"))
+            .min_notional(Money::from("10 USDT"))
+            .margin_init(dec!(0.1))
+            .margin_maint(dec!(0.1))
+            .maker_fee(dec!(-0.00005))
+            .taker_fee(dec!(0.00015))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
 
     simple_cache.add_instrument(btc_usdt.clone()).unwrap();
 

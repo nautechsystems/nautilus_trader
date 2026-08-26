@@ -1177,58 +1177,44 @@ fn trade(instrument_id: InstrumentId, price: &str, size: &str, ts: u64) -> Data 
 }
 
 fn option_underlying_equity(venue: Venue) -> InstrumentAny {
-    InstrumentAny::Equity(Equity::new(
-        InstrumentId::from(format!("AAPL.{venue}").as_str()),
-        Symbol::from("AAPL"),
-        None,
-        Currency::USD(),
-        2,
-        Price::from("0.01"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::Equity(
+        Equity::builder()
+            .instrument_id(InstrumentId::from(format!("AAPL.{venue}").as_str()))
+            .raw_symbol(Symbol::from("AAPL"))
+            .currency(Currency::USD())
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn option_contract(venue: Venue, expiration_ns: UnixNanos) -> InstrumentAny {
-    InstrumentAny::OptionContract(OptionContract::new(
-        InstrumentId::from(format!("AAPL240315C00150000.{venue}").as_str()),
-        Symbol::from("AAPL240315C00150000"),
-        AssetClass::Equity,
-        Some(Ustr::from(venue.as_str())),
-        Ustr::from("AAPL"),
-        OptionKind::Call,
-        Price::from("150.00"),
-        Currency::USD(),
-        UnixNanos::default(),
-        expiration_ns,
-        2,
-        Price::from("0.01"),
-        Quantity::from(100),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::OptionContract(
+        OptionContract::builder()
+            .instrument_id(InstrumentId::from(
+                format!("AAPL240315C00150000.{venue}").as_str(),
+            ))
+            .raw_symbol(Symbol::from("AAPL240315C00150000"))
+            .asset_class(AssetClass::Equity)
+            .exchange(Ustr::from(venue.as_str()))
+            .underlying(Ustr::from("AAPL"))
+            .option_kind(OptionKind::Call)
+            .strike_price(Price::from("150.00"))
+            .currency(Currency::USD())
+            .activation_ns(UnixNanos::default())
+            .expiration_ns(expiration_ns)
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(100))
+            .lot_size(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn quote_with_size(instrument_id: InstrumentId, bid: &str, ask: &str, size: &str, ts: u64) -> Data {

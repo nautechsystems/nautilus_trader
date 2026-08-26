@@ -149,6 +149,10 @@ fn contract_size_multiplier(product: &Product) -> Option<Quantity> {
 }
 
 /// Parses a Coinbase spot product into a `CurrencyPair`.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_spot_instrument(
     product: &Product,
     ts_init: UnixNanos,
@@ -168,37 +172,31 @@ pub fn parse_spot_instrument(
     let min_quantity = parse_optional_quantity(&product.base_min_size);
     let max_quantity = parse_optional_quantity(&product.base_max_size);
 
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        None, // multiplier
-        None, // lot_size
-        max_quantity,
-        min_quantity,
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee (loaded separately via transaction_summary)
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_init,
-        ts_init,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        // maker_fee (loaded separately via transaction_summary)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(instrument))
 }
 
 /// Parses a Coinbase perpetual futures product into a `CryptoPerpetual`.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_perpetual_instrument(
     product: &Product,
     ts_init: UnixNanos,
@@ -221,39 +219,33 @@ pub fn parse_perpetual_instrument(
 
     let multiplier = contract_size_multiplier(product);
 
-    let instrument = CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        false, // is_inverse
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        None, // lot_size
-        max_quantity,
-        min_quantity,
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_init,
-        ts_init,
-    );
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(false)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
 
 /// Parses a Coinbase dated future into a `CryptoFuture`.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_future_instrument(
     product: &Product,
     ts_init: UnixNanos,
@@ -292,36 +284,26 @@ pub fn parse_future_instrument(
 
     let multiplier = contract_size_multiplier(product);
 
-    let instrument = CryptoFuture::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote_currency,
-        settlement_currency,
-        false, // is_inverse
-        ts_init,
-        expiration_ns,
-        price_precision,
-        size_precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        None, // lot_size
-        max_quantity,
-        min_quantity,
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        ts_init,
-        ts_init,
-    );
+    let instrument = CryptoFuture::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(false)
+        .activation_ns(ts_init)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_precision)
+        .size_precision(size_precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoFuture(instrument))
 }

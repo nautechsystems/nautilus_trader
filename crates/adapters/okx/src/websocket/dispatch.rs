@@ -2522,34 +2522,21 @@ mod tests {
     }
 
     fn test_algo_instruments() -> AtomicMap<Ustr, InstrumentAny> {
-        let instrument = CryptoPerpetual::new(
-            InstrumentId::from("BTC-USDT-SWAP.OKX"),
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false,
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(InstrumentId::from("BTC-USDT-SWAP.OKX"))
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let instruments = AtomicMap::new();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),

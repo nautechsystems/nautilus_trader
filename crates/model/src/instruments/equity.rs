@@ -17,10 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{
-        CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8,
-        check_valid_string_ascii_optional,
-    },
+    correctness::{CorrectnessResult, check_equal_u8, check_valid_string_ascii_optional},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -92,17 +89,8 @@ pub struct Equity {
 
 #[bon::bon]
 impl Equity {
-    /// Creates a new [`Equity`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
-    pub fn new_checked(
+    fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         isin: Option<Ustr>,
@@ -160,67 +148,14 @@ impl Equity {
         })
     }
 
-    /// Creates a new [`Equity`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any parameter is invalid (see `new_checked`).
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        raw_symbol: Symbol,
-        isin: Option<Ustr>,
-        currency: Currency,
-        price_precision: u8,
-        price_increment: Price,
-        lot_size: Option<Quantity>,
-        max_quantity: Option<Quantity>,
-        min_quantity: Option<Quantity>,
-        max_price: Option<Price>,
-        min_price: Option<Price>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        tick_scheme: Option<Ustr>,
-        info: Option<Params>,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            isin,
-            currency,
-            price_precision,
-            price_increment,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .expect_display(FAILED)
-    }
-
     /// Returns a fluent builder for a [`Equity`] instance.
     ///
-    /// Required fields are enforced at compile time; optional fields can be omitted and default
-    /// the same way they do in [`Equity::new_checked`], which the builder calls so the same
-    /// correctness checks run on `build`.
+    /// Required fields are enforced at compile time; optional fields can be omitted and use the
+    /// same defaults as checked construction. The same correctness checks run on `build`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails (see [`Equity::new_checked`]).
+    /// Returns an error if any input validation fails.
     #[builder(start_fn = builder, finish_fn = build)]
     pub fn build_checked(
         instrument_id: InstrumentId,

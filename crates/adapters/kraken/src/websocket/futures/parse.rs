@@ -452,34 +452,23 @@ mod tests {
 
     fn create_mock_perp() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("PI_XBTUSD"), *KRAKEN_VENUE);
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            Symbol::new("PI_XBTUSD"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            1,
-            0,
-            Price::from("0.5"),
-            Quantity::from("1"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            TS,
-            TS,
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("PI_XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(0)
+                .price_increment(Price::from("0.5"))
+                .size_increment(Quantity::from("1"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]
@@ -729,34 +718,23 @@ mod tests {
 
         let instrument_id = InstrumentId::new(Symbol::new("PF_ETHUSD"), *KRAKEN_VENUE);
         let usd = Currency::new("USD", 6, 0, "USD", CurrencyType::Fiat);
-        let instrument = InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            Symbol::new("PF_ETHUSD"),
-            Currency::ETH(),
-            usd,
-            usd,
-            false,
-            1,
-            3,
-            Price::from("0.5"),
-            Quantity::from("0.001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // info
-            TS,
-            TS,
-        ));
+        let instrument = InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("PF_ETHUSD"))
+                .base_currency(Currency::ETH())
+                .quote_currency(usd)
+                .settlement_currency(usd)
+                .is_inverse(false)
+                .price_precision(1)
+                .size_precision(3)
+                .price_increment(Price::from("0.5"))
+                .size_increment(Quantity::from("0.001"))
+                .ts_event(TS)
+                .ts_init(TS)
+                .build()
+                .unwrap(),
+        );
 
         let account_id = AccountId::from("KRAKEN-001");
         let report = parse_futures_ws_fill_report(&fill, &instrument, account_id, TS).unwrap();

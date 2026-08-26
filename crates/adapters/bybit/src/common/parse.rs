@@ -335,6 +335,10 @@ fn default_margin() -> Decimal {
 }
 
 /// Parses a spot instrument definition returned by Bybit into a Nautilus currency pair.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_spot_instrument(
     definition: &BybitInstrumentSpot,
     fee_rate: &BybitFeeRate,
@@ -384,37 +388,37 @@ pub fn parse_spot_instrument(
         serde_json::Value::Bool(margin_trading_supported),
     );
 
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None,
-        lot_size,
-        max_quantity,
-        min_quantity,
-        None,
-        min_notional,
-        None,
-        None,
-        Some(default_margin()),
-        Some(default_margin()),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        Some(info),
-        ts_event,
-        ts_init,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_lot_size(lot_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_min_notional(min_notional)
+        .margin_init(default_margin())
+        .margin_maint(default_margin())
+        .maker_fee(maker_fee)
+        .taker_fee(taker_fee)
+        .info(info)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(instrument))
 }
 
 /// Parses a linear contract definition (perpetual or dated future) into a Nautilus instrument.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_linear_instrument(
     definition: &BybitInstrumentLinear,
     fee_rate: &BybitFeeRate,
@@ -478,69 +482,63 @@ pub fn parse_linear_instrument(
 
     match definition.contract_type {
         BybitContractType::LinearPerpetual => {
-            let instrument = CryptoPerpetual::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                settlement_currency,
-                false,
-                price_increment.precision,
-                size_increment.precision,
-                price_increment,
-                size_increment,
-                None,
-                lot_size,
-                max_quantity,
-                min_quantity,
-                None,
-                min_notional,
-                max_price,
-                min_price,
-                Some(default_margin()),
-                Some(default_margin()),
-                Some(maker_fee),
-                Some(taker_fee),
-                None,
-                None,
-                ts_event,
-                ts_init,
-            );
+            let instrument = CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .base_currency(base_currency)
+                .quote_currency(quote_currency)
+                .settlement_currency(settlement_currency)
+                .is_inverse(false)
+                .price_precision(price_increment.precision)
+                .size_precision(size_increment.precision)
+                .price_increment(price_increment)
+                .size_increment(size_increment)
+                .maybe_lot_size(lot_size)
+                .maybe_max_quantity(max_quantity)
+                .maybe_min_quantity(min_quantity)
+                .maybe_min_notional(min_notional)
+                .maybe_max_price(max_price)
+                .maybe_min_price(min_price)
+                .margin_init(default_margin())
+                .margin_maint(default_margin())
+                .maker_fee(maker_fee)
+                .taker_fee(taker_fee)
+                .ts_event(ts_event)
+                .ts_init(ts_init)
+                .build()
+                .unwrap();
             Ok(InstrumentAny::CryptoPerpetual(instrument))
         }
         BybitContractType::LinearFutures => {
             let activation_ns = parse_millis_timestamp(&definition.launch_time, "launchTime")?;
             let expiration_ns = parse_millis_timestamp(&definition.delivery_time, "deliveryTime")?;
-            let instrument = CryptoFuture::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                settlement_currency,
-                false,
-                activation_ns,
-                expiration_ns,
-                price_increment.precision,
-                size_increment.precision,
-                price_increment,
-                size_increment,
-                None,
-                lot_size,
-                max_quantity,
-                min_quantity,
-                None,
-                min_notional,
-                max_price,
-                min_price,
-                Some(default_margin()),
-                Some(default_margin()),
-                Some(maker_fee),
-                Some(taker_fee),
-                None,
-                None,
-                ts_event,
-                ts_init,
-            );
+            let instrument = CryptoFuture::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .underlying(base_currency)
+                .quote_currency(quote_currency)
+                .settlement_currency(settlement_currency)
+                .is_inverse(false)
+                .activation_ns(activation_ns)
+                .expiration_ns(expiration_ns)
+                .price_precision(price_increment.precision)
+                .size_precision(size_increment.precision)
+                .price_increment(price_increment)
+                .size_increment(size_increment)
+                .maybe_lot_size(lot_size)
+                .maybe_max_quantity(max_quantity)
+                .maybe_min_quantity(min_quantity)
+                .maybe_min_notional(min_notional)
+                .maybe_max_price(max_price)
+                .maybe_min_price(min_price)
+                .margin_init(default_margin())
+                .margin_maint(default_margin())
+                .maker_fee(maker_fee)
+                .taker_fee(taker_fee)
+                .ts_event(ts_event)
+                .ts_init(ts_init)
+                .build()
+                .unwrap();
             Ok(InstrumentAny::CryptoFuture(instrument))
         }
         other => Err(anyhow::anyhow!(
@@ -571,6 +569,10 @@ fn parse_optional_notional(
 }
 
 /// Parses an inverse contract definition into a Nautilus instrument.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_inverse_instrument(
     definition: &BybitInstrumentInverse,
     fee_rate: &BybitFeeRate,
@@ -634,69 +636,63 @@ pub fn parse_inverse_instrument(
 
     match definition.contract_type {
         BybitContractType::InversePerpetual => {
-            let instrument = CryptoPerpetual::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                settlement_currency,
-                true,
-                price_increment.precision,
-                size_increment.precision,
-                price_increment,
-                size_increment,
-                None,
-                lot_size,
-                max_quantity,
-                min_quantity,
-                None,
-                min_notional,
-                max_price,
-                min_price,
-                Some(default_margin()),
-                Some(default_margin()),
-                Some(maker_fee),
-                Some(taker_fee),
-                None,
-                None,
-                ts_event,
-                ts_init,
-            );
+            let instrument = CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .base_currency(base_currency)
+                .quote_currency(quote_currency)
+                .settlement_currency(settlement_currency)
+                .is_inverse(true)
+                .price_precision(price_increment.precision)
+                .size_precision(size_increment.precision)
+                .price_increment(price_increment)
+                .size_increment(size_increment)
+                .maybe_lot_size(lot_size)
+                .maybe_max_quantity(max_quantity)
+                .maybe_min_quantity(min_quantity)
+                .maybe_min_notional(min_notional)
+                .maybe_max_price(max_price)
+                .maybe_min_price(min_price)
+                .margin_init(default_margin())
+                .margin_maint(default_margin())
+                .maker_fee(maker_fee)
+                .taker_fee(taker_fee)
+                .ts_event(ts_event)
+                .ts_init(ts_init)
+                .build()
+                .unwrap();
             Ok(InstrumentAny::CryptoPerpetual(instrument))
         }
         BybitContractType::InverseFutures => {
             let activation_ns = parse_millis_timestamp(&definition.launch_time, "launchTime")?;
             let expiration_ns = parse_millis_timestamp(&definition.delivery_time, "deliveryTime")?;
-            let instrument = CryptoFuture::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                settlement_currency,
-                true,
-                activation_ns,
-                expiration_ns,
-                price_increment.precision,
-                size_increment.precision,
-                price_increment,
-                size_increment,
-                None,
-                lot_size,
-                max_quantity,
-                min_quantity,
-                None,
-                min_notional,
-                max_price,
-                min_price,
-                Some(default_margin()),
-                Some(default_margin()),
-                Some(maker_fee),
-                Some(taker_fee),
-                None,
-                None,
-                ts_event,
-                ts_init,
-            );
+            let instrument = CryptoFuture::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .underlying(base_currency)
+                .quote_currency(quote_currency)
+                .settlement_currency(settlement_currency)
+                .is_inverse(true)
+                .activation_ns(activation_ns)
+                .expiration_ns(expiration_ns)
+                .price_precision(price_increment.precision)
+                .size_precision(size_increment.precision)
+                .price_increment(price_increment)
+                .size_increment(size_increment)
+                .maybe_lot_size(lot_size)
+                .maybe_max_quantity(max_quantity)
+                .maybe_min_quantity(min_quantity)
+                .maybe_min_notional(min_notional)
+                .maybe_max_price(max_price)
+                .maybe_min_price(min_price)
+                .margin_init(default_margin())
+                .margin_maint(default_margin())
+                .maker_fee(maker_fee)
+                .taker_fee(taker_fee)
+                .ts_event(ts_event)
+                .ts_init(ts_init)
+                .build()
+                .unwrap();
             Ok(InstrumentAny::CryptoFuture(instrument))
         }
         other => Err(anyhow::anyhow!(
@@ -706,6 +702,10 @@ pub fn parse_inverse_instrument(
 }
 
 /// Parses a Bybit option contract definition into a Nautilus [`CryptoOption`].
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_option_instrument(
     definition: &BybitInstrumentOption,
     fee_rate: Option<&BybitFeeRate>,
@@ -768,38 +768,34 @@ pub fn parse_option_instrument(
         None => (Some(Decimal::ZERO), Some(Decimal::ZERO)),
     };
 
-    let instrument = CryptoOption::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        option_kind,
-        strike_price,
-        activation_ns,
-        expiration_ns,
-        price_increment.precision,
-        lot_size.precision,
-        price_increment,
-        lot_size,                    // Lot size represents size increment.
-        Some(Quantity::from(1_u32)), // multiplier
-        Some(lot_size),
-        max_quantity,
-        min_quantity,
-        None,
-        None,
-        max_price,
-        min_price,
-        None, // margin_init
-        None, // margin_maint
-        maker_fee,
-        taker_fee,
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+    let instrument = CryptoOption::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .option_kind(option_kind)
+        .strike_price(strike_price)
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_increment.precision)
+        .size_precision(lot_size.precision)
+        .price_increment(price_increment)
+        // Lot size represents size increment.
+        .size_increment(lot_size)
+        .multiplier(Quantity::from(1_u32))
+        .lot_size(lot_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoOption(instrument))
 }

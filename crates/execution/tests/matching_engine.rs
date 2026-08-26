@@ -12873,109 +12873,77 @@ fn option_contract(
         OptionKind::Call => format!("{underlying}211217C00150000"),
         OptionKind::Put => format!("{underlying}211217P00150000"),
     };
-    OptionContract::new(
-        InstrumentId::from(format!("{symbol}.{venue}").as_str()),
-        Symbol::from(symbol.as_str()),
-        AssetClass::Equity,
-        Some(Ustr::from(venue)),
-        Ustr::from(underlying),
-        kind,
-        Price::from("149.00"),
-        Currency::USD(),
-        UnixNanos::from(0),
-        expiration_ns,
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OptionContract::builder()
+        .instrument_id(InstrumentId::from(format!("{symbol}.{venue}").as_str()))
+        .raw_symbol(Symbol::from(symbol.as_str()))
+        .asset_class(AssetClass::Equity)
+        .exchange(Ustr::from(venue))
+        .underlying(Ustr::from(underlying))
+        .option_kind(kind)
+        .strike_price(Price::from("149.00"))
+        .currency(Currency::USD())
+        .activation_ns(UnixNanos::from(0))
+        .expiration_ns(expiration_ns)
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn crypto_option_call_btc(venue: &str, expiration_ns: UnixNanos, strike: Price) -> CryptoOption {
-    CryptoOption::new(
-        InstrumentId::from(format!("BTC-OPT-CALL.{venue}").as_str()),
-        Symbol::from("BTC-OPT-CALL"),
-        Currency::from("BTC"),
-        Currency::from("USD"),
-        Currency::from("BTC"),
-        false,
-        OptionKind::Call,
-        strike,
-        UnixNanos::from(0),
-        expiration_ns,
-        2,
-        1,
-        Price::from("0.01"),
-        Quantity::from("0.1"),
-        Some(Quantity::from(1)),
-        Some(Quantity::from(1)),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    CryptoOption::builder()
+        .instrument_id(InstrumentId::from(format!("BTC-OPT-CALL.{venue}").as_str()))
+        .raw_symbol(Symbol::from("BTC-OPT-CALL"))
+        .underlying(Currency::from("BTC"))
+        .quote_currency(Currency::from("USD"))
+        .settlement_currency(Currency::from("BTC"))
+        .is_inverse(false)
+        .option_kind(OptionKind::Call)
+        .strike_price(strike)
+        .activation_ns(UnixNanos::from(0))
+        .expiration_ns(expiration_ns)
+        .price_precision(2)
+        .size_precision(1)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.1"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn underlying_index(venue: &str) -> IndexInstrument {
-    IndexInstrument::new(
-        InstrumentId::from(format!("SPX.{venue}").as_str()),
-        Symbol::from("SPX"),
-        Currency::USD(),
-        2,
-        0,
-        Price::from("0.01"),
-        Quantity::from(1),
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    IndexInstrument::builder()
+        .instrument_id(InstrumentId::from(format!("SPX.{venue}").as_str()))
+        .raw_symbol(Symbol::from("SPX"))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn underlying_equity(venue: &str) -> Equity {
-    Equity::new(
-        InstrumentId::from(format!("AAPL.{venue}").as_str()),
-        Symbol::from("AAPL"),
-        None,
-        Currency::USD(),
-        2,
-        Price::from("0.01"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    Equity::builder()
+        .instrument_id(InstrumentId::from(format!("AAPL.{venue}").as_str()))
+        .raw_symbol(Symbol::from("AAPL"))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn open_long_option_position(
@@ -15074,19 +15042,20 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
     let strike = Price::from("50000.00");
     let option = InstrumentAny::CryptoOption(crypto_option_call_btc(venue, expiration_ns, strike));
 
-    let underlying = InstrumentAny::IndexInstrument(IndexInstrument::new(
-        InstrumentId::from(format!("BTC.{venue}").as_str()),
-        Symbol::from("BTC"),
-        Currency::USD(),
-        2,
-        0,
-        Price::from("0.01"),
-        Quantity::from(1),
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ));
+    let underlying = InstrumentAny::IndexInstrument(
+        IndexInstrument::builder()
+            .instrument_id(InstrumentId::from(format!("BTC.{venue}").as_str()))
+            .raw_symbol(Symbol::from("BTC"))
+            .currency(Currency::USD())
+            .price_precision(2)
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    );
 
     cache.borrow_mut().add_instrument(option.clone()).unwrap();
     cache

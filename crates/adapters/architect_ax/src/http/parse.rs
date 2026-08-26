@@ -153,6 +153,10 @@ pub fn parse_funding_rate(
 /// # Errors
 ///
 /// Returns an error if any required field cannot be parsed or is invalid.
+///
+/// # Panics
+///
+/// Panics if the constructed perpetual instrument fails validation.
 pub fn parse_instrument(
     definition: &AxInstrument,
     maker_fee: Decimal,
@@ -312,67 +316,56 @@ pub fn parse_instrument(
             json!("unavailable_from_ax"),
         );
 
-        let instrument = FuturesContract::new_checked(
-            instrument_id,
-            raw_symbol,
-            asset_class,
-            None,
-            underlying,
-            UnixNanos::default(),
-            expiration_ns,
-            quote_currency,
-            price_increment.precision,
-            price_increment,
-            multiplier,
-            size_increment,
-            None,
-            min_quantity,
-            None,
-            None,
-            Some(margin_init),
-            Some(margin_maint),
-            Some(maker_fee),
-            Some(taker_fee),
-            None,
-            Some(info),
-            ts_event,
-            ts_init,
-        )
-        .context("Failed to construct AX dated futures contract")?;
+        let instrument = FuturesContract::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .underlying(underlying)
+            .activation_ns(UnixNanos::default())
+            .expiration_ns(expiration_ns)
+            .currency(quote_currency)
+            .price_precision(price_increment.precision)
+            .price_increment(price_increment)
+            .multiplier(multiplier)
+            .lot_size(size_increment)
+            .maybe_min_quantity(min_quantity)
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .context("Failed to construct AX dated futures contract")?;
 
         return Ok(InstrumentAny::FuturesContract(instrument));
     }
 
-    let instrument = PerpetualContract::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        asset_class,
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        false,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None,
-        lot_size,
-        None,
-        min_quantity,
-        None,
-        None,
-        None,
-        None,
-        Some(margin_init),
-        Some(margin_maint),
-        Some(maker_fee),
-        Some(taker_fee),
-        None,
-        Some(info),
-        ts_event,
-        ts_init,
-    );
+    let instrument = PerpetualContract::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .asset_class(asset_class)
+        .maybe_base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(false)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_lot_size(lot_size)
+        .maybe_min_quantity(min_quantity)
+        .margin_init(margin_init)
+        .margin_maint(margin_maint)
+        .maker_fee(maker_fee)
+        .taker_fee(taker_fee)
+        .info(info)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::PerpetualContract(instrument))
 }

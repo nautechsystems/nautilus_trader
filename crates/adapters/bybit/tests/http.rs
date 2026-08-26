@@ -2689,32 +2689,19 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
 
     let eth = Currency::from("ETH");
     let usdt = Currency::from("USDT");
-    let ethusdt = CurrencyPair::new(
-        "ETHUSDT-SPOT.BYBIT".into(),
-        "ETHUSDT".into(),
-        eth,
-        usdt,
-        2,
-        5,
-        Price::from("0.01"),
-        Quantity::from("0.00001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    );
+    let ethusdt = CurrencyPair::builder()
+        .instrument_id("ETHUSDT-SPOT.BYBIT".into())
+        .raw_symbol("ETHUSDT".into())
+        .base_currency(eth)
+        .quote_currency(usdt)
+        .price_precision(2)
+        .size_precision(5)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.00001"))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap();
     client.cache_instrument(InstrumentAny::CurrencyPair(ethusdt));
 
     let account_id = AccountId::new("BYBIT-UNIFIED");

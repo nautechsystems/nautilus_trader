@@ -784,63 +784,44 @@ fn build_config_no_credentials(addr: SocketAddr) -> LighterExecutionClientConfig
 }
 
 fn test_perp_instrument() -> InstrumentAny {
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        eth_perp_id(),
-        Symbol::new(ETH_PERP_SYMBOL),
-        Currency::from("ETH"),
-        Currency::from("USDC"),
-        Currency::from("USDC"),
-        false,
-        2,
-        4,
-        Price::from("0.01"),
-        Quantity::from("0.0001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(Money::from("10.000000 USDC")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(eth_perp_id())
+            .raw_symbol(Symbol::new(ETH_PERP_SYMBOL))
+            .base_currency(Currency::from("ETH"))
+            .quote_currency(Currency::from("USDC"))
+            .settlement_currency(Currency::from("USDC"))
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(4)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.0001"))
+            .min_notional(Money::from("10.000000 USDC"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn test_spot_instrument() -> InstrumentAny {
-    InstrumentAny::CurrencyPair(CurrencyPair::new(
-        eth_spot_id(),
-        Symbol::new("ETH/USDC"),
-        Currency::from("ETH"),
-        Currency::from("USDC"),
-        4,
-        2,
-        Price::from("0.0001"),
-        Quantity::from("0.01"),
-        None,
-        None,
-        None,
-        Some(Quantity::from("0.01")),
-        None,
-        Some(Money::from("1.0000 USDC")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(eth_spot_id())
+            .raw_symbol(Symbol::new("ETH/USDC"))
+            .base_currency(Currency::from("ETH"))
+            .quote_currency(Currency::from("USDC"))
+            .price_precision(4)
+            .size_precision(2)
+            .price_increment(Price::from("0.0001"))
+            .size_increment(Quantity::from("0.01"))
+            .min_quantity(Quantity::from("0.01"))
+            .min_notional(Money::from("1.0000 USDC"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn build_cache_with_account_and_instrument() -> Rc<RefCell<Cache>> {

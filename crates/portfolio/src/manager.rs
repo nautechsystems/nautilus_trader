@@ -3640,32 +3640,19 @@ mod tests {
             "WQUOTE",
             CurrencyType::Crypto,
         );
-        let instrument = CurrencyPair::new(
-            InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"),
-            Symbol::from("WBASEWQUOTE"),
-            instrument_base,
-            instrument_quote,
-            16,
-            16,
-            Price::from_raw(1, 16),
-            Quantity::from_raw(1, 16),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"))
+            .raw_symbol(Symbol::from("WBASEWQUOTE"))
+            .base_currency(instrument_base)
+            .quote_currency(instrument_quote)
+            .price_precision(16)
+            .size_precision(16)
+            .price_increment(Price::from_raw(1, 16))
+            .size_increment(Quantity::from_raw(1, 16))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let scale = money_raw(10_i128.pow(u32::from(wallet_precision.max(FIXED_PRECISION))));
         let base_total = Money::from_raw(scale, observed_base);
         let quote_total = Money::from_raw(2 * scale, observed_quote);

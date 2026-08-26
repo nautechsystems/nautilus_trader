@@ -2527,34 +2527,21 @@ mod tests {
 
     fn create_stub_instrument() -> CryptoPerpetual {
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false,
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
+        CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
     }
 
     fn create_stub_order_msg(
@@ -3084,34 +3071,21 @@ mod tests {
 
         // Create a mock instrument for testing
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            2,     // price_precision
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None, // multiplier
-            None, // lot_size
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_notional
-            None, // min_notional
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            None, // taker_fee
-            None, // tick_scheme
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
@@ -3168,34 +3142,21 @@ mod tests {
 
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            2,     // price_precision
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         let ts_init = UnixNanos::default();
 
@@ -3234,34 +3195,21 @@ mod tests {
 
         let account_id = AccountId::new("OKX-001");
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            2,     // price_precision
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         let ts_init = UnixNanos::default();
 
@@ -3390,34 +3338,21 @@ mod tests {
     #[rstest]
     fn test_parse_fill_report_with_fee_cache() {
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            2,     // price_precision
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None, // multiplier
-            None, // lot_size
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_notional
-            None, // min_notional
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            None, // taker_fee
-            None, // tick_scheme
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
@@ -3598,34 +3533,21 @@ mod tests {
     #[rstest]
     fn test_parse_fill_report_with_maker_rebates() {
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false,
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
@@ -3804,34 +3726,21 @@ mod tests {
     #[rstest]
     fn test_parse_fill_report_rebate_to_charge_transition() {
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false,
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
@@ -4013,34 +3922,21 @@ mod tests {
     #[rstest]
     fn test_parse_fill_report_negative_incremental() {
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false,
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
@@ -4502,34 +4398,21 @@ mod tests {
 
         // Create mock instrument
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            2,     // price_precision
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,     // tick_scheme
-            None,     // info
-            0.into(), // ts_event
-            0.into(), // ts_init
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -4568,34 +4451,21 @@ mod tests {
 
         // Create mock instrument
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            2,     // price_precision
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,     // tick_scheme
-            None,     // info
-            0.into(), // ts_event
-            0.into(), // ts_init
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -4705,34 +4575,21 @@ mod tests {
 
         // Create mock instrument
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            2,     // price_precision
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,     // tick_scheme
-            None,     // info
-            0.into(), // ts_event
-            0.into(), // ts_init
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -4780,34 +4637,21 @@ mod tests {
 
         // Create mock instrument
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            2,     // price_precision
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,     // tick_scheme
-            None,     // info
-            0.into(), // ts_event
-            0.into(), // ts_init
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -4856,34 +4700,21 @@ mod tests {
 
         // Create mock instrument
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("ETH-USDT-SWAP"),
-            Currency::ETH(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            2,     // price_precision
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,     // tick_scheme
-            None,     // info
-            0.into(), // ts_event
-            0.into(), // ts_init
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("ETH-USDT-SWAP"))
+            .base_currency(Currency::ETH())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         instruments.insert(
             Ustr::from("ETH-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),
@@ -4947,34 +4778,21 @@ mod tests {
         let mut instruments = AHashMap::new();
 
         let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("BTC-USDT-SWAP"),
-            Currency::BTC(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false,
-            2,
-            8,
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            0.into(),
-            0.into(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("BTC-USDT-SWAP"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         instruments.insert(
             Ustr::from("BTC-USDT-SWAP"),
             InstrumentAny::CryptoPerpetual(instrument),

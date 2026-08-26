@@ -75,35 +75,35 @@ impl OptionContract {
             None
         };
 
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            asset_class,
-            exchange.map(|x| Ustr::from(&x)),
-            underlying.into(),
-            option_kind,
-            strike_price,
-            currency,
-            activation_ns.into(),
-            expiration_ns.into(),
-            price_precision,
-            price_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme.map(|name| ustr::Ustr::from(name.as_str())),
-            info_map,
-            ts_event.into(),
-            ts_init.into(),
-        )
-        .map_err(to_pyvalue_err)
+        Self::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .maybe_exchange(exchange.map(|x| Ustr::from(&x)))
+            .underlying(underlying.into())
+            .option_kind(option_kind)
+            .strike_price(strike_price)
+            .currency(currency)
+            .activation_ns(activation_ns.into())
+            .expiration_ns(expiration_ns.into())
+            .price_precision(price_precision)
+            .price_increment(price_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .maybe_tick_scheme(tick_scheme.map(|name| ustr::Ustr::from(name.as_str())))
+            .maybe_info(info_map)
+            .ts_event(ts_event.into())
+            .ts_init(ts_init.into())
+            .build()
+            .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

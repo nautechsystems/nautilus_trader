@@ -135,34 +135,25 @@ fn execution_engine_with_config() -> ExecutionEngine {
 }
 
 fn futures_contract_xcme() -> FuturesContract {
-    FuturesContract::new(
-        InstrumentId::from("ESM6.XCME"),
-        Symbol::from("ESM6"),
-        AssetClass::Index,
-        Some(Ustr::from("XCME")),
-        Ustr::from("ES"),
+    FuturesContract::builder()
+        .instrument_id(InstrumentId::from("ESM6.XCME"))
+        .raw_symbol(Symbol::from("ESM6"))
+        .asset_class(AssetClass::Index)
+        .exchange(Ustr::from("XCME"))
+        .underlying(Ustr::from("ES"))
         // Activation: 2026-04-06 00:00:00 UTC
-        UnixNanos::from(1_775_433_600_000_000_000),
+        .activation_ns(UnixNanos::from(1_775_433_600_000_000_000))
         // Expiration: 2026-06-17 16:00:00 UTC
-        UnixNanos::from(1_781_712_000_000_000_000),
-        Currency::USD(),
-        2,
-        Price::from("0.25"),
-        Quantity::from(50),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+        .expiration_ns(UnixNanos::from(1_781_712_000_000_000_000))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.25"))
+        .multiplier(Quantity::from(50))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[fixture]

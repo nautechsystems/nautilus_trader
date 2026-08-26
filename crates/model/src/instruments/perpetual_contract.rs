@@ -17,9 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     Params, UnixNanos,
-    correctness::{
-        CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8,
-    },
+    correctness::{CorrectnessError, CorrectnessResult, check_equal_u8},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -112,17 +110,8 @@ pub struct PerpetualContract {
 
 #[bon::bon]
 impl PerpetualContract {
-    /// Creates a new [`PerpetualContract`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
-    pub fn new_checked(
+    fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         underlying: Ustr,
@@ -214,85 +203,14 @@ impl PerpetualContract {
         })
     }
 
-    /// Creates a new [`PerpetualContract`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any input parameter is invalid (see `new_checked`).
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        raw_symbol: Symbol,
-        underlying: Ustr,
-        asset_class: AssetClass,
-        base_currency: Option<Currency>,
-        quote_currency: Currency,
-        settlement_currency: Currency,
-        is_inverse: bool,
-        price_precision: u8,
-        size_precision: u8,
-        price_increment: Price,
-        size_increment: Quantity,
-        multiplier: Option<Quantity>,
-        lot_size: Option<Quantity>,
-        max_quantity: Option<Quantity>,
-        min_quantity: Option<Quantity>,
-        max_notional: Option<Money>,
-        min_notional: Option<Money>,
-        max_price: Option<Price>,
-        min_price: Option<Price>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        tick_scheme: Option<Ustr>,
-        info: Option<Params>,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            underlying,
-            asset_class,
-            base_currency,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            price_precision,
-            size_precision,
-            price_increment,
-            size_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .expect_display(FAILED)
-    }
-
     /// Returns a fluent builder for a [`PerpetualContract`] instance.
     ///
-    /// Required fields are enforced at compile time; optional fields can be omitted and default
-    /// the same way they do in [`PerpetualContract::new_checked`], which the builder calls so the same
-    /// correctness checks run on `build`.
+    /// Required fields are enforced at compile time; optional fields can be omitted and use the
+    /// same defaults as checked construction. The same correctness checks run on `build`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails (see [`PerpetualContract::new_checked`]).
+    /// Returns an error if any input validation fails.
     #[builder(start_fn = builder, finish_fn = build)]
     pub fn build_checked(
         instrument_id: InstrumentId,

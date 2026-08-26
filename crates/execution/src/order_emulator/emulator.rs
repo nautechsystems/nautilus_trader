@@ -2182,14 +2182,15 @@ mod tests {
         let other_order = make_order(ClientOrderId::from("O-EMULATED-OTHER"));
         let unclaimed_order = make_order(ClientOrderId::from("O-EMULATED-UNCLAIMED"));
         let synthetic_formula = format!("{} * 1.0", instrument.id());
-        let synthetic = SyntheticInstrument::new(
-            Symbol::from("ETH-INDEX"),
-            instrument.price_precision(),
-            vec![instrument.id()],
-            &synthetic_formula,
-            0.into(),
-            0.into(),
-        );
+        let synthetic = SyntheticInstrument::builder()
+            .symbol(Symbol::from("ETH-INDEX"))
+            .price_precision(instrument.price_precision())
+            .components(vec![instrument.id()])
+            .formula(&synthetic_formula)
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         let trigger_instrument_id = synthetic.id;
         let cross_trigger_order = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument.id())

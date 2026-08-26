@@ -2291,32 +2291,19 @@ fn test_client_order_ids_filtering(mut cache: Cache) {
 #[rstest]
 fn test_position_ids_filtering(mut cache: Cache) {
     fn make_pair(id_str: &str) -> CurrencyPair {
-        CurrencyPair::new(
-            InstrumentId::from(id_str),
-            Symbol::from(id_str),
-            Currency::USD(),
-            Currency::EUR(),
-            2,
-            4,
-            Price::from("0.01"),
-            Quantity::from("0.0001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from(id_str))
+            .raw_symbol(Symbol::from(id_str))
+            .base_currency(Currency::USD())
+            .quote_currency(Currency::EUR())
+            .price_precision(2)
+            .size_precision(4)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.0001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
     }
 
     let venue_a = Venue::from("VENUE-A");
@@ -3305,34 +3292,26 @@ fn test_instruments_when_some(mut cache: Cache) {
 }
 
 fn es_option_contract() -> OptionContract {
-    OptionContract::new(
-        InstrumentId::from("ESZ1 P4000.GLBX"),
-        Symbol::from("ESZ1 P4000"),
-        AssetClass::Index,
-        Some(Ustr::from("XCME")),
-        Ustr::from("ES"),
-        OptionKind::Put,
-        Price::from("4000.00"),
-        Currency::USD(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None::<nautilus_core::Params>,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OptionContract::builder()
+        .instrument_id(InstrumentId::from("ESZ1 P4000.GLBX"))
+        .raw_symbol(Symbol::from("ESZ1 P4000"))
+        .asset_class(AssetClass::Index)
+        .exchange(Ustr::from("XCME"))
+        .underlying(Ustr::from("ES"))
+        .option_kind(OptionKind::Put)
+        .strike_price(Price::from("4000.00"))
+        .currency(Currency::USD())
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .maybe_info(None::<nautilus_core::Params>)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[rstest]
@@ -10088,32 +10067,19 @@ fn test_position_filters_with_state_and_side(mut cache: Cache) {
     // venues and a closed position on venue A; asserts filter and side branches against
     // `position_*_ids` and `positions_*_count`.
     fn make_pair(id_str: &str) -> CurrencyPair {
-        CurrencyPair::new(
-            InstrumentId::from(id_str),
-            Symbol::from(id_str),
-            Currency::USD(),
-            Currency::EUR(),
-            2,
-            4,
-            Price::from("0.01"),
-            Quantity::from("0.0001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from(id_str))
+            .raw_symbol(Symbol::from(id_str))
+            .base_currency(Currency::USD())
+            .quote_currency(Currency::EUR())
+            .price_precision(2)
+            .size_precision(4)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.0001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
     }
 
     let venue_a = Venue::from("VENUE-A");
@@ -10463,32 +10429,19 @@ fn assert_positions_apis_consistent(
 #[rstest]
 fn test_positions_query_apis_are_consistent(mut cache: Cache) {
     fn make_pair(id_str: &str) -> CurrencyPair {
-        CurrencyPair::new(
-            InstrumentId::from(id_str),
-            Symbol::from(id_str),
-            Currency::USD(),
-            Currency::EUR(),
-            2,
-            4,
-            Price::from("0.01"),
-            Quantity::from("0.0001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from(id_str))
+            .raw_symbol(Symbol::from(id_str))
+            .base_currency(Currency::USD())
+            .quote_currency(Currency::EUR())
+            .price_precision(2)
+            .size_precision(4)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.0001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
     }
 
     let venue_a = Venue::from("VENUE-A");

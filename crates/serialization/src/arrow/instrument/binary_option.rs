@@ -493,35 +493,43 @@ pub fn decode_binary_option_batch(
             _ => None,
         };
 
-        let binary_option = BinaryOption::new_checked(
-            id,
-            raw_symbol,
-            asset_class,
-            currency,
-            activation_ns,
-            expiration_ns,
-            price_prec,
-            size_prec,
-            price_increment,
-            size_increment,
-            outcome,
-            description,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            super::optional_price_value(max_price_values, "max_price", i)?,
-            super::optional_price_value(min_price_values, "min_price", i)?,
-            Some(margin_init),
-            Some(margin_maint),
-            Some(maker_fee),
-            Some(taker_fee),
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .map_err(|e| super::instrument_validation_error::<BinaryOption>(i, e))?;
+        let binary_option = BinaryOption::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .currency(currency)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(price_prec)
+            .size_precision(size_prec)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_outcome(outcome)
+            .maybe_description(description)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(super::optional_price_value(
+                max_price_values,
+                "max_price",
+                i,
+            )?)
+            .maybe_min_price(super::optional_price_value(
+                min_price_values,
+                "min_price",
+                i,
+            )?)
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_tick_scheme(tick_scheme)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .map_err(|e| super::instrument_validation_error::<BinaryOption>(i, e))?;
 
         result.push(binary_option);
     }

@@ -183,37 +183,26 @@ fn make_order_status_report(cid: &str, status: OrderStatus) -> OrderStatusReport
 }
 
 fn make_spread_instrument() -> InstrumentAny {
-    let instrument = CryptoFuturesSpread::new(
-        InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"),
-        Symbol::from("BCH-USDT_BCH-USDT-SWAP"),
-        Currency::get_or_create_crypto("BCH"),
-        Currency::USDT(),
-        Currency::USDT(),
-        false,
-        Ustr::from("linear"),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        1,
-        2,
-        Price::from("0.1"),
-        Quantity::from("0.01"),
-        None,
-        Some(Quantity::from("0.01")),
-        None,
-        Some(Quantity::from("0.01")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let instrument = CryptoFuturesSpread::builder()
+        .instrument_id(InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX"))
+        .raw_symbol(Symbol::from("BCH-USDT_BCH-USDT-SWAP"))
+        .underlying(Currency::get_or_create_crypto("BCH"))
+        .quote_currency(Currency::USDT())
+        .settlement_currency(Currency::USDT())
+        .is_inverse(false)
+        .strategy_type(Ustr::from("linear"))
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(1)
+        .size_precision(2)
+        .price_increment(Price::from("0.1"))
+        .size_increment(Quantity::from("0.01"))
+        .lot_size(Quantity::from("0.01"))
+        .min_quantity(Quantity::from("0.01"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
 
     InstrumentAny::CryptoFuturesSpread(instrument)
 }
@@ -4055,37 +4044,26 @@ async fn test_generate_fill_reports_includes_spreads_when_enabled() {
 }
 
 fn make_report_spread_instrument() -> InstrumentAny {
-    let instrument = CryptoFuturesSpread::new(
-        InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"),
-        Symbol::from("ETH-USD-SWAP_ETH-USD-231229"),
-        Currency::get_or_create_crypto("ETH"),
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        Ustr::from("inverse"),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        2,
-        0,
-        Price::from("0.01"),
-        Quantity::from("1"),
-        None,
-        Some(Quantity::from("1")),
-        None,
-        Some(Quantity::from("1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    );
+    let instrument = CryptoFuturesSpread::builder()
+        .instrument_id(InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX"))
+        .raw_symbol(Symbol::from("ETH-USD-SWAP_ETH-USD-231229"))
+        .underlying(Currency::get_or_create_crypto("ETH"))
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .strategy_type(Ustr::from("inverse"))
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::default())
+        .price_precision(2)
+        .size_precision(0)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("1"))
+        .lot_size(Quantity::from("1"))
+        .min_quantity(Quantity::from("1"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
 
     InstrumentAny::CryptoFuturesSpread(instrument)
 }

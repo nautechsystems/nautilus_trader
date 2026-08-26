@@ -929,35 +929,25 @@ pub(crate) async fn wait_for_connection(state: &TestServerState) {
 
 pub(crate) fn create_test_instrument(symbol: &str) -> InstrumentAny {
     let underlying = Ustr::from(symbol.split('-').next().unwrap_or(symbol));
-    let instrument = PerpetualContract::new(
-        InstrumentId::new(Symbol::new(symbol), *AX_VENUE),
-        Symbol::new(symbol),
-        underlying,
-        AssetClass::Cryptocurrency,
-        None,
-        Currency::USD(),
-        Currency::USD(),
-        false,
-        2,
-        3,
-        Price::new(0.01, 2),
-        Quantity::new(0.001, 3),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(Decimal::new(1, 2)),
-        Some(Decimal::new(5, 3)),
-        Some(Decimal::new(2, 4)),
-        Some(Decimal::new(5, 4)),
-        None,
-        None,
-        0.into(),
-        0.into(),
-    );
+    let instrument = PerpetualContract::builder()
+        .instrument_id(InstrumentId::new(Symbol::new(symbol), *AX_VENUE))
+        .raw_symbol(Symbol::new(symbol))
+        .underlying(underlying)
+        .asset_class(AssetClass::Cryptocurrency)
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .price_precision(2)
+        .size_precision(3)
+        .price_increment(Price::new(0.01, 2))
+        .size_increment(Quantity::new(0.001, 3))
+        .margin_init(Decimal::new(1, 2))
+        .margin_maint(Decimal::new(5, 3))
+        .maker_fee(Decimal::new(2, 4))
+        .taker_fee(Decimal::new(5, 4))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap();
     InstrumentAny::PerpetualContract(instrument)
 }

@@ -768,6 +768,10 @@ const HYPERLIQUID_MIN_ORDER_NOTIONAL: Decimal = Decimal::TEN;
 /// Converts a single Hyperliquid instrument definition into a Nautilus `InstrumentAny`.
 ///
 /// Returns `None` if the conversion fails (e.g., unsupported market type).
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 #[must_use]
 pub fn create_instrument_from_def(
     def: &HyperliquidInstrumentDef,
@@ -791,32 +795,23 @@ pub fn create_instrument_from_def(
             let quote_currency = get_currency(&def.quote);
             let min_notional = Some(min_order_notional(quote_currency)?);
 
-            Some(InstrumentAny::CurrencyPair(CurrencyPair::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                def.price_decimals as u8,
-                def.size_decimals as u8,
-                price_increment,
-                size_increment,
-                None,
-                None,
-                None,
-                None,
-                None,
-                min_notional,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                ts_init, // Identical to ts_init for now
-                ts_init,
-            )))
+            Some(InstrumentAny::CurrencyPair(
+                CurrencyPair::builder()
+                    .instrument_id(instrument_id)
+                    .raw_symbol(raw_symbol)
+                    .base_currency(base_currency)
+                    .quote_currency(quote_currency)
+                    .price_precision(def.price_decimals as u8)
+                    .size_precision(def.size_decimals as u8)
+                    .price_increment(price_increment)
+                    .size_increment(size_increment)
+                    .maybe_min_notional(min_notional)
+                    // Identical to ts_init for now
+                    .ts_event(ts_init)
+                    .ts_init(ts_init)
+                    .build()
+                    .unwrap(),
+            ))
         }
         HyperliquidMarketType::Perp => {
             let base_currency = get_currency(&def.base);
@@ -832,67 +827,50 @@ pub fn create_instrument_from_def(
             };
             let min_notional = Some(min_order_notional(quote_currency)?);
 
-            Some(InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-                instrument_id,
-                raw_symbol,
-                base_currency,
-                quote_currency,
-                settlement_currency,
-                false,
-                def.price_decimals as u8,
-                def.size_decimals as u8,
-                price_increment,
-                size_increment,
-                None, // multiplier
-                None,
-                None,
-                None,
-                None,
-                min_notional,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                ts_init, // Identical to ts_init for now
-                ts_init,
-            )))
+            Some(InstrumentAny::CryptoPerpetual(
+                CryptoPerpetual::builder()
+                    .instrument_id(instrument_id)
+                    .raw_symbol(raw_symbol)
+                    .base_currency(base_currency)
+                    .quote_currency(quote_currency)
+                    .settlement_currency(settlement_currency)
+                    .is_inverse(false)
+                    .price_precision(def.price_decimals as u8)
+                    .size_precision(def.size_decimals as u8)
+                    .price_increment(price_increment)
+                    .size_increment(size_increment)
+                    .maybe_min_notional(min_notional)
+                    // Identical to ts_init for now
+                    .ts_event(ts_init)
+                    .ts_init(ts_init)
+                    .build()
+                    .unwrap(),
+            ))
         }
         HyperliquidMarketType::Outcome => {
             let outcome = def.outcome.as_ref()?;
             let currency = get_usdh_currency();
 
-            Some(InstrumentAny::BinaryOption(BinaryOption::new(
-                instrument_id,
-                raw_symbol,
-                AssetClass::Alternative,
-                currency,
-                outcome.activation_ns,
-                outcome.expiration_ns,
-                def.price_decimals as u8,
-                def.size_decimals as u8,
-                price_increment,
-                size_increment,
-                outcome.side_name,
-                outcome.description,
-                None, // max_quantity
-                None, // min_quantity
-                None, // max_notional
-                None, // min_notional
-                None, // max_price
-                None, // min_price
-                None, // margin_init
-                None, // margin_maint
-                None, // maker_fee
-                None, // taker_fee
-                None, // tick_scheme
-                outcome.info.clone(),
-                ts_init,
-                ts_init,
-            )))
+            Some(InstrumentAny::BinaryOption(
+                BinaryOption::builder()
+                    .instrument_id(instrument_id)
+                    .raw_symbol(raw_symbol)
+                    .asset_class(AssetClass::Alternative)
+                    .currency(currency)
+                    .activation_ns(outcome.activation_ns)
+                    .expiration_ns(outcome.expiration_ns)
+                    .price_precision(def.price_decimals as u8)
+                    .size_precision(def.size_decimals as u8)
+                    .price_increment(price_increment)
+                    .size_increment(size_increment)
+                    .maybe_outcome(outcome.side_name)
+                    .maybe_description(outcome.description)
+                    .maybe_info(outcome.info.clone())
+                    .ts_event(ts_init)
+                    .ts_init(ts_init)
+                    .build()
+                    .unwrap(),
+            ))
         }
     }
 }

@@ -150,34 +150,25 @@ fn create_test_futures_instrument() -> InstrumentAny {
 
     // price_precision must match price_increment.precision (0 for "1")
     // size_precision must match size_increment.precision (4 for "0.0001")
-    InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        btc,
-        usd,
-        usd,
-        false, // is_inverse
-        0,     // price_precision (matches "1" increment)
-        4,     // size_precision (matches "0.0001" increment)
-        Price::from("1"),
-        Quantity::from("0.0001"),
-        None, // multiplier
-        None, // lot_size
-        None, // max_quantity
-        None, // min_quantity
-        None, // max_notional
-        None, // min_notional
-        None, // max_price
-        None, // min_price
-        None, // margin_init
-        None, // margin_maint
-        None, // maker_fee
-        None, // taker_fee
-        None, // tick_scheme
-        None, // info
-        0.into(),
-        0.into(),
-    ))
+    InstrumentAny::CryptoPerpetual(
+        CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(btc)
+            .quote_currency(usd)
+            .settlement_currency(usd)
+            .is_inverse(false)
+            // price_precision (matches "1" increment)
+            .price_precision(0)
+            // size_precision (matches "0.0001" increment)
+            .size_precision(4)
+            .price_increment(Price::from("1"))
+            .size_increment(Quantity::from("0.0001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn manifest_path() -> PathBuf {
@@ -2856,32 +2847,21 @@ async fn test_spot_domain_submit_orders_batch_preserves_status_order() {
     .unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
-    client.cache_instrument(InstrumentAny::CurrencyPair(CurrencyPair::new(
-        instrument_id,
-        Symbol::new("XBTUSD"),
-        Currency::BTC(),
-        Currency::USD(),
-        1,
-        8,
-        Price::from("0.1"),
-        Quantity::from("0.00000001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    )));
+    client.cache_instrument(InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("XBTUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    ));
 
     let statuses = client
         .submit_orders_batch(
@@ -2987,32 +2967,21 @@ async fn test_spot_domain_submit_orders_batch_singleton_falls_back_to_add_order(
     .unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
-    client.cache_instrument(InstrumentAny::CurrencyPair(CurrencyPair::new(
-        instrument_id,
-        Symbol::new("XBTUSD"),
-        Currency::BTC(),
-        Currency::USD(),
-        1,
-        8,
-        Price::from("0.1"),
-        Quantity::from("0.00000001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    )));
+    client.cache_instrument(InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("XBTUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    ));
 
     let statuses = client
         .submit_orders_batch(
@@ -3682,32 +3651,21 @@ async fn test_spot_request_account_state_synthetic_margin_balance_error() {
 
 fn create_xbtusd_spot_instrument() -> (InstrumentId, InstrumentAny) {
     let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
-    let inst = InstrumentAny::CurrencyPair(CurrencyPair::new(
-        instrument_id,
-        Symbol::new("XXBTZUSD"),
-        Currency::BTC(),
-        Currency::USD(),
-        1,
-        8,
-        Price::from("0.1"),
-        Quantity::from("0.00000001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    ));
+    let inst = InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("XXBTZUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    );
     (instrument_id, inst)
 }
 
@@ -3750,32 +3708,21 @@ async fn test_spot_margin_position_flat_when_fully_closed() {
     .unwrap();
 
     let instrument_id = InstrumentId::from("XBT/USD.KRAKEN");
-    client.cache_instrument(InstrumentAny::CurrencyPair(CurrencyPair::new(
-        instrument_id,
-        Symbol::new("XBTUSD"),
-        Currency::BTC(),
-        Currency::USD(),
-        1,
-        8,
-        Price::from("0.1"),
-        Quantity::from("0.00000001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    )));
+    client.cache_instrument(InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::new("XBTUSD"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    ));
 
     let account_id = AccountId::new("KRAKEN-001");
     let reports = client

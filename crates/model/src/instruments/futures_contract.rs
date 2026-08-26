@@ -18,7 +18,7 @@ use std::hash::{Hash, Hasher};
 use nautilus_core::{
     Params, UnixNanos,
     correctness::{
-        CorrectnessResult, CorrectnessResultExt, FAILED, check_equal_u8, check_valid_string_ascii,
+        CorrectnessResult, check_equal_u8, check_valid_string_ascii,
         check_valid_string_ascii_optional,
     },
 };
@@ -106,17 +106,8 @@ pub struct FuturesContract {
 
 #[bon::bon]
 impl FuturesContract {
-    /// Creates a new [`FuturesContract`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[expect(clippy::too_many_arguments)]
-    pub fn new_checked(
+    fn new_checked(
         instrument_id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
@@ -185,77 +176,14 @@ impl FuturesContract {
         })
     }
 
-    /// Creates a new [`FuturesContract`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any input parameter is invalid (see `new_checked`).
-    #[expect(clippy::too_many_arguments)]
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        raw_symbol: Symbol,
-        asset_class: AssetClass,
-        exchange: Option<Ustr>,
-        underlying: Ustr,
-        activation_ns: UnixNanos,
-        expiration_ns: UnixNanos,
-        currency: Currency,
-        price_precision: u8,
-        price_increment: Price,
-        multiplier: Quantity,
-        lot_size: Quantity,
-        max_quantity: Option<Quantity>,
-        min_quantity: Option<Quantity>,
-        max_price: Option<Price>,
-        min_price: Option<Price>,
-        margin_init: Option<Decimal>,
-        margin_maint: Option<Decimal>,
-        maker_fee: Option<Decimal>,
-        taker_fee: Option<Decimal>,
-        tick_scheme: Option<Ustr>,
-        info: Option<Params>,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new_checked(
-            instrument_id,
-            raw_symbol,
-            asset_class,
-            exchange,
-            underlying,
-            activation_ns,
-            expiration_ns,
-            currency,
-            price_precision,
-            price_increment,
-            multiplier,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_price,
-            min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .expect_display(FAILED)
-    }
-
     /// Returns a fluent builder for a [`FuturesContract`] instance.
     ///
-    /// Required fields are enforced at compile time; optional fields can be omitted and default
-    /// the same way they do in [`FuturesContract::new_checked`], which the builder calls so the same
-    /// correctness checks run on `build`.
+    /// Required fields are enforced at compile time; optional fields can be omitted and use the
+    /// same defaults as checked construction. The same correctness checks run on `build`.
     ///
     /// # Errors
     ///
-    /// Returns an error if any input validation fails (see [`FuturesContract::new_checked`]).
+    /// Returns an error if any input validation fails.
     #[builder(start_fn = builder, finish_fn = build)]
     pub fn build_checked(
         instrument_id: InstrumentId,

@@ -3672,14 +3672,15 @@ class CapturingActor:
         let comp1 = InstrumentId::from_str("BTC-USD.VENUE").unwrap();
         let comp2 = InstrumentId::from_str("ETH-USD.VENUE").unwrap();
         let formula = format!("({comp1} + {comp2}) / 2.0");
-        let synthetic = SyntheticInstrument::new(
-            Symbol::from("SYN"),
-            2,
-            vec![comp1, comp2],
-            &formula,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let synthetic = SyntheticInstrument::builder()
+            .symbol(Symbol::from("SYN"))
+            .price_precision(2)
+            .components(vec![comp1, comp2])
+            .formula(&formula)
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let synthetic_id = synthetic.id;
 
         actor.py_add_synthetic(synthetic.clone()).unwrap();
@@ -3689,14 +3690,15 @@ class CapturingActor:
         assert!(actor.py_add_synthetic(synthetic).is_err());
 
         let new_formula = format!("{comp1} + {comp2}");
-        let updated = SyntheticInstrument::new(
-            Symbol::from("SYN"),
-            2,
-            vec![comp1, comp2],
-            &new_formula,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let updated = SyntheticInstrument::builder()
+            .symbol(Symbol::from("SYN"))
+            .price_precision(2)
+            .components(vec![comp1, comp2])
+            .formula(&new_formula)
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         actor.py_update_synthetic(updated).unwrap();
         assert_eq!(
             cache.borrow().synthetic(&synthetic_id).unwrap().formula,
@@ -3704,14 +3706,15 @@ class CapturingActor:
         );
 
         // Updating a non-existent raises
-        let missing = SyntheticInstrument::new(
-            Symbol::from("GONE"),
-            2,
-            vec![comp1, comp2],
-            &formula,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let missing = SyntheticInstrument::builder()
+            .symbol(Symbol::from("GONE"))
+            .price_precision(2)
+            .components(vec![comp1, comp2])
+            .formula(&formula)
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         assert!(actor.py_update_synthetic(missing).is_err());
     }
 

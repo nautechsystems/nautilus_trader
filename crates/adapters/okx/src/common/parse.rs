@@ -1635,6 +1635,10 @@ pub fn parse_instrument_any(
 /// # Errors
 ///
 /// Returns an error if the spread definition cannot be parsed.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_spread_instrument(
     definition: &OKXSpread,
     margin_init: Option<Decimal>,
@@ -1701,72 +1705,60 @@ pub fn parse_spread_instrument(
     let info = Some(build_spread_info(definition));
 
     if spread_has_option_leg(definition) {
-        let instrument = CryptoOptionSpread::new(
-            instrument_id,
-            raw_symbol,
-            underlying,
-            quote_currency,
-            settlement_currency,
-            is_inverse,
-            Ustr::from(spread_type_literal(definition.sprd_type)),
-            activation_ns,
-            expiration_ns,
-            price_increment.precision,
-            size_increment.precision,
-            price_increment,
-            size_increment,
-            None,
-            Some(size_increment),
-            None,
-            min_quantity,
-            None,
-            None,
-            None,
-            None,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-            None,
-            info,
-            ts_event,
-            ts_init,
-        );
+        let instrument = CryptoOptionSpread::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .underlying(underlying)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(is_inverse)
+            .strategy_type(Ustr::from(spread_type_literal(definition.sprd_type)))
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(price_increment.precision)
+            .size_precision(size_increment.precision)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .lot_size(size_increment)
+            .maybe_min_quantity(min_quantity)
+            .maybe_margin_init(margin_init)
+            .maybe_margin_maint(margin_maint)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
 
         return Ok(InstrumentAny::CryptoOptionSpread(instrument));
     }
 
-    let instrument = CryptoFuturesSpread::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        Ustr::from(spread_type_literal(definition.sprd_type)),
-        activation_ns,
-        expiration_ns,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None,
-        Some(size_increment),
-        None,
-        min_quantity,
-        None,
-        None,
-        None,
-        None,
-        margin_init,
-        margin_maint,
-        maker_fee,
-        taker_fee,
-        None,
-        info,
-        ts_event,
-        ts_init,
-    );
+    let instrument = CryptoFuturesSpread::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .strategy_type(Ustr::from(spread_type_literal(definition.sprd_type)))
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .lot_size(size_increment)
+        .maybe_min_quantity(min_quantity)
+        .maybe_margin_init(margin_init)
+        .maybe_margin_maint(margin_maint)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .maybe_info(info)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoFuturesSpread(instrument))
 }
@@ -2068,32 +2060,32 @@ impl InstrumentParser for SpotInstrumentParser {
         let multiplier = parse_multiplier_product(definition)?;
         let info = build_price_limit_info(definition);
 
-        let instrument = CurrencyPair::new(
-            common.instrument_id,
-            common.raw_symbol,
-            base_currency,
-            quote_currency,
-            common.price_increment.precision,
-            common.size_increment.precision,
-            common.price_increment,
-            common.size_increment,
-            multiplier,
-            common.lot_size,
-            common.max_quantity,
-            common.min_quantity,
-            common.max_notional,
-            common.min_notional,
-            common.max_price,
-            common.min_price,
-            margin_fees.margin_init,
-            margin_fees.margin_maint,
-            margin_fees.maker_fee,
-            margin_fees.taker_fee,
-            None,
-            info,
-            ts_init,
-            ts_init,
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(common.instrument_id)
+            .raw_symbol(common.raw_symbol)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .price_precision(common.price_increment.precision)
+            .size_precision(common.size_increment.precision)
+            .price_increment(common.price_increment)
+            .size_increment(common.size_increment)
+            .maybe_multiplier(multiplier)
+            .maybe_lot_size(common.lot_size)
+            .maybe_max_quantity(common.max_quantity)
+            .maybe_min_quantity(common.min_quantity)
+            .maybe_max_notional(common.max_notional)
+            .maybe_min_notional(common.min_notional)
+            .maybe_max_price(common.max_price)
+            .maybe_min_price(common.min_price)
+            .maybe_margin_init(margin_fees.margin_init)
+            .maybe_margin_maint(margin_fees.margin_maint)
+            .maybe_maker_fee(margin_fees.maker_fee)
+            .maybe_taker_fee(margin_fees.taker_fee)
+            .maybe_info(info)
+            .ts_event(ts_init)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
 
         Ok(InstrumentAny::CurrencyPair(instrument))
     }
@@ -2143,6 +2135,10 @@ fn validate_underlying(inst_id: Ustr, uly: Ustr) -> anyhow::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the instrument definition cannot be parsed.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_swap_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
@@ -2233,34 +2229,35 @@ pub fn parse_swap_instrument(
     let min_price = None; // TBD
     let info = build_price_limit_info(definition);
 
-    let instrument = CryptoPerpetual::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        lot_size,
-        max_quantity,
-        min_quantity,
-        max_notional,
-        min_notional,
-        max_price,
-        min_price,
-        margin_init,
-        margin_maint,
-        maker_fee,
-        taker_fee,
-        None,
-        info,
-        ts_init, // No ts_event for response
-        ts_init,
-    );
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_lot_size(lot_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_notional(max_notional)
+        .maybe_min_notional(min_notional)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .maybe_margin_init(margin_init)
+        .maybe_margin_maint(margin_maint)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .maybe_info(info)
+        // No ts_event for response
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
@@ -2270,6 +2267,10 @@ pub fn parse_swap_instrument(
 /// # Errors
 ///
 /// Returns an error if the instrument definition cannot be parsed.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_futures_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
@@ -2369,36 +2370,37 @@ pub fn parse_futures_instrument(
 
     let info = build_futures_info(definition);
 
-    let instrument = CryptoFuture::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        activation_ns,
-        expiration_ns,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        lot_size,
-        max_quantity,
-        min_quantity,
-        max_notional,
-        min_notional,
-        max_price,
-        min_price,
-        margin_init,
-        margin_maint,
-        maker_fee,
-        taker_fee,
-        None,
-        info,
-        ts_init, // No ts_event for response
-        ts_init,
-    );
+    let instrument = CryptoFuture::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .maybe_lot_size(lot_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_notional(max_notional)
+        .maybe_min_notional(min_notional)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .maybe_margin_init(margin_init)
+        .maybe_margin_maint(margin_maint)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .maybe_info(info)
+        // No ts_event for response
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoFuture(instrument))
 }
@@ -2470,6 +2472,10 @@ fn insert_non_empty_info(info: &mut Params, key: &str, value: &str) {
 /// # Errors
 ///
 /// Returns an error if the instrument definition cannot be parsed.
+///
+/// # Panics
+///
+/// Panics if the constructed instrument fails validation.
 pub fn parse_option_instrument(
     definition: &OKXInstrument,
     margin_init: Option<Decimal>,
@@ -2575,38 +2581,37 @@ pub fn parse_option_instrument(
     let max_price = None;
     let min_price = None;
 
-    let instrument = CryptoOption::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote_currency,
-        settlement_currency,
-        is_inverse,
-        option_kind,
-        strike_price,
-        activation_ns,
-        expiration_ns,
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        multiplier,
-        Some(lot_size),
-        max_quantity,
-        min_quantity,
-        max_notional,
-        min_notional,
-        max_price,
-        min_price,
-        margin_init,
-        margin_maint,
-        maker_fee,
-        taker_fee,
-        None,
-        None,
-        ts_init,
-        ts_init,
-    );
+    let instrument = CryptoOption::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .underlying(underlying)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        .is_inverse(is_inverse)
+        .option_kind(option_kind)
+        .strike_price(strike_price)
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .maybe_multiplier(multiplier)
+        .lot_size(lot_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_notional(max_notional)
+        .maybe_min_notional(min_notional)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .maybe_margin_init(margin_init)
+        .maybe_margin_maint(margin_maint)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CryptoOption(instrument))
 }
@@ -2707,34 +2712,32 @@ pub fn parse_event_contract_instrument(
     let asset_class = okx_inst_category_to_asset_class(definition.inst_category);
     let info = build_event_contract_info(definition)?;
 
-    let instrument = BinaryOption::new_checked(
-        common.instrument_id,
-        common.raw_symbol,
-        asset_class,
-        currency,
-        activation_ns,
-        expiration_ns,
-        common.price_increment.precision,
-        common.size_increment.precision,
-        common.price_increment,
-        common.size_increment,
-        None,
-        definition.series_id,
-        common.max_quantity,
-        common.min_quantity,
-        common.max_notional,
-        common.min_notional,
-        Some(Price::from("1")),
-        Some(Price::from("0")),
-        margin_init,
-        margin_maint,
-        maker_fee,
-        taker_fee,
-        None,
-        Some(info),
-        ts_init,
-        ts_init,
-    )?;
+    let instrument = BinaryOption::builder()
+        .instrument_id(common.instrument_id)
+        .raw_symbol(common.raw_symbol)
+        .asset_class(asset_class)
+        .currency(currency)
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(common.price_increment.precision)
+        .size_precision(common.size_increment.precision)
+        .price_increment(common.price_increment)
+        .size_increment(common.size_increment)
+        .maybe_description(definition.series_id)
+        .maybe_max_quantity(common.max_quantity)
+        .maybe_min_quantity(common.min_quantity)
+        .maybe_max_notional(common.max_notional)
+        .maybe_min_notional(common.min_notional)
+        .max_price(Price::from("1"))
+        .min_price(Price::from("0"))
+        .maybe_margin_init(margin_init)
+        .maybe_margin_maint(margin_maint)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .info(info)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()?;
 
     Ok(InstrumentAny::BinaryOption(instrument))
 }

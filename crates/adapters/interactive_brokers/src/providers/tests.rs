@@ -45,33 +45,24 @@ mod tests {
     }
 
     fn create_test_option_spread(instrument_id: InstrumentId) -> OptionSpread {
-        OptionSpread::new(
-            instrument_id,
-            NautilusSymbol::from(instrument_id.symbol.as_str()),
-            AssetClass::Equity,
-            Some(Ustr::from("XNAS")),
-            Ustr::from("SPY"),
-            Ustr::from("SPY"),
-            UnixNanos::default(),
-            UnixNanos::default(),
-            ModelCurrency::USD(),
-            2,
-            Price::from("0.01"),
-            Quantity::from(1),
-            Quantity::from(1),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        )
+        OptionSpread::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(NautilusSymbol::from(instrument_id.symbol.as_str()))
+            .asset_class(AssetClass::Equity)
+            .exchange(Ustr::from("XNAS"))
+            .underlying(Ustr::from("SPY"))
+            .strategy_type(Ustr::from("SPY"))
+            .activation_ns(UnixNanos::default())
+            .expiration_ns(UnixNanos::default())
+            .currency(ModelCurrency::USD())
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(1))
+            .lot_size(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap()
     }
 
     // Note: Tests for load_async, load_with_return_async, load_ids_async, and load_ids_with_return_async

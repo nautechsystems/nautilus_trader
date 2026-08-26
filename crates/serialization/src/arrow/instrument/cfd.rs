@@ -508,33 +508,33 @@ pub fn decode_cfd_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let cfd = Cfd::new_checked(
-            id,
-            raw_symbol,
-            asset_class,
-            base_currency,
-            quote_currency,
-            price_prec,
-            size_prec,
-            price_increment,
-            size_increment,
-            lot_size,
-            max_quantity,
-            min_quantity,
-            max_notional,
-            min_notional,
-            max_price,
-            min_price,
-            Some(margin_init),
-            Some(margin_maint),
-            Some(maker_fee),
-            Some(taker_fee),
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .map_err(|e| super::instrument_validation_error::<Cfd>(i, e))?;
+        let cfd = Cfd::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .maybe_base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .price_precision(price_prec)
+            .size_precision(size_prec)
+            .price_increment(price_increment)
+            .size_increment(size_increment)
+            .maybe_lot_size(lot_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_max_notional(max_notional)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_tick_scheme(tick_scheme)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .map_err(|e| super::instrument_validation_error::<Cfd>(i, e))?;
 
         result.push(cfd);
     }

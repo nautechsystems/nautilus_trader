@@ -1253,34 +1253,27 @@ fn matching_option_contract(kind: OptionKind) -> InstrumentAny {
         OptionKind::Call => "AAPL240315C00150000",
         OptionKind::Put => "AAPL240315P00150000",
     };
-    InstrumentAny::OptionContract(OptionContract::new(
-        InstrumentId::from(format!("{symbol}.{venue}").as_str()),
-        Symbol::from(symbol),
-        AssetClass::Equity,
-        Some(Ustr::from(venue.as_str())),
-        Ustr::from("AAPL"),
-        kind,
-        Price::from("150.00"),
-        Currency::USD(),
-        UnixNanos::default(),
-        UnixNanos::from(2_000_000_000_000_000_000u64),
-        2,
-        Price::from("0.01"),
-        Quantity::from(100),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::OptionContract(
+        OptionContract::builder()
+            .instrument_id(InstrumentId::from(format!("{symbol}.{venue}").as_str()))
+            .raw_symbol(Symbol::from(symbol))
+            .asset_class(AssetClass::Equity)
+            .exchange(Ustr::from(venue.as_str()))
+            .underlying(Ustr::from("AAPL"))
+            .option_kind(kind)
+            .strike_price(Price::from("150.00"))
+            .currency(Currency::USD())
+            .activation_ns(UnixNanos::default())
+            .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+            .price_precision(2)
+            .price_increment(Price::from("0.01"))
+            .multiplier(Quantity::from(100))
+            .lot_size(Quantity::from(1))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn matching_crypto_option(kind: OptionKind) -> InstrumentAny {
@@ -1289,38 +1282,30 @@ fn matching_crypto_option(kind: OptionKind) -> InstrumentAny {
         OptionKind::Call => "BTC-28JUN24-50000-C",
         OptionKind::Put => "BTC-28JUN24-50000-P",
     };
-    InstrumentAny::CryptoOption(CryptoOption::new(
-        InstrumentId::from(format!("{symbol}.{venue}").as_str()),
-        Symbol::from(symbol),
-        Currency::from("BTC"),
-        Currency::from("USD"),
-        Currency::from("BTC"),
-        false,
-        kind,
-        Price::from("50000.00"),
-        UnixNanos::default(),
-        UnixNanos::from(2_000_000_000_000_000_000u64),
-        2,
-        1,
-        Price::from("0.01"),
-        Quantity::from("0.1"),
-        Some(Quantity::from(1)),
-        Some(Quantity::from(1)),
-        None,
-        Some(Quantity::from("0.1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CryptoOption(
+        CryptoOption::builder()
+            .instrument_id(InstrumentId::from(format!("{symbol}.{venue}").as_str()))
+            .raw_symbol(Symbol::from(symbol))
+            .underlying(Currency::from("BTC"))
+            .quote_currency(Currency::from("USD"))
+            .settlement_currency(Currency::from("BTC"))
+            .is_inverse(false)
+            .option_kind(kind)
+            .strike_price(Price::from("50000.00"))
+            .activation_ns(UnixNanos::default())
+            .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+            .price_precision(2)
+            .size_precision(1)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.1"))
+            .multiplier(Quantity::from(1))
+            .lot_size(Quantity::from(1))
+            .min_quantity(Quantity::from("0.1"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn matching_option_quote(

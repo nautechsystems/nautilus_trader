@@ -1724,32 +1724,19 @@ mod tests {
 
     #[cfg(feature = "defi")]
     fn test_currency_pair(base: Currency, quote: Currency) -> CurrencyPair {
-        CurrencyPair::new(
-            InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"),
-            Symbol::from("WBASEWQUOTE"),
-            base,
-            quote,
-            16,
-            16,
-            Price::from_raw(1, 16),
-            Quantity::from_raw(1, 16),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            0.into(),
-            0.into(),
-        )
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from("WBASEWQUOTE.BLOCKCHAIN"))
+            .raw_symbol(Symbol::from("WBASEWQUOTE"))
+            .base_currency(base)
+            .quote_currency(quote)
+            .price_precision(16)
+            .size_precision(16)
+            .price_increment(Price::from_raw(1, 16))
+            .size_increment(Quantity::from_raw(1, 16))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap()
     }
 
     fn wallet_with_total(currency: Currency, raw: MoneyRaw) -> WalletAccount {

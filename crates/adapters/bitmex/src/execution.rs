@@ -1461,34 +1461,23 @@ mod tests {
     }
 
     fn test_perpetual_instrument() -> InstrumentAny {
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::from("XBTUSD.BITMEX"),
-            Symbol::new("XBTUSD"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::BTC(),
-            true,
-            1,
-            0,
-            Price::new(0.5, 1),
-            Quantity::new(1.0, 0),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::from("XBTUSD.BITMEX"))
+                .raw_symbol(Symbol::new("XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::BTC())
+                .is_inverse(true)
+                .price_precision(1)
+                .size_precision(0)
+                .price_increment(Price::new(0.5, 1))
+                .size_increment(Quantity::new(1.0, 0))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn market_order() -> OrderAny {

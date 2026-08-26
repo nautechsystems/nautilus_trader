@@ -218,34 +218,29 @@ pub fn create_instrument_from_def(
 
     let info: Params = serde_json::from_value(build_info_json(def))?;
 
-    let binary_option = BinaryOption::new_checked(
-        instrument_id,
-        raw_symbol,
-        AssetClass::Alternative,
-        currency,
-        activation_ns,
-        expiration_ns,
-        def.price_precision,
-        6, // size_precision: 6-decimal collateral increments
-        price_increment,
-        size_increment,
-        Some(def.outcome.inner()),
-        Some(Ustr::from(def.question.as_str())),
-        None, // max_quantity
-        min_quantity,
-        None, // max_notional
-        None, // min_notional
-        Some(max_price),
-        Some(min_price),
-        None, // margin_init
-        None, // margin_maint
-        def.maker_fee,
-        def.taker_fee,
-        None,
-        Some(info),
-        ts_init,
-        ts_init,
-    )?;
+    let binary_option = BinaryOption::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .asset_class(AssetClass::Alternative)
+        .currency(currency)
+        .activation_ns(activation_ns)
+        .expiration_ns(expiration_ns)
+        .price_precision(def.price_precision)
+        // size_precision: 6-decimal collateral increments
+        .size_precision(6)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        .outcome(def.outcome.inner())
+        .description(Ustr::from(def.question.as_str()))
+        .maybe_min_quantity(min_quantity)
+        .max_price(max_price)
+        .min_price(min_price)
+        .maybe_maker_fee(def.maker_fee)
+        .maybe_taker_fee(def.taker_fee)
+        .info(info)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()?;
 
     Ok(InstrumentAny::BinaryOption(binary_option))
 }
@@ -286,34 +281,33 @@ pub fn rebuild_instrument_with_tick_size(
     let (min_price, max_price) = tick_relative_price_bounds(tick_size)?;
     let price_increment = min_price;
 
-    let rebuilt = BinaryOption::new_checked(
-        bo.id,
-        bo.raw_symbol,
-        bo.asset_class,
-        bo.currency,
-        bo.activation_ns,
-        bo.expiration_ns,
-        price_precision,
-        bo.size_precision,
-        price_increment,
-        bo.size_increment,
-        bo.outcome,
-        bo.description,
-        bo.max_quantity,
-        None, // min_quantity: see `create_instrument_from_def`
-        bo.max_notional,
-        bo.min_notional,
-        Some(max_price),
-        Some(min_price),
-        Some(bo.margin_init),
-        Some(bo.margin_maint),
-        Some(bo.maker_fee),
-        Some(bo.taker_fee),
-        None,
-        bo.info.clone(),
-        ts_event,
-        ts_init,
-    )?;
+    let rebuilt = BinaryOption::builder()
+        .instrument_id(bo.id)
+        .raw_symbol(bo.raw_symbol)
+        .asset_class(bo.asset_class)
+        .currency(bo.currency)
+        .activation_ns(bo.activation_ns)
+        .expiration_ns(bo.expiration_ns)
+        .price_precision(price_precision)
+        .size_precision(bo.size_precision)
+        .price_increment(price_increment)
+        .size_increment(bo.size_increment)
+        .maybe_outcome(bo.outcome)
+        .maybe_description(bo.description)
+        .maybe_max_quantity(bo.max_quantity)
+        // min_quantity: see `create_instrument_from_def`
+        .maybe_max_notional(bo.max_notional)
+        .maybe_min_notional(bo.min_notional)
+        .max_price(max_price)
+        .min_price(min_price)
+        .margin_init(bo.margin_init)
+        .margin_maint(bo.margin_maint)
+        .maker_fee(bo.maker_fee)
+        .taker_fee(bo.taker_fee)
+        .maybe_info(bo.info.clone())
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()?;
 
     Ok(InstrumentAny::BinaryOption(rebuilt))
 }

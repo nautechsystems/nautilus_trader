@@ -1581,32 +1581,21 @@ mod tests {
 
     fn currency_pair_with_ts_init(instrument_id: &str, ts_init: UnixNanos) -> InstrumentAny {
         let instrument_id = InstrumentId::from(instrument_id);
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            instrument_id,
-            instrument_id.symbol,
-            Currency::from("BTC"),
-            Currency::from("USDT"),
-            2,
-            6,
-            Price::from("0.01"),
-            Quantity::from("0.000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            ts_init,
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(instrument_id.symbol)
+                .base_currency(Currency::from("BTC"))
+                .quote_currency(Currency::from("USDT"))
+                .price_precision(2)
+                .size_precision(6)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.000001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(ts_init)
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]

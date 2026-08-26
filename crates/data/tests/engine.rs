@@ -1146,63 +1146,45 @@ fn test_unsubscribe_depth10_keeps_deltas_book_updater(
 }
 
 fn make_es_future(instrument_id: &str, symbol: &str) -> FuturesContract {
-    FuturesContract::new(
-        InstrumentId::from(instrument_id),
-        Symbol::from(symbol),
-        AssetClass::Index,
-        Some(Ustr::from("XCME")),
-        Ustr::from("ES"),
-        UnixNanos::default(),
-        UnixNanos::from(2_000_000_000_000_000_000u64),
-        Currency::USD(),
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    FuturesContract::builder()
+        .instrument_id(InstrumentId::from(instrument_id))
+        .raw_symbol(Symbol::from(symbol))
+        .asset_class(AssetClass::Index)
+        .exchange(Ustr::from("XCME"))
+        .underlying(Ustr::from("ES"))
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+        .currency(Currency::USD())
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn make_es_option(instrument_id: &str, symbol: &str, kind: OptionKind) -> OptionContract {
-    OptionContract::new(
-        InstrumentId::from(instrument_id),
-        Symbol::from(symbol),
-        AssetClass::Index,
-        Some(Ustr::from("XCME")),
-        Ustr::from("ES"),
-        kind,
-        Price::from("4000.00"),
-        Currency::USD(),
-        UnixNanos::default(),
-        UnixNanos::from(2_000_000_000_000_000_000u64),
-        2,
-        Price::from("0.01"),
-        Quantity::from(1),
-        Quantity::from(1),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    OptionContract::builder()
+        .instrument_id(InstrumentId::from(instrument_id))
+        .raw_symbol(Symbol::from(symbol))
+        .asset_class(AssetClass::Index)
+        .exchange(Ustr::from("XCME"))
+        .underlying(Ustr::from("ES"))
+        .option_kind(kind)
+        .strike_price(Price::from("4000.00"))
+        .currency(Currency::USD())
+        .activation_ns(UnixNanos::default())
+        .expiration_ns(UnixNanos::from(2_000_000_000_000_000_000u64))
+        .price_precision(2)
+        .price_increment(Price::from("0.01"))
+        .multiplier(Quantity::from(1))
+        .lot_size(Quantity::from(1))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 #[rstest]
@@ -11878,32 +11860,34 @@ fn test_process_defi_pools_publishes_distinct_tradable_instruments(
     let expected_invalid = pool_invalid.clone();
     let venue = id_a.venue;
     let expected = |pool: &Pool| {
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            pool.instrument_id,
-            pool.instrument_id.symbol,
-            Currency::new("BASE", 8, 0, "Base token", CurrencyType::Crypto),
-            Currency::new("QUOTE", 6, 0, "Quote token", CurrencyType::Crypto),
-            6,
-            8,
-            Price::from("0.000001"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            pool.fee.map(|fee| Decimal::new(i64::from(fee), 6)),
-            None,
-            None,
-            pool.ts_event,
-            pool.ts_init,
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(pool.instrument_id)
+                .raw_symbol(pool.instrument_id.symbol)
+                .base_currency(Currency::new(
+                    "BASE",
+                    8,
+                    0,
+                    "Base token",
+                    CurrencyType::Crypto,
+                ))
+                .quote_currency(Currency::new(
+                    "QUOTE",
+                    6,
+                    0,
+                    "Quote token",
+                    CurrencyType::Crypto,
+                ))
+                .price_precision(6)
+                .size_precision(8)
+                .price_increment(Price::from("0.000001"))
+                .size_increment(Quantity::from("0.00000001"))
+                .maybe_taker_fee(pool.fee.map(|fee| Decimal::new(i64::from(fee), 6)))
+                .ts_event(pool.ts_event)
+                .ts_init(pool.ts_init)
+                .build()
+                .unwrap(),
+        )
     };
     let expected_a = expected(&pool_a);
     let expected_b = expected(&pool_b);
@@ -13452,38 +13436,32 @@ fn make_crypto_option(
     let settlement = Currency::from(settlement_str);
     let activation = UnixNanos::from(1_671_696_000_000_000_000u64);
 
-    InstrumentAny::CryptoOption(CryptoOption::new(
-        instrument_id,
-        raw_symbol,
-        underlying,
-        quote,
-        settlement,
-        false,
-        kind,
-        Price::from(strike),
-        activation,
-        expiration_ns,
-        3,
-        1,
-        Price::from("0.001"),
-        Quantity::from("0.1"),
-        Some(Quantity::from(1)),
-        Some(Quantity::from(1)),
-        Some(Quantity::from("9000.0")),
-        Some(Quantity::from("0.1")),
-        None,
-        Some(Money::new(10.00, Currency::USD())),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        0.into(),
-        0.into(),
-    ))
+    InstrumentAny::CryptoOption(
+        CryptoOption::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .underlying(underlying)
+            .quote_currency(quote)
+            .settlement_currency(settlement)
+            .is_inverse(false)
+            .option_kind(kind)
+            .strike_price(Price::from(strike))
+            .activation_ns(activation)
+            .expiration_ns(expiration_ns)
+            .price_precision(3)
+            .size_precision(1)
+            .price_increment(Price::from("0.001"))
+            .size_increment(Quantity::from("0.1"))
+            .multiplier(Quantity::from(1))
+            .lot_size(Quantity::from(1))
+            .max_quantity(Quantity::from("9000.0"))
+            .min_quantity(Quantity::from("0.1"))
+            .min_notional(Money::new(10.00, Currency::USD()))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
@@ -14335,14 +14313,15 @@ fn synthetic_index_with_components(
     component_b: InstrumentId,
 ) -> SyntheticInstrument {
     let formula = format!("({component_a} + {component_b}) / 2.0");
-    SyntheticInstrument::new(
-        Symbol::new(symbol),
-        2,
-        vec![component_a, component_b],
-        &formula,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    )
+    SyntheticInstrument::builder()
+        .symbol(Symbol::new(symbol))
+        .price_precision(2)
+        .components(vec![component_a, component_b])
+        .formula(&formula)
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap()
 }
 
 fn subscribe_synthetic_quotes_cmd(instrument_id: InstrumentId) -> DataCommand {

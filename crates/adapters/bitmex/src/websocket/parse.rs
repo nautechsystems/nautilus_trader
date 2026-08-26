@@ -1223,34 +1223,23 @@ mod tests {
         price_precision: u8,
         size_precision: u8,
     ) -> InstrumentAny {
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            InstrumentId::from("XBTUSD.BITMEX"),
-            Symbol::new("XBTUSD"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::BTC(),
-            true, // is_inverse
-            price_precision,
-            size_precision,
-            Price::new(0.5, price_precision),
-            Quantity::new(1.0, size_precision),
-            None, // multiplier
-            None, // lot_size
-            None, // max_quantity
-            None, // min_quantity
-            None, // max_notional
-            None, // min_notional
-            None, // max_price
-            None, // min_price
-            None, // margin_init
-            None, // margin_maint
-            None, // maker_fee
-            None, // taker_fee
-            None, // tick_scheme
-            None, // info
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(InstrumentId::from("XBTUSD.BITMEX"))
+                .raw_symbol(Symbol::new("XBTUSD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::BTC())
+                .is_inverse(true)
+                .price_precision(price_precision)
+                .size_precision(size_precision)
+                .price_increment(Price::new(0.5, price_precision))
+                .size_increment(Quantity::new(1.0, size_precision))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn create_test_perpetual_instrument() -> InstrumentAny {
@@ -2101,34 +2090,22 @@ mod tests {
 
         // Create instruments cache with proper precision for .BXBT
         let instrument_id = InstrumentId::from(".BXBT.BITMEX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from(".BXBT"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false, // is_inverse
-            2,     // price_precision (for 119163.05)
-            8,     // size_precision
-            Price::from("0.01"),
-            Quantity::from("0.00000001"),
-            None,                 // multiplier
-            None,                 // lot_size
-            None,                 // max_quantity
-            None,                 // min_quantity
-            None,                 // max_notional
-            None,                 // min_notional
-            None,                 // max_price
-            None,                 // min_price
-            None,                 // margin_init
-            None,                 // margin_maint
-            None,                 // maker_fee
-            None,                 // taker_fee
-            None,                 // tick_scheme
-            None,                 // info
-            UnixNanos::default(), // ts_event
-            UnixNanos::default(), // ts_init
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from(".BXBT"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USD())
+            .settlement_currency(Currency::USD())
+            .is_inverse(false)
+            // price_precision (for 119163.05)
+            .price_precision(2)
+            .size_precision(8)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let mut instruments_cache = AHashMap::new();
         instruments_cache.insert(
             Ustr::from(".BXBT"),
@@ -2166,34 +2143,22 @@ mod tests {
             serde_json::from_str(&load_test_json("ws_instrument_mark_update.json")).unwrap();
 
         let instrument_id = InstrumentId::from("DOTUSDT.BITMEX");
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            Symbol::from("DOTUSDT"),
-            Currency::from_str("DOT").unwrap(),
-            Currency::USDT(),
-            Currency::USDT(),
-            false, // is_inverse
-            4,     // price_precision (1.2669)
-            8,     // size_precision
-            Price::from("0.0001"),
-            Quantity::from("0.00000001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(Symbol::from("DOTUSDT"))
+            .base_currency(Currency::from_str("DOT").unwrap())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            // price_precision (1.2669)
+            .price_precision(4)
+            .size_precision(8)
+            .price_increment(Price::from("0.0001"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
         let mut instruments_cache = AHashMap::new();
         instruments_cache.insert(
             Ustr::from("DOTUSDT"),

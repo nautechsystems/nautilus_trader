@@ -941,34 +941,33 @@ mod tests {
     fn create_test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD-PERP"), *DYDX_VENUE);
 
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            Symbol::new("BTC-USD"),
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            2,
-            8,
-            Price::new(0.01, 2),
-            Quantity::new(0.001, 8),
-            Some(Quantity::new(1.0, 0)),
-            Some(Quantity::new(0.001, 8)),
-            Some(Quantity::new(100000.0, 8)),
-            Some(Quantity::new(0.001, 8)),
-            None,
-            None,
-            Some(Price::new(1000000.0, 2)),
-            Some(Price::new(0.01, 2)),
-            Some(rust_decimal_macros::dec!(0.05)),
-            Some(rust_decimal_macros::dec!(0.03)),
-            Some(rust_decimal_macros::dec!(0.0002)),
-            Some(rust_decimal_macros::dec!(0.0005)),
-            None,
-            None, // info: Option<Params>
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(Symbol::new("BTC-USD"))
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::new(0.01, 2))
+                .size_increment(Quantity::new(0.001, 8))
+                .multiplier(Quantity::new(1.0, 0))
+                .lot_size(Quantity::new(0.001, 8))
+                .max_quantity(Quantity::new(100000.0, 8))
+                .min_quantity(Quantity::new(0.001, 8))
+                .max_price(Price::new(1000000.0, 2))
+                .min_price(Price::new(0.01, 2))
+                .margin_init(rust_decimal_macros::dec!(0.05))
+                .margin_maint(rust_decimal_macros::dec!(0.03))
+                .maker_fee(rust_decimal_macros::dec!(0.0002))
+                .taker_fee(rust_decimal_macros::dec!(0.0005))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]

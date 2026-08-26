@@ -448,35 +448,51 @@ pub fn decode_option_contract_batch(
 
         let tick_scheme = optional_ustr_value(tick_scheme_values, i);
 
-        let option_contract = OptionContract::new_checked(
-            id,
-            raw_symbol,
-            asset_class,
-            exchange,
-            underlying,
-            option_kind,
-            strike_price,
-            currency,
-            activation_ns,
-            expiration_ns,
-            price_prec,
-            price_increment,
-            multiplier,
-            lot_size,
-            super::optional_quantity_value(max_quantity_values, "max_quantity", i)?,
-            super::optional_quantity_value(min_quantity_values, "min_quantity", i)?,
-            super::optional_price_value(max_price_values, "max_price", i)?,
-            super::optional_price_value(min_price_values, "min_price", i)?,
-            Some(margin_init),
-            Some(margin_maint),
-            Some(maker_fee),
-            Some(taker_fee),
-            tick_scheme,
-            info,
-            ts_event,
-            ts_init,
-        )
-        .map_err(|e| super::instrument_validation_error::<OptionContract>(i, e))?;
+        let option_contract = OptionContract::builder()
+            .instrument_id(id)
+            .raw_symbol(raw_symbol)
+            .asset_class(asset_class)
+            .maybe_exchange(exchange)
+            .underlying(underlying)
+            .option_kind(option_kind)
+            .strike_price(strike_price)
+            .currency(currency)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(price_prec)
+            .price_increment(price_increment)
+            .multiplier(multiplier)
+            .lot_size(lot_size)
+            .maybe_max_quantity(super::optional_quantity_value(
+                max_quantity_values,
+                "max_quantity",
+                i,
+            )?)
+            .maybe_min_quantity(super::optional_quantity_value(
+                min_quantity_values,
+                "min_quantity",
+                i,
+            )?)
+            .maybe_max_price(super::optional_price_value(
+                max_price_values,
+                "max_price",
+                i,
+            )?)
+            .maybe_min_price(super::optional_price_value(
+                min_price_values,
+                "min_price",
+                i,
+            )?)
+            .margin_init(margin_init)
+            .margin_maint(margin_maint)
+            .maker_fee(maker_fee)
+            .taker_fee(taker_fee)
+            .maybe_tick_scheme(tick_scheme)
+            .maybe_info(info)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .map_err(|e| super::instrument_validation_error::<OptionContract>(i, e))?;
 
         result.push(option_contract);
     }

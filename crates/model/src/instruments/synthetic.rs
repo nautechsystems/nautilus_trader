@@ -19,11 +19,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use derive_builder::Builder;
-use nautilus_core::{
-    UnixNanos,
-    correctness::{CorrectnessError, FAILED},
-};
+use nautilus_core::{UnixNanos, correctness::CorrectnessError};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "defi")]
@@ -70,7 +66,7 @@ impl SyntheticInstrumentError {
 /// formula.
 ///
 /// The `id` for the synthetic will become `{symbol}.{SYNTH}`.
-#[derive(Clone, Debug, Builder)]
+#[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.model", from_py_object)
@@ -94,9 +90,7 @@ pub struct SyntheticInstrument {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
-    #[builder(setter(skip), default)]
     component_names: Vec<String>,
-    #[builder(setter(skip), default)]
     compiled_formula: CompiledExpression,
 }
 
@@ -153,17 +147,9 @@ impl<'de> Deserialize<'de> for SyntheticInstrument {
     }
 }
 
+#[bon::bon]
 impl SyntheticInstrument {
-    /// Creates a new [`SyntheticInstrument`] instance with correctness checking.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if input validation or formula compilation fails.
-    ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked(
+    fn new_checked(
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
@@ -202,27 +188,23 @@ impl SyntheticInstrument {
         })
     }
 
-    /// Returns whether the given formula compiles against the provided components.
-    #[must_use]
-    pub fn is_valid_formula_for_components(formula: &str, components: &[InstrumentId]) -> bool {
-        let component_names = component_names_from_components(components);
-        compile_formula(formula, &component_names).is_ok()
-    }
-
-    /// Creates a new [`SyntheticInstrument`] instance, parsing the given formula.
+    /// Returns a fluent builder for a [`SyntheticInstrument`] instance.
     ///
-    /// # Panics
+    /// The builder derives the instrument ID and price increment, compiles the formula against the
+    /// component identifiers, and stores the compiled expression on `build`.
     ///
-    /// Panics if the provided formula is invalid and cannot be parsed.
-    #[must_use]
-    pub fn new(
+    /// # Errors
+    ///
+    /// Returns an error if input validation or formula compilation fails.
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
         formula: &str,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Self {
+    ) -> Result<Self, SyntheticInstrumentError> {
         Self::new_checked(
             symbol,
             price_precision,
@@ -231,7 +213,13 @@ impl SyntheticInstrument {
             ts_event,
             ts_init,
         )
-        .unwrap_or_else(|e| panic!("{FAILED}: {e}"))
+    }
+
+    /// Returns whether the given formula compiles against the provided components.
+    #[must_use]
+    pub fn is_valid_formula_for_components(formula: &str, components: &[InstrumentId]) -> bool {
+        let component_names = component_names_from_components(components);
+        compile_formula(formula, &component_names).is_ok()
     }
 
     /// Returns whether the given formula compiles against this instrument's components.
@@ -432,8 +420,15 @@ mod tests {
         let components = vec![comp1, comp2];
         let raw_formula = format!("({comp1} + {comp2}) / 2.0");
         let symbol = Symbol::from("ETH-USDC");
-        let synth =
-            SyntheticInstrument::new(symbol, 2, components, &raw_formula, 0.into(), 0.into());
+        let synth = SyntheticInstrument::builder()
+            .symbol(symbol)
+            .price_precision(2)
+            .components(components)
+            .formula(&raw_formula)
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         let price = synth.calculate(&[100.0, 200.0]).unwrap();
 
         assert_eq!(price, Price::from("150.0"));
@@ -451,14 +446,15 @@ mod tests {
             components[1].to_string().replace('-', "_"),
         );
         let symbol = Symbol::from("ETH-USD");
-        let synth = SyntheticInstrument::new(
-            symbol,
-            2,
-            components.clone(),
-            &legacy_formula,
-            0.into(),
-            0.into(),
-        );
+        let synth = SyntheticInstrument::builder()
+            .symbol(symbol)
+            .price_precision(2)
+            .components(components.clone())
+            .formula(&legacy_formula)
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         let mut inputs = HashMap::new();
         inputs.insert(components[0].to_string(), 100.0);
         inputs.insert(components[1].to_string(), 200.0);
@@ -475,14 +471,15 @@ mod tests {
         let components = vec![comp1, comp2];
         let raw_formula = format!("({} + {}) / 2.0", components[0], components[1]);
 
-        let synth = SyntheticInstrument::new(
-            Symbol::from("FX-BASKET"),
-            5,
-            components.clone(),
-            &raw_formula,
-            0.into(),
-            0.into(),
-        );
+        let synth = SyntheticInstrument::builder()
+            .symbol(Symbol::from("FX-BASKET"))
+            .price_precision(5)
+            .components(components.clone())
+            .formula(&raw_formula)
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         let mut inputs = HashMap::new();
         inputs.insert(components[0].to_string(), 0.65001);
         inputs.insert(components[1].to_string(), 0.59001);
@@ -517,6 +514,65 @@ mod tests {
         assert_eq!(synth.price_precision, price_precision);
         assert_eq!(synth.price_increment.raw, expected_raw);
         assert_eq!(synth.price_increment.precision, price_precision);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let components = vec![
+            InstrumentId::from_str("BTC.BINANCE").unwrap(),
+            InstrumentId::from_str("LTC.BINANCE").unwrap(),
+        ];
+        let positional = SyntheticInstrument::new_checked(
+            Symbol::from("BTC-LTC"),
+            3,
+            components.clone(),
+            "BTC.BINANCE + LTC.BINANCE",
+            1.into(),
+            2.into(),
+        )
+        .unwrap();
+        let built = SyntheticInstrument::builder()
+            .symbol(Symbol::from("BTC-LTC"))
+            .price_precision(3)
+            .components(components)
+            .formula("BTC.BINANCE + LTC.BINANCE")
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
+        assert_eq!(
+            positional.calculate(&[100.0, 200.0]).unwrap(),
+            built.calculate(&[100.0, 200.0]).unwrap(),
+        );
+    }
+
+    #[rstest]
+    fn test_builder_rejects_unknown_formula_symbol() {
+        let components = vec![
+            InstrumentId::from_str("BTC.BINANCE").unwrap(),
+            InstrumentId::from_str("LTC.BINANCE").unwrap(),
+        ];
+
+        let error = SyntheticInstrument::builder()
+            .symbol(Symbol::from("BTC-LTC"))
+            .price_precision(2)
+            .components(components)
+            .formula("BTC.BINANCE + missing")
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap_err();
+
+        assert!(matches!(
+            &error,
+            SyntheticInstrumentError::Expression { .. }
+        ));
+        assert_eq!(error.to_string(), "Unknown symbol `missing`");
     }
 
     #[rstest]
@@ -674,14 +730,15 @@ mod tests {
         let formula = terms.join(" + ");
         let missing_component = components.last().unwrap().to_string();
 
-        let synth = SyntheticInstrument::new(
-            Symbol::from("BIG"),
-            2,
-            components.clone(),
-            &formula,
-            0.into(),
-            0.into(),
-        );
+        let synth = SyntheticInstrument::builder()
+            .symbol(Symbol::from("BIG"))
+            .price_precision(2)
+            .components(components.clone())
+            .formula(&formula)
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
 
         let mut inputs = HashMap::new();
         for component in components.iter().take(count - 1) {
@@ -760,14 +817,15 @@ mod tests {
         let comp1 = InstrumentId::from_str("FOO-BAR.VENUE").unwrap();
         let comp2 = InstrumentId::from_str("FOO_BAR.VENUE").unwrap();
         let formula = format!("{comp1} + {comp2}");
-        let synth = SyntheticInstrument::new(
-            Symbol::from("TEST"),
-            2,
-            vec![comp1, comp2],
-            &formula,
-            0.into(),
-            0.into(),
-        );
+        let synth = SyntheticInstrument::builder()
+            .symbol(Symbol::from("TEST"))
+            .price_precision(2)
+            .components(vec![comp1, comp2])
+            .formula(&formula)
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         let price = synth.calculate(&[100.0, 200.0]).unwrap();
 
         assert_eq!(price, Price::from("300.0"));
@@ -782,14 +840,15 @@ mod tests {
         let terms: Vec<String> = components.iter().map(ToString::to_string).collect();
         let formula = terms.join(" + ");
 
-        let synth = SyntheticInstrument::new(
-            Symbol::from("BIG"),
-            2,
-            components.clone(),
-            &formula,
-            0.into(),
-            0.into(),
-        );
+        let synth = SyntheticInstrument::builder()
+            .symbol(Symbol::from("BIG"))
+            .price_precision(2)
+            .components(components.clone())
+            .formula(&formula)
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
 
         let mut inputs = HashMap::new();
         for component in &components {

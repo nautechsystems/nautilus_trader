@@ -369,34 +369,34 @@ pub fn parse_instrument_any(
     );
 
     // Create the perpetual instrument
-    let instrument = CryptoPerpetual::new_checked(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        settlement_currency,
-        false, // dYdX perpetuals are not inverse
-        price_increment.precision,
-        size_increment.precision,
-        price_increment,
-        size_increment,
-        None,                 // multiplier: not applicable for dYdX
-        Some(size_increment), // lot_size: same as size_increment
-        None,                 // max_quantity: not specified by dYdX
-        min_quantity,
-        None, // max_notional: not specified by dYdX
-        None, // min_notional: not specified by dYdX
-        None, // max_price: not specified by dYdX
-        None, // min_price: not specified by dYdX
-        margin_init,
-        margin_maint,
-        maker_fee,
-        taker_fee,
-        None,
-        None, // info: Option<Params>
-        ts_init,
-        ts_init,
-    )?;
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .settlement_currency(settlement_currency)
+        // dYdX perpetuals are not inverse
+        .is_inverse(false)
+        .price_precision(price_increment.precision)
+        .size_precision(size_increment.precision)
+        .price_increment(price_increment)
+        .size_increment(size_increment)
+        // multiplier: not applicable for dYdX
+        // lot_size: same as size_increment
+        .lot_size(size_increment)
+        // max_quantity: not specified by dYdX
+        .maybe_min_quantity(min_quantity)
+        // max_notional: not specified by dYdX
+        // min_notional: not specified by dYdX
+        // max_price: not specified by dYdX
+        // min_price: not specified by dYdX
+        .maybe_margin_init(margin_init)
+        .maybe_margin_maint(margin_maint)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .ts_event(ts_init)
+        .ts_init(ts_init)
+        .build()?;
 
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
@@ -1707,34 +1707,33 @@ mod reconciliation_tests {
     fn create_test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *DYDX_VENUE);
 
-        InstrumentAny::CryptoPerpetual(CryptoPerpetual::new(
-            instrument_id,
-            instrument_id.symbol,
-            Currency::BTC(),
-            Currency::USD(),
-            Currency::USD(),
-            false,
-            2,                                // price_precision
-            8,                                // size_precision
-            Price::new(0.01, 2),              // price_increment
-            Quantity::new(0.001, 8),          // size_increment
-            Some(Quantity::new(1.0, 0)),      // multiplier
-            Some(Quantity::new(0.001, 8)),    // lot_size
-            Some(Quantity::new(100000.0, 8)), // max_quantity
-            Some(Quantity::new(0.001, 8)),    // min_quantity
-            None,                             // max_notional
-            None,                             // min_notional
-            Some(Price::new(1000000.0, 2)),   // max_price
-            Some(Price::new(0.01, 2)),        // min_price
-            Some(dec!(0.05)),                 // margin_init
-            Some(dec!(0.03)),                 // margin_maint
-            Some(dec!(0.0002)),               // maker_fee
-            Some(dec!(0.0005)),               // taker_fee
-            None,                             // tick_scheme
-            None,                             // info: Option<Params>
-            UnixNanos::default(),             // ts_event
-            UnixNanos::default(),             // ts_init
-        ))
+        InstrumentAny::CryptoPerpetual(
+            CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(instrument_id.symbol)
+                .base_currency(Currency::BTC())
+                .quote_currency(Currency::USD())
+                .settlement_currency(Currency::USD())
+                .is_inverse(false)
+                .price_precision(2)
+                .size_precision(8)
+                .price_increment(Price::new(0.01, 2))
+                .size_increment(Quantity::new(0.001, 8))
+                .multiplier(Quantity::new(1.0, 0))
+                .lot_size(Quantity::new(0.001, 8))
+                .max_quantity(Quantity::new(100000.0, 8))
+                .min_quantity(Quantity::new(0.001, 8))
+                .max_price(Price::new(1000000.0, 2))
+                .min_price(Price::new(0.01, 2))
+                .margin_init(dec!(0.05))
+                .margin_maint(dec!(0.03))
+                .maker_fee(dec!(0.0002))
+                .taker_fee(dec!(0.0005))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     #[rstest]

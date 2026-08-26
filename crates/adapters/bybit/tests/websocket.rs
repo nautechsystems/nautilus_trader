@@ -533,32 +533,19 @@ fn load_test_data(filename: &str) -> serde_json::Value {
 }
 
 fn make_linear_pair(raw_symbol: &str, base: &str, quote: &str) -> CurrencyPair {
-    CurrencyPair::new(
-        format!("{raw_symbol}-LINEAR.BYBIT").into(),
-        raw_symbol.into(),
-        Currency::from(base),
-        Currency::from(quote),
-        2,
-        5,
-        Price::from("0.01"),
-        Quantity::from("0.00001"),
-        None,     // multiplier
-        None,     // lot_size
-        None,     // max_quantity
-        None,     // min_quantity
-        None,     // max_notional
-        None,     // min_notional
-        None,     // max_price
-        None,     // min_price
-        None,     // margin_init
-        None,     // margin_maint
-        None,     // maker_fee
-        None,     // taker_fee
-        None,     // tick_scheme
-        None,     // info
-        0.into(), // ts_event
-        0.into(), // ts_init
-    )
+    CurrencyPair::builder()
+        .instrument_id(format!("{raw_symbol}-LINEAR.BYBIT").into())
+        .raw_symbol(raw_symbol.into())
+        .base_currency(Currency::from(base))
+        .quote_currency(Currency::from(quote))
+        .price_precision(2)
+        .size_precision(5)
+        .price_increment(Price::from("0.01"))
+        .size_increment(Quantity::from("0.00001"))
+        .ts_event(0.into())
+        .ts_init(0.into())
+        .build()
+        .unwrap()
 }
 
 fn create_test_router(state: TestServerState) -> Router {

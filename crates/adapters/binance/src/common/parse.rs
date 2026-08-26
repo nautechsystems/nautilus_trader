@@ -361,69 +361,63 @@ pub(crate) fn parse_usdm_instrument_with_fees(
             Ok(InstrumentAny::PerpetualContract(instrument))
         }
         ContractKind::CryptoPerpetual => {
-            let instrument = CryptoPerpetual::new(
-                instrument_id,
-                raw_symbol,
-                get_currency(symbol.base_asset.as_str()),
-                quote_currency,
-                settlement_currency,
-                false,
-                tick_size.precision,
-                step_size.precision,
-                tick_size,
-                step_size,
-                None,
-                Some(step_size),
-                max_quantity,
-                min_quantity,
-                None,
-                min_notional,
-                max_price,
-                min_price,
-                Some(default_margin),
-                Some(default_margin),
-                maker_fee,
-                taker_fee,
-                None,
-                None,
-                ts_event,
-                ts_init,
-            );
+            let instrument = CryptoPerpetual::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .base_currency(get_currency(symbol.base_asset.as_str()))
+                .quote_currency(quote_currency)
+                .settlement_currency(settlement_currency)
+                .is_inverse(false)
+                .price_precision(tick_size.precision)
+                .size_precision(step_size.precision)
+                .price_increment(tick_size)
+                .size_increment(step_size)
+                .lot_size(step_size)
+                .maybe_max_quantity(max_quantity)
+                .maybe_min_quantity(min_quantity)
+                .maybe_min_notional(min_notional)
+                .maybe_max_price(max_price)
+                .maybe_min_price(min_price)
+                .margin_init(default_margin)
+                .margin_maint(default_margin)
+                .maybe_maker_fee(maker_fee)
+                .maybe_taker_fee(taker_fee)
+                .ts_event(ts_event)
+                .ts_init(ts_init)
+                .build()
+                .unwrap();
             Ok(InstrumentAny::CryptoPerpetual(instrument))
         }
         ContractKind::Delivery => {
             let activation_ns = parse_millis(symbol.onboard_date, "Futures onboardDate")?;
             let expiration_ns = parse_millis(symbol.delivery_date, "Futures deliveryDate")?;
-            let instrument = CryptoFuture::new(
-                instrument_id,
-                raw_symbol,
-                get_currency(symbol.base_asset.as_str()),
-                quote_currency,
-                settlement_currency,
-                false,
-                activation_ns,
-                expiration_ns,
-                tick_size.precision,
-                step_size.precision,
-                tick_size,
-                step_size,
-                None,
-                Some(step_size),
-                max_quantity,
-                min_quantity,
-                None,
-                min_notional,
-                max_price,
-                min_price,
-                Some(default_margin),
-                Some(default_margin),
-                maker_fee,
-                taker_fee,
-                None,
-                None,
-                ts_event,
-                ts_init,
-            );
+            let instrument = CryptoFuture::builder()
+                .instrument_id(instrument_id)
+                .raw_symbol(raw_symbol)
+                .underlying(get_currency(symbol.base_asset.as_str()))
+                .quote_currency(quote_currency)
+                .settlement_currency(settlement_currency)
+                .is_inverse(false)
+                .activation_ns(activation_ns)
+                .expiration_ns(expiration_ns)
+                .price_precision(tick_size.precision)
+                .size_precision(step_size.precision)
+                .price_increment(tick_size)
+                .size_increment(step_size)
+                .lot_size(step_size)
+                .maybe_max_quantity(max_quantity)
+                .maybe_min_quantity(min_quantity)
+                .maybe_min_notional(min_notional)
+                .maybe_max_price(max_price)
+                .maybe_min_price(min_price)
+                .margin_init(default_margin)
+                .margin_maint(default_margin)
+                .maybe_maker_fee(maker_fee)
+                .maybe_taker_fee(taker_fee)
+                .ts_event(ts_event)
+                .ts_init(ts_init)
+                .build()
+                .unwrap();
             Ok(InstrumentAny::CryptoFuture(instrument))
         }
     }
@@ -515,68 +509,64 @@ pub(crate) fn parse_coinm_instrument_with_fees(
     let default_margin = Decimal::new(1, 1);
 
     if is_perpetual {
-        let instrument = CryptoPerpetual::new(
-            instrument_id,
-            raw_symbol,
-            base_currency,
-            quote_currency,
-            settlement_currency,
-            true,
-            tick_size.precision,
-            step_size.precision,
-            tick_size,
-            step_size,
-            Some(multiplier),
-            Some(step_size),
-            max_quantity,
-            min_quantity,
-            None,
-            min_notional,
-            max_price,
-            min_price,
-            Some(default_margin),
-            Some(default_margin),
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let instrument = CryptoPerpetual::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .base_currency(base_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(true)
+            .price_precision(tick_size.precision)
+            .size_precision(step_size.precision)
+            .price_increment(tick_size)
+            .size_increment(step_size)
+            .multiplier(multiplier)
+            .lot_size(step_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .margin_init(default_margin)
+            .margin_maint(default_margin)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(InstrumentAny::CryptoPerpetual(instrument))
     } else {
         let activation_ns = parse_millis(symbol.onboard_date, "Futures onboardDate")?;
         let expiration_ns = parse_millis(symbol.delivery_date, "Futures deliveryDate")?;
-        let instrument = CryptoFuture::new(
-            instrument_id,
-            raw_symbol,
-            base_currency,
-            quote_currency,
-            settlement_currency,
-            true,
-            activation_ns,
-            expiration_ns,
-            tick_size.precision,
-            step_size.precision,
-            tick_size,
-            step_size,
-            Some(multiplier),
-            Some(step_size),
-            max_quantity,
-            min_quantity,
-            None,
-            min_notional,
-            max_price,
-            min_price,
-            Some(default_margin),
-            Some(default_margin),
-            maker_fee,
-            taker_fee,
-            None,
-            None,
-            ts_event,
-            ts_init,
-        );
+        let instrument = CryptoFuture::builder()
+            .instrument_id(instrument_id)
+            .raw_symbol(raw_symbol)
+            .underlying(base_currency)
+            .quote_currency(quote_currency)
+            .settlement_currency(settlement_currency)
+            .is_inverse(true)
+            .activation_ns(activation_ns)
+            .expiration_ns(expiration_ns)
+            .price_precision(tick_size.precision)
+            .size_precision(step_size.precision)
+            .price_increment(tick_size)
+            .size_increment(step_size)
+            .multiplier(multiplier)
+            .lot_size(step_size)
+            .maybe_max_quantity(max_quantity)
+            .maybe_min_quantity(min_quantity)
+            .maybe_min_notional(min_notional)
+            .maybe_max_price(max_price)
+            .maybe_min_price(min_price)
+            .margin_init(default_margin)
+            .margin_maint(default_margin)
+            .maybe_maker_fee(maker_fee)
+            .maybe_taker_fee(taker_fee)
+            .ts_event(ts_event)
+            .ts_init(ts_init)
+            .build()
+            .unwrap();
         Ok(InstrumentAny::CryptoFuture(instrument))
     }
 }
@@ -736,32 +726,28 @@ pub(crate) fn parse_spot_instrument_sbe_with_fees(
     // Spot has no leverage, use 1.0 margin
     let default_margin = Decimal::new(1, 0);
 
-    let instrument = CurrencyPair::new(
-        instrument_id,
-        raw_symbol,
-        base_currency,
-        quote_currency,
-        tick_size.precision,
-        step_size.precision,
-        tick_size,
-        step_size,
-        None, // multiplier
-        Some(step_size),
-        max_quantity,
-        min_quantity,
-        None, // max_notional
-        None, // min_notional
-        max_price,
-        min_price,
-        Some(default_margin),
-        Some(default_margin),
-        maker_fee,
-        taker_fee,
-        None, // tick_scheme
-        None, // info
-        ts_event,
-        ts_init,
-    );
+    let instrument = CurrencyPair::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(raw_symbol)
+        .base_currency(base_currency)
+        .quote_currency(quote_currency)
+        .price_precision(tick_size.precision)
+        .size_precision(step_size.precision)
+        .price_increment(tick_size)
+        .size_increment(step_size)
+        .lot_size(step_size)
+        .maybe_max_quantity(max_quantity)
+        .maybe_min_quantity(min_quantity)
+        .maybe_max_price(max_price)
+        .maybe_min_price(min_price)
+        .margin_init(default_margin)
+        .margin_maint(default_margin)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(instrument))
 }
@@ -806,35 +792,43 @@ pub(crate) fn parse_spot_instrument_json_with_fees(
     )?;
     anyhow::ensure!(!step_size.is_zero(), "Invalid stepSize of 0");
 
-    let instrument = CurrencyPair::new(
-        InstrumentId::new(
+    let instrument = CurrencyPair::builder()
+        .instrument_id(InstrumentId::new(
             Symbol::from_str_unchecked(&symbol.symbol),
             Venue::new(BINANCE),
-        ),
-        Symbol::new(&symbol.symbol),
-        get_currency(&symbol.base_asset),
-        get_currency(&symbol.quote_asset),
-        tick_size.precision,
-        step_size.precision,
-        tick_size,
-        step_size,
-        None,
-        Some(step_size),
-        optional_decimal_quantity(lot_filter.max_qty.as_deref(), step_size.precision)?,
-        optional_decimal_quantity(lot_filter.min_qty.as_deref(), step_size.precision)?,
-        None,
-        None,
-        optional_decimal_price(price_filter.max_price.as_deref(), tick_size.precision)?,
-        optional_decimal_price(price_filter.min_price.as_deref(), tick_size.precision)?,
-        Some(Decimal::ONE),
-        Some(Decimal::ONE),
-        maker_fee,
-        taker_fee,
-        None,
-        None,
-        ts_event,
-        ts_init,
-    );
+        ))
+        .raw_symbol(Symbol::new(&symbol.symbol))
+        .base_currency(get_currency(&symbol.base_asset))
+        .quote_currency(get_currency(&symbol.quote_asset))
+        .price_precision(tick_size.precision)
+        .size_precision(step_size.precision)
+        .price_increment(tick_size)
+        .size_increment(step_size)
+        .lot_size(step_size)
+        .maybe_max_quantity(optional_decimal_quantity(
+            lot_filter.max_qty.as_deref(),
+            step_size.precision,
+        )?)
+        .maybe_min_quantity(optional_decimal_quantity(
+            lot_filter.min_qty.as_deref(),
+            step_size.precision,
+        )?)
+        .maybe_max_price(optional_decimal_price(
+            price_filter.max_price.as_deref(),
+            tick_size.precision,
+        )?)
+        .maybe_min_price(optional_decimal_price(
+            price_filter.min_price.as_deref(),
+            tick_size.precision,
+        )?)
+        .margin_init(Decimal::ONE)
+        .margin_maint(Decimal::ONE)
+        .maybe_maker_fee(maker_fee)
+        .maybe_taker_fee(taker_fee)
+        .ts_event(ts_event)
+        .ts_init(ts_init)
+        .build()
+        .unwrap();
 
     Ok(InstrumentAny::CurrencyPair(instrument))
 }

@@ -4740,27 +4740,29 @@ class IndicatorEventStrategy:
             let comp2 = InstrumentId::from_str("ETH-USD.VENUE").unwrap();
             let symbol = Symbol::from("SYN");
             let original_formula = format!("({comp1} + {comp2}) / 2.0");
-            let synthetic = SyntheticInstrument::new(
-                symbol,
-                2,
-                vec![comp1, comp2],
-                &original_formula,
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
+            let synthetic = SyntheticInstrument::builder()
+                .symbol(symbol)
+                .price_precision(2)
+                .components(vec![comp1, comp2])
+                .formula(&original_formula)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap();
             let synthetic_id = synthetic.id;
 
             rust_strategy.py_add_synthetic(synthetic).unwrap();
 
             let updated_formula = format!("{comp1} + {comp2}");
-            let updated = SyntheticInstrument::new(
-                symbol,
-                2,
-                vec![comp1, comp2],
-                &updated_formula,
-                UnixNanos::default(),
-                UnixNanos::default(),
-            );
+            let updated = SyntheticInstrument::builder()
+                .symbol(symbol)
+                .price_precision(2)
+                .components(vec![comp1, comp2])
+                .formula(&updated_formula)
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap();
             rust_strategy.py_update_synthetic(updated).unwrap();
 
             let cache = DataActor::cache(rust_strategy.inner());

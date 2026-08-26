@@ -54,32 +54,21 @@ const SPOT_SYMBOL: &str = "BTC/USDT";
 const SPOT_INSTRUMENT_ID: &str = "BTC/USDT.KRAKEN";
 
 fn make_spot_pair() -> InstrumentAny {
-    InstrumentAny::CurrencyPair(CurrencyPair::new(
-        InstrumentId::from(SPOT_INSTRUMENT_ID),
-        Symbol::from(SPOT_SYMBOL),
-        Currency::BTC(),
-        Currency::from("USDT"),
-        1,
-        8,
-        Price::from("0.1"),
-        Quantity::from("0.00000001"),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UnixNanos::default(),
-        UnixNanos::default(),
-    ))
+    InstrumentAny::CurrencyPair(
+        CurrencyPair::builder()
+            .instrument_id(InstrumentId::from(SPOT_INSTRUMENT_ID))
+            .raw_symbol(Symbol::from(SPOT_SYMBOL))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::from("USDT"))
+            .price_precision(1)
+            .size_precision(8)
+            .price_increment(Price::from("0.1"))
+            .size_increment(Quantity::from("0.00000001"))
+            .ts_event(UnixNanos::default())
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap(),
+    )
 }
 
 fn instruments_with(instrument: InstrumentAny) -> Arc<AtomicMap<InstrumentId, InstrumentAny>> {

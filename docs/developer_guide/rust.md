@@ -287,9 +287,10 @@ Use the shared `FAILED` constant with `CorrectnessResultExt::expect_display` so 
 the standard `Condition failed: ...` prefix. Document the error on `new_checked()` and the panic on
 `new()`.
 
-Types with long constructors dominated by optional fields may also expose a `bon` builder. Put
-`#[bon::bon]` on the inherent implementation and make the builder's finish method delegate to
-`new_checked()`. Keep `new()` and `new_checked()` as the single validation path.
+Types with long constructors dominated by optional fields should expose a `bon` builder instead of
+public positional `new()` and `new_checked()` methods. Put `#[bon::bon]` on the inherent
+implementation and make the builder's finish method delegate to a private validation function or
+perform the validation directly. Keep one validation and defaulting path.
 
 ```rust
 #[builder(start_fn = builder, finish_fn = build)]
@@ -299,7 +300,7 @@ pub fn build_checked(/* same inputs as new_checked */) -> CorrectnessResult<Self
 ```
 
 Required fields remain required in `bon` typestate. Optional fields remain omittable, and `build()`
-returns the same `CorrectnessResult` as `new_checked()`.
+returns the same `CorrectnessResult` as the internal validation path.
 
 ### Conversion patterns
 
