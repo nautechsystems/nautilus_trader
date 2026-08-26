@@ -169,6 +169,9 @@ const fn historical_status_priority(status: OrderStatus) -> u8 {
 pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
     LazyLock::new(|| Quota::per_minute(NonZeroU32::new(1200).unwrap()));
 
+const HYPERLIQUID_RECENT_HISTORY_LIMIT: usize = 2_000;
+const VAULT_TOKEN_PREFIX: &str = "vntls:";
+
 /// Provides a raw HTTP client for low-level Hyperliquid REST API operations.
 ///
 /// This client handles HTTP infrastructure, request signing, and raw API calls
@@ -1392,7 +1395,7 @@ impl HyperliquidHttpClient {
         }
 
         // Vault tokens aren't in standard API, create synthetic instruments
-        if coin.as_str().starts_with("vntls:") {
+        if coin.as_str().starts_with(VAULT_TOKEN_PREFIX) {
             log::debug!("Creating synthetic instrument for vault token: {coin}");
 
             let ts_event = self.clock.get_time_ns();
@@ -2230,13 +2233,24 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<OrderStatusReport>> {
+        let dexes = self.reconciliation_dexes(instrument_id);
+        self.request_order_status_reports_for_dexes(user, instrument_id, &dexes)
+            .await
+    }
+
+    pub(crate) async fn request_order_status_reports_for_dexes(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+        dexes: &[Option<Ustr>],
+    ) -> Result<Vec<OrderStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
 
-        for dex in self.reconciliation_dexes(instrument_id) {
+        for dex in dexes {
             let response = self
                 .info_frontend_open_orders_for_dex(user, dex.as_deref())
                 .await?;
@@ -2287,10 +2301,18 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<OrderStatusReport>> {
+        let entries = self.info_historical_orders(user).await?;
+        self.historical_order_status_reports_from_response(entries, instrument_id)
+    }
+
+    pub(crate) fn historical_order_status_reports_from_response(
+        &self,
+        entries: Vec<HyperliquidOrderStatusEntry>,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<Vec<OrderStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let entries = self.info_historical_orders(user).await?;
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
 
@@ -2575,10 +2597,18 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<FillReport>> {
+        let fills_response = self.info_user_fills(user).await?;
+        self.fill_reports_from_response(fills_response, instrument_id)
+    }
+
+    pub(crate) fn fill_reports_from_response(
+        &self,
+        fills_response: HyperliquidFills,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<Vec<FillReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
-        let fills_response = self.info_user_fills(user).await?;
 
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
@@ -2635,6 +2665,17 @@ impl HyperliquidHttpClient {
         user: &str,
         instrument_id: Option<InstrumentId>,
     ) -> Result<Vec<PositionStatusReport>> {
+        let dexes = self.reconciliation_dexes(instrument_id);
+        self.request_position_status_reports_for_dexes(user, instrument_id, &dexes)
+            .await
+    }
+
+    pub(crate) async fn request_position_status_reports_for_dexes(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+        dexes: &[Option<Ustr>],
+    ) -> Result<Vec<PositionStatusReport>> {
         let account_id = self
             .account_id
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
@@ -2659,7 +2700,7 @@ impl HyperliquidHttpClient {
             return Ok(reports);
         }
 
-        for dex in self.reconciliation_dexes(instrument_id) {
+        for dex in dexes {
             let state_response = self
                 .info_clearinghouse_state_for_dex(user, dex.as_deref())
                 .await?;
@@ -3552,18 +3593,62 @@ impl HyperliquidHttpClient {
         }
 
         let cached = self.instruments.load();
-        let mut builder_dexs = cached
-            .keys()
-            .filter_map(|symbol| perp_dex_from_symbol(symbol.as_str()))
-            .collect::<Vec<_>>();
-        builder_dexs.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
-        builder_dexs.dedup();
-
-        let mut dexes = Vec::with_capacity(builder_dexs.len() + 1);
-        dexes.push(None);
-        dexes.extend(builder_dexs.into_iter().map(Some));
-        dexes
+        reconciliation_dexes_from_builders(
+            cached
+                .keys()
+                .filter_map(|symbol| perp_dex_from_symbol(symbol.as_str())),
+        )
     }
+
+    pub(crate) async fn reconciliation_dexes_from_activity(
+        &self,
+        historical_orders: &[HyperliquidOrderStatusEntry],
+        fills: &HyperliquidFills,
+    ) -> Result<Vec<Option<Ustr>>> {
+        if historical_orders.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT
+            || fills.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT
+        {
+            let builder_dexes = self
+                .inner
+                .load_perp_dexs()
+                .await?
+                .into_iter()
+                .flatten()
+                .filter(|dex| !dex.name.is_empty())
+                .map(|dex| Ustr::from(dex.name.as_str()));
+            return Ok(reconciliation_dexes_from_builders(builder_dexes));
+        }
+
+        let builder_dexes = historical_orders
+            .iter()
+            .map(|entry| entry.order.coin.as_str())
+            .chain(fills.iter().map(|fill| fill.coin.as_str()))
+            .filter_map(perp_dex_from_activity_coin);
+
+        Ok(reconciliation_dexes_from_builders(builder_dexes))
+    }
+}
+
+fn reconciliation_dexes_from_builders(
+    builder_dexes: impl IntoIterator<Item = Ustr>,
+) -> Vec<Option<Ustr>> {
+    let mut builder_dexes = builder_dexes.into_iter().collect::<Vec<_>>();
+    builder_dexes.sort_unstable_by(|a, b| a.as_str().cmp(b.as_str()));
+    builder_dexes.dedup();
+
+    let mut dexes = Vec::with_capacity(builder_dexes.len() + 1);
+    dexes.push(None);
+    dexes.extend(builder_dexes.into_iter().map(Some));
+    dexes
+}
+
+fn perp_dex_from_activity_coin(coin: &str) -> Option<Ustr> {
+    if coin.starts_with(VAULT_TOKEN_PREFIX) {
+        return None;
+    }
+
+    let (dex, _) = coin.split_once(':')?;
+    (!dex.is_empty()).then(|| Ustr::from(dex))
 }
 
 fn perp_dex_from_symbol(symbol: &str) -> Option<Ustr> {

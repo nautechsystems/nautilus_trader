@@ -34,7 +34,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    MUTEX_POISONED, Params, UUID4, UnixNanos,
+    MUTEX_POISONED, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -1967,25 +1967,38 @@ impl ExecutionClient for HyperliquidExecutionClient {
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ts_init = self.clock.get_time_ns();
+        let account_address = self.get_account_address()?;
 
-        let order_cmd = GenerateOrderStatusReports::new(
-            UUID4::new(),
-            ts_init,
-            true, // open_only
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
-        let fill_cmd =
-            GenerateFillReports::new(UUID4::new(), ts_init, None, None, None, None, None, None);
-        let position_cmd =
-            GeneratePositionStatusReports::new(UUID4::new(), ts_init, None, None, None, None, None);
+        let fills_response = self
+            .http_client
+            .info_user_fills(&account_address)
+            .await
+            .context("failed to fetch fills for mass status")?;
+        let historical_orders = self
+            .http_client
+            .info_historical_orders(&account_address)
+            .await
+            .context("failed to fetch historical orders for mass status")?;
+        let dexes = self
+            .http_client
+            .reconciliation_dexes_from_activity(&historical_orders, &fills_response)
+            .await
+            .context("failed to determine reconciliation dexes")?;
 
-        let mut order_reports = self.generate_order_status_reports(&order_cmd).await?;
-        let mut fill_reports = self.generate_fill_reports(fill_cmd).await?;
-        let position_reports = self.generate_position_status_reports(&position_cmd).await?;
+        let mut order_reports = self
+            .http_client
+            .request_order_status_reports_for_dexes(&account_address, None, &dexes)
+            .await
+            .context("failed to generate order status reports")?;
+        let mut fill_reports = self
+            .http_client
+            .fill_reports_from_response(fills_response, None)
+            .context("failed to generate fill reports")?;
+        let position_reports = self
+            .http_client
+            .request_position_status_reports_for_dexes(&account_address, None, &dexes)
+            .await
+            .context("failed to generate position status reports")?;
 
         // Apply lookback filter to fills only (positions are current state,
         // and open orders must always be included for correct reconciliation)
@@ -1999,7 +2012,6 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         if !fill_reports.is_empty() {
-            let account_address = self.get_account_address()?;
             let filled_order_ids: ahash::AHashSet<_> = fill_reports
                 .iter()
                 .map(|report| report.venue_order_id)
@@ -2010,8 +2022,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .collect();
             let mut historical_reports = self
                 .http_client
-                .request_historical_order_status_reports(&account_address, None)
-                .await
+                .historical_order_status_reports_from_response(historical_orders, None)
                 .context("failed to generate historical order status reports")?;
             historical_reports.retain(|report| {
                 filled_order_ids.contains(&report.venue_order_id)

@@ -331,18 +331,24 @@ instruments = await client.load_instrument_definitions(
 
 ### Open-order and position reconciliation
 
-Open-order and position reconciliation covers standard perpetuals and every HIP-3 dex represented by
-the execution client's cached perpetual instruments, without separate reconciliation configuration.
-A `LiveNode` initializes this cache from the instrument universe when the execution client connects.
-Direct `HyperliquidHttpClient` callers get the same coverage for the instruments they add with
-`cache_instrument()`.
+#### Startup mass status
 
-An unfiltered request queries the default perp dex and each cached builder dex, then combines their
-reports; position reconciliation also includes spot holdings. For perpetual filters, a request
-filtered to a HIP-3 instrument derives the builder dex from the symbol's dex prefix and queries only
-that dex. A standard perpetual filter queries only the default dex. Spot and outcome position filters
-keep their existing spot-only routing. If any required request fails, reconciliation returns an error
-rather than a partial snapshot.
+At `LiveNode` startup, unfiltered open-order and position reconciliation queries the default perp dex
+and each unique HIP-3 dex named by the wallet's recent historical orders or fills. Cached dexes
+without wallet activity do not generate startup requests. If either history response reaches its
+2,000-record limit, reconciliation instead queries every dex returned by the venue's current perp
+dex list so bounded history cannot hide older open orders or positions. Position reconciliation also
+includes spot holdings.
+
+#### Command and direct requests
+
+Outside startup mass status, unfiltered `LiveNode` open-order and position report commands and direct
+`HyperliquidHttpClient` requests query the default perp dex and each builder dex represented by the
+cached perpetual instruments. For perpetual filters, a request filtered to a HIP-3 instrument derives
+the builder dex from the symbol's dex prefix and queries only that dex. A standard perpetual filter
+queries only the default dex. Spot and outcome position filters keep their existing spot-only
+routing. If any required request fails, reconciliation returns an error rather than a partial
+snapshot.
 
 ### Differences from standard perpetuals
 

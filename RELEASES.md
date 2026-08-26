@@ -73,6 +73,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Allowed `DataActor` implementations without native `Component` state
+- Optimized Hyperliquid startup reconciliation to skip inactive dexes (#4861), thanks for reporting @nah294
 - Optimized Polymarket quote parsing across WebSocket inputs
 - Upgraded Rust (MSRV) to 1.98.0
 - Upgraded Miri to `nightly-2026-08-21`

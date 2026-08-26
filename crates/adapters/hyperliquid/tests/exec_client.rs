@@ -98,6 +98,7 @@ use ustr::Ustr;
 #[derive(Clone)]
 struct TestServerState {
     exchange_request_count: Arc<tokio::sync::Mutex<usize>>,
+    info_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     last_exchange_action: Arc<tokio::sync::Mutex<Option<Value>>>,
     reject_next_order: Arc<std::sync::atomic::AtomicBool>,
     /// Returns a `status="ok"` envelope whose inner `statuses[0]` carries a
@@ -119,6 +120,7 @@ struct TestServerState {
     fail_frontend_open_orders_count: Arc<AtomicUsize>,
     /// Optional override for `frontendOpenOrders` info responses.
     frontend_open_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    frontend_open_orders_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     /// Optional override for `orderStatus` info responses.
     order_status_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     /// Optional override for `spotClearinghouseState` info responses;
@@ -126,6 +128,7 @@ struct TestServerState {
     spot_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     /// Optional override for `clearinghouseState` (perp) info responses.
     perp_clearinghouse_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    perp_clearinghouse_dex_responses: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     /// Captures the `user` field from the most recent `clearinghouseState`
     /// request so tests can verify the address sent to the venue.
     last_clearinghouse_user: Arc<tokio::sync::Mutex<Option<String>>>,
@@ -133,6 +136,10 @@ struct TestServerState {
     user_fills_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     /// Optional override for `historicalOrders` info responses; defaults to `[]`.
     historical_orders_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    all_perp_metas_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    perp_dexs_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    reject_dex_info_requests: Arc<std::sync::atomic::AtomicBool>,
+    rejected_dex_info_requests: Arc<tokio::sync::Mutex<AHashSet<String>>>,
     rate_limit_after: Arc<AtomicUsize>,
     /// When set, `handle_exchange` awaits `pause_release` before returning.
     /// Lets a test hold the response so it can assert on synchronous state
@@ -146,6 +153,7 @@ impl Default for TestServerState {
     fn default() -> Self {
         Self {
             exchange_request_count: Arc::new(tokio::sync::Mutex::new(0)),
+            info_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             last_exchange_action: Arc::new(tokio::sync::Mutex::new(None)),
             reject_next_order: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             inner_order_error_next: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -154,12 +162,18 @@ impl Default for TestServerState {
             fail_next_exchange: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             fail_frontend_open_orders_count: Arc::new(AtomicUsize::new(0)),
             frontend_open_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            frontend_open_orders_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             order_status_response: Arc::new(tokio::sync::Mutex::new(None)),
             spot_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
             perp_clearinghouse_response: Arc::new(tokio::sync::Mutex::new(None)),
+            perp_clearinghouse_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_clearinghouse_user: Arc::new(tokio::sync::Mutex::new(None)),
             user_fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             historical_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
+            all_perp_metas_response: Arc::new(tokio::sync::Mutex::new(None)),
+            perp_dexs_response: Arc::new(tokio::sync::Mutex::new(None)),
+            reject_dex_info_requests: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            rejected_dex_info_requests: Arc::new(tokio::sync::Mutex::new(AHashSet::new())),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             pause_next_exchange: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pause_release: Arc::new(tokio::sync::Notify::new()),
@@ -175,6 +189,102 @@ fn load_json(filename: &str) -> Value {
     let content = std::fs::read_to_string(data_path().join(filename))
         .unwrap_or_else(|_| panic!("failed to read {filename}"));
     serde_json::from_str(&content).expect("invalid json")
+}
+
+fn perp_metas(builder_metas: impl IntoIterator<Item = Value>) -> Value {
+    let mut metas = vec![load_json("http_meta_perp_sample.json")];
+    metas.extend(builder_metas);
+    Value::Array(metas)
+}
+
+fn builder_perp_meta(dex: &str, coins: &[&str]) -> Value {
+    let universe = coins
+        .iter()
+        .map(|coin| {
+            json!({
+                "name": format!("{dex}:{coin}"),
+                "szDecimals": 5,
+                "maxLeverage": 10,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({"universe": universe})
+}
+
+fn frontend_order(coin: &str, oid: u64) -> Value {
+    json!({
+        "coin": coin,
+        "side": "B",
+        "limitPx": "100.0",
+        "sz": "0.10000",
+        "oid": oid,
+        "timestamp": 1_700_000_000_000u64,
+        "origSz": "0.10000",
+    })
+}
+
+fn clearinghouse_position(coin: &str) -> Value {
+    json!({
+        "assetPositions": [{
+            "type": "oneWay",
+            "position": {
+                "coin": coin,
+                "cumFunding": {
+                    "allTime": "0.0",
+                    "sinceOpen": "0.0",
+                    "sinceChange": "0.0",
+                },
+                "entryPx": "100.0",
+                "leverage": {"type": "cross", "value": 2},
+                "liquidationPx": null,
+                "marginUsed": "1.0",
+                "maxLeverage": 10,
+                "positionValue": "10.0",
+                "returnOnEquity": "0.0",
+                "szi": "0.10000",
+                "unrealizedPnl": "0.0",
+            },
+        }],
+    })
+}
+
+fn user_fill(coin: &str, oid: u64) -> Value {
+    json!({
+        "coin": coin,
+        "px": "100.0",
+        "sz": "0.10000",
+        "side": "B",
+        "time": 1_700_000_000_000u64,
+        "startPosition": "0",
+        "dir": "Open Long",
+        "closedPnl": "0",
+        "hash": format!("0x{oid:064x}"),
+        "oid": oid,
+        "crossed": true,
+        "fee": "0.01",
+        "tid": oid,
+        "feeToken": "USDC",
+    })
+}
+
+fn historical_order(coin: &str, oid: u64) -> Value {
+    json!({
+        "order": {
+            "coin": coin,
+            "side": "B",
+            "limitPx": "100.0",
+            "sz": "0",
+            "oid": oid,
+            "timestamp": 1_700_000_000_000u64,
+            "origSz": "0.10000",
+            "reduceOnly": false,
+            "orderType": "Limit",
+            "tif": "Gtc",
+            "cloid": null,
+        },
+        "status": "filled",
+        "statusTimestamp": 1_700_000_000_001u64,
+    })
 }
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
@@ -204,6 +314,24 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         .get("type")
         .and_then(|t| t.as_str())
         .unwrap_or("");
+    state.info_requests.lock().await.push(request_body.clone());
+
+    let rejected_dex = request_body.get("dex").and_then(Value::as_str);
+    let reject_named_dex = if let Some(dex) = rejected_dex {
+        state.rejected_dex_info_requests.lock().await.contains(dex)
+    } else {
+        false
+    };
+
+    if (state.reject_dex_info_requests.load(Ordering::Relaxed) && rejected_dex.is_some())
+        || reject_named_dex
+    {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "unexpected dex request"})),
+        )
+            .into_response();
+    }
 
     match request_type {
         "meta" => {
@@ -211,9 +339,22 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             Json(meta).into_response()
         }
         "allPerpMetas" => {
-            let meta = load_json("http_meta_perp_sample.json");
-            Json(json!([meta])).into_response()
+            if let Some(body) = state.all_perp_metas_response.lock().await.clone() {
+                Json(body).into_response()
+            } else {
+                let meta = load_json("http_meta_perp_sample.json");
+                Json(json!([meta])).into_response()
+            }
         }
+        "perpDexs" => Json(
+            state
+                .perp_dexs_response
+                .lock()
+                .await
+                .clone()
+                .unwrap_or_else(|| json!([null])),
+        )
+        .into_response(),
         "metaAndAssetCtxs" => {
             let meta = load_json("http_meta_perp_sample.json");
             Json(json!([meta, []])).into_response()
@@ -236,7 +377,18 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
                     .into_response();
             }
 
-            if let Some(body) = state.frontend_open_orders_response.lock().await.clone() {
+            let response = if let Some(dex) = request_body.get("dex").and_then(Value::as_str) {
+                state
+                    .frontend_open_orders_dex_responses
+                    .lock()
+                    .await
+                    .get(dex)
+                    .cloned()
+            } else {
+                state.frontend_open_orders_response.lock().await.clone()
+            };
+
+            if let Some(body) = response {
                 Json(body).into_response()
             } else {
                 Json(json!([])).into_response()
@@ -273,7 +425,18 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
                 *state.last_clearinghouse_user.lock().await = Some(user.to_string());
             }
 
-            if let Some(body) = state.perp_clearinghouse_response.lock().await.clone() {
+            let response = if let Some(dex) = request_body.get("dex").and_then(Value::as_str) {
+                state
+                    .perp_clearinghouse_dex_responses
+                    .lock()
+                    .await
+                    .get(dex)
+                    .cloned()
+            } else {
+                state.perp_clearinghouse_response.lock().await.clone()
+            };
+
+            if let Some(body) = response {
                 return Json(body).into_response();
             }
 
@@ -6524,6 +6687,263 @@ async fn test_generate_fill_reports_filters_time_range() {
     );
     let reports = client.generate_fill_reports(cmd_both).await.unwrap();
     assert_eq!(reports.len(), 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_skips_inactive_cached_builder_dexes() {
+    let state = TestServerState::default();
+    let builder_metas = (0..200).map(|index| {
+        json!({
+            "universe": [{
+                "name": format!("dex{index}:COIN{index}"),
+                "szDecimals": 5,
+                "maxLeverage": 10,
+            }],
+        })
+    });
+    *state.all_perp_metas_response.lock().await = Some(perp_metas(builder_metas));
+    *state.historical_orders_response.lock().await =
+        Some(json!([historical_order("vntls:TOKEN", 1)]));
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    state.info_requests.lock().await.clear();
+    state
+        .reject_dex_info_requests
+        .store(true, Ordering::Relaxed);
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+    let requests = state.info_requests.lock().await.clone();
+    let request_types = requests
+        .iter()
+        .filter_map(|request| request.get("type").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+
+    assert!(mass.order_reports().is_empty());
+    assert!(mass.fill_reports().is_empty());
+    assert!(mass.position_reports().is_empty());
+    assert_eq!(
+        request_types,
+        vec![
+            "userFills",
+            "historicalOrders",
+            "frontendOpenOrders",
+            "clearinghouseState",
+            "spotClearinghouseState",
+        ]
+    );
+    assert!(requests.iter().all(|request| request.get("dex").is_none()));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::historical_orders(true)]
+#[case::user_fills(false)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_queries_each_active_builder_dex_once(
+    #[case] use_historical_orders: bool,
+) {
+    let state = TestServerState::default();
+    *state.all_perp_metas_response.lock().await = Some(perp_metas([
+        builder_perp_meta("idle", &["NEVER"]),
+        builder_perp_meta("xyz", &["ONE", "TWO"]),
+    ]));
+    state
+        .rejected_dex_info_requests
+        .lock()
+        .await
+        .insert("idle".to_string());
+
+    if use_historical_orders {
+        *state.historical_orders_response.lock().await = Some(json!([
+            historical_order("xyz:ONE", 8_001),
+            historical_order("xyz:TWO", 8_002),
+        ]));
+    } else {
+        *state.user_fills_response.lock().await = Some(json!([
+            user_fill("xyz:ONE", 8_001),
+            user_fill("xyz:TWO", 8_002),
+        ]));
+    }
+    state
+        .frontend_open_orders_dex_responses
+        .lock()
+        .await
+        .insert("xyz".to_string(), json!([frontend_order("xyz:ONE", 9_001)]));
+    state
+        .perp_clearinghouse_dex_responses
+        .lock()
+        .await
+        .insert("xyz".to_string(), clearinghouse_position("xyz:ONE"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    state.info_requests.lock().await.clear();
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+    let requests = state.info_requests.lock().await.clone();
+    let xyz_requests = requests
+        .iter()
+        .filter(|request| request.get("dex") == Some(&json!("xyz")))
+        .collect::<Vec<_>>();
+    let historical_count = requests
+        .iter()
+        .filter(|request| request.get("type") == Some(&json!("historicalOrders")))
+        .count();
+    let fills_count = requests
+        .iter()
+        .filter(|request| request.get("type") == Some(&json!("userFills")))
+        .count();
+    let positions = mass.position_reports();
+
+    assert!(
+        mass.order_reports()
+            .contains_key(&VenueOrderId::from("9001"))
+    );
+    assert_eq!(
+        mass.fill_reports().len(),
+        if use_historical_orders { 0 } else { 2 }
+    );
+    assert_eq!(
+        positions
+            .get(&InstrumentId::from("xyz:ONE-USD-PERP.HYPERLIQUID"))
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(xyz_requests.len(), 2);
+    assert_eq!(
+        xyz_requests
+            .iter()
+            .filter(|request| request.get("type") == Some(&json!("frontendOpenOrders")))
+            .count(),
+        1
+    );
+    assert_eq!(
+        xyz_requests
+            .iter()
+            .filter(|request| request.get("type") == Some(&json!("clearinghouseState")))
+            .count(),
+        1
+    );
+    assert_eq!(historical_count, 1);
+    assert_eq!(fills_count, 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::historical_orders(true)]
+#[case::user_fills(false)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_falls_back_for_saturated_history(
+    #[case] saturate_historical_orders: bool,
+) {
+    let state = TestServerState::default();
+    *state.all_perp_metas_response.lock().await =
+        Some(perp_metas([builder_perp_meta("old", &["LIVE"])]));
+    *state.perp_dexs_response.lock().await = Some(json!([null, {"name": "old"}]));
+    if saturate_historical_orders {
+        *state.historical_orders_response.lock().await = Some(Value::Array(
+            (0..2_000).map(|oid| historical_order("BTC", oid)).collect(),
+        ));
+    } else {
+        *state.user_fills_response.lock().await = Some(Value::Array(
+            (0..2_000).map(|oid| user_fill("BTC", oid)).collect(),
+        ));
+    }
+    state
+        .frontend_open_orders_dex_responses
+        .lock()
+        .await
+        .insert(
+            "old".to_string(),
+            json!([frontend_order("old:LIVE", 9_999)]),
+        );
+    state
+        .perp_clearinghouse_dex_responses
+        .lock()
+        .await
+        .insert("old".to_string(), clearinghouse_position("old:LIVE"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    state.info_requests.lock().await.clear();
+
+    let mass = client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .expect("mass status payload");
+    let requests = state.info_requests.lock().await.clone();
+
+    assert!(
+        mass.order_reports()
+            .contains_key(&VenueOrderId::from("9999"))
+    );
+    assert!(
+        mass.position_reports()
+            .contains_key(&InstrumentId::from("old:LIVE-USD-PERP.HYPERLIQUID"))
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.get("type") == Some(&json!("perpDexs")))
+            .count(),
+        1
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request.get("dex") == Some(&json!("old")))
+            .count(),
+        2
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_generate_mass_status_propagates_saturated_dex_discovery_error() {
+    let state = TestServerState::default();
+    *state.historical_orders_response.lock().await = Some(Value::Array(
+        (0..2_000).map(|oid| historical_order("BTC", oid)).collect(),
+    ));
+    *state.perp_dexs_response.lock().await = Some(json!({"invalid": true}));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let error = client
+        .generate_mass_status(None)
+        .await
+        .expect_err("invalid perpDexs response must fail mass status");
+
+    assert_eq!(
+        error.to_string(),
+        "failed to determine reconciliation dexes"
+    );
 
     client.disconnect().await.unwrap();
 }
