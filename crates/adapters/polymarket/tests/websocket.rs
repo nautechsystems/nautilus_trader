@@ -60,6 +60,7 @@ const TEST_ASSET_ID_3: &str =
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
     subscribed_assets: Arc<tokio::sync::Mutex<Vec<String>>>,
+    received_market_texts: Arc<tokio::sync::Mutex<Vec<String>>>,
     received_market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
     received_user_auth: Arc<tokio::sync::Mutex<Option<Value>>>,
     drop_next_connection: Arc<AtomicBool>,
@@ -71,6 +72,7 @@ impl Default for TestServerState {
         Self {
             connection_count: Arc::new(tokio::sync::Mutex::new(0)),
             subscribed_assets: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            received_market_texts: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             received_market_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             received_user_auth: Arc::new(tokio::sync::Mutex::new(None)),
             drop_next_connection: Arc::new(AtomicBool::new(false)),
@@ -121,6 +123,21 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>, is_us
 
         match msg {
             Message::Text(text) => {
+                if !is_user {
+                    state
+                        .received_market_texts
+                        .lock()
+                        .await
+                        .push(text.to_string());
+                }
+
+                if text == "PING" {
+                    if socket.send(Message::Text("PONG".into())).await.is_err() {
+                        break;
+                    }
+                    continue;
+                }
+
                 let Ok(payload) = serde_json::from_str::<Value>(&text) else {
                     continue;
                 };
@@ -285,6 +302,37 @@ async fn test_market_client_connects_and_disconnects() {
     client.disconnect().await.expect("disconnect failed");
 
     wait_for_connection_count(&state, 0, Duration::from_secs(5)).await;
+}
+
+#[rstest]
+#[tokio::test(start_paused = true)]
+async fn test_market_heartbeat_uses_control_frames_before_initial_subscription() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/market");
+    let mut client =
+        PolymarketWebSocketClient::new_market(Some(ws_url), false, TransportBackend::default());
+
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0).await;
+
+    tokio::time::advance(Duration::from_secs(10)).await;
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.ping_count.load(Ordering::Relaxed) > 0
+                    || !state.received_market_texts.lock().await.is_empty()
+            }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    assert_eq!(state.ping_count.load(Ordering::Relaxed), 1);
+    assert!(state.received_market_texts.lock().await.is_empty());
+
+    client.disconnect().await.expect("disconnect failed");
 }
 
 #[rstest]

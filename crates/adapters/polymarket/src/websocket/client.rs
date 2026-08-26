@@ -42,8 +42,9 @@ use crate::common::{
 
 // The venue counts only the `PING` text frame, not protocol ping frames, and
 // closes with `1008 no ping received` otherwise. Cadence per venue docs:
-// https://docs.polymarket.com/developers/CLOB/websocket/wss-overview
-const POLYMARKET_HEARTBEAT_SECS: u64 = 10;
+// https://docs.polymarket.com/api-reference/wss/market
+pub(super) const POLYMARKET_HEARTBEAT_SECS: u64 = 10;
+pub(super) const POLYMARKET_HEARTBEAT_PAYLOAD: &str = "PING";
 
 // Prediction markets go quiet for long stretches, so liveness is the venue
 // still sending frames, not data arriving. A data-silence timer cannot serve:
@@ -372,11 +373,18 @@ impl PolymarketWebSocketClient {
     }
 
     fn websocket_config(&self) -> WebSocketConfig {
+        // The market endpoint rejects text PING before its initial subscription. Protocol pings
+        // keep an idle socket alive until FeedHandler starts the required text heartbeat.
+        let heartbeat_payload = match self.channel {
+            WsChannel::Market => None,
+            WsChannel::User => Some(POLYMARKET_HEARTBEAT_PAYLOAD.to_string()),
+        };
+
         WebSocketConfig {
             url: self.url.clone(),
             headers: vec![],
             heartbeat_interval_secs: Some(POLYMARKET_HEARTBEAT_SECS),
-            heartbeat_payload: Some("PING".to_string()),
+            heartbeat_payload,
             connect_timeout_ms: Some(15_000),
             reconnect_delay_initial_ms: Some(250),
             reconnect_delay_max_ms: Some(5_000),
@@ -677,7 +685,6 @@ mod tests {
         let assert_common = |config: &WebSocketConfig| {
             assert_eq!(config.headers, Vec::<(String, String)>::new());
             assert_eq!(config.heartbeat_interval_secs, Some(10));
-            assert_eq!(config.heartbeat_payload.as_deref(), Some("PING"));
             assert_eq!(config.connect_timeout_ms, Some(15_000));
             assert_eq!(config.reconnect_delay_initial_ms, Some(250));
             assert_eq!(config.reconnect_delay_max_ms, Some(5_000));
@@ -696,6 +703,8 @@ mod tests {
         assert_eq!(user_config.url, "ws://user.example/ws");
         assert_eq!(market_config.proxy_url.as_deref(), Some(MARKET_PROXY));
         assert_eq!(user_config.proxy_url.as_deref(), Some(USER_PROXY));
+        assert_eq!(market_config.heartbeat_payload, None);
+        assert_eq!(user_config.heartbeat_payload.as_deref(), Some("PING"));
         assert_common(&market_config);
         assert_common(&user_config);
         assert!(!market_debug.contains("market-proxy-secret"));

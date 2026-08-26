@@ -15,9 +15,12 @@
 
 //! WebSocket message handler for the Polymarket CLOB API.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 use ahash::AHashMap;
@@ -31,7 +34,7 @@ use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::{
-    client::WsChannel,
+    client::{POLYMARKET_HEARTBEAT_PAYLOAD, POLYMARKET_HEARTBEAT_SECS, WsChannel},
     messages::{
         MarketInitialSubscribeRequest, MarketSubscribeRequest, MarketUnsubscribeRequest,
         MarketWsMessage, PolymarketWsAuth, PolymarketWsMessage, UserSubscribeRequest,
@@ -73,6 +76,7 @@ pub(super) struct FeedHandler {
     user_subscribed: bool,
     // True once the current market-channel session has sent its initial subscribe payload.
     market_subscription_initialized: bool,
+    market_heartbeat_next: Option<(tokio::time::Instant, u64)>,
     // Assets awaiting first authoritative data, keyed by the connection that wrote the subscribe.
     market_subscription_epochs: AHashMap<String, u64>,
     // Overflow buffer for batched frames, drained before reading the next raw message
@@ -112,6 +116,7 @@ impl FeedHandler {
             auth_tracker,
             user_subscribed,
             market_subscription_initialized: false,
+            market_heartbeat_next: None,
             market_subscription_epochs: AHashMap::new(),
             message_buffer: Vec::new(),
             subscribe_new_markets,
@@ -176,7 +181,11 @@ impl FeedHandler {
                                 .insert(id.clone(), connection_epoch);
                         }
                     }
-                    self.market_subscription_initialized = true;
+
+                    if !self.market_subscription_initialized {
+                        self.market_subscription_initialized = true;
+                        self.schedule_market_heartbeat(connection_epoch);
+                    }
                 }
             }
             Err(e) => {
@@ -341,7 +350,20 @@ impl FeedHandler {
         }
 
         loop {
+            let market_heartbeat_next = self.market_heartbeat_next;
+
             tokio::select! {
+                connection_epoch = async move {
+                    if let Some((deadline, connection_epoch)) = market_heartbeat_next {
+                        tokio::time::sleep_until(deadline).await;
+                        connection_epoch
+                    } else {
+                        std::future::pending::<u64>().await
+                    }
+                } => {
+                    self.send_market_heartbeat(connection_epoch).await;
+                    self.schedule_market_heartbeat(connection_epoch);
+                }
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
@@ -384,6 +406,7 @@ impl FeedHandler {
                         Message::Text(text) => {
                             if text == RECONNECTED {
                                 self.market_subscription_initialized = false;
+                                self.market_heartbeat_next = None;
                                 self.resubscribe_all(connection_epoch).await;
                                 return Some(PolymarketWsMessage::Reconnected);
                             }
@@ -422,6 +445,30 @@ impl FeedHandler {
                 }
                 else => return None,
             }
+        }
+    }
+
+    fn schedule_market_heartbeat(&mut self, connection_epoch: u64) {
+        self.market_heartbeat_next = Some((
+            tokio::time::Instant::now() + Duration::from_secs(POLYMARKET_HEARTBEAT_SECS),
+            connection_epoch,
+        ));
+    }
+
+    async fn send_market_heartbeat(&self, connection_epoch: u64) {
+        let Some(ref client) = self.client else {
+            return;
+        };
+
+        if let Err(e) = client
+            .send_text_on_connection(
+                POLYMARKET_HEARTBEAT_PAYLOAD.to_string(),
+                None,
+                connection_epoch,
+            )
+            .await
+        {
+            log::debug!("Failed to send market heartbeat: {e}");
         }
     }
 
@@ -653,6 +700,167 @@ mod tests {
             .expect("websocket client")
             .disconnect()
             .await;
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn market_text_heartbeat_follows_initial_subscription() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let connection_epoch = client.connection_epoch();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut handler = FeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            WsChannel::Market,
+            Some(client),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            None,
+            SubscriptionState::new(':'),
+            Arc::new(AtomicBool::new(false)),
+            None,
+            AuthTracker::new(),
+            false,
+            false,
+        );
+
+        handler
+            .send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
+            .await;
+        wait_for_recorded_messages(&messages, 1).await;
+
+        let task = tokio::spawn(async move {
+            let message = handler.next().await;
+            (handler, message)
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(POLYMARKET_HEARTBEAT_SECS)).await;
+        wait_for_recorded_messages(&messages, 2).await;
+
+        raw_tx
+            .send((connection_epoch, Message::Text(RECONNECTED.into())))
+            .expect("queue reconnect notification");
+        let (mut handler, message) = task.await.expect("join handler task");
+        assert!(matches!(message, Some(PolymarketWsMessage::Reconnected)));
+        wait_for_recorded_messages(&messages, 3).await;
+
+        let task = tokio::spawn(async move {
+            let message = handler.next().await;
+            (handler, message)
+        });
+        tokio::task::yield_now().await;
+        tokio::time::advance(Duration::from_secs(POLYMARKET_HEARTBEAT_SECS)).await;
+        wait_for_recorded_messages(&messages, 4).await;
+
+        cmd_tx
+            .send(HandlerCommand::Disconnect)
+            .expect("queue disconnect");
+        let (_, message) = task.await.expect("join handler task");
+        assert!(message.is_none());
+
+        let messages = messages.lock().expect("recording mutex poisoned").clone();
+        let expected_subscription = json!({
+            "assets_ids": [MARKET_ASSET_ID],
+            "type": "market",
+            "initial_dump": true,
+        });
+        assert_eq!(messages.len(), 4);
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[0]).expect("valid subscribe payload"),
+            expected_subscription,
+        );
+        assert_eq!(messages[1], POLYMARKET_HEARTBEAT_PAYLOAD);
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[2]).expect("valid replay payload"),
+            expected_subscription,
+        );
+        assert_eq!(messages[3], POLYMARKET_HEARTBEAT_PAYLOAD);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn market_heartbeat_stays_bound_to_subscribed_connection() {
+        let (url, messages) = recording_server().await;
+        let client = recording_client(url).await;
+        let connection_epoch = client.connection_epoch();
+        let connection_epoch_atomic = client.connection_epoch_atomic();
+        let (mut handler, raw_tx, _) = market_handler_with(client);
+
+        handler
+            .send_subscribe_market(&[MARKET_ASSET_ID.to_string()], None)
+            .await;
+        wait_for_recorded_messages(&messages, 1).await;
+
+        let replacement_epoch = connection_epoch + 1;
+        connection_epoch_atomic.store(replacement_epoch, Ordering::Release);
+        handler.send_market_heartbeat(connection_epoch).await;
+        raw_tx
+            .send((replacement_epoch, Message::Text(RECONNECTED.into())))
+            .expect("queue reconnect notification");
+
+        assert!(matches!(
+            handler.next().await,
+            Some(PolymarketWsMessage::Reconnected),
+        ));
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .send_text_on_connection("barrier".to_string(), None, replacement_epoch)
+            .await
+            .expect("send barrier on replacement connection");
+        wait_until_async(
+            || {
+                let messages = Arc::clone(&messages);
+                async move {
+                    messages
+                        .lock()
+                        .expect("recording mutex poisoned")
+                        .last()
+                        .is_some_and(|message| message == "barrier")
+                }
+            },
+            Duration::from_secs(1),
+        )
+        .await;
+
+        let messages = messages.lock().expect("recording mutex poisoned").clone();
+        let expected_subscription = json!({
+            "assets_ids": [MARKET_ASSET_ID],
+            "type": "market",
+            "initial_dump": true,
+        });
+        assert_eq!(messages.len(), 3);
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[0]).expect("valid subscribe payload"),
+            expected_subscription,
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&messages[1]).expect("valid replay payload"),
+            expected_subscription,
+        );
+        assert_eq!(messages[2], "barrier");
+
+        handler
+            .client
+            .as_ref()
+            .expect("websocket client")
+            .disconnect()
+            .await;
+    }
+
+    async fn wait_for_recorded_messages(messages: &Arc<Mutex<Vec<String>>>, expected: usize) {
+        wait_until_async(
+            || {
+                let messages = Arc::clone(messages);
+                async move { messages.lock().expect("recording mutex poisoned").len() == expected }
+            },
+            Duration::from_secs(1),
+        )
+        .await;
     }
 
     #[rstest]

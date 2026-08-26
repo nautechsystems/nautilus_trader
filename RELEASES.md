@@ -66,6 +66,7 @@ Released on TBD (UTC).
 - Fixed OKX ambiguous submissions, subscription recovery, and triggered child reconciliation
 - Fixed Polymarket user WebSocket subscriptions to cover all account orders and trades
 - Fixed Polymarket `CancelAllOrders` handling for empty caches and cross-strategy, instrument, and side scopes
+- Fixed Polymarket market WebSocket heartbeats before initial subscription (#4864), thanks for reporting @mystic-io
 
 ### Internal Improvements
 
