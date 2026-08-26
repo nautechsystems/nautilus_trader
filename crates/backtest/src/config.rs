@@ -49,7 +49,7 @@ use nautilus_trading::ImportableControllerConfig;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use crate::modules::{SimulationModule, SimulationModuleAny};
+use crate::modules::{SimulationModuleAny, SimulationModuleHandle};
 
 /// Represents a type of market data for catalog queries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -270,7 +270,7 @@ impl Default for BacktestEngineConfig {
 ///
 /// Constructed via [`bon::Builder`] so callers only specify what differs from
 /// the documented defaults. Field types mirror the internal
-/// `SimulatedExchange` shapes (trait objects for modules, runtime model handles,
+/// `SimulatedExchange` shapes (runtime handles for modules and models,
 /// and typed `Money` balances), which is why this is distinct from the
 /// YAML-friendly [`BacktestVenueConfig`] used by `BacktestNode`.
 #[allow(missing_debug_implementations)]
@@ -294,7 +294,7 @@ pub struct SimulatedVenueConfig {
     pub leverages: AHashMap<InstrumentId, Decimal>,
     pub margin_model: Option<MarginModelHandle>,
     #[builder(default)]
-    pub modules: Vec<Box<dyn SimulationModule>>,
+    pub modules: Vec<SimulationModuleHandle>,
     #[builder(default)]
     pub fill_model: FillModelHandle,
     #[builder(default)]

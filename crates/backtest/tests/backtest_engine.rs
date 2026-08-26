@@ -25,7 +25,8 @@ use nautilus_backtest::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
     modules::{
-        AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleResult,
+        AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
+        SimulationModuleResult,
     },
 };
 use nautilus_common::{
@@ -1896,10 +1897,14 @@ fn test_end_stops_on_unpriced_funding_boundary() {
         .run(None, Some(UnixNanos::from(5_000_000_000)), None, true)
         .unwrap();
 
-    engine.end();
+    let end_error = engine.end().unwrap_err();
 
     let error = engine.run(None, None, None, false).unwrap_err();
 
+    assert!(
+        end_error.to_string().contains("Funding settlement failed"),
+        "unexpected error: {end_error:#}"
+    );
     assert!(
         error.to_string().contains("Funding settlement failed"),
         "unexpected error: {error:#}"
@@ -1907,7 +1912,8 @@ fn test_end_stops_on_unpriced_funding_boundary() {
     assert!(engine.kernel().trader.borrow().is_stopped());
     assert_eq!(engine.backtest_end(), Some(boundary));
 
-    engine.end();
+    let retry_error = engine.end().unwrap_err();
+    assert_eq!(retry_error.to_string(), end_error.to_string());
 }
 
 #[rstest]
@@ -1989,7 +1995,7 @@ fn test_reset_cancels_funding_timer() {
     let timer_name = Ustr::from("FUNDING-SETTLEMENT:BINANCE");
     assert!(engine.kernel().clock.borrow().timer_exists(&timer_name));
 
-    engine.reset();
+    engine.reset().unwrap();
 
     assert!(!engine.kernel().clock.borrow().timer_exists(&timer_name));
 }
@@ -2440,7 +2446,7 @@ fn test_reset_preserves_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
     assert_eq!(result1.iterations, 2);
 
     // Reset and run again - data should persist
-    engine.reset();
+    engine.reset().unwrap();
 
     engine.add_strategy(EmptyStrategy::new()).unwrap();
     engine.run(None, None, None, false).unwrap();
@@ -3351,7 +3357,7 @@ fn test_reset_run_produces_same_results(crypto_perpetual_ethusdt: CryptoPerpetua
     let result1_orders = engine.get_result().total_orders;
 
     // Reset and run again with same data
-    engine.reset();
+    engine.reset().unwrap();
     engine.run(None, None, None, false).unwrap();
     let result2_iterations = engine.get_result().iterations;
     let result2_orders = engine.get_result().total_orders;
@@ -4010,7 +4016,7 @@ fn test_reset_between_emulated_runs_clears_order_emulator_state(
         assert_eq!(emulator.get_submit_order_commands().len(), 1);
     }
 
-    engine.reset();
+    engine.reset().unwrap();
     {
         let emulator = engine.kernel().order_emulator.get_emulator();
         assert!(emulator.get_matching_core(&instrument_id).is_none());
@@ -4364,7 +4370,7 @@ fn test_streaming_end_flushes_tail_timers(crypto_perpetual_ethusdt: CryptoPerpet
 
     // end() should flush tail timers up to end_ns (20s),
     // producing gap bars between 10s and 20s
-    engine.end();
+    engine.end().unwrap();
 
     let cache = engine.kernel().cache.borrow();
     let bars_after_end = cache.bars(&bar_type).unwrap_or_default().len();
@@ -4878,9 +4884,15 @@ struct CountingSimulationModule {
 }
 
 impl SimulationModule for CountingSimulationModule {
-    fn pre_process(&self, _data: &Data) {}
+    fn pre_process(&self, _data: &Data) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn process(&self, ts_now: UnixNanos, _ctx: &ExchangeContext) -> SimulationModuleResult {
+    fn process(
+        &self,
+        ts_now: UnixNanos,
+        _ctx: &ExchangeContext,
+    ) -> anyhow::Result<SimulationModuleResult> {
         let prev = self.tracker.last_ts.get();
         if prev == Some(ts_now) {
             self.tracker.duplicate_ts_seen.set(true);
@@ -4889,14 +4901,77 @@ impl SimulationModule for CountingSimulationModule {
         self.tracker
             .total_calls
             .set(self.tracker.total_calls.get() + 1);
-        SimulationModuleResult::Completed(Vec::new())
+        Ok(SimulationModuleResult::Completed(Vec::new()))
     }
 
-    fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) {}
+    fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn log_diagnostics(&self) {}
+    fn log_diagnostics(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
 
-    fn reset(&self) {}
+    fn reset(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct FailingDiagnosticsSimulationModule;
+
+impl SimulationModule for FailingDiagnosticsSimulationModule {
+    fn pre_process(&self, _data: &Data) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn process(
+        &self,
+        _ts_now: UnixNanos,
+        _ctx: &ExchangeContext,
+    ) -> anyhow::Result<SimulationModuleResult> {
+        Ok(SimulationModuleResult::NotReady)
+    }
+
+    fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn log_diagnostics(&self) -> anyhow::Result<()> {
+        anyhow::bail!("diagnostics failure")
+    }
+
+    fn reset(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_end_reports_simulation_module_diagnostics_error() {
+    let config = BacktestEngineConfig::default();
+    let mut engine = BacktestEngine::new(config).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 USD")])
+        .modules(vec![SimulationModuleHandle::new(
+            FailingDiagnosticsSimulationModule,
+        )])
+        .build()
+        .unwrap();
+    engine.add_venue(venue_config).unwrap();
+    engine.run(None, None, None, true).unwrap();
+
+    let error = engine.end().unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Simulation module 0 log_diagnostics failed: diagnostics failure"
+    );
+    assert!(engine.kernel().trader.borrow().is_stopped());
+    assert!(engine.run_finished().is_some());
 }
 
 #[rstest]
@@ -4920,7 +4995,7 @@ fn test_end_does_not_double_run_modules_at_same_timestamp(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .modules(vec![Box::new(module)])
+        .modules(vec![SimulationModuleHandle::new(module)])
         .build()
         .unwrap();
     engine.add_venue(venue_config).unwrap();
@@ -5448,7 +5523,7 @@ fn test_close_all_positions_in_on_stop_is_processed_streaming(
     engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, true).unwrap();
-    engine.end();
+    engine.end().unwrap();
 
     let cache_rc = engine.kernel().cache();
     let cache = cache_rc.borrow();

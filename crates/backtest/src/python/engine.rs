@@ -67,11 +67,10 @@ use nautilus_trading::{
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
-use super::node::create_config_instance;
+use super::{modules::pyobject_to_simulation_module_handle, node::create_config_instance};
 use crate::{
     config::{BacktestEngineConfig, SimulatedVenueConfig},
     engine::BacktestEngine,
-    modules::{FXRolloverInterestModule, SimulationModuleAny},
     result::BacktestResult,
 };
 
@@ -234,15 +233,12 @@ impl PyBacktestEngine {
             .map(|objs| {
                 objs.into_iter()
                     .map(|obj| {
-                        Python::attach(|py| pyobject_to_simulation_module_any(py, obj.bind(py)))
+                        Python::attach(|py| pyobject_to_simulation_module_handle(py, obj.bind(py)))
                     })
                     .collect::<PyResult<Vec<_>>>()
             })
             .transpose()?
-            .unwrap_or_default()
-            .into_iter()
-            .map(Into::into)
-            .collect();
+            .unwrap_or_default();
 
         let sim_config = SimulatedVenueConfig::builder()
             .venue(venue)
@@ -567,13 +563,13 @@ impl PyBacktestEngine {
     /// Ends the backtest run, finalizing results.
     #[pyo3(name = "end")]
     fn py_end(&mut self) -> PyResult<()> {
-        self.0.end_with_result().map_err(to_pyruntime_err)
+        self.0.end().map_err(to_pyruntime_err)
     }
 
     /// Resets the engine state for a new run.
     #[pyo3(name = "reset")]
-    fn py_reset(&mut self) {
-        self.0.reset();
+    fn py_reset(&mut self) -> PyResult<()> {
+        self.0.reset().map_err(to_pyruntime_err)
     }
 
     /// Disposes of the engine, releasing all resources.
@@ -1671,21 +1667,6 @@ mod tests {
             assert!(exec_algorithm_ids.contains(&ExecAlgorithmId::from("EXEC-MULTI-002")));
         });
     }
-}
-
-pub(crate) fn pyobject_to_simulation_module_any(
-    _py: Python,
-    obj: &Bound<'_, PyAny>,
-) -> PyResult<SimulationModuleAny> {
-    if let Ok(cell) = obj.cast::<FXRolloverInterestModule>() {
-        let module = cell.borrow().clone();
-        return Ok(SimulationModuleAny::FXRolloverInterest(module));
-    }
-
-    let type_name = obj.get_type().name()?;
-    Err(to_pytype_err(format!(
-        "Cannot convert {type_name} to SimulationModule"
-    )))
 }
 
 pub(crate) fn pyobject_to_latency_model_any(

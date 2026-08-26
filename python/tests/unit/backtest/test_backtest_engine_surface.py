@@ -35,6 +35,8 @@ from strategies.backtest_surface import StreamingWhipsawConfig
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
+from nautilus_trader.backtest import SimulationModule
+from nautilus_trader.backtest import SimulationModuleContext
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.execution import BestPriceFillModel
 from nautilus_trader.execution import OneTickSlippageFillModel
@@ -98,6 +100,85 @@ from tests.unit.common.actor import TestControllerConfig
 
 USD = Currency.from_str("USD")
 USDT = Currency.from_str("USDT")
+
+
+class RecordingSimulationModule(SimulationModule):
+    """
+    Record simulation module calls from the engine.
+    """
+
+    def __init__(self) -> None:
+        """
+        Initialize the recording state.
+        """
+        self.calls = 0
+        self.context: SimulationModuleContext | None = None
+
+    def process(self, ts_now: int, context: SimulationModuleContext) -> None:
+        """
+        Record one processing call and its context.
+        """
+        assert ts_now == 0
+        self.calls += 1
+        self.context = context
+
+
+def test_add_venue_runs_python_simulation_module_with_read_only_context() -> None:
+    """
+    Test direct add venue dispatches a Python simulation module.
+    """
+    module = RecordingSimulationModule()
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    venue = Venue("SIM")
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money.from_str("1_000 USD")],
+        base_currency=USD,
+        modules=[module],
+    )
+
+    engine.run()
+
+    assert module.calls == 1
+    assert module.context is not None
+    assert module.context.venue == venue
+    assert module.context.base_currency == USD
+    assert module.context.instruments == []
+    assert module.context.order_books == []
+    assert module.context.positions == []
+    with pytest.raises(AttributeError):
+        module.context.venue = Venue("OTHER")
+    engine.dispose()
+
+
+def test_python_simulation_module_exception_propagates_from_run() -> None:
+    """
+    Test a Python simulation module exception stops the run with method context.
+    """
+
+    class FailingSimulationModule(SimulationModule):
+        def process(self, _ts_now: int, _context: SimulationModuleContext) -> None:
+            raise ValueError("module boom")
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=Venue("SIM"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money.from_str("1_000 USD")],
+        modules=[FailingSimulationModule()],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=r"Simulation module 0 process failed: Python SimulationModule\.process failed: "
+        r"ValueError: module boom",
+    ):
+        engine.run()
+
+    engine.dispose()
 
 
 def test_add_venue_uses_margin_account_default_leverage() -> None:

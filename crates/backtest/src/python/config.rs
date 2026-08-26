@@ -45,15 +45,13 @@ use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use super::engine::{
-    pyobject_to_latency_model_any, pyobject_to_margin_model_any, pyobject_to_simulation_module_any,
+use super::{
+    engine::{pyobject_to_latency_model_any, pyobject_to_margin_model_any},
+    modules::{pyobject_to_simulation_module_any, simulation_module_any_to_pyobject},
 };
-use crate::{
-    config::{
-        BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
-        NautilusDataType,
-    },
-    modules::SimulationModuleAny,
+use crate::config::{
+    BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
+    NautilusDataType,
 };
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -349,9 +347,7 @@ impl BacktestVenueConfig {
         let modules = modules
             .map(|objs| {
                 objs.into_iter()
-                    .map(|obj| {
-                        Python::attach(|py| pyobject_to_simulation_module_any(py, obj.bind(py)))
-                    })
+                    .map(|obj| Python::attach(|py| pyobject_to_simulation_module_any(obj.bind(py))))
                     .collect::<pyo3::PyResult<Vec<_>>>()
             })
             .transpose()?
@@ -904,15 +900,6 @@ fn margin_model_any_to_pyobject(py: Python<'_>, model: &MarginModelAny) -> PyRes
     match model {
         MarginModelAny::Standard(model) => (*model).into_py_any(py),
         MarginModelAny::Leveraged(model) => (*model).into_py_any(py),
-    }
-}
-
-fn simulation_module_any_to_pyobject(
-    py: Python<'_>,
-    module: &SimulationModuleAny,
-) -> PyResult<Py<PyAny>> {
-    match module {
-        SimulationModuleAny::FXRolloverInterest(module) => module.clone().into_py_any(py),
     }
 }
 

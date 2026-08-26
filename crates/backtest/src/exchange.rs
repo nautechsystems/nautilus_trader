@@ -66,7 +66,7 @@ use crate::{
     config::SimulatedVenueConfig,
     modules::{
         AccountAdjustmentError, AccountAdjustmentOutcome, ExchangeContext, SimulationModule,
-        SimulationModuleResult,
+        SimulationModuleHandle, SimulationModuleResult,
     },
 };
 
@@ -154,7 +154,8 @@ pub struct SimulatedExchange {
     funding_settlements: BTreeSet<(UnixNanos, InstrumentId)>,
     leverages: AHashMap<InstrumentId, Decimal>,
     margin_model: Option<MarginModelHandle>,
-    modules: Vec<Box<dyn SimulationModule>>,
+    modules: Vec<SimulationModuleHandle>,
+    module_error: Option<String>,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     message_queue: VecDeque<TradingCommand>,
@@ -242,6 +243,7 @@ impl SimulatedExchange {
             leverages: config.leverages,
             margin_model: config.margin_model,
             modules: config.modules,
+            module_error: None,
             clock,
             cache,
             message_queue: VecDeque::new(),
@@ -282,7 +284,9 @@ impl SimulatedExchange {
         let handler_id = endpoint.clone();
         let exchange = Rc::clone(exchange);
         let handler = TypedHandler::from_with_id(handler_id, move |quote: &QuoteTick| {
-            exchange.borrow_mut().process_quote_tick(quote);
+            if let Err(e) = exchange.borrow_mut().process_quote_tick(quote) {
+                log::error!("{e:#}");
+            }
         });
 
         msgbus::register_quote_endpoint(endpoint.into(), handler);
@@ -300,6 +304,40 @@ impl SimulatedExchange {
     /// Sets the latency model for the exchange.
     pub fn set_latency_model(&mut self, latency_model: LatencyModelHandle) {
         self.latency_model = Some(latency_model);
+    }
+
+    pub(crate) fn check_module_error(&self) -> anyhow::Result<()> {
+        if let Some(error) = &self.module_error {
+            anyhow::bail!("Simulation module failure requires exchange reset: {error}");
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub(crate) const fn has_module_error(&self) -> bool {
+        self.module_error.is_some()
+    }
+
+    fn store_module_error(
+        &mut self,
+        module_index: usize,
+        method: &str,
+        error: &anyhow::Error,
+    ) -> anyhow::Error {
+        let error = format!("Simulation module {module_index} {method} failed: {error:#}");
+        self.module_error = Some(error.clone());
+        anyhow::anyhow!(error)
+    }
+
+    fn pre_process_modules(&mut self, data: &Data) -> anyhow::Result<()> {
+        self.check_module_error()?;
+
+        for module_index in 0..self.modules.len() {
+            if let Err(e) = self.modules[module_index].pre_process(data) {
+                return Err(self.store_module_error(module_index, "pre_process", &e));
+            }
+        }
+        Ok(())
     }
 
     /// Returns the configured book type for this venue.
@@ -794,13 +832,11 @@ impl SimulatedExchange {
 
     /// Processes a single order book delta.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if adding a missing instrument during delta processing fails.
-    pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) {
-        for module in &self.modules {
-            module.pre_process(&Data::Delta(delta));
-        }
+    /// Returns an error if module pre-processing or matching engine processing fails.
+    pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::Delta(delta))?;
 
         if !self.matching_engines.contains_key(&delta.instrument_id) {
             let instrument = {
@@ -809,9 +845,9 @@ impl SimulatedExchange {
             };
 
             if let Some(instrument) = instrument {
-                self.add_instrument(instrument).unwrap();
+                self.add_instrument(instrument)?;
             } else {
-                panic!(
+                anyhow::bail!(
                     "No matching engine found for instrument {}",
                     delta.instrument_id
                 );
@@ -819,21 +855,20 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&delta.instrument_id) {
-            matching_engine.process_order_book_delta(&delta).unwrap();
+            matching_engine.process_order_book_delta(&delta)?;
         } else {
-            panic!("Matching engine should be initialized");
+            anyhow::bail!("Matching engine should be initialized");
         }
+        Ok(())
     }
 
     /// Processes a batch of order book deltas.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if adding a missing instrument during deltas processing fails.
-    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
-        for module in &self.modules {
-            module.pre_process(&Data::Deltas(Box::new(deltas.clone())));
-        }
+    /// Returns an error if module pre-processing or matching engine processing fails.
+    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::Deltas(Box::new(deltas.clone())))?;
 
         if !self.matching_engines.contains_key(&deltas.instrument_id) {
             let instrument = {
@@ -842,9 +877,9 @@ impl SimulatedExchange {
             };
 
             if let Some(instrument) = instrument {
-                self.add_instrument(instrument).unwrap();
+                self.add_instrument(instrument)?;
             } else {
-                panic!(
+                anyhow::bail!(
                     "No matching engine found for instrument {}",
                     deltas.instrument_id
                 );
@@ -852,21 +887,20 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&deltas.instrument_id) {
-            matching_engine.process_order_book_deltas(deltas).unwrap();
+            matching_engine.process_order_book_deltas(deltas)?;
         } else {
-            panic!("Matching engine should be initialized");
+            anyhow::bail!("Matching engine should be initialized");
         }
+        Ok(())
     }
 
     /// Processes an L2 order book depth snapshot.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if adding a missing instrument during depth10 processing fails.
-    pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) {
-        for module in &self.modules {
-            module.pre_process(&Data::Depth10(Box::new(*depth)));
-        }
+    /// Returns an error if module pre-processing or matching engine processing fails.
+    pub fn process_order_book_depth10(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::Depth10(Box::new(*depth)))?;
 
         if !self.matching_engines.contains_key(&depth.instrument_id) {
             let instrument = {
@@ -875,9 +909,9 @@ impl SimulatedExchange {
             };
 
             if let Some(instrument) = instrument {
-                self.add_instrument(instrument).unwrap();
+                self.add_instrument(instrument)?;
             } else {
-                panic!(
+                anyhow::bail!(
                     "No matching engine found for instrument {}",
                     depth.instrument_id
                 );
@@ -885,21 +919,20 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&depth.instrument_id) {
-            matching_engine.process_order_book_depth10(depth).unwrap();
+            matching_engine.process_order_book_depth10(depth)?;
         } else {
-            panic!("Matching engine should be initialized");
+            anyhow::bail!("Matching engine should be initialized");
         }
+        Ok(())
     }
 
     /// Processes a quote tick and updates the matching engine.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if adding a missing instrument during quote tick processing fails.
-    pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
-        for module in &self.modules {
-            module.pre_process(&Data::Quote(*quote));
-        }
+    /// Returns an error if module pre-processing or matching engine processing fails.
+    pub fn process_quote_tick(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::Quote(*quote))?;
 
         if !self.matching_engines.contains_key(&quote.instrument_id) {
             let instrument = {
@@ -908,9 +941,9 @@ impl SimulatedExchange {
             };
 
             if let Some(instrument) = instrument {
-                self.add_instrument(instrument).unwrap();
+                self.add_instrument(instrument)?;
             } else {
-                panic!(
+                anyhow::bail!(
                     "No matching engine found for instrument {}",
                     quote.instrument_id
                 );
@@ -920,19 +953,18 @@ impl SimulatedExchange {
         if let Some(matching_engine) = self.matching_engines.get_mut(&quote.instrument_id) {
             matching_engine.process_quote_tick(quote);
         } else {
-            panic!("Matching engine should be initialized");
+            anyhow::bail!("Matching engine should be initialized");
         }
+        Ok(())
     }
 
     /// Processes a trade tick and updates the matching engine.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if adding a missing instrument during trade tick processing fails.
-    pub fn process_trade_tick(&mut self, trade: &TradeTick) {
-        for module in &self.modules {
-            module.pre_process(&Data::Trade(*trade));
-        }
+    /// Returns an error if module pre-processing or matching engine processing fails.
+    pub fn process_trade_tick(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::Trade(*trade))?;
 
         if !self.matching_engines.contains_key(&trade.instrument_id) {
             let instrument = {
@@ -941,9 +973,9 @@ impl SimulatedExchange {
             };
 
             if let Some(instrument) = instrument {
-                self.add_instrument(instrument).unwrap();
+                self.add_instrument(instrument)?;
             } else {
-                panic!(
+                anyhow::bail!(
                     "No matching engine found for instrument {}",
                     trade.instrument_id
                 );
@@ -953,19 +985,18 @@ impl SimulatedExchange {
         if let Some(matching_engine) = self.matching_engines.get_mut(&trade.instrument_id) {
             matching_engine.process_trade_tick(trade);
         } else {
-            panic!("Matching engine should be initialized");
+            anyhow::bail!("Matching engine should be initialized");
         }
+        Ok(())
     }
 
     /// Processes a bar and updates the matching engine.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if adding a missing instrument during bar processing fails.
-    pub fn process_bar(&mut self, bar: Bar) {
-        for module in &self.modules {
-            module.pre_process(&Data::Bar(bar));
-        }
+    /// Returns an error if module pre-processing or matching engine processing fails.
+    pub fn process_bar(&mut self, bar: Bar) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::Bar(bar))?;
 
         if !self.matching_engines.contains_key(&bar.instrument_id()) {
             let instrument = {
@@ -974,9 +1005,9 @@ impl SimulatedExchange {
             };
 
             if let Some(instrument) = instrument {
-                self.add_instrument(instrument).unwrap();
+                self.add_instrument(instrument)?;
             } else {
-                panic!(
+                anyhow::bail!(
                     "No matching engine found for instrument {}",
                     bar.instrument_id()
                 );
@@ -986,19 +1017,18 @@ impl SimulatedExchange {
         if let Some(matching_engine) = self.matching_engines.get_mut(&bar.instrument_id()) {
             matching_engine.process_bar(&bar);
         } else {
-            panic!("Matching engine should be initialized");
+            anyhow::bail!("Matching engine should be initialized");
         }
+        Ok(())
     }
 
     /// Processes an instrument status update.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if adding a missing instrument during instrument status processing fails.
-    pub fn process_instrument_status(&mut self, status: InstrumentStatus) {
-        for module in &self.modules {
-            module.pre_process(&Data::InstrumentStatus(status));
-        }
+    /// Returns an error if module pre-processing or matching engine processing fails.
+    pub fn process_instrument_status(&mut self, status: InstrumentStatus) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::InstrumentStatus(status))?;
 
         if !self.matching_engines.contains_key(&status.instrument_id) {
             let instrument = {
@@ -1007,9 +1037,9 @@ impl SimulatedExchange {
             };
 
             if let Some(instrument) = instrument {
-                self.add_instrument(instrument).unwrap();
+                self.add_instrument(instrument)?;
             } else {
-                panic!(
+                anyhow::bail!(
                     "No matching engine found for instrument {}",
                     status.instrument_id
                 );
@@ -1019,19 +1049,18 @@ impl SimulatedExchange {
         if let Some(matching_engine) = self.matching_engines.get_mut(&status.instrument_id) {
             matching_engine.process_status(status.action);
         } else {
-            panic!("Matching engine should be initialized");
+            anyhow::bail!("Matching engine should be initialized");
         }
+        Ok(())
     }
 
     /// Processes an instrument close event.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if adding a missing instrument during instrument close processing fails.
-    pub fn process_instrument_close(&mut self, close: InstrumentClose) {
-        for module in &self.modules {
-            module.pre_process(&Data::InstrumentClose(close));
-        }
+    /// Returns an error if module pre-processing or matching engine processing fails.
+    pub fn process_instrument_close(&mut self, close: InstrumentClose) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::InstrumentClose(close))?;
 
         if !self.matching_engines.contains_key(&close.instrument_id) {
             let instrument = {
@@ -1040,9 +1069,9 @@ impl SimulatedExchange {
             };
 
             if let Some(instrument) = instrument {
-                self.add_instrument(instrument).unwrap();
+                self.add_instrument(instrument)?;
             } else {
-                panic!(
+                anyhow::bail!(
                     "No matching engine found for instrument {}",
                     close.instrument_id
                 );
@@ -1052,69 +1081,89 @@ impl SimulatedExchange {
         if let Some(matching_engine) = self.matching_engines.get_mut(&close.instrument_id) {
             matching_engine.process_instrument_close(close);
         } else {
-            panic!("Matching engine should be initialized");
+            anyhow::bail!("Matching engine should be initialized");
         }
+        Ok(())
     }
 
     /// Processes a funding rate update.
     ///
     /// Returns the funding boundary timestamp when the engine should schedule a settlement.
-    pub fn process_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> Option<UnixNanos> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if module pre-processing or funding settlement fails.
+    pub fn process_funding_rate(
+        &mut self,
+        funding_rate: FundingRateUpdate,
+    ) -> anyhow::Result<Option<UnixNanos>> {
         let replay_ts = self.clock.borrow().timestamp_ns();
         let instrument_id = funding_rate.instrument_id;
         let boundary = Self::funding_boundary(&funding_rate);
-        let next_boundary = self.queue_funding_rate(funding_rate);
+        let next_boundary = self.queue_funding_rate(funding_rate)?;
 
         if let Some(boundary) = boundary
             && boundary <= replay_ts
         {
-            self.process_funding_settlement(instrument_id, boundary);
-            return None;
+            self.process_funding_settlement(instrument_id, boundary)?;
+            return Ok(None);
         }
 
-        next_boundary
+        Ok(next_boundary)
     }
 
     pub(crate) fn process_funding_rate_deferred(
         &mut self,
         funding_rate: FundingRateUpdate,
         replay_ts: UnixNanos,
-    ) -> Option<UnixNanos> {
-        self.queue_funding_rate(funding_rate);
-        self.next_funding_boundary()
-            .filter(|boundary| *boundary > replay_ts)
+    ) -> anyhow::Result<Option<UnixNanos>> {
+        self.queue_funding_rate(funding_rate)?;
+        Ok(self
+            .next_funding_boundary()
+            .filter(|boundary| *boundary > replay_ts))
     }
 
-    fn queue_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> Option<UnixNanos> {
-        for module in &self.modules {
-            module.pre_process(&Data::FundingRate(funding_rate));
-        }
+    fn queue_funding_rate(
+        &mut self,
+        funding_rate: FundingRateUpdate,
+    ) -> anyhow::Result<Option<UnixNanos>> {
+        self.pre_process_modules(&Data::FundingRate(funding_rate))?;
 
         let Some(boundary) = Self::funding_boundary(&funding_rate) else {
             log::debug!(
                 "Funding rate update for {} does not define a settlement boundary",
                 funding_rate.instrument_id
             );
-            return None;
+            return Ok(None);
         };
 
         let key = (boundary, funding_rate.instrument_id);
         if !self.funding_settlements.contains(&key) {
             self.pending_funding_rates.insert(key, funding_rate);
         }
-        Some(boundary)
+        Ok(Some(boundary))
     }
 
     /// Processes a scheduled funding settlement for the instrument.
-    pub fn process_funding_settlement(&mut self, instrument_id: InstrumentId, ts_event: UnixNanos) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a prior simulation module failure requires reset.
+    pub fn process_funding_settlement(
+        &mut self,
+        instrument_id: InstrumentId,
+        ts_event: UnixNanos,
+    ) -> anyhow::Result<()> {
+        self.check_module_error()?;
         let key = (ts_event, instrument_id);
         let Some(funding_rate) = self.pending_funding_rates.remove(&key) else {
-            return;
+            return Ok(());
         };
 
         if !self.settle_funding_rate(&funding_rate, ts_event) {
             self.pending_funding_rates.insert(key, funding_rate);
         }
+        Ok(())
     }
 
     #[must_use]
@@ -1503,9 +1552,16 @@ impl SimulatedExchange {
     ///
     /// Must be called once per time step after all command queues have fully
     /// settled, not inside the settle loop.
-    pub fn process_modules(&mut self, ts_now: UnixNanos) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a simulation module fails. The exchange retains the failure and
+    /// rejects further processing until reset.
+    pub fn process_modules(&mut self, ts_now: UnixNanos) -> anyhow::Result<()> {
+        self.check_module_error()?;
+
         if self.frozen_account || self.exec_client.is_none() {
-            return;
+            return Ok(());
         }
 
         let results = {
@@ -1520,8 +1576,19 @@ impl SimulatedExchange {
             self.modules
                 .iter()
                 .enumerate()
-                .map(|(module_index, module)| (module_index, module.process(ts_now, &ctx)))
-                .collect::<Vec<_>>()
+                .map(|(module_index, module)| {
+                    module
+                        .process(ts_now, &ctx)
+                        .map(|result| (module_index, result))
+                        .map_err(|e| (module_index, e))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        };
+        let results = match results {
+            Ok(results) => results,
+            Err((module_index, error)) => {
+                return Err(self.store_module_error(module_index, "process", &error));
+            }
         };
 
         for (module_index, result) in results {
@@ -1533,19 +1600,35 @@ impl SimulatedExchange {
                         Err(e) => AccountAdjustmentOutcome::Failed(e),
                     })
                     .collect::<Vec<_>>();
-                self.modules[module_index].acknowledge(&outcomes);
+
+                if let Err(e) = self.modules[module_index].acknowledge(&outcomes) {
+                    return Err(self.store_module_error(module_index, "acknowledge", &e));
+                }
             }
         }
+        Ok(())
     }
 
     /// Resets the exchange to its initial state.
-    pub fn reset(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a simulation module cannot reset.
+    pub fn reset(&mut self) -> anyhow::Result<()> {
         if !self.account_at_starting_balances() {
             self.generate_fresh_account_state();
         }
 
-        for module in &self.modules {
-            module.reset();
+        let mut module_error = None;
+
+        for (module_index, module) in self.modules.iter().enumerate() {
+            if let Err(e) = module.reset()
+                && module_error.is_none()
+            {
+                module_error = Some(format!(
+                    "Simulation module {module_index} reset failed: {e:#}"
+                ));
+            }
         }
 
         for matching_engine in self.matching_engines.values_mut() {
@@ -1559,13 +1642,22 @@ impl SimulatedExchange {
         self.inflight_counter.clear();
 
         log::info!("Resetting exchange state");
+        self.module_error = module_error;
+        self.check_module_error()
     }
 
     /// Logs diagnostic information from all simulation modules.
-    pub fn log_diagnostics(&self) {
-        for module in &self.modules {
-            module.log_diagnostics();
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a simulation module cannot produce its diagnostics.
+    pub fn log_diagnostics(&self) -> anyhow::Result<()> {
+        for (module_index, module) in self.modules.iter().enumerate() {
+            module.log_diagnostics().map_err(|e| {
+                anyhow::anyhow!("Simulation module {module_index} log_diagnostics failed: {e:#}")
+            })?;
         }
+        Ok(())
     }
 
     /// Checks if any margin accounts have breached maintenance margin and liquidates open
@@ -2120,7 +2212,7 @@ mod tests {
 
         assert_eq!(exchange.inflight_counter.len(), 1);
 
-        exchange.reset();
+        exchange.reset().unwrap();
 
         assert!(exchange.inflight_counter.is_empty());
     }

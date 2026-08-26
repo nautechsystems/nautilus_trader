@@ -14,6 +14,7 @@ from nautilus_trader import risk
 from nautilus_trader import trading
 
 __all__ = [
+    "AccountAdjustmentOutcome",
     "BacktestDataConfig",
     "BacktestEngine",
     "BacktestEngineConfig",
@@ -21,9 +22,20 @@ __all__ = [
     "BacktestResult",
     "BacktestRunConfig",
     "BacktestVenueConfig",
+    "CfdSwapModule",
+    "CfdSwapRate",
     "FXRolloverInterestModule",
     "InterestRateRecord",
+    "SimulationModule",
+    "SimulationModuleContext",
 ]
+
+@typing.final
+class AccountAdjustmentOutcome:
+    @property
+    def applied(self) -> bool: ...
+    @property
+    def error(self) -> str | None: ...
 
 @typing.final
 class BacktestDataConfig:
@@ -355,8 +367,33 @@ class BacktestVenueConfig:
     ) -> BacktestVenueConfig: ...
 
 @typing.final
-class FXRolloverInterestModule:
-    def __new__(cls, records: typing.Sequence[InterestRateRecord]) -> FXRolloverInterestModule: ...
+class CfdSwapModule(SimulationModule):
+    def __new__(
+        cls,
+        rates: typing.Sequence[CfdSwapRate],
+        rollover_hour: int = ...,
+        rollover_minute: int = ...,
+        triple_roll_weekday: int = ...,
+    ) -> typing.Self: ...
+
+@typing.final
+class CfdSwapRate:
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def long_rate(self) -> decimal.Decimal: ...
+    @property
+    def short_rate(self) -> decimal.Decimal: ...
+    def __new__(
+        cls,
+        instrument_id: model.InstrumentId,
+        long_rate: decimal.Decimal,
+        short_rate: decimal.Decimal,
+    ) -> CfdSwapRate: ...
+
+@typing.final
+class FXRolloverInterestModule(SimulationModule):
+    def __new__(cls, records: typing.Sequence[InterestRateRecord]) -> typing.Self: ...
 
 @typing.final
 class InterestRateRecord:
@@ -488,3 +525,26 @@ class BacktestEngine:
     def generate_account_report(
         self, venue: model.Venue | None = None, account_id: model.AccountId | None = None
     ) -> typing.Any: ...
+
+class SimulationModule:
+    def __new__(cls, *_args: typing.Any, **_kwargs: typing.Any) -> typing.Self: ...
+    def pre_process(self, _data: typing.Any) -> None: ...
+    def process(
+        self, _ts_now: int, _context: SimulationModuleContext
+    ) -> list[model.Money] | None: ...
+    def acknowledge(self, _outcomes: typing.Any) -> None: ...
+    def log_diagnostics(self) -> None: ...
+    def reset(self) -> None: ...
+
+@typing.final
+class SimulationModuleContext:
+    @property
+    def venue(self) -> model.Venue: ...
+    @property
+    def base_currency(self) -> model.Currency | None: ...
+    @property
+    def instruments(self) -> list[typing.Any]: ...
+    @property
+    def order_books(self) -> list[model.OrderBook]: ...
+    @property
+    def positions(self) -> list[model.Position]: ...
