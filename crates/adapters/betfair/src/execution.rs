@@ -3606,62 +3606,75 @@ async fn fetch_order_status_reports_snapshot_http(
 
     let mut reports = Vec::new();
     let mut active_quantities = AHashMap::new();
-    let mut from_record: u32 = 0;
+    let market_id_batches = list_current_orders_market_id_batches(market_ids);
+    let merge_batches = market_id_batches.len() > 1;
 
-    loop {
-        let params = ListCurrentOrdersParams {
-            bet_ids: None,
-            market_ids: market_ids.clone(),
-            order_projection,
-            customer_order_refs: None,
-            customer_strategy_refs: None,
-            date_range: None,
-            order_by: None,
-            sort_dir: None,
-            from_record: if from_record > 0 {
-                Some(from_record)
-            } else {
-                None
-            },
-            record_count: None,
-        };
+    for market_ids in market_id_batches {
+        let mut from_record: u32 = 0;
 
-        let response =
-            list_current_orders_with_retry(http_client, &params, stream_session, session_refresh)
-                .await?;
-        let page_size = response.current_orders.len() as u32;
+        loop {
+            let params = ListCurrentOrdersParams {
+                bet_ids: None,
+                market_ids: market_ids.clone(),
+                order_projection,
+                customer_order_refs: None,
+                customer_strategy_refs: None,
+                date_range: None,
+                order_by: None,
+                sort_dir: None,
+                from_record: if from_record > 0 {
+                    Some(from_record)
+                } else {
+                    None
+                },
+                record_count: None,
+            };
 
-        if response.more_available && page_size == 0 {
-            anyhow::bail!("listCurrentOrders returned an empty page with moreAvailable=true");
-        }
+            let response = list_current_orders_with_retry(
+                http_client,
+                &params,
+                stream_session,
+                session_refresh,
+            )
+            .await?;
+            let page_size = response.current_orders.len() as u32;
 
-        for order in &response.current_orders {
-            let mut report =
-                parse_current_order_report(order, account_id, ts_init).map_err(|e| {
-                    anyhow::anyhow!("Failed to parse order report for {}: {e}", order.bet_id)
-                })?;
-
-            if let Ok(state) = ocm_state.lock()
-                && let Some(resolution) = state.resolve_order_owner(
-                    order.customer_order_ref.as_deref(),
-                    report.venue_order_id.as_str(),
-                )
-            {
-                report.client_order_id = resolution.client_order_id();
+            if response.more_available && page_size == 0 {
+                anyhow::bail!("listCurrentOrders returned an empty page with moreAvailable=true");
             }
 
-            let active_quantity = current_order_active_quantity(order).map_err(|e| {
-                anyhow::anyhow!("Failed to parse active quantity for {}: {e}", order.bet_id)
-            })?;
-            active_quantities.insert(order.bet_id.clone(), active_quantity);
-            reports.push(report);
-        }
+            for order in &response.current_orders {
+                let mut report =
+                    parse_current_order_report(order, account_id, ts_init).map_err(|e| {
+                        anyhow::anyhow!("Failed to parse order report for {}: {e}", order.bet_id)
+                    })?;
 
-        if !response.more_available {
-            break;
-        }
+                if let Ok(state) = ocm_state.lock()
+                    && let Some(resolution) = state.resolve_order_owner(
+                        order.customer_order_ref.as_deref(),
+                        report.venue_order_id.as_str(),
+                    )
+                {
+                    report.client_order_id = resolution.client_order_id();
+                }
 
-        from_record += page_size;
+                let active_quantity = current_order_active_quantity(order).map_err(|e| {
+                    anyhow::anyhow!("Failed to parse active quantity for {}: {e}", order.bet_id)
+                })?;
+                active_quantities.insert(order.bet_id.clone(), active_quantity);
+                reports.push(report);
+            }
+
+            if !response.more_available {
+                break;
+            }
+
+            from_record += page_size;
+        }
+    }
+
+    if merge_batches {
+        reports.sort_by_key(|report| (report.ts_accepted, report.venue_order_id));
     }
 
     Ok(FetchedOrderStatusReports {
@@ -3954,45 +3967,83 @@ async fn fetch_fill_orders_http(
     session_refresh: &mut SessionRefresh,
 ) -> anyhow::Result<Vec<CurrentOrderSummary>> {
     let mut orders = Vec::new();
-    let mut from_record: u32 = 0;
+    let market_id_batches = list_current_orders_market_id_batches(market_ids);
+    let merge_batches = market_id_batches.len() > 1;
 
-    loop {
-        let params = ListCurrentOrdersParams {
-            bet_ids: None,
-            market_ids: market_ids.clone(),
-            order_projection: Some(OrderProjection::All),
-            customer_order_refs: None,
-            customer_strategy_refs: None,
-            date_range: date_range.clone(),
-            order_by: Some(OrderBy::ByMatchTime),
-            sort_dir: Some(SortDir::EarliestToLatest),
-            from_record: if from_record > 0 {
-                Some(from_record)
-            } else {
-                None
-            },
-            record_count: None,
-        };
+    for market_ids in market_id_batches {
+        let mut from_record: u32 = 0;
 
-        let response =
-            list_current_orders_with_retry(http_client, &params, stream_session, session_refresh)
-                .await?;
-        let page_size = response.current_orders.len() as u32;
+        loop {
+            let params = ListCurrentOrdersParams {
+                bet_ids: None,
+                market_ids: market_ids.clone(),
+                order_projection: Some(OrderProjection::All),
+                customer_order_refs: None,
+                customer_strategy_refs: None,
+                date_range: date_range.clone(),
+                order_by: Some(OrderBy::ByMatchTime),
+                sort_dir: Some(SortDir::EarliestToLatest),
+                from_record: if from_record > 0 {
+                    Some(from_record)
+                } else {
+                    None
+                },
+                record_count: None,
+            };
 
-        if response.more_available && page_size == 0 {
-            anyhow::bail!("listCurrentOrders returned an empty page with moreAvailable=true");
+            let response = list_current_orders_with_retry(
+                http_client,
+                &params,
+                stream_session,
+                session_refresh,
+            )
+            .await?;
+            let page_size = response.current_orders.len() as u32;
+
+            if response.more_available && page_size == 0 {
+                anyhow::bail!("listCurrentOrders returned an empty page with moreAvailable=true");
+            }
+
+            orders.extend(response.current_orders);
+
+            if !response.more_available {
+                break;
+            }
+
+            from_record += page_size;
         }
+    }
 
-        orders.extend(response.current_orders);
-
-        if !response.more_available {
-            break;
-        }
-
-        from_record += page_size;
+    if merge_batches {
+        orders.sort_by_cached_key(current_order_match_sort_key);
     }
 
     Ok(orders)
+}
+
+const MAX_LIST_CURRENT_ORDERS_MARKET_IDS: usize = 250;
+
+fn list_current_orders_market_id_batches(
+    market_ids: Option<Vec<String>>,
+) -> Vec<Option<Vec<String>>> {
+    match market_ids {
+        Some(ids) if ids.len() > MAX_LIST_CURRENT_ORDERS_MARKET_IDS => ids
+            .chunks(MAX_LIST_CURRENT_ORDERS_MARKET_IDS)
+            .map(|chunk| Some(chunk.to_vec()))
+            .collect(),
+        ids => vec![ids],
+    }
+}
+
+fn current_order_match_sort_key(
+    order: &CurrentOrderSummary,
+) -> (Option<UnixNanos>, Option<UnixNanos>, String) {
+    let matched = order
+        .matched_date
+        .as_deref()
+        .and_then(|date| parse_betfair_timestamp(date).ok());
+    let placed = parse_betfair_timestamp(&order.placed_date).ok();
+    (matched, placed, order.bet_id.clone())
 }
 
 fn build_incremental_fill_reports(
@@ -8601,5 +8652,22 @@ mod tests {
         assert!(params.sort_dir.is_none());
         assert!(params.from_record.is_none());
         assert!(params.record_count.is_none());
+    }
+
+    #[rstest]
+    fn test_list_current_orders_market_id_batches_respect_betfair_limit() {
+        let market_ids = (0..=MAX_LIST_CURRENT_ORDERS_MARKET_IDS)
+            .map(|index| format!("1.{index}"))
+            .collect::<Vec<_>>();
+
+        let batches = list_current_orders_market_id_batches(Some(market_ids.clone()));
+
+        assert_eq!(
+            batches,
+            vec![
+                Some(market_ids[..MAX_LIST_CURRENT_ORDERS_MARKET_IDS].to_vec()),
+                Some(market_ids[MAX_LIST_CURRENT_ORDERS_MARKET_IDS..].to_vec()),
+            ],
+        );
     }
 }

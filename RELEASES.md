@@ -52,6 +52,7 @@ Released on TBD (UTC).
 - Fixed own order book audits removing active-local orders
 - Fixed rate-limit requests consuming quota before all applicable limits were available
 - Fixed reconnect-buffered socket messages stalling or being overtaken by newer messages
+- Fixed Betfair order and fill reconciliation with more than 250 market IDs
 - Fixed Betfair stream readiness, liveness, subscription replay, and reconnect reconciliation
 - Fixed Betfair modify recovery after ambiguous REST outcomes and instruction failures
 - Fixed Betfair terminal order identity across reconnects, late fills, void corrections, and replacements

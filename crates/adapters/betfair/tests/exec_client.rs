@@ -2480,6 +2480,128 @@ async fn test_generate_fill_reports() {
 
 #[rstest]
 #[tokio::test]
+async fn test_generate_reports_batches_market_ids_and_resets_pagination() {
+    let (addr, state) = start_mock_http().await;
+    let executable = load_json_fixture("rest/list_current_orders_executable.json");
+    let executable_orders = executable["result"]["currentOrders"]
+        .as_array()
+        .expect("currentOrders must be an array");
+    let completed = load_json_fixture("rest/list_current_orders_execution_complete.json");
+    let completed_orders = completed["result"]["currentOrders"]
+        .as_array()
+        .expect("currentOrders must be an array");
+    let current_orders_page = |orders: Vec<Value>, more_available: bool| {
+        serde_json::json!({
+            "currentOrders": orders,
+            "moreAvailable": more_available,
+        })
+    };
+    state.betting_response_sequences.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        VecDeque::from([
+            current_orders_page(vec![executable_orders[1].clone()], true),
+            current_orders_page(Vec::new(), false),
+            current_orders_page(vec![executable_orders[0].clone()], false),
+            current_orders_page(vec![completed_orders[2].clone()], true),
+            current_orders_page(Vec::new(), false),
+            current_orders_page(vec![completed_orders[1].clone()], false),
+        ]),
+    );
+
+    let market_ids = (0..=250)
+        .map(|index| format!("1.{index}"))
+        .collect::<Vec<_>>();
+    let config = BetfairExecutionClientConfig {
+        reconcile_market_ids_only: true,
+        reconcile_market_ids: Some(market_ids.clone()),
+        ..Default::default()
+    };
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, _rx, _data_rx, _cache) =
+        create_test_execution_client_with_config(addr, stream_port, config);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    let order_cmd = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(true)
+        .build()
+        .unwrap();
+    let order_reports = client
+        .generate_order_status_reports(&order_cmd)
+        .await
+        .unwrap();
+    let fill_cmd = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let fill_reports = client.generate_fill_reports(fill_cmd).await.unwrap();
+
+    let params = state
+        .betting_request_params
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+    let first_batch = serde_json::to_value(&market_ids[..250]).unwrap();
+    let second_batch = serde_json::to_value(&market_ids[250..]).unwrap();
+    let expected_batches = [
+        &first_batch,
+        &first_batch,
+        &second_batch,
+        &first_batch,
+        &first_batch,
+        &second_batch,
+    ];
+    let expected_from_records = [None, Some(1), None, None, Some(1), None];
+
+    assert_eq!(params.len(), 6);
+    for ((params, expected_batch), expected_from_record) in params
+        .iter()
+        .zip(expected_batches)
+        .zip(expected_from_records)
+    {
+        assert_eq!(&params["marketIds"], expected_batch);
+        match expected_from_record {
+            Some(from_record) => assert_eq!(params["fromRecord"], from_record),
+            None => assert!(params.get("fromRecord").is_none()),
+        }
+    }
+    assert_eq!(params[0]["orderProjection"], "EXECUTABLE");
+    assert_eq!(params[3]["orderProjection"], "ALL");
+    assert_eq!(params[3]["orderBy"], "BY_MATCH_TIME");
+    assert_eq!(params[3]["sortDir"], "EARLIEST_TO_LATEST");
+    assert_eq!(
+        order_reports
+            .iter()
+            .map(|report| report.venue_order_id.to_string())
+            .collect::<Vec<_>>(),
+        vec!["228059754671", "228059760965"],
+    );
+    assert_eq!(
+        fill_reports
+            .iter()
+            .map(|report| report.venue_order_id.to_string())
+            .collect::<Vec<_>>(),
+        vec!["228059821049", "228059869313"],
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_query_order_emits_order_status_report() {
     let (addr, state) = start_mock_http().await;
 
