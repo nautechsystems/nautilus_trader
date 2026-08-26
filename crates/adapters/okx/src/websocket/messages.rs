@@ -1139,6 +1139,9 @@ pub struct OKXAlgoOrderMsg {
     pub cl_ord_id: String,
     /// Order ID (empty until algo order is triggered).
     pub ord_id: String,
+    /// Triggered child order IDs.
+    #[serde(default)]
+    pub ord_id_list: Vec<String>,
     /// Instrument ID.
     pub inst_id: Ustr,
     /// Instrument type.
@@ -1209,6 +1212,9 @@ pub struct OKXAlgoOrderMsg {
     /// Trigger time (empty until triggered).
     #[serde(default)]
     pub trigger_time: String,
+    /// Failure code for rejected algo orders.
+    #[serde(default)]
+    pub fail_code: String,
     /// Tag.
     #[serde(default)]
     pub tag: String,

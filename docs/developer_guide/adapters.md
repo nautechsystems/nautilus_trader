@@ -902,6 +902,32 @@ Missing tracked metadata, a parse failure, or an unresolved venue binding does n
 update is external. A tracked status with no corresponding Nautilus lifecycle event is a tracked
 no-op or deferred update unless the adapter documents and tests a report exception.
 
+##### Triggered parent and child orders
+
+Some venues replace a tracked parent venue order with a child after a trigger. Treat both venue IDs
+as one order context:
+
+- Keep the client identity stable.
+- Bind the child atomically with the trigger transition. The child ID becomes authoritative for
+  later events and commands.
+- If the child arrives during the binding race, use venue linkage to complete the tracked transition
+  or defer the update. Do not route it as external.
+- Once the child is authoritative, suppress stale parent acceptance and any superseded parent update
+  that would regress child authority.
+
+##### Incomplete and late updates
+
+Keep these cases distinct from normal tracked events:
+
+- An aggregate parent status without the trade identity or other fields required for a typed event
+  remains a tracked no-op or deferred update. The authoritative child produces the live event, while
+  report-based recovery remains in the reconciliation path.
+- A fill with a new trade identity that arrives after the tracked lifecycle reached a terminal state
+  remains a `FillReport`. The active order context is no longer available for a typed event, so
+  reconciliation applies the late venue evidence.
+
+Suppress terminal status replays and fills whose trade identity was already processed.
+
 #### Event ordering and deduplication
 
 A venue can report the same transition through an order response, private stream, query, and
@@ -930,6 +956,14 @@ Emit any required preceding lifecycle event only when the adapter has complete o
 the venue evidence proves that state. Record the synthesized transition so a later acknowledgement
 does not duplicate it. Untracked orders continue through reports rather than synthesized strategy
 events.
+
+When parent and child updates can arrive on different streams:
+
+- Serialize the venue order ID binding with the lifecycle events that publish it.
+- Emit any required `OrderAccepted`, `OrderUpdated`, and `OrderTriggered` events before routing a
+  child fill or cancellation.
+- Route commands from the same authoritative binding. Do not infer it from an engine cache that may
+  still be processing those events.
 
 When a venue implements modify as cancel-replace, update the venue order ID mapping before routing
 the replacement leg. Distinguish a stale cancel for the old leg from cancellation of the active

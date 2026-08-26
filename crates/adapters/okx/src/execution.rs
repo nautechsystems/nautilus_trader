@@ -91,6 +91,7 @@ use crate::{
         dispatch::{
             AlgoCancelContext, WsDispatchState, dispatch_ws_message, emit_algo_cancel_rejections,
         },
+        messages::OKXWsMessage,
         parse::OrderStateSnapshot,
     },
 };
@@ -642,9 +643,14 @@ impl OKXExecutionClient {
         &self,
         instrument_id: InstrumentId,
         order_state: Option<(OrderType, Option<bool>)>,
+        has_bound_child: bool,
     ) -> OrderCommandRoute {
         if is_spread_instrument(instrument_id) {
             return OrderCommandRoute::SpreadHttp;
+        }
+
+        if has_bound_child {
+            return OrderCommandRoute::RegularWs;
         }
 
         if order_state.is_some_and(|(order_type, is_triggered)| {
@@ -837,9 +843,6 @@ impl OKXExecutionClient {
         let clock = self.clock;
         let context = OrderContext::from(&order);
 
-        self.ws_dispatch_state
-            .order_identities
-            .insert(context.identity.client_order_id, context.identity);
         let client_order_id = context.identity.client_order_id;
         let strategy_id = context.identity.strategy_id;
         let instrument_id = context.identity.instrument_id;
@@ -884,6 +887,9 @@ impl OKXExecutionClient {
             (None, None)
         };
 
+        self.ws_dispatch_state.track_order_context(context);
+        let dispatch_state = Arc::clone(&self.ws_dispatch_state);
+
         self.spawn_task("submit_algo_order", async move {
             let result = http_client
                 .place_algo_order_with_domain_types(
@@ -904,16 +910,26 @@ impl OKXExecutionClient {
                 )
                 .await;
 
-            if let Err(e) = result {
-                emit_submit_failure(
-                    classify_okx_http_failure(&e),
-                    &emitter,
-                    clock,
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                );
-                return Err(anyhow::Error::new(e).context("submit algo order failed"));
+            match result {
+                Ok(response) => {
+                    dispatch_state.bind_algo_parent(
+                        client_order_id,
+                        VenueOrderId::new(response.algo_id.as_str()),
+                    );
+                }
+                Err(e) => {
+                    let failure = classify_okx_http_failure(&e);
+                    dispatch_state.resolve_algo_submit_failure(client_order_id, &failure);
+                    emit_submit_failure(
+                        failure,
+                        &emitter,
+                        clock,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                    );
+                    return Err(anyhow::Error::new(e).context("submit algo order failed"));
+                }
             }
 
             Ok(())
@@ -926,7 +942,12 @@ impl OKXExecutionClient {
         self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
 
         let ws_private = self.ws_private.clone();
-        let command = cmd.clone();
+        let mut command = cmd.clone();
+        command.venue_order_id = self
+            .ws_dispatch_state
+            .order_venue_binding(cmd.client_order_id)
+            .map(|(venue_order_id, _)| venue_order_id)
+            .or(cmd.venue_order_id);
 
         self.spawn_task("cancel_order", async move {
             let result = ws_private
@@ -1099,6 +1120,14 @@ impl OKXExecutionClient {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
     ) {
+        if self
+            .ws_dispatch_state
+            .order_identity(client_order_id)
+            .is_some()
+        {
+            return;
+        }
+
         self.ws_dispatch_state
             .order_identities
             .entry(client_order_id)
@@ -1348,18 +1377,38 @@ impl OKXExecutionClient {
 
                 pin_mut!(stream);
 
-                while let Some(message) = stream.next().await {
-                    dispatch_ws_message(
-                        message,
-                        &emitter,
-                        &state,
-                        account_id,
-                        &instruments,
-                        &mut fee_cache,
-                        &mut filled_qty_cache,
-                        &mut order_state_cache,
-                        clock,
-                    );
+                loop {
+                    tokio::select! {
+                        message = stream.next() => {
+                            let Some(message) = message else {
+                                break;
+                            };
+                            dispatch_ws_message(
+                                message,
+                                &emitter,
+                                &state,
+                                account_id,
+                                &instruments,
+                                &mut fee_cache,
+                                &mut filled_qty_cache,
+                                &mut order_state_cache,
+                                clock,
+                            );
+                        }
+                        () = state.wait_for_linked_child_route() => {
+                            dispatch_ws_message(
+                                OKXWsMessage::Orders(Vec::new()),
+                                &emitter,
+                                &state,
+                                account_id,
+                                &instruments,
+                                &mut fee_cache,
+                                &mut filled_qty_cache,
+                                &mut order_state_cache,
+                                clock,
+                            );
+                        }
+                    }
                 }
             });
             self.ws_stream_handle = Some(handle);
@@ -1592,15 +1641,26 @@ impl ExecutionClient for OKXExecutionClient {
                     venue_order_id: order.venue_order_id(),
                 })
         };
+
+        let venue_binding = self.ws_dispatch_state.order_venue_binding(client_order_id);
+        let authoritative_venue_order_id = venue_binding.map(|(venue_order_id, _)| venue_order_id);
+        let has_bound_child = venue_binding.is_some_and(|(_, has_bound_child)| has_bound_child);
         let cached_venue_order_id = order_state.and_then(|state| state.venue_order_id);
-        let regular_venue_order_id = order_state.and_then(|state| {
-            if OKX_CONDITIONAL_ORDER_TYPES.contains(&state.order_type) {
-                state.venue_order_id.or(venue_order_id)
-            } else {
-                state.venue_order_id
-            }
-        });
-        let selection_venue_order_id = cached_venue_order_id.or(venue_order_id);
+        let regular_venue_order_id = if has_bound_child {
+            authoritative_venue_order_id
+        } else {
+            order_state.and_then(|state| {
+                if OKX_CONDITIONAL_ORDER_TYPES.contains(&state.order_type) {
+                    state.venue_order_id.or(venue_order_id)
+                } else {
+                    state.venue_order_id
+                }
+            })
+        };
+
+        let selection_venue_order_id = authoritative_venue_order_id
+            .or(cached_venue_order_id)
+            .or(venue_order_id);
         let route = query_order_route(
             instrument_id,
             order_state.map(|state| state.order_type),
@@ -2355,7 +2415,12 @@ impl ExecutionClient for OKXExecutionClient {
         self.ensure_order_identity(cmd.client_order_id, cmd.strategy_id, cmd.instrument_id);
 
         let ws_private = self.ws_private.clone();
-        let command = cmd.clone();
+        let mut command = cmd.clone();
+        command.venue_order_id = self
+            .ws_dispatch_state
+            .order_venue_binding(cmd.client_order_id)
+            .map(|(venue_order_id, _)| venue_order_id)
+            .or(cmd.venue_order_id);
 
         let new_px_usd = get_param_as_string(&cmd.params, "px_usd");
         let new_px_vol = get_param_as_string(&cmd.params, "px_vol");
@@ -2403,14 +2468,25 @@ impl ExecutionClient for OKXExecutionClient {
         Ok(())
     }
 
-    fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+    fn cancel_order(&self, mut cmd: CancelOrder) -> anyhow::Result<()> {
+        let venue_binding = self
+            .ws_dispatch_state
+            .order_venue_binding(cmd.client_order_id);
         let route = {
             let cache = self.core.cache();
             let order_state = cache
                 .order(&cmd.client_order_id)
                 .map(|order| (order.order_type(), order.is_triggered()));
-            self.cancel_order_route(cmd.instrument_id, order_state)
+            self.cancel_order_route(
+                cmd.instrument_id,
+                order_state,
+                venue_binding.is_some_and(|(_, has_bound_child)| has_bound_child),
+            )
         };
+
+        cmd.venue_order_id = venue_binding
+            .map(|(venue_order_id, _)| venue_order_id)
+            .or(cmd.venue_order_id);
 
         match route {
             OrderCommandRoute::RegularWs => self.cancel_ws_order(&cmd),
@@ -2448,7 +2524,17 @@ impl ExecutionClient for OKXExecutionClient {
 
                 for order in &open_orders {
                     let order_state = Some((order.order_type(), order.is_triggered()));
-                    match self.cancel_order_route(order.instrument_id(), order_state) {
+                    let venue_binding = self
+                        .ws_dispatch_state
+                        .order_venue_binding(order.client_order_id());
+                    let authoritative_venue_order_id = venue_binding
+                        .map(|(venue_order_id, _)| venue_order_id)
+                        .or(order.venue_order_id());
+                    match self.cancel_order_route(
+                        order.instrument_id(),
+                        order_state,
+                        venue_binding.is_some_and(|(_, has_bound_child)| has_bound_child),
+                    ) {
                         OrderCommandRoute::RegularWs => {
                             self.ensure_order_identity(
                                 order.client_order_id(),
@@ -2458,7 +2544,7 @@ impl ExecutionClient for OKXExecutionClient {
                             regular_payload.push((
                                 order.instrument_id(),
                                 Some(order.client_order_id()),
-                                order.venue_order_id(),
+                                authoritative_venue_order_id,
                             ));
                             regular_cancel_contexts.push((
                                 order.client_order_id(),
@@ -2470,7 +2556,7 @@ impl ExecutionClient for OKXExecutionClient {
                             algo_orders.push((
                                 order.instrument_id(),
                                 order.client_order_id(),
-                                order.venue_order_id(),
+                                authoritative_venue_order_id,
                                 order.trader_id(),
                                 order.strategy_id(),
                             ));
@@ -2555,7 +2641,17 @@ impl ExecutionClient for OKXExecutionClient {
                 .order(&cancel.client_order_id)
                 .map(|order| (order.order_type(), order.is_triggered()));
 
-            match self.cancel_order_route(cancel.instrument_id, order_state) {
+            let venue_binding = self
+                .ws_dispatch_state
+                .order_venue_binding(cancel.client_order_id);
+            let authoritative_venue_order_id = venue_binding
+                .map(|(venue_order_id, _)| venue_order_id)
+                .or(cancel.venue_order_id);
+            match self.cancel_order_route(
+                cancel.instrument_id,
+                order_state,
+                venue_binding.is_some_and(|(_, has_bound_child)| has_bound_child),
+            ) {
                 OrderCommandRoute::RegularWs => {
                     self.ensure_order_identity(
                         cancel.client_order_id,
@@ -2565,10 +2661,14 @@ impl ExecutionClient for OKXExecutionClient {
                     regular_payload.push((
                         cancel.instrument_id,
                         Some(cancel.client_order_id),
-                        cancel.venue_order_id,
+                        authoritative_venue_order_id,
                     ));
                 }
-                OrderCommandRoute::AlgoHttp => algo_orders.push(cancel.clone()),
+                OrderCommandRoute::AlgoHttp => {
+                    let mut cancel = cancel.clone();
+                    cancel.venue_order_id = authoritative_venue_order_id;
+                    algo_orders.push(cancel);
+                }
                 OrderCommandRoute::SpreadHttp => {
                     self.ensure_order_identity(
                         cancel.client_order_id,
@@ -2579,7 +2679,7 @@ impl ExecutionClient for OKXExecutionClient {
                         cancel.client_order_id,
                         cancel.instrument_id,
                         cancel.strategy_id,
-                        cancel.venue_order_id,
+                        authoritative_venue_order_id,
                     ));
                 }
             }
@@ -3198,14 +3298,22 @@ fn select_query_order_report(
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, rc::Rc, time::Duration};
 
-    use nautilus_common::cache::Cache;
-    use nautilus_model::{enums::OrderStatus, instruments::Instrument};
+    use axum::{Json, Router, routing::post};
+    use nautilus_common::{cache::Cache, testing::wait_until_async};
+    use nautilus_core::UUID4;
+    use nautilus_model::{
+        enums::OrderStatus,
+        instruments::Instrument,
+        orders::OrderTestBuilder,
+        types::{Price, Quantity},
+    };
     use rstest::rstest;
     use serde_json::Value;
 
     use super::*;
+    use crate::common::consts::OKX_CLIENT_ID;
 
     #[rstest]
     #[case(OrderType::Market, QueryOrderRoute::Regular)]
@@ -3720,6 +3828,161 @@ mod tests {
         );
 
         OKXExecutionClient::new(core, config).expect("failed to build test client")
+    }
+
+    #[rstest]
+    fn test_cancel_order_route_uses_bound_child_before_engine_trigger_state_updates() {
+        let client = build_test_exec_client();
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        let pending_trigger = Some((OrderType::StopLimit, Some(false)));
+
+        assert_eq!(
+            client.cancel_order_route(instrument_id, pending_trigger, false),
+            OrderCommandRoute::AlgoHttp
+        );
+        assert_eq!(
+            client.cancel_order_route(instrument_id, pending_trigger, true),
+            OrderCommandRoute::RegularWs
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_submit_conditional_order_resolves_routing_context() {
+        let router = Router::new().route(
+            "/api/v5/trade/order-algo",
+            post(|Json(request): Json<Value>| async move {
+                let data = if request["algoClOrdId"] == "O-REST-BIND-001" {
+                    serde_json::json!([{
+                        "algoId": "3796251408639365120",
+                        "algoClOrdId": "O-REST-BIND-001",
+                        "sCode": "0",
+                        "sMsg": "",
+                    }])
+                } else {
+                    serde_json::json!([])
+                };
+                Json(serde_json::json!({
+                    "code": "0",
+                    "msg": "",
+                    "data": data,
+                }))
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url_http = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(listener, router.into_make_service())
+                .await
+                .unwrap();
+        });
+
+        let config = OKXExecutionClientConfig {
+            api_key: Some("test_key".to_string()),
+            api_secret: Some("test_secret".to_string()),
+            api_passphrase: Some("test_pass".to_string()),
+            base_url_http: Some(base_url_http),
+            ..OKXExecutionClientConfig::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            ClientId::from("OKX-TEST"),
+            *OKX_VENUE,
+            OmsType::Hedging,
+            config.account_id,
+            AccountType::Cash,
+            None,
+            Rc::clone(&cache),
+        );
+        let client = OKXExecutionClient::new(core, config).unwrap();
+        let client_order_id = ClientOrderId::from("O-REST-BIND-001");
+        let order = OrderTestBuilder::new(OrderType::StopLimit)
+            .client_order_id(client_order_id)
+            .strategy_id(StrategyId::from("S-REST-BIND-001"))
+            .instrument_id(InstrumentId::from("BTC-USDT-SWAP.OKX"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.01"))
+            .price(Price::from("94900"))
+            .trigger_price(Price::from("95000"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+        let command = SubmitOrder::from_order(
+            &order,
+            TraderId::from("TESTER-001"),
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        client.submit_conditional_order(&command).unwrap();
+        wait_until_async(
+            || async {
+                client
+                    .ws_dispatch_state
+                    .order_venue_binding(client_order_id)
+                    == Some((VenueOrderId::from("3796251408639365120"), false))
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert_eq!(
+            client.ws_dispatch_state.order_identity(client_order_id),
+            Some(OrderIdentity {
+                client_order_id,
+                strategy_id: StrategyId::from("S-REST-BIND-001"),
+                instrument_id: InstrumentId::from("BTC-USDT-SWAP.OKX"),
+                order_side: OrderSide::Sell,
+                order_type: OrderType::StopLimit,
+            })
+        );
+
+        let ambiguous_client_order_id = ClientOrderId::from("O-REST-AMBIGUOUS-002");
+        let ambiguous_order = OrderTestBuilder::new(OrderType::StopLimit)
+            .client_order_id(ambiguous_client_order_id)
+            .strategy_id(StrategyId::from("S-REST-BIND-001"))
+            .instrument_id(InstrumentId::from("BTC-USDT-SWAP.OKX"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.02"))
+            .price(Price::from("94800"))
+            .trigger_price(Price::from("95100"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(ambiguous_order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+        let ambiguous_command = SubmitOrder::from_order(
+            &ambiguous_order,
+            TraderId::from("TESTER-001"),
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        client.submit_conditional_order(&ambiguous_command).unwrap();
+        wait_until_async(
+            || async {
+                client
+                    .ws_dispatch_state
+                    .order_identity(ambiguous_client_order_id)
+                    .is_none()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert_eq!(
+            client
+                .ws_dispatch_state
+                .order_venue_binding(ambiguous_client_order_id),
+            None
+        );
     }
 
     #[rstest]

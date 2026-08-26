@@ -65,6 +65,7 @@ Released on TBD (UTC).
 - Fixed Lighter testnet orders by omitting mainnet-only integrator attribution (#4834), thanks @Buff2out
 - Fixed OKX WebSocket submissions omitting `reduceOnly` (#4827), thanks for reporting @silarin
 - Fixed OKX ambiguous submissions, subscription recovery, and triggered child reconciliation
+- Fixed OKX conditional order identity, replay deduplication, and post-trigger cancellation
 - Fixed Polymarket user WebSocket subscriptions to cover all account orders and trades
 - Fixed Polymarket `CancelAllOrders` handling for empty caches and cross-strategy, instrument, and side scopes
 - Fixed Polymarket market WebSocket heartbeats before initial subscription (#4864), thanks for reporting @mystic-io

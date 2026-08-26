@@ -232,7 +232,10 @@ pub fn parse_order_event(
                 previous_filled_qty,
                 ts_init,
             )? {
-                Some(report) => Ok(ParsedOrderEvent::Fill(report)),
+                Some(mut report) => {
+                    report.client_order_id = Some(client_order_id);
+                    Ok(ParsedOrderEvent::Fill(report))
+                }
                 None => Ok(ParsedOrderEvent::Skipped),
             }
         }
@@ -6811,6 +6814,7 @@ mod tests {
             algo_cl_ord_id: "algo_cl_1".to_string(),
             cl_ord_id: String::new(),
             ord_id: String::new(),
+            ord_id_list: Vec::new(),
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             ord_type: OKXAlgoOrderType::Trigger,
@@ -6837,6 +6841,7 @@ mod tests {
             c_time: 1706000000000,
             u_time: 1706000001000,
             trigger_time: String::new(),
+            fail_code: String::new(),
             tag: String::new(),
             callback_ratio: String::new(),
             callback_spread: String::new(),
@@ -6863,6 +6868,7 @@ mod tests {
             algo_cl_ord_id: "algo_cl_1".to_string(),
             cl_ord_id: String::new(),
             ord_id: String::new(),
+            ord_id_list: Vec::new(),
             inst_id: Ustr::from("BTC-USDT-SWAP"),
             inst_type: OKXInstrumentType::Swap,
             ord_type,
@@ -6889,6 +6895,7 @@ mod tests {
             c_time: 1706000000000,
             u_time: 1706000001000,
             trigger_time: String::new(),
+            fail_code: String::new(),
             tag: String::new(),
             callback_ratio: String::new(),
             callback_spread: String::new(),

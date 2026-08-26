@@ -574,15 +574,22 @@ The low-level HTTP client models OKX attached TP/SL and OCO payloads, but
 Conditional orders (OKX algo orders) use a hybrid architecture:
 
 - **Submission**: HTTP REST API (`/api/v5/trade/order-algo`).
-- **Status updates**: WebSocket business endpoint (`/ws/v5/business`) on the
-  `orders-algo` channel.
-- **Cancellation**: HTTP REST API with algo order ID tracking.
+- **Status updates**: WebSocket business endpoint (`/ws/v5/business`). Stop and touched orders use
+  `orders-algo`; trailing stops use `algo-advance`.
+- **Cancellation**: HTTP REST API while the algo parent is active, then the regular order path
+  after a triggered child becomes authoritative.
+
+The `orders-algo` channel sends updates only, while `algo-advance` also sends a snapshot on
+subscription. The adapter keeps tracked order context across transport reconnects and deduplicates
+replayed advance-algo snapshots. REST reconciliation remains responsible for cold-start and
+missed-update recovery.
 
 This design ensures:
 
 - Immediate submission acknowledgment through HTTP.
 - Real-time status updates through WebSocket.
-- Proper order lifecycle management with algo order ID mapping.
+- Stable order identity while venue authority moves from the algo parent ID to the triggered child
+  order ID.
 
 #### Supported conditional order types
 
