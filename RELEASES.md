@@ -40,6 +40,8 @@ Released on TBD (UTC).
 - Changed `SimulatedExecutionClientFactory::create` to receive the node's `TraderId`
 - Changed adapter execution account configs to use `account_id` instead of factory arguments
 - Changed adapter execution factories to use no-argument constructors
+- Changed Polymarket Gamma models to expose resolution metadata (#4842), thanks @seungpyoson
+- Changed Polymarket REST reconciliation to reject unbound or invalid reports (#4831), thanks @seungpyoson
 
 ### Security
 
@@ -62,6 +64,8 @@ Released on TBD (UTC).
 - Fixed Bybit rate limiting causing expired requests, venue rejections, and inconsistent order state
 - Fixed Hyperliquid execution disconnect cleanup
 - Fixed Hyperliquid market order prices in order list submits
+- Fixed Interactive Brokers adaptive limit orders parsed as market orders (#4830), thanks @mameikagou
+- Fixed L2/L3 matching against deleted book touches (#4819), thanks @SoYuCry
 - Fixed Lighter testnet orders by omitting mainnet-only integrator attribution (#4834), thanks @Buff2out
 - Fixed OKX WebSocket submissions omitting `reduceOnly` (#4827), thanks for reporting @silarin
 - Fixed OKX ambiguous submissions, subscription recovery, and triggered child reconciliation
@@ -73,10 +77,13 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Allowed `DataActor` implementations without native `Component` state
+- Improved Betfair stream lifecycle test synchronization (#4849), thanks @folknor
+- Improved dYdX retry timeout test coverage (#4835), thanks @folknor
+- Optimized Betfair subscription test teardown (#4837), thanks @folknor
 - Optimized Hyperliquid startup reconciliation to skip inactive dexes (#4861), thanks for reporting @nah294
 - Optimized Polymarket quote parsing across WebSocket inputs
 - Upgraded Rust (MSRV) to 1.98.0
-- Upgraded Miri to `nightly-2026-08-21`
+- Upgraded Miri to `nightly-2026-08-23`
 - Upgraded `cargo-hawk` to v0.1.13
 - Upgraded `shellcheck-py` pre-commit hook to v0.11.0.1-1
 - Upgraded `arrow` crate to v59.2.0
@@ -85,10 +92,13 @@ Released on TBD (UTC).
 - Upgraded `databento` crate to v0.59.0
 - Upgraded `datafusion` crate to v55.0.0
 - Upgraded `either` crate to v1.18.0
+- Upgraded `log` crate to v0.4.34
 - Upgraded `parquet` crate to v59.2.0
+- Upgraded `uuid` crate to v1.25.0
 - Upgraded `ruff` package (dev) to v0.16.3
 - Upgraded `simplejson` package (visualization) to v4.1.1
-- Upgraded `uvicorn` package (dev) to v0.52.3
+- Upgraded `ty` package (dev) to v0.0.73
+- Upgraded `uvicorn` package (dev) to v0.52.4
 
 ### Documentation Updates
 

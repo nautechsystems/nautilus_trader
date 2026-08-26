@@ -184,7 +184,7 @@ jiff = { version = "0.2.35", default-features = false, features = [
 ] }
 libc = "0.2.189"
 libfuzzer-sys = "0.4.13"
-log = { version = "0.4.33", features = [
+log = { version = "0.4.34", features = [
   "std",
   "kv_unstable",
   "serde",
@@ -314,7 +314,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.24.1", features = ["v4", "serde"] }
+uuid = { version = "1.25.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.9"
 
 # -----------------------------------------------------------------------------

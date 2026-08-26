@@ -969,6 +969,12 @@ criteria = "safe-to-deploy"
 delta = "1.18.0 -> 1.18.1"
 notes = "SIMD decode optimizations, serde alloc gate removal. No new deps, no build script changes."
 
+[[audits.crc32fast]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.5.0 -> 1.5.1"
+notes = "Reviewed the published 1.5.0 -> 1.5.1 crate. Adds runtime-gated AVX2/AVX-512 and interleaved AArch64 CRC paths. CPU feature checks cover each target feature, every SIMD load is preceded by a length bound, and the scalar fallback remains. No new filesystem, network, process, credential, or data-exfiltration behavior."
+
 [[audits.crossbeam-epoch]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1646,6 +1652,12 @@ criteria = "safe-to-deploy"
 delta = "2.12.0 -> 2.12.1"
 notes = "Fixes full-range subnet decomposition near the IPv4 and IPv6 maximum values and updates diagnostics. No unsafe or ambient capabilities."
 
+[[audits.is-macro]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.3.7 -> 0.3.8"
+notes = "Reviewed the published 0.3.7 -> 0.3.8 crate. Adds optional small-panic code generation and dependency floor updates. Generated code only changes panic formatting. No unsafe or filesystem, network, process, credential, or data-exfiltration behavior."
+
 [[audits.itertools]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1693,6 +1705,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.31 -> 0.4.32"
 notes = "Moves structured Value standard-library conversions under the std feature while keeping to_cow_str gated by kv_std. No new dependencies, build script, filesystem, network, or unsafe code changes."
+
+[[audits.log]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.33 -> 0.4.34"
+notes = "Reviewed the published 0.4.33 -> 0.4.34 crate. Adds alloc-gated boxed logger support, with std enabling alloc; this workspace enables std. No new unsafe, build script, filesystem, network, process, credential, or data-exfiltration behavior."
 
 [[audits.lru]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -2315,6 +2333,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.24.0 -> 1.24.1"
 notes = "Reviewed a parse-diagnostics fix matching characters with is_ascii_hexdigit instead of truncating non-ASCII input to a byte, plus a regression test and metadata updates. No new dependencies, build script, filesystem, network, process, or unsafe-code behavior."
+
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.24.1 -> 1.25.0"
+notes = "Reviewed the published 1.24.1 -> 1.25.0 crate. Adds an opt-in Serde byte-string serializer and deserializer. No new unsafe, build script, filesystem, network, process, credential, or data-exfiltration behavior."
 
 [[audits.value-bag]]
 who = "Nautech Systems <info@nautechsystems.io>"
