@@ -20,6 +20,7 @@
 use std::{
     collections::HashSet,
     fmt::Debug,
+    num::NonZeroU32,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
@@ -40,13 +41,12 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    backoff::ExponentialBackoff,
     http::USER_AGENT,
     mode::ConnectionMode,
     ratelimiter::{RateLimiter, clock::MonotonicClock},
     websocket::{
-        AuthTracker, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        AuthTracker, InitialConnectRetryPolicy, SubscriptionState, TransportBackend,
+        WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
 use serde_json::Value;
@@ -135,7 +135,7 @@ pub struct BybitWebSocketClient {
     bars_timestamp_on_close: Arc<AtomicBool>,
     pending_py_requests: Arc<DashMap<String, Vec<PendingPyRequest>>>,
     transport_backend: TransportBackend,
-    cancellation_token: CancellationToken,
+    cancellation_token: Arc<ArcSwap<CancellationToken>>,
     proxy_url: Option<String>,
     socket_control: Option<SocketControl>,
 }
@@ -182,7 +182,7 @@ impl Clone for BybitWebSocketClient {
             bars_timestamp_on_close: Arc::clone(&self.bars_timestamp_on_close),
             pending_py_requests: Arc::clone(&self.pending_py_requests),
             transport_backend: self.transport_backend,
-            cancellation_token: self.cancellation_token.clone(),
+            cancellation_token: Arc::clone(&self.cancellation_token),
             proxy_url: self.proxy_url.clone(),
             socket_control: self.socket_control.clone(),
         }
@@ -190,6 +190,16 @@ impl Clone for BybitWebSocketClient {
 }
 
 impl BybitWebSocketClient {
+    fn initial_connect_retry_policy() -> InitialConnectRetryPolicy {
+        InitialConnectRetryPolicy {
+            max_attempts: NonZeroU32::new(5).expect("initial connect attempts must be non-zero"),
+            delay_initial: Duration::from_millis(500),
+            delay_max: Duration::from_secs(5),
+            backoff_factor: 2.0,
+            jitter_ms: 250,
+        }
+    }
+
     /// Creates a new Bybit public WebSocket client.
     #[must_use]
     pub fn new_public(url: Option<String>, heartbeat: u64) -> Self {
@@ -259,7 +269,7 @@ impl BybitWebSocketClient {
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             proxy_url,
             socket_control: None,
         }
@@ -329,7 +339,7 @@ impl BybitWebSocketClient {
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             proxy_url,
             socket_control: None,
         }
@@ -392,7 +402,7 @@ impl BybitWebSocketClient {
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             proxy_url,
             socket_control: None,
         }
@@ -405,9 +415,10 @@ impl BybitWebSocketClient {
     /// Returns an error if the underlying WebSocket connection cannot be established,
     /// after retrying multiple times with exponential backoff.
     pub async fn connect(&mut self) -> BybitWsResult<()> {
-        const MAX_RETRIES: u32 = 5;
-
         self.signal.store(false, Ordering::Relaxed);
+        let cancellation_token = CancellationToken::new();
+        self.cancellation_token
+            .store(Arc::new(cancellation_token.clone()));
 
         let (raw_handler, raw_rx) = channel_message_handler();
 
@@ -437,19 +448,6 @@ impl BybitWebSocketClient {
             proxy_url: self.proxy_url.clone(),
         };
 
-        // Retry initial connection with exponential backoff to handle transient DNS/network issues
-        let mut backoff = ExponentialBackoff::new(
-            Duration::from_millis(500),
-            Duration::from_millis(5000),
-            2.0,
-            250,
-            false,
-        )
-        .map_err(|e| BybitWsError::ClientError(e.to_string()))?;
-
-        #[allow(unused_assignments)]
-        let mut last_error = String::new();
-        let mut attempt = 0;
         let message_rate_limiter = Arc::new(RateLimiter::<Ustr, MonotonicClock>::new_with_quota(
             None,
             vec![],
@@ -457,54 +455,24 @@ impl BybitWebSocketClient {
         let connection_rate_limiter =
             websocket_connection_limiter(&self.url, self.proxy_url.as_deref());
         let connection_rate_keys: Arc<[Ustr]> = Arc::from([websocket_connection_key()]);
-        let client = loop {
-            attempt += 1;
-
-            match WebSocketClient::builder()
-                .config(config.clone())
-                .message_handler(raw_handler.clone())
-                .rate_limiter(Arc::clone(&message_rate_limiter))
-                .connection_rate_limiter(Arc::clone(&connection_rate_limiter))
-                .connection_rate_keys(Arc::clone(&connection_rate_keys))
-                .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
-                .connect()
-                .await
-            {
-                Ok(client) => {
-                    if attempt > 1 {
-                        log::info!("WebSocket connection established after {attempt} attempts");
-                    }
-                    break client;
-                }
-                Err(e) => {
-                    last_error = e.to_string();
-                    log::warn!(
-                        "WebSocket connection attempt failed: attempt={attempt}, max_retries={MAX_RETRIES}, url={}, error={last_error}",
-                        self.url
-                    );
-                }
-            }
-
-            if attempt >= MAX_RETRIES {
-                return Err(BybitWsError::Transport(format!(
-                    "Failed to connect to {} after {MAX_RETRIES} attempts: {}. \
+        let client = WebSocketClient::builder()
+            .config(config.clone())
+            .message_handler(raw_handler.clone())
+            .rate_limiter(Arc::clone(&message_rate_limiter))
+            .connection_rate_limiter(Arc::clone(&connection_rate_limiter))
+            .connection_rate_keys(Arc::clone(&connection_rate_keys))
+            .initial_connect_retry_policy(Self::initial_connect_retry_policy())
+            .cancellation_token(cancellation_token)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
+            .await
+            .map_err(|e| {
+                BybitWsError::Transport(format!(
+                    "Failed to connect to {}: {e}. \
                     If this is a DNS error, check your network configuration and DNS settings.",
                     self.url,
-                    if last_error.is_empty() {
-                        "unknown error"
-                    } else {
-                        &last_error
-                    }
-                )));
-            }
-
-            let delay = backoff.next_duration();
-            log::debug!(
-                "Retrying in {delay:?} (attempt {}/{MAX_RETRIES})",
-                attempt + 1
-            );
-            tokio::time::sleep(delay).await;
-        };
+                ))
+            })?;
 
         self.connection_mode.store(client.connection_mode_atomic());
         let reconnect_handle = client.reconnect_handle();
@@ -700,6 +668,7 @@ impl BybitWebSocketClient {
         log::debug!("Starting close process");
 
         self.signal.store(true, Ordering::Relaxed);
+        self.cancellation_token.load().cancel();
 
         let cmd = HandlerCommand::Disconnect;
         if let Err(e) = self.cmd_tx.read().await.send(cmd) {

@@ -28,7 +28,7 @@
 //! seconds resets its attempt count and backoff delay; shorter-lived connections continue the
 //! current cycle.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, num::NonZeroU32, time::Duration};
 
 use nautilus_core::string::secret::REDACTED;
 use serde::{Deserialize, Serialize};
@@ -349,6 +349,28 @@ impl WebSocketConfig {
             self.heartbeat_interval_secs,
         )
     }
+}
+
+/// Retry policy for establishing the initial handler-mode connection.
+///
+/// Supplied to the client builder rather than held in [`WebSocketConfig`], because it governs a
+/// single invocation of `connect` and has no meaning once a client exists. Without a policy the
+/// builder makes exactly one attempt.
+///
+/// This does not affect automatic reconnection after a connection has been established; that is
+/// configured by the `reconnect_*` fields of [`WebSocketConfig`].
+#[derive(Clone, Debug)]
+pub struct InitialConnectRetryPolicy {
+    /// Maximum number of connection attempts, including the first attempt.
+    pub max_attempts: NonZeroU32,
+    /// Delay before the second connection attempt.
+    pub delay_initial: Duration,
+    /// Maximum delay between connection attempts.
+    pub delay_max: Duration,
+    /// Multiplier applied to the delay after each failed attempt.
+    pub backoff_factor: f64,
+    /// Maximum random jitter added to each delay, in milliseconds.
+    pub jitter_ms: u64,
 }
 
 #[cfg(test)]

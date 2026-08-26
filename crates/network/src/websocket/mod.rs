@@ -82,7 +82,7 @@ pub use auth::AuthTracker;
 pub use client::{
     ReconnectHeaders, WebSocketClient, WebSocketClientInner, WebSocketReconnectHandle,
 };
-pub use config::{TransportBackend, WebSocketConfig};
+pub use config::{InitialConnectRetryPolicy, TransportBackend, WebSocketConfig};
 pub use consts::{AUTHENTICATION_TIMEOUT_SECS, TEXT_PING, TEXT_PONG};
 pub use subscription::{SubscriptionSnapshot, SubscriptionState, split_topic};
 pub use types::{
