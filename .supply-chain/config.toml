@@ -325,6 +325,10 @@ criteria = "safe-to-deploy"
 version = "1.0.104"
 criteria = "safe-to-deploy"
 
+[[exemptions.approx]]
+version = "0.5.1"
+criteria = "safe-to-run"
+
 [[exemptions.arc-swap]]
 version = "1.9.0"
 criteria = "safe-to-deploy"
@@ -673,10 +677,6 @@ criteria = "safe-to-deploy"
 version = "0.26.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.cbindgen]]
-version = "0.29.4"
-criteria = "safe-to-deploy"
-
 [[exemptions.cc]]
 version = "1.3.0"
 criteria = "safe-to-deploy"
@@ -708,6 +708,22 @@ criteria = "safe-to-deploy"
 [[exemptions.cmov]]
 version = "0.5.4"
 criteria = "safe-to-deploy"
+
+[[exemptions.codspeed]]
+version = "5.0.1"
+criteria = "safe-to-run"
+
+[[exemptions.codspeed-criterion-compat]]
+version = "5.0.1"
+criteria = "safe-to-run"
+
+[[exemptions.codspeed-criterion-compat-walltime]]
+version = "5.0.1"
+criteria = "safe-to-run"
+
+[[exemptions.colored]]
+version = "3.1.1"
+criteria = "safe-to-run"
 
 [[exemptions.combine]]
 version = "4.6.7"
@@ -797,8 +813,8 @@ criteria = "safe-to-deploy"
 version = "1.5.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.criterion]]
-version = "0.3.5"
+[[exemptions.criterion-plot]]
+version = "0.4.4"
 criteria = "safe-to-run"
 
 [[exemptions.crossbeam-deque]]
@@ -1477,6 +1493,10 @@ criteria = "safe-to-deploy"
 version = "0.3.7"
 criteria = "safe-to-deploy"
 
+[[exemptions.is-terminal]]
+version = "0.4.16"
+criteria = "safe-to-run"
+
 [[exemptions.itchy]]
 version = "0.3.4"
 criteria = "safe-to-deploy"
@@ -1696,6 +1716,10 @@ criteria = "safe-to-deploy"
 [[exemptions.naive-timer]]
 version = "0.2.0"
 criteria = "safe-to-deploy"
+
+[[exemptions.nix]]
+version = "0.31.3"
+criteria = "safe-to-run"
 
 [[exemptions.ntapi]]
 version = "0.4.3"
@@ -2428,6 +2452,10 @@ criteria = "safe-to-deploy"
 [[exemptions.stable_deref_trait]]
 version = "1.2.1"
 criteria = "safe-to-deploy"
+
+[[exemptions.statrs]]
+version = "0.16.0"
+criteria = "safe-to-run"
 
 [[exemptions.stringprep]]
 version = "0.1.5"

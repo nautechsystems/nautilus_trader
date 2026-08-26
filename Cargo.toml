@@ -369,7 +369,7 @@ axum = { version = "0.8.9", default-features = false, features = [
   "query",
   "ws",
 ] }
-criterion = { version = "0.8.2", default-features = false, features = [
+criterion = { package = "codspeed-criterion-compat", version = "5.0.1", default-features = false, features = [
   "cargo_bench_support",
 ] }
 iai = "0.1.1"
@@ -402,6 +402,7 @@ pyo3-stub-gen = { path = "patches/pyo3-stub-gen" }
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
 cargo-audit = "0.22.2"
+cargo-codspeed = "5.0.1"
 cargo-deny = "0.20.2"
 cargo-edit = "0.13.13"
 cargo-fuzz = "0.13.2"

@@ -8,6 +8,7 @@ IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
 # Tool versions from Cargo.toml [workspace.metadata.tools]
 CARGO_AUDIT_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-audit)
+CARGO_CODSPEED_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-codspeed)
 CARGO_DENY_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-deny)
 CARGO_EDIT_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-edit)
 CARGO_FUZZ_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-fuzz)
@@ -223,7 +224,7 @@ CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel p
 	cargo-test-debug cargo-test-coverage cargo-test-crate-% \
 	cargo-test-coverage-crate-% cargo-test-coverage-html \
 	cargo-test-coverage-crate-html-% cargo-miri-core cargo-miri-model \
-	cargo-miri-plugin cargo-miri cargo-ci-benches \
+	cargo-miri-plugin cargo-miri cargo-ci-benches cargo-codspeed-build \
 	install-cli
 
 # Apple ld can emit compact-unwind size warnings for large Rust binaries
@@ -524,7 +525,7 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	sh scripts/check-outdated.sh
 	@printf "\n$(CYAN)Checking tool versions...$(RESET)\n"
 	@outdated_count=0; \
-	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-fuzz:$(CARGO_FUZZ_VERSION) cargo-hawk:$(CARGO_HAWK_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) flamegraph:$(FLAMEGRAPH_VERSION) lychee:$(LYCHEE_VERSION); do \
+	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-codspeed:$(CARGO_CODSPEED_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-fuzz:$(CARGO_FUZZ_VERSION) cargo-hawk:$(CARGO_HAWK_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) flamegraph:$(FLAMEGRAPH_VERSION) lychee:$(LYCHEE_VERSION); do \
 		name=$${tool%%:*}; current=$${tool##*:}; \
 		latest=$$(cargo search $$name --limit 1 2>/dev/null | head -1 | awk -F\" '{print $$2}'); \
 		if [ "$$current" != "$$latest" ]; then \
@@ -550,6 +551,7 @@ update-uv:  #-- Install or upgrade uv to the version pinned in tools.toml
 .PHONY: install-tools
 install-tools: check-binstall-installed update-uv  #-- Install required development tools (pinned versions from Cargo.toml and tools.toml)
 	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
+	&& cargo install cargo-codspeed --version $(CARGO_CODSPEED_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \
 	&& cargo install cargo-fuzz --version $(CARGO_FUZZ_VERSION) --locked \
 	&& cargo binstall cargo-hawk --version $(CARGO_HAWK_VERSION) --no-confirm --locked \
@@ -1212,6 +1214,19 @@ cargo-miri:  #-- Run Miri across the in-scope foundational and plug-in crates
 CI_BENCH_CRATES := nautilus-core nautilus-model nautilus-common \
 	nautilus-execution nautilus-backtest nautilus-live
 
+# CodSpeed excludes iai, iter_custom, with_filter, OS-dependent, and concurrent benchmarks
+CODSPEED_BENCH_CRATES := nautilus-core nautilus-model nautilus-common nautilus-execution
+CODSPEED_BENCH_TARGETS := \
+	datetime stack_str identifier_comparison decimal_deserialization hash_map hex \
+	to_snake_case urlencoding \
+	greeks_criterion black_scholes_criterion fixed_precision_criterion \
+	f64_vs_decimal_to_price_quantity money_criterion price_criterion quantity_criterion \
+	expressions_criterion order_fills_criterion position_replay_criterion \
+	cache_orders cache_query_sets cache_xrate client_order_id order_list_id position_id matching \
+	msgbus mstr throttler matching_core
+CODSPEED_BENCH_ARGS := $(addprefix --package ,$(CODSPEED_BENCH_CRATES)) \
+	$(addprefix --bench ,$(CODSPEED_BENCH_TARGETS))
+
 # NOTE:
 # - We invoke `cargo bench` *once per crate* to avoid the well-known
 #   "mixed panic strategy" linker error that appears when crates which specify
@@ -1226,6 +1241,14 @@ cargo-ci-benches:  #-- Run Rust benches for the crates included in the CI perfor
 	  echo "Running benches for $$crate"; \
 	  cargo bench -p $$crate --profile bench --benches --no-fail-fast; \
 	done
+
+.PHONY: cargo-codspeed-build
+cargo-codspeed-build:  #-- Build the selected Rust benchmarks for CodSpeed CPU simulation
+	cargo codspeed build --locked --measurement-mode simulation $(CODSPEED_BENCH_ARGS)
+
+.PHONY: cargo-codspeed-run
+cargo-codspeed-run:  #-- Run the selected Rust benchmarks previously built for CodSpeed
+	cargo codspeed run --measurement-mode simulation $(CODSPEED_BENCH_ARGS)
 
 #== Docker
 

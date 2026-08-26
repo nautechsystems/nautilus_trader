@@ -117,20 +117,25 @@ deeper runner and engine workload.
 
 ---
 
-## Nightly benchmark execution
+## Automated benchmark execution
 
-The [`performance` workflow](.github/workflows/performance.yml) executes
-registered Rust Criterion and iai benchmarks on pushes to `nightly`. It does
-not compare benchmark deltas or gate pull requests.
+The [`performance` workflow](.github/workflows/performance.yml) runs two benchmark paths:
 
-The `CI_BENCH_CRATES` variable in the workspace [`Makefile`](Makefile) is the
-authoritative crate set. Register a benchmark in its crate's `Cargo.toml`, then
-add the crate to `CI_BENCH_CRATES` when the nightly workflow does not already
-cover it.
+- `performance-benchmarks` executes the registered Rust Criterion and iai benchmarks on pushes to
+  `nightly`. This path checks benchmark execution but does not compare deltas or gate pull requests.
+- `codspeed-benchmarks` runs selected deterministic Criterion targets under CodSpeed CPU simulation
+  for pull requests targeting `develop` and pushes to `develop` or `test-performance`. CodSpeed uses
+  the `develop` results as the comparison baseline for pull request reports.
 
-For a pull request that materially changes a hot path, run a local Criterion
-comparison against `develop`. The nightly workflow provides an execution check
-after the change reaches `nightly`.
+The workspace [`Makefile`](Makefile) defines both scopes. `CI_BENCH_CRATES` is the authoritative
+crate set for the full nightly run. `CODSPEED_BENCH_CRATES` and `CODSPEED_BENCH_TARGETS` define the
+CodSpeed subset. CodSpeed excludes iai targets, Criterion's `iter_custom` and `with_filter` APIs,
+OS-dependent work, and concurrent wall-clock workloads because CPU simulation does not preserve
+their intended measurement.
+
+For a pull request that materially changes a hot path outside the CodSpeed subset, run a local
+Criterion comparison against `develop`. The nightly workflow provides an execution check after the
+change reaches `nightly`.
 
 ---
 
@@ -140,10 +145,13 @@ Add a Rust bench under `crates/<crate>/benches/` when the measured work stays
 inside Rust. Use a Python benchmark when the workload must include end-user
 PyO3 API cost.
 
-The nightly workflow runs the registered Rust benches. CodSpeed is suitable
-when a Python-level workload is required and the benchmark proves that it
-exercises the `nautilus_trader` package built from `python/pyproject.toml`.
-Add the suite path and runner command with any future Python CI integration.
+The nightly workflow runs the registered Rust benches, and CodSpeed compares its selected Rust
+Criterion subset. The workspace dependency aliases `codspeed-criterion-compat` as `criterion`, so
+the same source continues to run through standard `cargo bench` commands.
+
+Use a Python benchmark when the workload must include end-user PyO3 API cost. A future Python CI
+integration must prove that it exercises the `nautilus_trader` package built from
+`python/pyproject.toml`.
 
 ---
 
@@ -153,6 +161,7 @@ Add the suite path and runner command with any future Python CI integration.
 | ----------------------------------------------------- | --------------------------------------------------------- | ----------------------------------------- |
 | Measure elapsed time or compare implementations       | [Criterion](https://docs.rs/criterion/latest/criterion/)  | Wall-clock time with confidence intervals |
 | Detect instruction-count changes in a small operation | [iai](https://docs.rs/iai/latest/iai/)                    | Retired CPU instructions under Cachegrind |
+| Compare deterministic CPU work in pull requests       | [CodSpeed](https://codspeed.io/docs/instruments/cpu)      | Simulated CPU cost and cache metrics      |
 | Locate work inside a representative slow path         | [flamegraph](https://github.com/flamegraph-rs/flamegraph) | Sampled call-stack profile                |
 
 Criterion produces wall-clock numbers. They reflect what the user actually
@@ -164,6 +173,10 @@ iai counts machine instructions under Cachegrind. For a fixed binary,
 toolchain, and input, the count gives a stable change signal. It is not
 directly comparable to wall-clock time, and code generation changes can shift
 it independently of runtime performance.
+
+CodSpeed CPU simulation runs each selected Criterion case once under a simulated CPU. It provides
+a stable pull request comparison signal, not an authoritative wall-clock measurement. Confirm a
+material regression or improvement with Criterion under the project's measurement controls.
 
 For setup, examples, and templates, see the
 [developer guide](docs/developer_guide/benchmarking.md).
@@ -187,14 +200,17 @@ should include a headline comparison with the hardware, toolchain, and build
 profile. The pull request provides the durable context for the change and its
 measurements.
 
+**CodSpeed history.** CodSpeed stores the selected Rust benchmark results for `develop`,
+`test-performance`, and pull requests targeting `develop`. Use its reports to identify candidate
+regressions, then use the benchmark's native tool when the decision requires elapsed time or
+instruction counts.
+
 **Release notes.** A measured user-visible improvement belongs under
 "Internal Improvements" as a brief entry naming the optimized component. Keep
 detailed result tables in the pull request.
 
-The repository does not maintain a separate historical benchmark database.
-Pull request descriptions and Git history retain historical comparisons,
-while checked-in component reports publish the reproducible baseline for their
-stated revision.
+Pull request descriptions and Git history retain measurement context outside the CodSpeed subset,
+while checked-in component reports publish the reproducible baseline for their stated revision.
 
 ---
 

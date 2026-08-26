@@ -274,15 +274,6 @@ criteria = "safe-to-deploy"
 version = "0.1.6"
 notes = "Contains no unsafe code, no IO, no build.rs."
 
-[[audits.bytecode-alliance.audits.arrayref]]
-who = "Nick Fitzgerald <fitzgen@gmail.com>"
-criteria = "safe-to-deploy"
-version = "0.3.6"
-notes = """
-Unsafe code, but its logic looks good to me. Necessary given what it is
-doing. Well tested, has quickchecks.
-"""
-
 [[audits.bytecode-alliance.audits.async-task]]
 who = "Chris Fallin <chris@cfallin.org>"
 criteria = "safe-to-deploy"
@@ -361,23 +352,20 @@ criteria = "safe-to-deploy"
 delta = "0.2.8 -> 0.2.14"
 notes = "Minor updates, nothing awry. Mostly portability updates."
 
-[[audits.bytecode-alliance.audits.criterion]]
+[[audits.bytecode-alliance.audits.criterion-plot]]
 who = "Alex Crichton <alex@alexcrichton.com>"
 criteria = "safe-to-run"
-delta = "0.3.5 -> 0.3.6"
+delta = "0.4.4 -> 0.4.5"
 notes = """
-There were no major changes to code in this update, mostly just stylistic and
-updating some version dependency requirements.
+No major changes in this update, it was almost entirely stylistic with what
+appears to be a few clippy fixes here and there.
 """
 
-[[audits.bytecode-alliance.audits.criterion]]
+[[audits.bytecode-alliance.audits.criterion-plot]]
 who = "Pat Hickey <phickey@fastly.com>"
 criteria = "safe-to-deploy"
-delta = "0.3.6 -> 0.4.0"
-notes = """
-criterion v0.3.6..v0.4.0 is mostly re-arranging the crate features and bumping dependencies. all changes
-to code seem to be confined to benchmarks.
-"""
+delta = "0.4.5 -> 0.5.0"
+notes = "Just a version bump, only change to code is to remove an allow(deprecated)"
 
 [[audits.bytecode-alliance.audits.crossbeam-epoch]]
 who = "Alex Crichton <alex@alexcrichton.com>"
@@ -1048,11 +1036,6 @@ version = "0.3.18"
 notes = "Contains one line of repr(transparent) unsafe"
 aggregated-from = "https://chromium.googlesource.com/chromium/src/+/main/third_party/rust/chromium_crates_io/supply-chain/audits.toml?format=TEXT"
 
-[[audits.isrg.audits.alloca]]
-who = "David Cook <dcook@divviup.org>"
-criteria = "safe-to-run"
-version = "0.4.0"
-
 [[audits.isrg.audits.block-buffer]]
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
@@ -1092,47 +1075,6 @@ delta = "0.2.16 -> 0.2.17"
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 delta = "0.2.17 -> 0.3.0"
-
-[[audits.isrg.audits.criterion]]
-who = "Brandon Pitman <bran@bran.land>"
-criteria = "safe-to-run"
-delta = "0.4.0 -> 0.5.1"
-
-[[audits.isrg.audits.criterion]]
-who = "Tim Geoghegan <timg@divviup.org>"
-criteria = "safe-to-run"
-delta = "0.5.1 -> 0.6.0"
-notes = "No new unsafe code and nothing suspicious in build scripts."
-
-[[audits.isrg.audits.criterion]]
-who = "David Cook <dcook@divviup.org>"
-criteria = "safe-to-run"
-delta = "0.6.0 -> 0.7.0"
-
-[[audits.isrg.audits.criterion]]
-who = "David Cook <dcook@divviup.org>"
-criteria = "safe-to-run"
-delta = "0.7.0 -> 0.8.0"
-
-[[audits.isrg.audits.criterion]]
-who = "J.C. Jones <jc@divviup.org>"
-criteria = "safe-to-run"
-delta = "0.8.0 -> 0.8.1"
-
-[[audits.isrg.audits.criterion]]
-who = "J.C. Jones <jc@divviup.org>"
-criteria = "safe-to-run"
-delta = "0.8.1 -> 0.8.2"
-
-[[audits.isrg.audits.criterion-plot]]
-who = "J.C. Jones <jc@divviup.org>"
-criteria = "safe-to-run"
-version = "0.8.1"
-
-[[audits.isrg.audits.criterion-plot]]
-who = "J.C. Jones <jc@divviup.org>"
-criteria = "safe-to-run"
-delta = "0.8.1 -> 0.8.2"
 
 [[audits.isrg.audits.digest]]
 who = "David Cook <dcook@divviup.org>"
@@ -1282,11 +1224,6 @@ who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 version = "0.3.0"
 
-[[audits.isrg.audits.page_size]]
-who = "David Cook <dcook@divviup.org>"
-criteria = "safe-to-run"
-version = "0.6.0"
-
 [[audits.isrg.audits.rand_chacha]]
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
@@ -1326,6 +1263,22 @@ version = "0.10.2"
 who = "David Cook <dcook@divviup.org>"
 criteria = "safe-to-deploy"
 delta = "0.10.8 -> 0.10.9"
+
+[[audits.isrg.audits.statrs]]
+who = "David Cook <dcook@divviup.org>"
+criteria = "safe-to-run"
+delta = "0.16.0 -> 0.16.1"
+
+[[audits.isrg.audits.statrs]]
+who = "Brandon Pitman <bran@bran.land>"
+criteria = "safe-to-run"
+delta = "0.16.1 -> 0.17.1"
+
+[[audits.isrg.audits.statrs]]
+who = "J.C. Jones <jc@insufficient.coffee>"
+criteria = "safe-to-run"
+delta = "0.17.1 -> 0.18.0"
+notes = "In particular, network access is limited to setup for the NIST tests (which are optional), and there are no new uses of unsafe."
 
 [[audits.isrg.audits.subtle]]
 who = "David Cook <dcook@divviup.org>"
@@ -1739,6 +1692,12 @@ aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-ch
 who = "Mike Hommey <mh+mozilla@glandium.org>"
 criteria = "safe-to-deploy"
 delta = "0.10.3 -> 0.10.5"
+aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
+
+[[audits.mozilla.audits.itertools]]
+who = "Erich Gubler <erichdongubler@gmail.com>"
+criteria = "safe-to-deploy"
+delta = "0.14.0 -> 0.15.0"
 aggregated-from = "https://hg.mozilla.org/mozilla-central/raw-file/tip/supply-chain/audits.toml"
 
 [[audits.mozilla.audits.mime]]
@@ -2285,19 +2244,6 @@ criteria = "safe-to-deploy"
 delta = "1.1.3 -> 1.1.4"
 aggregated-from = "https://raw.githubusercontent.com/zcash/wallet/main/supply-chain/audits.toml"
 
-[[audits.zcash.audits.arrayref]]
-who = "Daira-Emma Hopwood <daira@jacaranda.org>"
-criteria = "safe-to-deploy"
-delta = "0.3.6 -> 0.3.8"
-aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
-
-[[audits.zcash.audits.arrayref]]
-who = "Jack Grigg <jack@electriccoin.co>"
-criteria = "safe-to-deploy"
-delta = "0.3.8 -> 0.3.9"
-notes = "Changes to `unsafe` lines are to make some existing `unsafe fn`s `const`."
-aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
-
 [[audits.zcash.audits.block-buffer]]
 who = "Jack Grigg <jack@electriccoin.co>"
 criteria = "safe-to-deploy"
@@ -2397,6 +2343,12 @@ who = "Daira-Emma Hopwood <daira@jacaranda.org>"
 criteria = "safe-to-deploy"
 delta = "0.3.3 -> 0.3.9"
 aggregated-from = "https://raw.githubusercontent.com/zcash/zcash/master/qa/supply-chain/audits.toml"
+
+[[audits.zcash.audits.is-terminal]]
+who = "Jack Grigg <jack@electriccoin.co>"
+criteria = "safe-to-deploy"
+delta = "0.4.16 -> 0.4.17"
+aggregated-from = "https://raw.githubusercontent.com/zcash/wallet/main/supply-chain/audits.toml"
 
 [[audits.zcash.audits.multimap]]
 who = "Jack Grigg <jack@electriccoin.co>"

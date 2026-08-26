@@ -44,7 +44,9 @@ integration, scheduled checks, and publication.
   network tests, and Cargo publication checks.
 - [`openssf-scorecard.yml`](workflows/openssf-scorecard.yml): publishes OpenSSF Scorecard results
   and uploads SARIF.
-- [`performance.yml`](workflows/performance.yml): runs Rust tests and benchmarks on `nightly`.
+- [`performance.yml`](workflows/performance.yml): runs Rust tests and registered benchmarks on
+  `nightly`, plus selected CodSpeed benchmarks on `develop`, `test-performance`, and pull requests
+  targeting `develop`.
 - [`security-audit.yml`](workflows/security-audit.yml): runs change-aware and scheduled supply-chain
   audits.
 - [`test.yml`](workflows/test.yml): runs pre-commit, Python tests, and Rust tests on Linux x86 with

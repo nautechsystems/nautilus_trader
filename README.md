@@ -516,6 +516,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 - `make ruff`: Runs Ruff over all files using `python/pyproject.toml` (with autofix).
 - `make pytest`: Runs all tests with `pytest`.
 - `make cargo-ci-benches`: Builds the Rust benchmarks used by CI.
+- `make cargo-codspeed-build`: Builds the Rust benchmark subset used for CodSpeed comparisons.
 
 > [!TIP]
 >
