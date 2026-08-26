@@ -38,7 +38,7 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_core::{UUID4, UnixNanos};
-use nautilus_execution::models::latency::StaticLatencyModel;
+use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
     indicator::{Indicator, MovingAverage},
@@ -5481,7 +5481,7 @@ fn test_close_all_positions_in_on_stop_is_processed_with_latency(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .latency_model(Box::new(StaticLatencyModel::new(
+        .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
             UnixNanos::from(1_000_000_000),
             UnixNanos::default(),
             UnixNanos::default(),
@@ -5605,7 +5605,7 @@ fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt:
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .latency_model(Box::new(StaticLatencyModel::new(
+        .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
             UnixNanos::from(1_000_000_000),
             UnixNanos::default(),
             UnixNanos::default(),
@@ -5677,7 +5677,7 @@ fn test_cancel_all_orders_in_on_stop_is_processed_with_latency(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .latency_model(Box::new(StaticLatencyModel::new(
+        .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
             UnixNanos::default(),
             UnixNanos::default(),
             UnixNanos::default(),
@@ -5840,7 +5840,7 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
-                .latency_model(Box::new(StaticLatencyModel::new(
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
                     UnixNanos::from(2_000_000_000),
                     UnixNanos::default(),
                     UnixNanos::default(),
@@ -5858,7 +5858,7 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
-                .latency_model(Box::new(StaticLatencyModel::new(
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
                     UnixNanos::from(1_000_000_000),
                     UnixNanos::default(),
                     UnixNanos::default(),

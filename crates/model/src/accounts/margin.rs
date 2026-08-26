@@ -45,7 +45,7 @@ use crate::{
     accounts::{
         Account,
         base::BaseAccount,
-        margin_model::{MarginModel, MarginModelAny},
+        margin_model::{MarginModel, MarginModelHandle},
     },
     enums::{AccountType, InstrumentClass, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
@@ -78,8 +78,8 @@ pub struct MarginAccount {
     /// `None`. Most derivatives venues in cross-margin mode report here.
     pub account_margins: IndexMap<Currency, MarginBalance>,
     pub default_leverage: Decimal,
-    #[serde(skip, default = "MarginModelAny::default")]
-    margin_model: MarginModelAny,
+    #[serde(skip, default = "MarginModelHandle::default")]
+    margin_model: MarginModelHandle,
 }
 
 fn split_event_margins(
@@ -116,16 +116,16 @@ impl MarginAccount {
             margins,
             account_margins,
             default_leverage: Decimal::ONE,
-            margin_model: MarginModelAny::default(),
+            margin_model: MarginModelHandle::default(),
         }
     }
 
-    pub fn set_margin_model(&mut self, model: MarginModelAny) {
+    pub fn set_margin_model(&mut self, model: MarginModelHandle) {
         self.margin_model = model;
     }
 
     #[must_use]
-    pub const fn margin_model(&self) -> &MarginModelAny {
+    pub const fn margin_model(&self) -> &MarginModelHandle {
         &self.margin_model
     }
 
@@ -750,7 +750,11 @@ mod tests {
     use rust_decimal::Decimal;
 
     use crate::{
-        accounts::{Account, MarginAccount, stubs::*},
+        accounts::{
+            Account, MarginAccount,
+            margin_model::{MarginModel, MarginModelHandle},
+            stubs::*,
+        },
         enums::{AccountType, OrderSide, OrderType},
         events::{AccountState, account::stubs::*, order::spec::OrderFilledSpec},
         identifiers::{
@@ -768,6 +772,36 @@ mod tests {
             money::{MONEY_RAW_MAX, MONEY_RAW_MIN},
         },
     };
+
+    struct CustomMarginModel;
+
+    impl MarginModel for CustomMarginModel {
+        fn name(&self) -> &'static str {
+            "custom"
+        }
+
+        fn calculate_initial_margin(
+            &self,
+            _instrument: &dyn Instrument,
+            _quantity: Quantity,
+            _price: Price,
+            _leverage: Decimal,
+            _use_quote_for_inverse: Option<bool>,
+        ) -> anyhow::Result<Money> {
+            Ok(Money::from("12.34 USD"))
+        }
+
+        fn calculate_maintenance_margin(
+            &self,
+            _instrument: &dyn Instrument,
+            _quantity: Quantity,
+            _price: Price,
+            _leverage: Decimal,
+            _use_quote_for_inverse: Option<bool>,
+        ) -> anyhow::Result<Money> {
+            Ok(Money::from("5.67 USD"))
+        }
+    }
 
     #[rstest]
     fn test_display(margin_account: MarginAccount) {
@@ -1132,6 +1166,35 @@ mod tests {
             )
             .unwrap();
         assert_eq!(result, Money::from("48.00 USD"));
+    }
+
+    #[rstest]
+    fn test_custom_margin_model_through_account(
+        mut margin_account: MarginAccount,
+        audusd_sim: CurrencyPair,
+    ) {
+        margin_account.set_margin_model(MarginModelHandle::new(CustomMarginModel));
+
+        let initial = margin_account
+            .calculate_initial_margin(
+                &audusd_sim,
+                Quantity::from(100_000),
+                Price::from("0.8000"),
+                None,
+            )
+            .unwrap();
+        let maintenance = margin_account
+            .calculate_maintenance_margin(
+                &audusd_sim,
+                Quantity::from(100_000),
+                Price::from("0.8000"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(margin_account.margin_model().name(), "custom");
+        assert_eq!(initial, Money::from("12.34 USD"));
+        assert_eq!(maintenance, Money::from("5.67 USD"));
     }
 
     #[rstest]

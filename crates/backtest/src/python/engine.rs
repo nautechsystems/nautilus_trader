@@ -221,7 +221,8 @@ impl PyBacktestEngine {
             .unwrap_or_default();
         let margin_model = margin_model
             .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(py, obj.bind(py))))
-            .transpose()?;
+            .transpose()?
+            .map(Into::into);
         let fill_model = fill_model
             .map(|obj| Python::attach(|py| pyobject_to_fill_model_handle(obj.bind(py))))
             .transpose()?

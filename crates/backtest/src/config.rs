@@ -32,11 +32,11 @@ use nautilus_execution::{
     models::{
         fee::{FeeModelAny, FeeModelHandle},
         fill::{FillModelAny, FillModelHandle},
-        latency::{LatencyModel, LatencyModelAny},
+        latency::{LatencyModelAny, LatencyModelHandle},
     },
 };
 use nautilus_model::{
-    accounts::margin_model::MarginModelAny,
+    accounts::margin_model::{MarginModelAny, MarginModelHandle},
     data::{BarSpecification, BarType},
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId, Venue},
@@ -270,9 +270,9 @@ impl Default for BacktestEngineConfig {
 ///
 /// Constructed via [`bon::Builder`] so callers only specify what differs from
 /// the documented defaults. Field types mirror the internal
-/// `SimulatedExchange` shapes (trait objects for modules/latency, typed
-/// `Money` balances), which is why this is distinct from the YAML-friendly
-/// [`BacktestVenueConfig`] used by `BacktestNode`.
+/// `SimulatedExchange` shapes (trait objects for modules, runtime model handles,
+/// and typed `Money` balances), which is why this is distinct from the
+/// YAML-friendly [`BacktestVenueConfig`] used by `BacktestNode`.
 #[allow(missing_debug_implementations)]
 #[expect(
     clippy::struct_excessive_bools,
@@ -292,14 +292,14 @@ pub struct SimulatedVenueConfig {
     pub default_leverage: Option<Decimal>,
     #[builder(default)]
     pub leverages: AHashMap<InstrumentId, Decimal>,
-    pub margin_model: Option<MarginModelAny>,
+    pub margin_model: Option<MarginModelHandle>,
     #[builder(default)]
     pub modules: Vec<Box<dyn SimulationModule>>,
     #[builder(default)]
     pub fill_model: FillModelHandle,
     #[builder(default)]
     pub fee_model: FeeModelHandle,
-    pub latency_model: Option<Box<dyn LatencyModel>>,
+    pub latency_model: Option<LatencyModelHandle>,
     #[builder(default = false)]
     pub routing: bool,
     #[builder(default = true)]

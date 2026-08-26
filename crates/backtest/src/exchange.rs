@@ -38,10 +38,14 @@ use nautilus_core::{
 use nautilus_execution::{
     matching_core::RestingOrder,
     matching_engine::{OrderMatchingEngine, config::OrderMatchingEngineConfig},
-    models::{fee::FeeModelHandle, fill::FillModelHandle, latency::LatencyModel},
+    models::{
+        fee::FeeModelHandle,
+        fill::FillModelHandle,
+        latency::{LatencyModel, LatencyModelHandle},
+    },
 };
 use nautilus_model::{
-    accounts::{Account, AccountAny, margin_model::MarginModelAny},
+    accounts::{Account, AccountAny, margin_model::MarginModelHandle},
     data::{
         Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, OrderBookDelta,
         OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
@@ -142,7 +146,7 @@ pub struct SimulatedExchange {
     deferring_events: Rc<Cell<bool>>,
     fee_model: FeeModelHandle,
     fill_model: FillModelHandle,
-    latency_model: Option<Box<dyn LatencyModel>>,
+    latency_model: Option<LatencyModelHandle>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     matching_engines: IndexMap<InstrumentId, OrderMatchingEngine>,
     last_raw_id: u32,
@@ -150,7 +154,7 @@ pub struct SimulatedExchange {
     pending_funding_rates: BTreeMap<(UnixNanos, InstrumentId), FundingRateUpdate>,
     funding_settlements: BTreeSet<(UnixNanos, InstrumentId)>,
     leverages: AHashMap<InstrumentId, Decimal>,
-    margin_model: Option<MarginModelAny>,
+    margin_model: Option<MarginModelHandle>,
     modules: Vec<Box<dyn SimulationModule>>,
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
@@ -296,7 +300,7 @@ impl SimulatedExchange {
     }
 
     /// Sets the latency model for the exchange.
-    pub fn set_latency_model(&mut self, latency_model: Box<dyn LatencyModel>) {
+    pub fn set_latency_model(&mut self, latency_model: LatencyModelHandle) {
         self.latency_model = Some(latency_model);
     }
 
@@ -1919,7 +1923,7 @@ impl Drop for DeferEventsGuard {
 #[cfg(test)]
 mod tests {
     use nautilus_common::messages::execution::{QueryAccount, QueryOrder, SubmitOrder};
-    use nautilus_execution::models::latency::StaticLatencyModel;
+    use nautilus_execution::models::latency::{LatencyModelHandle, StaticLatencyModel};
     use nautilus_model::{
         accounts::MarginAccount,
         enums::{AccountType, BookType, OrderSide, OrderType},
@@ -1959,7 +1963,7 @@ mod tests {
 
         match dispatch {
             Dispatch::Latency => {
-                config.latency_model = Some(Box::new(StaticLatencyModel::new(
+                config.latency_model = Some(LatencyModelHandle::new(StaticLatencyModel::new(
                     UnixNanos::default(),
                     UnixNanos::default(),
                     UnixNanos::default(),

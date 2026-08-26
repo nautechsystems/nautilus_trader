@@ -47,6 +47,7 @@ from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientId
 from nautilus_trader.model import Currency
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import LeveragedMarginModel
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
 from nautilus_trader.model import OtoTriggerMode
@@ -251,6 +252,48 @@ def test_venue_config_optional_params() -> None:
     assert config.fee_model is None
     assert config.price_protection_points == 7
     assert config.settlement_prices == {instrument_id: 50_000.0}
+
+
+@pytest.mark.parametrize("margin_model", [StandardMarginModel(), LeveragedMarginModel()])
+def test_venue_config_round_trips_margin_models(margin_model: object) -> None:
+    """
+    Test venue config round trips each built-in margin model.
+    """
+    config = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+        margin_model=margin_model,
+    )
+
+    assert type(config.margin_model) is type(margin_model)
+
+
+@pytest.mark.parametrize(
+    ("model_field", "expected_model"),
+    [
+        ("margin_model", "MarginModel"),
+        ("latency_model", "LatencyModel"),
+    ],
+)
+def test_venue_config_rejects_unsupported_models(
+    model_field: str,
+    expected_model: str,
+) -> None:
+    """
+    Test venue config rejects unsupported model objects.
+    """
+    with pytest.raises(TypeError, match=rf"^Cannot convert object to {expected_model}$"):
+        BacktestVenueConfig(
+            name="SIM",
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            book_type=BookType.L1_MBP,
+            starting_balances=["1_000_000 USD"],
+            **{model_field: object()},
+        )
 
 
 def test_venue_config_defaults() -> None:

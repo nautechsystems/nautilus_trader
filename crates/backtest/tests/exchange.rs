@@ -49,7 +49,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos, datetime::get_timezone};
 use nautilus_execution::models::{
     fee::{FeeModelAny, MakerTakerFeeModel},
-    latency::StaticLatencyModel,
+    latency::{LatencyModelHandle, StaticLatencyModel},
 };
 use nautilus_model::{
     accounts::{Account, AccountAny, CashAccount, MarginAccount},
@@ -2556,7 +2556,7 @@ fn test_inflight_commands_process_fifo_for_same_timestamp(
     );
     exchange
         .borrow_mut()
-        .set_latency_model(Box::new(latency_model));
+        .set_latency_model(LatencyModelHandle::new(latency_model));
     exchange
         .borrow_mut()
         .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt))
@@ -2659,7 +2659,7 @@ fn test_due_inflight_commands_drain_after_queued_commands(
     exchange.borrow_mut().send(queued_cmd);
     exchange
         .borrow_mut()
-        .set_latency_model(Box::new(StaticLatencyModel::new(
+        .set_latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
             UnixNanos::from(0),
             UnixNanos::from(0),
             UnixNanos::from(0),
@@ -2725,7 +2725,7 @@ fn test_max_inflight_command_ts_single_entry() {
     );
     exchange
         .borrow_mut()
-        .set_latency_model(Box::new(latency_model));
+        .set_latency_model(LatencyModelHandle::new(latency_model));
     let (_, cmd) = create_submit_order_command(UnixNanos::from(100), "O-1");
     exchange.borrow_mut().send(cmd);
 
@@ -2751,7 +2751,7 @@ fn test_max_inflight_command_ts_returns_global_max_across_entries() {
     );
     exchange
         .borrow_mut()
-        .set_latency_model(Box::new(latency_model));
+        .set_latency_model(LatencyModelHandle::new(latency_model));
     let (_, cmd1) = create_submit_order_command(UnixNanos::from(50), "O-1");
     let (_, cmd2) = create_submit_order_command(UnixNanos::from(200), "O-2");
     let (_, cmd3) = create_submit_order_command(UnixNanos::from(100), "O-3");
@@ -2782,7 +2782,7 @@ fn test_max_inflight_command_ts_ignores_counter_for_same_timestamp() {
     );
     exchange
         .borrow_mut()
-        .set_latency_model(Box::new(latency_model));
+        .set_latency_model(LatencyModelHandle::new(latency_model));
     let (_, cmd1) = create_submit_order_command(UnixNanos::from(100), "O-1");
     let (_, cmd2) = create_submit_order_command(UnixNanos::from(100), "O-2");
 
@@ -3245,7 +3245,7 @@ fn test_process_with_latency_model(crypto_perpetual_ethusdt: CryptoPerpetual) {
     );
     exchange
         .borrow_mut()
-        .set_latency_model(Box::new(latency_model));
+        .set_latency_model(LatencyModelHandle::new(latency_model));
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     exchange.borrow_mut().add_instrument(instrument).unwrap();

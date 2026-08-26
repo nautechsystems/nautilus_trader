@@ -514,7 +514,11 @@ def test_static_latency_model_defaults() -> None:
     """
     model = StaticLatencyModel()
 
-    assert model is not None
+    assert repr(model) == (
+        "StaticLatencyModel { base_latency_nanos: UnixNanos(0), "
+        "insert_latency_nanos: UnixNanos(0), update_latency_nanos: UnixNanos(0), "
+        "delete_latency_nanos: UnixNanos(0) }"
+    )
 
 
 def test_static_latency_model_with_params() -> None:
@@ -528,4 +532,9 @@ def test_static_latency_model_with_params() -> None:
         cancel_latency_nanos=500_000,
     )
 
-    assert model is not None
+    assert repr(model) == (
+        "StaticLatencyModel { base_latency_nanos: UnixNanos(1000000), "
+        "insert_latency_nanos: UnixNanos(3000000), "
+        "update_latency_nanos: UnixNanos(2500000), "
+        "delete_latency_nanos: UnixNanos(1500000) }"
+    )

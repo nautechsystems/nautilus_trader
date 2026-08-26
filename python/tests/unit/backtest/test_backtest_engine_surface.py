@@ -57,6 +57,7 @@ from nautilus_trader.model import IndexPriceUpdate
 from nautilus_trader.model import InstrumentClose
 from nautilus_trader.model import InstrumentCloseType
 from nautilus_trader.model import InstrumentStatus
+from nautilus_trader.model import LeveragedMarginModel
 from nautilus_trader.model import MarketStatusAction
 from nautilus_trader.model import MarkPriceUpdate
 from nautilus_trader.model import Money
@@ -70,6 +71,7 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
@@ -96,6 +98,106 @@ from tests.unit.common.actor import TestControllerConfig
 
 USD = Currency.from_str("USD")
 USDT = Currency.from_str("USDT")
+
+
+@pytest.mark.parametrize(
+    ("margin_model", "expected_margin"),
+    [
+        (StandardMarginModel(), Money.from_str("240.00 USD")),
+        (LeveragedMarginModel(), Money.from_str("24.00 USD")),
+    ],
+)
+def test_add_venue_installs_margin_model(
+    margin_model: object,
+    expected_margin: Money,
+) -> None:
+    """
+    Test add venue installs each built-in margin model on the account.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.audusd_sim()
+    venue = Venue("SIM")
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, USD)],
+        base_currency=USD,
+        default_leverage=Decimal(10),
+        margin_model=margin_model,
+    )
+    engine.run()
+    account = engine.cache.account_for_venue(venue)
+
+    assert account is not None
+    assert (
+        account.calculate_initial_margin(
+            instrument=instrument,
+            quantity=Quantity.from_int(10_000),
+            price=Price.from_str("0.80000"),
+        )
+        == expected_margin
+    )
+    engine.dispose()
+
+
+def test_add_venue_applies_static_latency_model() -> None:
+    """
+    Test add venue applies the configured static latency during execution.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.audusd_sim()
+    engine.add_venue(
+        venue=Venue("SIM"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, USD)],
+        base_currency=USD,
+        latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+    )
+    engine.add_instrument(instrument)
+    engine.add_strategy(
+        StreamingWhipsaw(
+            StreamingWhipsawConfig(
+                instrument_id=str(instrument.id),
+                trade_size="100000",
+            ),
+        ),
+    )
+    quotes = _audusd_quotes(instrument, count=10)
+    engine.add_data(quotes)
+    engine.run()
+
+    assert engine.backtest_end == quotes[-1].ts_event + 1_000_000_000
+    engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("model_field", "expected_model"),
+    [
+        ("margin_model", "MarginModel"),
+        ("latency_model", "LatencyModel"),
+    ],
+)
+def test_add_venue_rejects_unsupported_models(
+    model_field: str,
+    expected_model: str,
+) -> None:
+    """
+    Test add venue rejects unsupported model objects.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+
+    with pytest.raises(TypeError, match=rf"^Cannot convert object to {expected_model}$"):
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            starting_balances=[Money(1_000_000.0, USD)],
+            **{model_field: object()},
+        )
+
+    engine.dispose()
 
 
 def test_native_grid_market_maker_requotes_from_python_surface() -> None:

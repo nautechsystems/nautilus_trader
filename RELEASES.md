@@ -6,6 +6,7 @@ Released on TBD (UTC).
 
 - Added custom Python fee model support to simulation configs (#4806), thanks for reporting @gtalknitin
 - Added instrument-scoped order fill-voided event topics
+- Added Rust model handles for custom backtest margin and latency implementations
 - Added live socket state events and targeted reconnect controls across adapters
 - Added OKX instrument cache reconciliation and WebSocket instrument updates
 - Added Polymarket market descriptions to `instrument.info` (#4840), thanks for reporting @mystic-io
@@ -27,6 +28,9 @@ Released on TBD (UTC).
 - Renamed `*ExecClientConfig` types to `*ExecutionClientConfig`
 - Renamed `BetfairDataConfig` to `BetfairDataClientConfig`
 - Renamed `BetfairExecConfig` to `BetfairExecutionClientConfig`
+- Changed Rust backtest margin parameters to `MarginModelHandle`
+- Changed Rust backtest latency parameters to `LatencyModelHandle`
+- Changed Rust `MarginModel` implementations to require `Send + Sync` and `name()`
 - Changed `Strategy.cancel_all_orders` to associated orders by default (#4470), thanks for reporting @zurpet
 - Changed `ExecutionClientFactory::create` to receive the node's `TraderId`
 - Changed `SimulatedExecutionClientFactory::create` to receive the node's `TraderId`
@@ -80,6 +84,7 @@ Released on TBD (UTC).
 ### Documentation Updates
 
 - Updated maintained examples and tutorials for current APIs and removed unsupported variants
+- Documented behavioral model dispatch and native model extension boundaries
 - Documented Lighter testnet account and API key setup
 - Documented OKX instrument cache reconciliation and WebSocket update behavior
 - Documented Polymarket quote sources and order book feed interaction

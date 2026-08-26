@@ -229,7 +229,7 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
 
         let default_leverage = venue_config.default_leverage();
         let leverages = venue_config.leverages().cloned().unwrap_or_default();
-        let margin_model = venue_config.margin_model().cloned();
+        let margin_model = venue_config.margin_model().cloned().map(Into::into);
         let modules = venue_config
             .modules()
             .iter()
