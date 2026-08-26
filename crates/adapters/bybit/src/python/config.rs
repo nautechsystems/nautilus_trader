@@ -132,10 +132,10 @@ impl BybitExecutionClientConfig {
         recv_window_ms = None,
         account_id = None,
         use_spot_position_reports = None,
-        use_sourced_execution_events = None,
         auto_repay_spot_borrows = None,
         margin_mode = None,
         transport_backend = None,
+        use_sourced_execution_events = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -156,10 +156,10 @@ impl BybitExecutionClientConfig {
         recv_window_ms: Option<u64>,
         account_id: Option<AccountId>,
         use_spot_position_reports: Option<bool>,
-        use_sourced_execution_events: Option<bool>,
         auto_repay_spot_borrows: Option<bool>,
         margin_mode: Option<BybitMarginMode>,
         transport_backend: Option<TransportBackend>,
+        use_sourced_execution_events: Option<bool>,
     ) -> Self {
         let defaults = Self::default();
         Self {

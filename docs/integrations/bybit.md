@@ -782,28 +782,29 @@ The product types for each client must be specified in the configurations.
 
 ### Execution client configuration options
 
-| Option                      | Default    | Description                                                                                                     |
-| --------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------- |
-| `product_types`             | `[LINEAR]` | Sequence of `BybitProductType` values to enable.                                                                |
-| `environment`               | `MAINNET`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
-| `api_key`                   | `None`     | API key; loaded from the matching environment variable when omitted.                                            |
-| `api_secret`                | `None`     | API secret; loaded from the matching environment variable when omitted.                                         |
-| `base_url_http`             | `None`     | Override for the REST base URL.                                                                                 |
-| `base_url_ws_private`       | `None`     | Override for the private WebSocket base URL.                                                                    |
-| `base_url_ws_trade`         | `None`     | Override for the trade WebSocket base URL.                                                                      |
-| `proxy_url`                 | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                           |
-| `http_timeout_secs`         | `60`       | Timeout (seconds) for REST requests.                                                                            |
-| `max_retries`               | `3`        | Maximum retry attempts for REST requests.                                                                       |
-| `retry_delay_initial_ms`    | `1,000`    | Initial retry delay (milliseconds).                                                                             |
-| `retry_delay_max_ms`        | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
-| `heartbeat_interval_secs`   | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                             |
-| `auth_timeout_secs`         | `None`     | Optional WebSocket authentication timeout (seconds).                                                            |
-| `recv_window_ms`            | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                     |
-| `account_id`                | `None`     | Optional account ID associated with this client.                                                                |
-| `use_spot_position_reports` | `False`    | Report Spot wallet balances as positions for scoped requests; bulk reports omit Spot (no pair attribution).     |
-| `auto_repay_spot_borrows`   | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill.                                    |
-| `margin_mode`               | `None`     | Unified margin mode setting for the account.                                                                    |
-| `transport_backend`         | `Sockudo`  | WebSocket transport backend.                                                                                    |
+| Option                         | Default    | Description                                                                                                     |
+| ------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------- |
+| `product_types`                | `[LINEAR]` | Sequence of `BybitProductType` values to enable.                                                                |
+| `environment`                  | `MAINNET`  | Bybit environment enum. Use `BybitEnvironment.MAINNET`, `BybitEnvironment.DEMO`, or `BybitEnvironment.TESTNET`. |
+| `api_key`                      | `None`     | API key; loaded from the matching environment variable when omitted.                                            |
+| `api_secret`                   | `None`     | API secret; loaded from the matching environment variable when omitted.                                         |
+| `base_url_http`                | `None`     | Override for the REST base URL.                                                                                 |
+| `base_url_ws_private`          | `None`     | Override for the private WebSocket base URL.                                                                    |
+| `base_url_ws_trade`            | `None`     | Override for the trade WebSocket base URL.                                                                      |
+| `proxy_url`                    | `None`     | Optional proxy URL for HTTP and WebSocket transports.                                                           |
+| `http_timeout_secs`            | `60`       | Timeout (seconds) for REST requests.                                                                            |
+| `max_retries`                  | `3`        | Maximum retry attempts for REST requests.                                                                       |
+| `retry_delay_initial_ms`       | `1,000`    | Initial retry delay (milliseconds).                                                                             |
+| `retry_delay_max_ms`           | `10,000`   | Maximum retry delay (milliseconds).                                                                             |
+| `heartbeat_interval_secs`      | `5`        | Heartbeat interval (seconds) for WebSocket clients.                                                             |
+| `auth_timeout_secs`            | `None`     | Optional WebSocket authentication timeout (seconds).                                                            |
+| `recv_window_ms`               | `5,000`    | Receive window (milliseconds) for signed REST and trade WebSocket requests.                                     |
+| `account_id`                   | `None`     | Optional account ID associated with this client.                                                                |
+| `use_spot_position_reports`    | `False`    | Report Spot wallet balances as positions for scoped requests; bulk reports omit Spot (no pair attribution).     |
+| `auto_repay_spot_borrows`      | `False`    | Automatically repay tracked Spot margin borrows after BUY orders fully fill.                                    |
+| `margin_mode`                  | `None`     | Unified margin mode setting for the account.                                                                    |
+| `transport_backend`            | `Sockudo`  | WebSocket transport backend.                                                                                    |
+| `use_sourced_execution_events` | `False`    | Route all runtime events through the source-bound lane; strictly validate order and fill reports.               |
 
 The compiled default is Sockudo when the `transport-sockudo` Cargo feature is enabled and
 Tungstenite otherwise.

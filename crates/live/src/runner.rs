@@ -45,7 +45,8 @@
 //! - **Integrated**: call [`AsyncRunner::take_channels`] to extract the
 //!   receivers and run the `select!` loop directly inside `LiveNode::run`,
 //!   where it is interleaved with startup, reconciliation, and shutdown
-//!   phases.
+//!   phases. Use [`AsyncRunner::handle_next_exec_event`] for the execution
+//!   branch so both legacy and sourced execution lanes remain serviceable.
 //!
 //! # Invariants
 //!
@@ -63,12 +64,19 @@
 //!   arbitration prevents either ready lane from starving, but no global order
 //!   is defined across the two lanes.
 
-use std::{cell::RefCell, fmt::Debug, sync::Arc};
+use std::{
+    cell::RefCell,
+    fmt::Debug,
+    future::poll_fn,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use nautilus_common::{
     live::runner::{
-        replace_data_event_sender, replace_exec_event_sender, replace_system_command_sender,
-        replace_system_event_sender,
+        get_exec_event_sender, replace_data_event_sender, replace_exec_event_sender,
+        replace_system_command_sender, replace_system_event_sender,
     },
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport, SystemCommand, SystemEvent,
@@ -86,6 +94,7 @@ use nautilus_model::{events::OrderEventAny, identifiers::ClientId};
 
 thread_local! {
     static SOURCED_EXEC_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SourcedExecutionEvent>>> = const { RefCell::new(None) };
+    static INTEGRATED_SOURCED_EXEC_INGRESS: RefCell<Option<SourcedExecutionIngress>> = const { RefCell::new(None) };
 }
 
 /// An execution-event sender permanently bound to one execution client.
@@ -97,25 +106,35 @@ thread_local! {
 pub struct SourcedExecutionEventSink {
     client_id: ClientId,
     sender: tokio::sync::mpsc::UnboundedSender<SourcedExecutionEvent>,
+    public_exec_sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
 }
 
 impl SourcedExecutionEventSink {
     pub(crate) fn new(
         client_id: ClientId,
         sender: tokio::sync::mpsc::UnboundedSender<SourcedExecutionEvent>,
+        public_exec_sender: tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
     ) -> Self {
-        Self { client_id, sender }
+        Self {
+            client_id,
+            sender,
+            public_exec_sender,
+        }
     }
 
     /// Sends an execution event through the sourced ingress lane.
     ///
     /// # Errors
     ///
-    /// Returns the original event when the sourced ingress receiver is closed.
+    /// Returns the original event when the sourced ingress or paired public execution receiver
+    /// is closed.
     pub(crate) fn send(
         &self,
         event: ExecutionEvent,
     ) -> Result<(), Box<tokio::sync::mpsc::error::SendError<ExecutionEvent>>> {
+        if self.public_exec_sender.is_closed() {
+            return Err(Box::new(tokio::sync::mpsc::error::SendError(event)));
+        }
         self.sender
             .send(SourcedExecutionEvent::new(self.client_id, event))
             .map_err(|e| Box::new(tokio::sync::mpsc::error::SendError(e.0.event)))
@@ -138,6 +157,7 @@ pub fn get_sourced_exec_event_sink(client_id: ClientId) -> SourcedExecutionEvent
                 .as_ref()
                 .expect("sourced execution-event sender is not bound")
                 .clone(),
+            get_exec_event_sender(),
         )
     })
 }
@@ -197,37 +217,66 @@ impl SourcedExecutionIngress {
         &mut self,
         legacy_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     ) -> Option<ExecutionEventIngress> {
-        let ingress = if self.prefer_sourced {
-            tokio::select! {
-                biased;
+        poll_fn(|cx| self.poll_recv(cx, legacy_rx)).await
+    }
 
-                Some(event) = self.receiver.recv() => {
-                    Some(ExecutionEventIngress::Sourced(event))
-                }
-                Some(event) = legacy_rx.recv() => {
-                    Some(ExecutionEventIngress::Legacy(event))
-                }
-                else => None,
-            }
-        } else {
-            tokio::select! {
-                biased;
-
-                Some(event) = legacy_rx.recv() => {
-                    Some(ExecutionEventIngress::Legacy(event))
-                }
-                Some(event) = self.receiver.recv() => {
-                    Some(ExecutionEventIngress::Sourced(event))
-                }
-                else => None,
-            }
-        };
-
-        if let Some(ingress) = &ingress {
-            self.prefer_sourced = matches!(ingress, ExecutionEventIngress::Legacy(_));
+    fn poll_recv(
+        &mut self,
+        cx: &mut Context<'_>,
+        legacy_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) -> Poll<Option<ExecutionEventIngress>> {
+        if legacy_rx.is_closed() {
+            self.receiver.close();
         }
 
-        ingress
+        if self.prefer_sourced {
+            let sourced_closed = match Pin::new(&mut self.receiver).poll_recv(cx) {
+                Poll::Ready(Some(event)) => {
+                    return self.ready(ExecutionEventIngress::Sourced(event));
+                }
+                Poll::Ready(None) => true,
+                Poll::Pending => false,
+            };
+            let legacy_closed = match Pin::new(legacy_rx).poll_recv(cx) {
+                Poll::Ready(Some(event)) => {
+                    return self.ready(ExecutionEventIngress::Legacy(event));
+                }
+                Poll::Ready(None) => true,
+                Poll::Pending => false,
+            };
+
+            return if sourced_closed && legacy_closed {
+                Poll::Ready(None)
+            } else {
+                Poll::Pending
+            };
+        }
+
+        let legacy_closed = match Pin::new(&mut *legacy_rx).poll_recv(cx) {
+            Poll::Ready(Some(event)) => {
+                return self.ready(ExecutionEventIngress::Legacy(event));
+            }
+            Poll::Ready(None) => true,
+            Poll::Pending => false,
+        };
+        let sourced_closed = match Pin::new(&mut self.receiver).poll_recv(cx) {
+            Poll::Ready(Some(event)) => {
+                return self.ready(ExecutionEventIngress::Sourced(event));
+            }
+            Poll::Ready(None) => true,
+            Poll::Pending => false,
+        };
+
+        if legacy_closed && sourced_closed {
+            Poll::Ready(None)
+        } else {
+            Poll::Pending
+        }
+    }
+
+    fn ready(&mut self, ingress: ExecutionEventIngress) -> Poll<Option<ExecutionEventIngress>> {
+        self.prefer_sourced = matches!(&ingress, ExecutionEventIngress::Legacy(_));
+        Poll::Ready(Some(ingress))
     }
 
     #[cfg(any(test, feature = "node"))]
@@ -255,6 +304,12 @@ impl SourcedExecutionIngress {
 
         ingress
     }
+}
+
+fn replace_integrated_sourced_exec_ingress(ingress: Option<SourcedExecutionIngress>) {
+    INTEGRATED_SOURCED_EXEC_INGRESS.with(|slot| {
+        *slot.borrow_mut() = ingress;
+    });
 }
 
 /// Asynchronous implementation of `DataCommandSender` for live environments.
@@ -448,6 +503,7 @@ impl AsyncRunner {
     /// and again before entering the event loop to reclaim ownership if another
     /// runner was constructed on this thread in the interim.
     pub fn bind_senders(&self) {
+        replace_integrated_sourced_exec_ingress(None);
         replace_time_event_sender(Arc::new(AsyncTimeEventSender::new(
             self.time_evt_tx.clone(),
         )));
@@ -482,10 +538,53 @@ impl AsyncRunner {
     /// Consumes the runner and returns the channel receivers for direct event loop driving.
     ///
     /// This is used when the event loop needs to run on the same thread as the msgbus
-    /// endpoints (which use thread-local storage).
+    /// endpoints (which use thread-local storage). Drive `exec_evt_rx` through
+    /// [`Self::handle_next_exec_event`] so the private sourced lane is also serviced.
     #[must_use]
     pub fn take_channels(self) -> AsyncRunnerChannels {
-        self.channels
+        let Self {
+            channels,
+            sourced_exec_ingress,
+            ..
+        } = self;
+        replace_integrated_sourced_exec_ingress(Some(sourced_exec_ingress));
+        channels
+    }
+
+    /// Receives and handles the next execution event for an integrated runner.
+    ///
+    /// This fairly services both the public legacy receiver and the private sourced sidecar
+    /// installed by [`Self::take_channels`]. Poll this future on the same thread that extracted
+    /// the channels so the thread-local sourced ingress and message bus remain aligned.
+    ///
+    /// Returns `false` after both execution lanes close.
+    pub async fn handle_next_exec_event(
+        exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) -> bool {
+        let ingress = poll_fn(|cx| {
+            INTEGRATED_SOURCED_EXEC_INGRESS.with(|slot| {
+                let mut slot = slot.borrow_mut();
+                if let Some(sourced) = slot.as_mut() {
+                    sourced.poll_recv(cx, exec_evt_rx)
+                } else {
+                    match Pin::new(&mut *exec_evt_rx).poll_recv(cx) {
+                        Poll::Ready(Some(event)) => {
+                            Poll::Ready(Some(ExecutionEventIngress::Legacy(event)))
+                        }
+                        Poll::Ready(None) => Poll::Ready(None),
+                        Poll::Pending => Poll::Pending,
+                    }
+                }
+            })
+        })
+        .await;
+
+        match ingress {
+            Some(ExecutionEventIngress::Legacy(event)) => Self::handle_exec_event(event),
+            Some(ExecutionEventIngress::Sourced(event)) => Self::handle_sourced_exec_event(event),
+            None => return false,
+        }
+        true
     }
 
     /// Consumes the runner and returns its public channels plus the internal sourced sidecar.
@@ -1371,16 +1470,19 @@ mod tests {
 
         let mut legacy_ids = Vec::new();
         let mut sourced_ids = Vec::new();
+        let mut ingress_order = Vec::new();
 
         for _ in 0..4 {
             match runner.recv().await.unwrap() {
                 PendingRunnerEvent::ExecEvent(ExecutionEvent::Order(event)) => {
+                    ingress_order.push("legacy");
                     legacy_ids.push(event.client_order_id());
                 }
                 PendingRunnerEvent::SourcedExecEvent(SourcedExecutionEvent {
                     event: ExecutionEvent::Order(event),
                     ..
                 }) => {
+                    ingress_order.push("sourced");
                     sourced_ids.push(event.client_order_id());
                 }
                 _ => panic!("Unexpected runner event"),
@@ -1401,6 +1503,7 @@ mod tests {
                 ClientOrderId::from("O-SOURCED-1")
             ]
         );
+        assert_eq!(ingress_order, ["legacy", "sourced", "legacy", "sourced"]);
     }
 
     #[rstest]
@@ -1452,12 +1555,188 @@ mod tests {
         assert!(channels.exec_evt_rx.try_recv().is_err());
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_take_channels_services_prebound_sourced_account_event() {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let sink = get_sourced_exec_event_sink(ClientId::from("SOURCE-INTEGRATED"));
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let received_handler = received.clone();
+        msgbus::register_account_state_endpoint(
+            MessagingSwitchboard::portfolio_update_account(),
+            TypedHandler::from(move |account: &AccountState| {
+                received_handler.borrow_mut().push(account.account_id);
+            }),
+        );
+        let AsyncRunnerChannels {
+            time_evt_rx: _,
+            system_evt_rx: _,
+            system_cmd_rx: _,
+            mut exec_evt_rx,
+            exec_cmd_rx: _,
+            data_evt_rx: _,
+            data_cmd_rx: _,
+        } = runner.take_channels();
+
+        sink.send(ExecutionEvent::Account(AccountState::new(
+            AccountId::from("SOURCE-INTEGRATED-001"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        )))
+        .unwrap();
+
+        assert!(AsyncRunner::handle_next_exec_event(&mut exec_evt_rx).await);
+        assert_eq!(
+            received.borrow().as_slice(),
+            &[AccountId::from("SOURCE-INTEGRATED-001")]
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_integrated_runner_dispatches_strict_reports_with_source() {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let source_id = ClientId::from("SOURCE-INTEGRATED-STRICT");
+        let sink = get_sourced_exec_event_sink(source_id);
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let received_handler = received.clone();
+        msgbus::register_sourced_execution_report_endpoint(
+            MessagingSwitchboard::exec_engine_reconcile_sourced_execution_report(),
+            TypedIntoHandler::from(move |report: SourcedExecutionReport| {
+                let kind = match report.report {
+                    ExecutionReport::Order(_) => "order",
+                    ExecutionReport::Fill(_) => "fill",
+                    _ => panic!("Unexpected non-strict execution report"),
+                };
+                received_handler.borrow_mut().push((report.client_id, kind));
+            }),
+        );
+        let mut channels = runner.take_channels();
+        let account_id = AccountId::from("SOURCE-INTEGRATED-STRICT-001");
+        let instrument_id = InstrumentId::from("EUR/USD.SIM");
+        let client_order_id = ClientOrderId::from("O-INTEGRATED-STRICT");
+        let venue_order_id = VenueOrderId::from("V-INTEGRATED-STRICT");
+        let order = OrderStatusReport::new(
+            account_id,
+            instrument_id,
+            Some(client_order_id),
+            venue_order_id,
+            OrderSide::Buy.into(),
+            OrderType::Market,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from(100_000),
+            Quantity::from(0),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            UnixNanos::from(3),
+            None,
+        );
+        let fill = FillReport::new(
+            account_id,
+            instrument_id,
+            venue_order_id,
+            TradeId::from("T-INTEGRATED-STRICT"),
+            OrderSide::Buy,
+            Quantity::from(100_000),
+            Price::from("1.10000"),
+            Money::from("1 USD"),
+            LiquiditySide::Taker,
+            Some(client_order_id),
+            None,
+            UnixNanos::from(4),
+            UnixNanos::from(5),
+            None,
+        );
+
+        sink.send(ExecutionEvent::Report(ExecutionReport::Order(Box::new(
+            order,
+        ))))
+        .unwrap();
+        sink.send(ExecutionEvent::Report(ExecutionReport::Fill(Box::new(
+            fill,
+        ))))
+        .unwrap();
+
+        assert!(AsyncRunner::handle_next_exec_event(&mut channels.exec_evt_rx).await);
+        assert!(AsyncRunner::handle_next_exec_event(&mut channels.exec_evt_rx).await);
+        assert_eq!(
+            received.borrow().as_slice(),
+            [(source_id, "order"), (source_id, "fill")]
+        );
+    }
+
+    #[rstest]
+    fn test_sourced_sink_closes_with_integrated_channels() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let sink = get_sourced_exec_event_sink(ClientId::from("SOURCE-INTEGRATED-CLOSED"));
+        let channels = runner.take_channels();
+        drop(channels);
+
+        let error = sink
+            .send(ExecutionEvent::Account(AccountState::new(
+                AccountId::from("SOURCE-INTEGRATED-CLOSED-001"),
+                AccountType::Cash,
+                vec![],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+                None,
+            )))
+            .expect_err("sourced sink must close with the public integrated channels");
+
+        assert!(matches!(error.0, ExecutionEvent::Account(_)));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_integrated_runner_drains_sourced_lane_before_closing() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let sink = get_sourced_exec_event_sink(ClientId::from("SOURCE-INTEGRATED-DRAIN"));
+        let mut channels = runner.take_channels();
+
+        sink.send(ExecutionEvent::Account(AccountState::new(
+            AccountId::from("SOURCE-INTEGRATED-DRAIN-001"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        )))
+        .unwrap();
+        channels.exec_evt_rx.close();
+
+        assert!(AsyncRunner::handle_next_exec_event(&mut channels.exec_evt_rx).await);
+        let handled = tokio::time::timeout(
+            Duration::from_millis(100),
+            AsyncRunner::handle_next_exec_event(&mut channels.exec_evt_rx),
+        )
+        .await
+        .expect("integrated sourced lane should close after draining");
+        assert!(!handled);
+    }
+
     #[rstest]
     fn test_sourced_sink_closed_lane_returns_event_without_legacy_fallback() {
         let (sourced_tx, sourced_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (_legacy_tx, mut legacy_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        let (legacy_tx, mut legacy_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         drop(sourced_rx);
-        let sink = SourcedExecutionEventSink::new(ClientId::from("SOURCE-CLOSED"), sourced_tx);
+        let sink =
+            SourcedExecutionEventSink::new(ClientId::from("SOURCE-CLOSED"), sourced_tx, legacy_tx);
 
         let error = sink
             .send(ExecutionEvent::Account(AccountState::new(

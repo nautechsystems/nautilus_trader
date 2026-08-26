@@ -152,10 +152,10 @@ class BybitExecutionClientConfig:
         recv_window_ms: int | None = None,
         account_id: model.AccountId | None = None,
         use_spot_position_reports: bool | None = None,
-        use_sourced_execution_events: bool | None = None,
         auto_repay_spot_borrows: bool | None = None,
         margin_mode: BybitMarginMode | None = None,
         transport_backend: network.TransportBackend | None = None,
+        use_sourced_execution_events: bool | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

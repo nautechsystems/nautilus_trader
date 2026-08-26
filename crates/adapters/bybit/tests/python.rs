@@ -20,7 +20,7 @@ use std::{cell::RefCell, rc::Rc};
 use nautilus_bybit::{
     common::{
         consts::BYBIT,
-        enums::{BybitEnvironment, BybitProductType},
+        enums::{BybitEnvironment, BybitMarginMode, BybitProductType},
     },
     config::{BybitDataClientConfig, BybitExecutionClientConfig},
     factories::{BybitDataClientFactory, BybitExecutionClientFactory},
@@ -33,10 +33,11 @@ use nautilus_common::{
     messages::{DataEvent, ExecutionEvent},
 };
 use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{
-    Py, Python,
-    types::{PyAnyMethods, PyDict, PyDictMethods, PyModule},
+    IntoPyObjectExt, Py, Python,
+    types::{PyAny, PyAnyMethods, PyDict, PyDictMethods, PyModule, PyTuple},
 };
 use rstest::rstest;
 
@@ -54,6 +55,7 @@ fn test_bybit_python_factories_extract_from_registry() {
         assert_data_factory_extracts_from_python_object(py);
         assert_exec_factory_extracts_from_python_object(py);
         assert_exec_config_sourced_event_opt_in(py);
+        assert_exec_config_preserves_legacy_positional_bindings(py);
     });
 }
 
@@ -193,4 +195,50 @@ fn assert_exec_config_sourced_event_opt_in(py: Python<'_>) {
         .extract::<bool>()
         .expect("sourced event getter should return bool");
     assert!(enabled);
+}
+
+fn assert_exec_config_preserves_legacy_positional_bindings(py: Python<'_>) {
+    let config_type = py.get_type::<BybitExecutionClientConfig>();
+    let args = PyTuple::new(
+        py,
+        [
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py.None(),
+            py_object(py, true),
+            py_object(py, BybitMarginMode::PortfolioMargin),
+            py_object(py, TransportBackend::Tungstenite),
+        ],
+    )
+    .expect("legacy execution config args should build");
+    let config = config_type
+        .call1(args)
+        .expect("legacy BybitExecutionClientConfig should construct from Python")
+        .extract::<BybitExecutionClientConfig>()
+        .expect("legacy execution config should extract");
+
+    assert!(config.auto_repay_spot_borrows);
+    assert_eq!(config.margin_mode, Some(BybitMarginMode::PortfolioMargin));
+    assert_eq!(config.transport_backend, TransportBackend::Tungstenite);
+    assert!(!config.use_sourced_execution_events);
+}
+
+fn py_object<'py>(py: Python<'py>, value: impl IntoPyObjectExt<'py>) -> Py<PyAny> {
+    value
+        .into_py_any(py)
+        .expect("value should convert to a Python object")
 }

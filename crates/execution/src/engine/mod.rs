@@ -1191,10 +1191,10 @@ impl ExecutionEngine {
             );
         }
 
-        let direct_order = direct_client_order_id
-            .and_then(|client_order_id| cache.order(&client_order_id).map(|order| order.clone()));
-        let indexed_order = indexed_client_order_id
-            .and_then(|client_order_id| cache.order(&client_order_id).map(|order| order.clone()));
+        let direct_order =
+            direct_client_order_id.and_then(|client_order_id| cache.order_ref(&client_order_id));
+        let indexed_order =
+            indexed_client_order_id.and_then(|client_order_id| cache.order_ref(&client_order_id));
 
         if let Some(indexed_client_order_id) = indexed_client_order_id {
             anyhow::ensure!(
