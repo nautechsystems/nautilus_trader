@@ -81,6 +81,30 @@ due at the current timestamp as pending, so zero-latency or same-tick latency co
 settle correctly. Commands with future timestamps are deferred and processed when the engine reaches
 that time.
 
+### Sandbox inbound latency
+
+`SandboxExecutionClientConfig.latency_model` accepts a `StaticLatencyModel`, mirroring the existing
+`fee_model` field. A submit, modify, or cancel is deferred by the model's insert, update, or delete
+leg before it reaches the matching engine; venue-generated events (accepts, fills, cancels,
+expirations) still dispatch synchronously, exactly as without a latency model.
+
+```python
+from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
+from nautilus_trader.execution import StaticLatencyModel
+
+config = SandboxExecutionClientConfig(
+    venue=Venue("BINANCE"),
+    starting_balances=[Money.from_str("10_000 USDT")],
+    latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
+)
+```
+
+Stopping the client discards anything still in flight. A discarded submit, modify, or targeted
+cancel is rejected (`OrderRejected`, `OrderModifyRejected`, `OrderCancelRejected`) so its order does
+not stay `SUBMITTED` or pending forever; the sandbox generates no order status reports, so nothing
+else would resolve it. A discarded `CancelAllOrders` is simply dropped, since the strategy marks no
+order `PENDING_CANCEL` for it and so there is no pending state to release.
+
 ### Shutdown semantics
 
 `BacktestEngine::end()` is separate from the `shutdown_on_error` configuration in [backtest APIs and

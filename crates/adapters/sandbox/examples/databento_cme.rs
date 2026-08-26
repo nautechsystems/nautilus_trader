@@ -98,6 +98,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         book_type: BookType::L1_MBP,
         fee_model: None,
         fill_model: None,
+        latency_model: None,
         frozen_account: false,
         bar_execution: true,
         trade_execution: false,
