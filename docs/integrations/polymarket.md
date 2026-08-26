@@ -748,9 +748,10 @@ quantity without the Polymarket commission.
 `generate_order_status_report` falls back to `/data/trades` filtered by the venue order ID. This
 avoids the engine resolving a local `ACCEPTED` order as `REJECTED`, which would discard fills that
 already happened at the venue. The cached order is resolved via `client_order_id`, falling back to
-the cache's `venue_order_id` index when only the venue ID is known. Recovery is keyed on the cached
-order; without one the recovery defers to the engine rather than synthesizing an external order
-from trade history alone:
+the cache's `venue_order_id` index when only the venue ID is known. When the request supplies or
+resolves to a `client_order_id`, the cached order must be a base-denominated `LIMIT` order;
+otherwise the request returns an error. An unassociated venue-order request without a cached order
+defers to the engine rather than synthesizing an external order from trade history alone:
 
 - Cached order + recovered fills covering the cached quantity (within
   `DUST_SNAP_THRESHOLD` for CLOB cent-tick truncation): returns `Filled`. The
@@ -767,8 +768,8 @@ from trade history alone:
 - Cached order with any `MATCHED`, `MINED`, or `RETRYING` trade: a singular order query preserves
   the locally applied matched quantity while terminal REST recovery waits for `CONFIRMED` or
   `FAILED`.
-- No cached order (regardless of trades): returns `None`; the engine's
-  not-found-at-venue path resolves the local entry.
+- No cached order and no known client association (regardless of trades): returns `None`; the
+  engine's not-found-at-venue path resolves the local entry.
 
 The bulk open-order check cannot use this fallback for matched orders omitted by `GET /orders`.
 With the default `open_check_open_only=true`, the engine leaves those cached orders open for later
