@@ -15,7 +15,15 @@
 
 //! Integration tests for dYdX HTTP client using a mock Axum server.
 
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -31,13 +39,19 @@ use nautilus_dydx::{
         consts::DYDX_VENUE,
         enums::{DydxCandleResolution, DydxNetwork},
     },
-    http::client::{DydxHttpClient, DydxRawHttpClient},
+    http::{
+        client::{DydxHttpClient, DydxRawHttpClient},
+        error::DydxHttpError,
+    },
 };
 use nautilus_model::{
     identifiers::{InstrumentId, Symbol},
     instruments::Instrument,
 };
-use nautilus_network::{http::HttpClient, retry::RetryConfig};
+use nautilus_network::{
+    http::HttpClient,
+    retry::{RetryConfig, RetryError},
+};
 use rstest::rstest;
 use serde_json::{Value, json};
 
@@ -1487,10 +1501,13 @@ async fn test_concurrent_requests() {
 #[tokio::test]
 async fn test_request_timeout_short() {
     let state = TestServerState::default();
+    let handler_entered = Arc::new(AtomicBool::new(false));
+    let handler_entered_clone = Arc::clone(&handler_entered);
     let router = Router::new()
         .route(
             "/v4/time",
-            get(|| async {
+            get(move || async move {
+                handler_entered_clone.store(true, Ordering::SeqCst);
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 Json(json!({
                     "iso": "2024-01-01T00:00:00.000Z",
@@ -1514,8 +1531,8 @@ async fn test_request_timeout_short() {
     let base_url = format!("http://{addr}");
     let retry_config = RetryConfig {
         max_retries: 0,
-        initial_delay_ms: 0,
-        max_delay_ms: 0,
+        initial_delay_ms: 1,
+        max_delay_ms: 1,
         backoff_factor: 1.0,
         jitter_ms: 0,
         operation_timeout_ms: Some(1_000),
@@ -1524,7 +1541,7 @@ async fn test_request_timeout_short() {
     };
     let client = DydxRawHttpClient::new(
         Some(base_url),
-        1,
+        60,
         None,
         DydxNetwork::Mainnet,
         Some(retry_config),
@@ -1535,9 +1552,20 @@ async fn test_request_timeout_short() {
     let result = client.get_time().await;
     let duration = start.elapsed();
 
-    assert!(result.is_err());
+    let expected = RetryError::OperationTimeout { timeout_ms: 1_000 }.to_string();
     assert!(
-        duration.as_secs() < 5,
+        matches!(
+            &result,
+            Err(DydxHttpError::HttpClientError(message)) if message == &expected
+        ),
+        "Expected operation timeout, received {result:?}"
+    );
+    assert!(
+        handler_entered.load(Ordering::SeqCst),
+        "Slow route was never entered"
+    );
+    assert!(
+        duration < Duration::from_secs(5),
         "Should timeout before server response, took {duration:?}"
     );
 }
