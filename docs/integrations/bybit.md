@@ -387,6 +387,13 @@ Individual orders can be customized using the `params` dictionary when submittin
 
 Parameters left unset are omitted from the request, so Bybit's own defaults apply.
 
+:::warning
+Bybit's `close_on_trigger` parameter is not the generic `close_position` whole-position exit
+contract used by the risk engine. The adapter sends the order quantity, and it ignores an unknown
+`close_position` parameter. Do not add `BYBIT` to `full_position_exit_venues` based on
+`close_on_trigger`; leave the venue unlisted so ordinary quantity and notional checks apply.
+:::
+
 The adapter validates these params before emitting `OrderSubmitted` and denies the order with a
 `VALIDATION_FAILED` reason when a rule is broken:
 

@@ -41,6 +41,9 @@ pub use self::{
     submit::{SubmitOrder, SubmitOrderList},
 };
 
+/// Parameter indicating that a conditional order should close the whole position at trigger time.
+pub const PARAMS_CLOSE_POSITION: &str = "close_position";
+
 /// Execution report variants for reconciliation.
 #[derive(Clone, Debug, Display)]
 pub enum ExecutionReport {

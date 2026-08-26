@@ -42,7 +42,7 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     enums::{BarAggregation, BarIntervalType},
-    identifiers::{ClientId, ClientOrderId, InstrumentId, TraderId},
+    identifiers::{ClientId, ClientOrderId, InstrumentId, TraderId, Venue},
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
@@ -197,6 +197,11 @@ pub struct LiveRiskEngineConfig {
     /// Entries map instrument ID strings to decimal notional strings.
     #[builder(default)]
     pub max_notional_per_order: HashMap<String, String>,
+    /// Venues whose execution clients enforce whole-position conditional exits.
+    ///
+    /// Validated exits skip bounds that apply only to their placeholder quantity and notional.
+    #[builder(default)]
+    pub full_position_exit_venues: Vec<Venue>,
     /// If debug mode is active (will provide extra debug logging).
     #[builder(default)]
     pub debug: bool,
@@ -227,6 +232,7 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
                 (instrument_id, notional)
             })
             .collect::<AHashMap<_, _>>();
+        let full_position_exit_venues = config.full_position_exit_venues.into_iter().collect();
 
         Self {
             bypass: config.bypass,
@@ -241,6 +247,7 @@ impl From<LiveRiskEngineConfig> for RiskEngineConfig {
             )
             .expect("validate_runtime_support must run before RiskEngineConfig conversion"),
             max_notional_per_order,
+            full_position_exit_venues,
             debug: config.debug,
         }
     }
@@ -1574,6 +1581,7 @@ mean_dispatch_ns_clear = 700
                 "ETHUSDT.BINANCE".to_string(),
                 "1000.5".to_string(),
             )]),
+            full_position_exit_venues: vec![Venue::from("BINANCE")],
             debug: true,
             ..Default::default()
         };
@@ -1589,6 +1597,10 @@ mean_dispatch_ns_clear = 700
         assert_eq!(
             converted.max_notional_per_order[&"ETHUSDT.BINANCE".parse::<InstrumentId>().unwrap()],
             Decimal::from_str("1000.5").unwrap(),
+        );
+        assert_eq!(
+            converted.full_position_exit_venues,
+            [Venue::from("BINANCE")].into_iter().collect(),
         );
         assert!(converted.debug);
     }
@@ -2098,6 +2110,7 @@ mean_dispatch_ns_clear = 700
         assert_eq!(config.max_order_submit_rate, DEFAULT_ORDER_RATE_LIMIT);
         assert_eq!(config.max_order_modify_rate, DEFAULT_ORDER_RATE_LIMIT);
         assert!(config.max_notional_per_order.is_empty());
+        assert!(config.full_position_exit_venues.is_empty());
         assert!(!config.debug);
         assert_eq!(config.qsize, 100_000);
     }

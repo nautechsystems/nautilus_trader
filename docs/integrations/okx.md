@@ -594,6 +594,12 @@ This design ensures:
 | `LIMIT_IF_TOUCHED`     | Last, Mark, Index | Limit order placement when price touched.            |
 | `TRAILING_STOP_MARKET` | -                 | Callback ratio or spread; optional activation price. |
 
+:::warning
+OKX's `close_fraction` conditional-order parameter is not normalized to the generic
+`close_position` risk contract. Do not add `OKX` to `full_position_exit_venues` based on
+`close_fraction`; leave the venue unlisted so ordinary quantity and notional checks apply.
+:::
+
 #### Trigger price types
 
 Stop and touched orders support different trigger price sources:

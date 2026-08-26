@@ -474,18 +474,45 @@ auto-cancels the order when the position is closed by other means.
 Pass `close_position` via the `params` dictionary on `StopMarket` or `MarketIfTouched` orders.
 Cannot be combined with `reduce_only`, and it is rejected for batch order submission.
 
+Allow Binance whole-position exits in the risk engine configuration:
+
+```python
+from nautilus_trader.adapters.binance import BINANCE_VENUE
+from nautilus_trader.config import LiveRiskEngineConfig
+
+risk_engine = LiveRiskEngineConfig(
+    full_position_exit_venues=[BINANCE_VENUE],
+)
+```
+
+The allowlist defaults to empty. Without this entry, the placeholder quantity receives the same
+minimum quantity, maximum quantity, and notional checks as an ordinary order. Pass the open
+position ID when submitting the order so the risk engine can verify that the exit reduces it.
+
 ```rust tab="Rust"
 let params = Params::from([("close_position", true.into())]);
-let cmd = SubmitOrder::new(order).with_params(params);
+self.submit_order(order, Some(position.id), None, Some(params))?;
 ```
 
 ```python tab="Python"
-strategy.submit_order(order, params={"close_position": True})
+strategy.submit_order(
+    order,
+    position_id=position.id,
+    params={"close_position": True},
+)
 ```
 
 :::info
 Nautilus omits `quantity` and `reduceOnly` from the API request when `close_position` is set.
-The order quantity is used only for local risk checks.
+For an allowlisted venue, the risk engine still validates quantity precision and positivity,
+the trigger price, the order shape and side, and the linked open position. It does not apply
+minimum or maximum quantity and notional bounds to the placeholder quantity.
+:::
+
+:::warning
+Only add a venue when its configured execution client enforces whole-position closing semantics.
+An unsupported client may ignore `close_position` and submit the placeholder as an ordinary
+quantity-bearing order.
 :::
 
 ### Trailing stops

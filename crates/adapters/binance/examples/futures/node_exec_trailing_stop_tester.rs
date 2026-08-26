@@ -33,7 +33,7 @@ use std::{
 use anyhow::Context;
 use nautilus_binance::{
     common::{
-        consts::BINANCE_CLIENT_ID,
+        consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
         credential::resolve_credentials,
         enums::{BinanceEnvironment, BinanceFuturesOrderType, BinanceProductType},
         symbol::format_binance_symbol,
@@ -47,7 +47,10 @@ use nautilus_binance::{
 };
 use nautilus_common::{enums::Environment, live::get_runtime};
 use nautilus_core::time::get_atomic_clock_realtime;
-use nautilus_live::node::{LiveNode, LiveNodeHandle};
+use nautilus_live::{
+    config::LiveRiskEngineConfig,
+    node::{LiveNode, LiveNodeHandle},
+};
 use nautilus_model::{
     enums::{OrderType, TrailingOffsetType, TriggerType},
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
@@ -117,9 +120,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let data_factory = BinanceDataClientFactory::new();
     let exec_factory = BinanceExecutionClientFactory::new();
+    let risk_engine_config = LiveRiskEngineConfig {
+        full_position_exit_venues: vec![*BINANCE_VENUE],
+        ..Default::default()
+    };
 
     let mut node = LiveNode::builder(trader_id, Environment::Live)?
         .with_name(node_name)
+        .with_risk_engine_config(risk_engine_config)
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)

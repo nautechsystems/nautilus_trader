@@ -20,6 +20,7 @@ from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.model import Venue
 from nautilus_trader.risk import RiskEngineConfig
 
 
@@ -34,6 +35,7 @@ def test_risk_engine_config_defaults() -> None:
     assert config.max_order_submit_rate == "100/00:00:01"
     assert config.max_order_modify_rate == "100/00:00:01"
     assert config.max_notional_per_order == {}
+    assert config.full_position_exit_venues == []
 
 
 def test_risk_engine_config_explicit() -> None:
@@ -45,6 +47,7 @@ def test_risk_engine_config_explicit() -> None:
         max_order_submit_rate="250/00:00:05",
         max_order_modify_rate="50/00:01:00",
         max_notional_per_order={"ETHUSDT.BINANCE": "100000.50"},
+        full_position_exit_venues=[Venue("BINANCE")],
         debug=True,
     )
 
@@ -53,6 +56,7 @@ def test_risk_engine_config_explicit() -> None:
     assert config.max_order_submit_rate == "250/00:00:05"
     assert config.max_order_modify_rate == "50/00:01:00"
     assert config.max_notional_per_order == {"ETHUSDT.BINANCE": "100000.50"}
+    assert config.full_position_exit_venues == [Venue("BINANCE")]
 
 
 def test_risk_engine_config_round_trips_hours_component() -> None:

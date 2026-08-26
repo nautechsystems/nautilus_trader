@@ -36,8 +36,8 @@ use nautilus_common::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
         GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-        SubmitOrderList,
+        GeneratePositionStatusReportsBuilder, ModifyOrder, PARAMS_CLOSE_POSITION, QueryAccount,
+        QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -554,7 +554,7 @@ impl BinanceFuturesExecutionClient {
         let close_position = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get_bool("close_position"))
+            .and_then(|p| p.get_bool(PARAMS_CLOSE_POSITION))
             .unwrap_or(false);
 
         // `close_position` retires an entire hedge leg, so it carries close intent on
@@ -2614,7 +2614,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let close_position = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get_bool("close_position"))
+            .and_then(|p| p.get_bool(PARAMS_CLOSE_POSITION))
             .unwrap_or(false);
 
         if close_position {
@@ -2682,7 +2682,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let close_position = cmd
             .params
             .as_ref()
-            .and_then(|p| p.get_bool("close_position"))
+            .and_then(|p| p.get_bool(PARAMS_CLOSE_POSITION))
             .unwrap_or(false);
         let price_match = match cmd
             .params

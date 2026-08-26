@@ -180,6 +180,49 @@ If a submit-time risk check fails, the system generates an `OrderDenied` event w
 standardized [reason code](#order-denied-reasons). If a modify-time risk check fails, it
 generates an `OrderModifyRejected` event.
 
+### Whole-position conditional exits
+
+Some execution clients support conditional exits whose venue determines the closing quantity from
+the open position when the trigger fires. Nautilus orders still carry a placeholder quantity for
+local validation. The `full_position_exit_venues` setting on `RiskEngineConfig` and
+`LiveRiskEngineConfig` identifies venues whose execution clients enforce these semantics. It
+defaults to empty.
+
+An order qualifies for the placeholder exemption only when all of these conditions hold:
+
+- The order is submitted individually, not in an order list.
+- Its venue is listed in `full_position_exit_venues`.
+- It uses a supported futures or perpetual instrument.
+- It is a `StopMarket` or `MarketIfTouched` order with a trigger price and
+  `close_position=true`.
+- It has a positive placeholder quantity and does not set `reduce_only`.
+- The command, order, and linked cached position use the same instrument and position ID.
+- The linked position is open, the order side closes it, and the placeholder quantity does not
+  exceed the position quantity.
+
+For a qualifying exit, the risk engine treats checks as follows:
+
+| Risk check                                                            | Treatment                                   |
+| --------------------------------------------------------------------- | ------------------------------------------- |
+| Quantity precision and positivity                                     | Enforced.                                   |
+| Price and trigger-price precision and positivity                      | Enforced.                                   |
+| GTD expiration, trading-state restrictions, and submission rate limit | Enforced.                                   |
+| Position exposure, margin, and balance                                | Treated as position-reducing.               |
+| Instrument minimum and maximum quantity                               | Skipped for the placeholder quantity.       |
+| Instrument minimum and maximum notional                               | Skipped for the placeholder notional.       |
+| Configured `max_notional_per_order`                                   | Skipped for the placeholder notional.       |
+| Non-qualifying orders                                                 | All ordinary risk checks continue to apply. |
+
+Only allowlist a venue when its downstream execution client enforces whole-position closing. See
+[Binance Futures close-position orders](../integrations/binance.md#close-position) for a supported
+configuration.
+
+:::warning
+The simulated exchange does not interpret `close_position` or replace the placeholder with the
+open position quantity. Leave simulated backtest venues out of `full_position_exit_venues`; model
+a backtest exit with an explicit quantity and `reduce_only` instead.
+:::
+
 ### Trading state
 
 The `TradingState` enum has three variants:

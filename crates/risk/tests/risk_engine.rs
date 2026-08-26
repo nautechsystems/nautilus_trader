@@ -20,14 +20,14 @@
 
 use std::{cell::RefCell, rc::Rc, str::FromStr, sync::Arc};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use nautilus_common::{
     cache::Cache,
     clock::{Clock, TestClock},
     messages::{
         execution::{
-            BatchModifyOrders, CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList,
-            TradingCommand,
+            BatchModifyOrders, CancelOrder, ModifyOrder, PARAMS_CLOSE_POSITION, SubmitOrder,
+            SubmitOrderList, TradingCommand,
         },
         system::trading::TradingStateChanged,
     },
@@ -41,7 +41,7 @@ use nautilus_common::{
     },
     throttler::RateLimit,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
 use nautilus_model::{
     accounts::{
@@ -64,7 +64,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
-        Symbol, TradeId, TraderId, VenueOrderId,
+        Symbol, TradeId, TraderId, Venue, VenueOrderId,
         stubs::{
             account_id, client_id_binance, client_order_id, strategy_id_ema_cross, trader_id,
             uuid4, venue_order_id,
@@ -72,10 +72,10 @@ use nautilus_model::{
     },
     instruments::{
         Commodity, CryptoPerpetual, CurrencyPair, FuturesSpread, Instrument, InstrumentAny,
-        OptionSpread,
+        OptionSpread, PerpetualContract,
         stubs::{
-            audusd_sim, betting, commodity_gold, crypto_perpetual_ethusdt, futures_spread_es,
-            gbpusd_sim, option_spread, xbtusd_bitmex,
+            audusd_sim, betting, commodity_gold, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            futures_spread_es, gbpusd_sim, option_spread, perpetual_contract_eurusd, xbtusd_bitmex,
         },
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -194,6 +194,7 @@ fn test_deny_order_exceeding_max_notional(
         max_order_submit: RateLimit::new(10, 1000),
         max_order_modify: RateLimit::new(5, 1000),
         max_notional_per_order: AHashMap::new(),
+        full_position_exit_venues: AHashSet::new(),
     };
 
     let mut risk_engine = get_risk_engine(
@@ -467,6 +468,7 @@ fn config_fixture(
         max_order_submit,
         max_order_modify,
         max_notional_per_order,
+        full_position_exit_venues: AHashSet::new(),
     }
 }
 
@@ -583,10 +585,26 @@ fn get_risk_engine(
         max_order_submit: RateLimit::new(10, 1000),
         max_order_modify: RateLimit::new(5, 1000),
         max_notional_per_order: AHashMap::new(),
+        full_position_exit_venues: AHashSet::new(),
     });
     let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
     let portfolio = Portfolio::new(clock.clone(), cache.clone(), None);
     RiskEngine::new(config, portfolio, clock, cache)
+}
+
+fn get_risk_engine_for_full_position_exit(
+    cache: Option<Rc<RefCell<Cache>>>,
+    venue: Venue,
+) -> RiskEngine {
+    let config = RiskEngineConfig {
+        debug: true,
+        bypass: false,
+        max_order_submit: RateLimit::new(10, 1000),
+        max_order_modify: RateLimit::new(5, 1000),
+        max_notional_per_order: AHashMap::new(),
+        full_position_exit_venues: [venue].into_iter().collect(),
+    };
+    get_risk_engine(cache, Some(config), None, false)
 }
 
 fn get_exec_engine(
@@ -3427,6 +3445,650 @@ fn test_submit_order_below_min_notional_respects_reduce_only(
         assert_eq!(forwarded.position_id, command_position_id);
         assert!(forwarded.order_init.reduce_only);
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ClosePositionBound {
+    MinQuantity,
+    MaxQuantity,
+    MaxQuantityCoinM,
+    MinNotional,
+    MaxNotionalConfigured,
+    MaxNotionalInstrument,
+}
+
+#[rstest]
+#[case::min_quantity(ClosePositionBound::MinQuantity)]
+#[case::max_quantity(ClosePositionBound::MaxQuantity)]
+#[case::max_quantity_coinm(ClosePositionBound::MaxQuantityCoinM)]
+#[case::min_notional(ClosePositionBound::MinNotional)]
+#[case::max_notional_configured(ClosePositionBound::MaxNotionalConfigured)]
+#[case::max_notional_instrument(ClosePositionBound::MaxNotionalInstrument)]
+fn test_submit_close_position_exempts_placeholder_bound(
+    #[case] bound: ClosePositionBound,
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    mut xbtusd_bitmex: CryptoPerpetual,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let mut instrument = if matches!(bound, ClosePositionBound::MaxQuantityCoinM) {
+        xbtusd_bitmex.id = InstrumentId::from("BTCUSD_PERP.BINANCE");
+        xbtusd_bitmex.raw_symbol = Symbol::from("BTCUSD_PERP");
+        InstrumentAny::CryptoPerpetual(xbtusd_bitmex)
+    } else {
+        instrument_eth_usdt
+    };
+    let InstrumentAny::CryptoPerpetual(crypto_perpetual) = &mut instrument else {
+        unreachable!();
+    };
+    crypto_perpetual.min_quantity = None;
+    crypto_perpetual.max_quantity = None;
+    crypto_perpetual.min_notional = None;
+    crypto_perpetual.max_notional = None;
+
+    let quantity = match bound {
+        ClosePositionBound::MinQuantity => {
+            crypto_perpetual.min_quantity = Some(Quantity::from("2.000"));
+            Quantity::from("1.000")
+        }
+        ClosePositionBound::MaxQuantity => {
+            crypto_perpetual.max_quantity = Some(Quantity::from("1.000"));
+            Quantity::from("2.000")
+        }
+        ClosePositionBound::MaxQuantityCoinM => {
+            crypto_perpetual.max_quantity = Some(Quantity::from("1"));
+            Quantity::from("2")
+        }
+        ClosePositionBound::MinNotional => {
+            crypto_perpetual.min_notional = Some(Money::from("20.00 USDT"));
+            Quantity::from("1.000")
+        }
+        ClosePositionBound::MaxNotionalConfigured => Quantity::from("2.000"),
+        ClosePositionBound::MaxNotionalInstrument => {
+            crypto_perpetual.max_notional = Some(Money::from("10.00 USDT"));
+            Quantity::from("2.000")
+        }
+    };
+
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    add_margin_account_for_close_position(&mut simple_cache);
+    let position_id = PositionId::from("P-CLOSE-POSITION");
+    let position_side = if matches!(bound, ClosePositionBound::MaxNotionalConfigured) {
+        PositionSide::Short
+    } else {
+        PositionSide::Long
+    };
+    add_position_for_close_position(
+        &mut simple_cache,
+        &instrument,
+        quantity,
+        position_id,
+        position_side,
+    );
+
+    let mut risk_engine = get_risk_engine_for_full_position_exit(
+        Some(Rc::new(RefCell::new(simple_cache))),
+        instrument.id().venue,
+    );
+
+    if matches!(bound, ClosePositionBound::MaxNotionalConfigured) {
+        risk_engine.set_max_notional_per_order(instrument.id(), dec!(10));
+    }
+
+    let order_type = if matches!(bound, ClosePositionBound::MaxNotionalConfigured) {
+        OrderType::MarketIfTouched
+    } else {
+        OrderType::StopMarket
+    };
+    let order = OrderTestBuilder::new(order_type)
+        .instrument_id(instrument.id())
+        .side(match position_side {
+            PositionSide::Long => OrderSide::Sell,
+            PositionSide::Short => OrderSide::Buy,
+            _ => unreachable!(),
+        })
+        .quantity(quantity)
+        .trigger_price(Price::from("10"))
+        .build();
+    assert!(order.would_reduce_only(position_side, quantity));
+
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            order.clone(),
+            Some(position_id),
+            Some(client_id_binance),
+            false,
+        )
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        Some(position_id),
+        Some(close_position_params(true)),
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert!(process_messages.is_empty());
+    assert_eq!(execute_messages.len(), 1);
+    let TradingCommand::SubmitOrder(forwarded) = &execute_messages[0] else {
+        panic!("Expected SubmitOrder command");
+    };
+    assert_eq!(forwarded.client_order_id, order.client_order_id());
+    assert_eq!(forwarded.position_id, Some(position_id));
+    assert_eq!(
+        forwarded
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool(PARAMS_CLOSE_POSITION)),
+        Some(true)
+    );
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InvalidClosePositionShape {
+    ClosePositionFalse,
+    VenueNotAllowlisted,
+    OtherVenue,
+    SpotInstrument,
+    InversePerpetualContract,
+    OrderInstrumentMismatch,
+    UnsupportedOrderType,
+    ReduceOnly,
+    MissingPositionId,
+    PositionNotFound,
+    OrderPositionMismatch,
+    PositionClosed,
+    PositionInstrumentMismatch,
+    WrongSide,
+    QuantityExceedsPosition,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum InvalidClosePositionValue {
+    QuantityPrecision,
+    TriggerPrecision,
+    TriggerNonPositive,
+}
+
+#[rstest]
+#[case::close_position_false(InvalidClosePositionShape::ClosePositionFalse)]
+#[case::venue_not_allowlisted(InvalidClosePositionShape::VenueNotAllowlisted)]
+#[case::other_venue(InvalidClosePositionShape::OtherVenue)]
+#[case::spot_instrument(InvalidClosePositionShape::SpotInstrument)]
+#[case::inverse_perpetual_contract(InvalidClosePositionShape::InversePerpetualContract)]
+#[case::order_instrument_mismatch(InvalidClosePositionShape::OrderInstrumentMismatch)]
+#[case::unsupported_order_type(InvalidClosePositionShape::UnsupportedOrderType)]
+#[case::reduce_only(InvalidClosePositionShape::ReduceOnly)]
+#[case::missing_position_id(InvalidClosePositionShape::MissingPositionId)]
+#[case::position_not_found(InvalidClosePositionShape::PositionNotFound)]
+#[case::order_position_mismatch(InvalidClosePositionShape::OrderPositionMismatch)]
+#[case::position_closed(InvalidClosePositionShape::PositionClosed)]
+#[case::position_instrument_mismatch(InvalidClosePositionShape::PositionInstrumentMismatch)]
+#[case::wrong_side(InvalidClosePositionShape::WrongSide)]
+#[case::quantity_exceeds_position(InvalidClosePositionShape::QuantityExceedsPosition)]
+fn test_submit_invalid_close_position_shape_does_not_bypass_max_quantity(
+    #[case] shape: InvalidClosePositionShape,
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    instrument_eth_usdt: InstrumentAny,
+    currency_pair_btcusdt: CurrencyPair,
+    mut perpetual_contract_eurusd: PerpetualContract,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let mut instrument = match shape {
+        InvalidClosePositionShape::SpotInstrument => {
+            InstrumentAny::CurrencyPair(currency_pair_btcusdt.clone())
+        }
+        InvalidClosePositionShape::InversePerpetualContract => {
+            perpetual_contract_eurusd.id = InstrumentId::from("EURUSD-PERP.BINANCE");
+            perpetual_contract_eurusd.is_inverse = true;
+            InstrumentAny::PerpetualContract(perpetual_contract_eurusd)
+        }
+        _ => instrument_eth_usdt,
+    };
+
+    match &mut instrument {
+        InstrumentAny::CryptoPerpetual(instrument) => {
+            if matches!(shape, InvalidClosePositionShape::OtherVenue) {
+                instrument.id = InstrumentId::from("ETHUSDT-PERP.BITMEX");
+            }
+            instrument.min_quantity = None;
+            instrument.max_quantity = Some(Quantity::from("1"));
+            instrument.min_notional = None;
+            instrument.max_notional = None;
+        }
+        InstrumentAny::CurrencyPair(instrument) => {
+            instrument.min_quantity = None;
+            instrument.max_quantity = Some(Quantity::from("1"));
+            instrument.min_notional = None;
+            instrument.max_notional = None;
+        }
+        InstrumentAny::PerpetualContract(instrument) => {
+            instrument.min_quantity = None;
+            instrument.max_quantity = Some(Quantity::from("1"));
+            instrument.min_notional = None;
+            instrument.max_notional = None;
+        }
+        _ => unreachable!(),
+    }
+
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    add_margin_account_for_close_position(&mut simple_cache);
+    let position_id = PositionId::from("P-INVALID-CLOSE-POSITION");
+    let position_quantity = if matches!(shape, InvalidClosePositionShape::QuantityExceedsPosition) {
+        Quantity::from("1")
+    } else {
+        Quantity::from("2")
+    };
+    let position_instrument =
+        if matches!(shape, InvalidClosePositionShape::PositionInstrumentMismatch) {
+            InstrumentAny::CurrencyPair(currency_pair_btcusdt)
+        } else {
+            instrument.clone()
+        };
+    add_position_for_close_position(
+        &mut simple_cache,
+        &position_instrument,
+        position_quantity,
+        position_id,
+        PositionSide::Long,
+    );
+
+    if matches!(shape, InvalidClosePositionShape::PositionClosed) {
+        let close_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(position_quantity)
+            .build();
+        let mut close_fill = order_filled(
+            &close_order,
+            &instrument,
+            None,
+            Some(AccountId::from("BINANCE-001")),
+            Some(VenueOrderId::from("V-CLOSE-POSITION-CLOSED")),
+            None,
+            None,
+            Some(Price::from("10.00")),
+            None,
+            None,
+            None,
+        );
+        close_fill.position_id = Some(position_id);
+        close_fill.trade_id = TradeId::from("E-CLOSE-POSITION-CLOSED");
+        let mut position = simple_cache.position_mut(&position_id).unwrap();
+        position.apply(&close_fill);
+        assert!(position.is_closed());
+    }
+
+    let command_instrument_id =
+        if matches!(shape, InvalidClosePositionShape::OrderInstrumentMismatch) {
+            let mut command_instrument = instrument.clone();
+            let InstrumentAny::CryptoPerpetual(command_instrument) = &mut command_instrument else {
+                unreachable!();
+            };
+            command_instrument.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+            let command_instrument_id = command_instrument.id;
+            simple_cache
+                .add_instrument(InstrumentAny::CryptoPerpetual(command_instrument.clone()))
+                .unwrap();
+            command_instrument_id
+        } else {
+            instrument.id()
+        };
+
+    let cache = Some(Rc::new(RefCell::new(simple_cache)));
+    let mut risk_engine = if matches!(shape, InvalidClosePositionShape::VenueNotAllowlisted) {
+        get_risk_engine(cache, None, None, false)
+    } else {
+        get_risk_engine_for_full_position_exit(cache, Venue::from("BINANCE"))
+    };
+    let order_side = if matches!(shape, InvalidClosePositionShape::WrongSide) {
+        OrderSide::Buy
+    } else {
+        OrderSide::Sell
+    };
+    let order = if matches!(shape, InvalidClosePositionShape::UnsupportedOrderType) {
+        OrderTestBuilder::new(OrderType::StopLimit)
+            .instrument_id(instrument.id())
+            .side(order_side)
+            .quantity(Quantity::from("2"))
+            .price(Price::from("9.00"))
+            .trigger_price(Price::from("10.00"))
+            .build()
+    } else {
+        OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument.id())
+            .side(order_side)
+            .quantity(Quantity::from("2"))
+            .trigger_price(Price::from("10.00"))
+            .reduce_only(matches!(shape, InvalidClosePositionShape::ReduceOnly))
+            .build()
+    };
+    let order_position_id = if matches!(shape, InvalidClosePositionShape::OrderPositionMismatch) {
+        PositionId::from("P-OTHER")
+    } else {
+        position_id
+    };
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            order.clone(),
+            Some(order_position_id),
+            Some(client_id_binance),
+            false,
+        )
+        .unwrap();
+
+    let command_position_id = match shape {
+        InvalidClosePositionShape::MissingPositionId => None,
+        InvalidClosePositionShape::PositionNotFound => Some(PositionId::from("P-NOT-FOUND")),
+        _ => Some(position_id),
+    };
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        command_instrument_id,
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        command_position_id,
+        Some(close_position_params(!matches!(
+            shape,
+            InvalidClosePositionShape::ClosePositionFalse
+        ))),
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 1);
+    assert_eq!(
+        process_messages[0].message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::QuantityExceedsMaximum {
+                effective_quantity: Quantity::from("2"),
+                max_quantity: Quantity::from("1"),
+            }
+            .to_string()
+        )
+    );
+    assert!(execute_messages.is_empty());
+}
+
+#[rstest]
+fn test_submit_close_position_order_list_does_not_bypass_max_quantity(
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    mut instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let InstrumentAny::CryptoPerpetual(instrument) = &mut instrument_eth_usdt else {
+        unreachable!();
+    };
+    instrument.min_quantity = None;
+    instrument.max_quantity = Some(Quantity::from("1.000"));
+    instrument.min_notional = None;
+    instrument.max_notional = None;
+
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    add_margin_account_for_close_position(&mut simple_cache);
+    let position_id = PositionId::from("P-CLOSE-POSITION-LIST");
+    add_position_for_close_position(
+        &mut simple_cache,
+        &instrument_eth_usdt,
+        Quantity::from("2.000"),
+        position_id,
+        PositionSide::Long,
+    );
+
+    let mut risk_engine = get_risk_engine_for_full_position_exit(
+        Some(Rc::new(RefCell::new(simple_cache))),
+        instrument_eth_usdt.id().venue,
+    );
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("2.000"))
+        .trigger_price(Price::from("10.00"))
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            order.clone(),
+            Some(position_id),
+            Some(client_id_binance),
+            false,
+        )
+        .unwrap();
+
+    let order_list = OrderList::new(
+        OrderListId::from("L-CLOSE-POSITION"),
+        instrument_eth_usdt.id(),
+        strategy_id_ema_cross,
+        vec![order.client_order_id()],
+        risk_engine.clock().borrow().timestamp_ns(),
+    );
+    let submit_order_list = SubmitOrderList::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        order_list,
+        vec![order.init_event().clone()],
+        None,
+        Some(position_id),
+        Some(close_position_params(true)),
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrderList(submit_order_list));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 1);
+    assert_eq!(
+        process_messages[0].client_order_id(),
+        order.client_order_id()
+    );
+    assert_eq!(
+        process_messages[0].message().unwrap(),
+        Ustr::from(
+            &OrderDeniedReason::QuantityExceedsMaximum {
+                effective_quantity: Quantity::from("2.000"),
+                max_quantity: Quantity::from("1.000"),
+            }
+            .to_string()
+        )
+    );
+    assert!(execute_messages.is_empty());
+}
+
+#[rstest]
+#[case::quantity_precision("2.0000", "10.00", InvalidClosePositionValue::QuantityPrecision)]
+#[case::trigger_precision("2.000", "10.000", InvalidClosePositionValue::TriggerPrecision)]
+#[case::trigger_non_positive("2.000", "-1.00", InvalidClosePositionValue::TriggerNonPositive)]
+fn test_submit_close_position_preserves_quantity_and_trigger_checks(
+    #[case] quantity: &str,
+    #[case] trigger_price: &str,
+    #[case] invalid_value: InvalidClosePositionValue,
+    strategy_id_ema_cross: StrategyId,
+    client_id_binance: ClientId,
+    trader_id: TraderId,
+    mut instrument_eth_usdt: InstrumentAny,
+    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    execute_order_event_handler: TypedIntoMessageSavingHandler<TradingCommand>,
+    mut simple_cache: Cache,
+) {
+    let InstrumentAny::CryptoPerpetual(instrument) = &mut instrument_eth_usdt else {
+        unreachable!();
+    };
+    instrument.min_quantity = None;
+    instrument.max_quantity = None;
+    instrument.min_notional = None;
+    instrument.max_notional = None;
+
+    simple_cache
+        .add_instrument(instrument_eth_usdt.clone())
+        .unwrap();
+    add_margin_account_for_close_position(&mut simple_cache);
+    let position_id = PositionId::from("P-CLOSE-POSITION-PRECISION");
+    add_position_for_close_position(
+        &mut simple_cache,
+        &instrument_eth_usdt,
+        Quantity::from("2.000"),
+        position_id,
+        PositionSide::Long,
+    );
+
+    let mut risk_engine = get_risk_engine_for_full_position_exit(
+        Some(Rc::new(RefCell::new(simple_cache))),
+        instrument_eth_usdt.id().venue,
+    );
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(quantity))
+        .trigger_price(Price::from(trigger_price))
+        .build();
+    risk_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            order.clone(),
+            Some(position_id),
+            Some(client_id_binance),
+            false,
+        )
+        .unwrap();
+
+    let submit_order = SubmitOrder::new(
+        trader_id,
+        Some(client_id_binance),
+        strategy_id_ema_cross,
+        instrument_eth_usdt.id(),
+        order.client_order_id(),
+        order.init_event().clone(),
+        None,
+        Some(position_id),
+        Some(close_position_params(true)),
+        UUID4::new(),
+        risk_engine.clock().borrow().timestamp_ns(),
+        None,
+    );
+
+    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    let process_messages = get_process_order_event_handler_messages(&process_order_event_handler);
+    let execute_messages = get_execute_order_event_handler_messages(&execute_order_event_handler);
+    assert_eq!(process_messages.len(), 1);
+    let expected_reason = match invalid_value {
+        InvalidClosePositionValue::QuantityPrecision => {
+            OrderDeniedReason::QuantityPrecisionExceedsMaximum {
+                quantity: order.quantity(),
+                quantity_precision: order.quantity().precision,
+                max_precision: instrument_eth_usdt.size_precision(),
+            }
+        }
+        InvalidClosePositionValue::TriggerPrecision => {
+            OrderDeniedReason::PricePrecisionExceedsMaximum {
+                field: OrderPriceField::TriggerPrice,
+                price: order.trigger_price().unwrap(),
+                price_precision: order.trigger_price().unwrap().precision,
+                max_precision: instrument_eth_usdt.price_precision(),
+            }
+        }
+        InvalidClosePositionValue::TriggerNonPositive => OrderDeniedReason::PriceNotPositive {
+            field: OrderPriceField::TriggerPrice,
+            price: order.trigger_price().unwrap(),
+        },
+    };
+    assert_eq!(
+        process_messages[0].message().unwrap(),
+        Ustr::from(&expected_reason.to_string())
+    );
+    assert!(execute_messages.is_empty());
+}
+
+fn add_margin_account_for_close_position(cache: &mut Cache) {
+    let mut account = margin_account_with_usdt_balance("1000000 USDT", "0 USDT", "1000000 USDT");
+    account.set_default_leverage(dec!(10));
+    cache.add_account(AccountAny::Margin(account)).unwrap();
+}
+
+fn add_position_for_close_position(
+    cache: &mut Cache,
+    instrument: &InstrumentAny,
+    quantity: Quantity,
+    position_id: PositionId,
+    position_side: PositionSide,
+) {
+    let entry_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(match position_side {
+            PositionSide::Long => OrderSide::Buy,
+            PositionSide::Short => OrderSide::Sell,
+            _ => unreachable!(),
+        })
+        .quantity(quantity)
+        .build();
+    let mut fill = order_filled(
+        &entry_order,
+        instrument,
+        None,
+        Some(AccountId::from("BINANCE-001")),
+        Some(VenueOrderId::from("V-CLOSE-POSITION")),
+        None,
+        None,
+        Some(Price::from("10")),
+        None,
+        None,
+        None,
+    );
+    fill.position_id = Some(position_id);
+    let position = Position::new(instrument, fill);
+    assert_eq!(position.side, position_side);
+    assert_eq!(position.quantity, quantity);
+    cache.add_position(&position, OmsType::Hedging).unwrap();
+}
+
+fn close_position_params(close_position: bool) -> Params {
+    let mut params = Params::new();
+    params.insert(PARAMS_CLOSE_POSITION.to_string(), close_position.into());
+    params
 }
 
 #[rstest]
@@ -6890,6 +7552,7 @@ fn test_set_trading_state_publishes_trading_state_changed_event() {
         max_order_submit: RateLimit::new(100, 1_000_000_000),
         max_order_modify: RateLimit::new(50, 1_000_000_000),
         max_notional_per_order: AHashMap::new(),
+        full_position_exit_venues: [Venue::from("BINANCE")].into_iter().collect(),
     };
 
     let mut risk_engine = get_risk_engine(None, Some(config), None, false);
@@ -6911,6 +7574,7 @@ fn test_set_trading_state_publishes_trading_state_changed_event() {
     assert_eq!(event.config["bypass"], "false");
     assert_eq!(event.config["max_order_submit_rate"], "100/00:00:01");
     assert_eq!(event.config["max_order_modify_rate"], "50/00:00:01");
+    assert_eq!(event.config["full_position_exit_venues"], "BINANCE");
     assert_eq!(event.config["debug"], "true");
     assert_eq!(event.config["max_notional_per_order.AUD/USD.SIM"], "500000");
 }
@@ -6951,6 +7615,7 @@ fn test_reset_restores_trading_state_and_config_notionals() {
         max_order_submit: RateLimit::new(10, 1000),
         max_order_modify: RateLimit::new(5, 1000),
         max_notional_per_order: config_notionals,
+        full_position_exit_venues: AHashSet::new(),
     };
 
     let mut risk_engine = get_risk_engine(None, Some(config), None, false);

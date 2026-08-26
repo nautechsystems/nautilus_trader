@@ -27,7 +27,10 @@ use nautilus_common::{
     clock::Clock,
     logging::{CMD, EVT, RECV},
     messages::{
-        execution::{BatchModifyOrders, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
+        execution::{
+            BatchModifyOrders, ModifyOrder, PARAMS_CLOSE_POSITION, SubmitOrder, SubmitOrderList,
+            TradingCommand,
+        },
         system::trading::TradingStateChanged,
     },
     msgbus,
@@ -42,7 +45,7 @@ use nautilus_execution::trailing::{
 use nautilus_model::{
     accounts::{Account, AccountAny},
     enums::{
-        AggregationSource, OrderSide, OrderStatus, PositionSide, PriceType, TimeInForce,
+        AggregationSource, OrderSide, OrderStatus, OrderType, PositionSide, PriceType, TimeInForce,
         TradingState, TrailingOffsetType, TriggerType,
     },
     events::{
@@ -550,6 +553,18 @@ impl RiskEngine {
             );
         }
 
+        let mut full_position_exit_venues = self
+            .config
+            .full_position_exit_venues
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        full_position_exit_venues.sort_unstable();
+        map.insert(
+            "full_position_exit_venues".to_string(),
+            full_position_exit_venues.join(","),
+        );
+
         map.insert("debug".to_string(), self.config.debug.to_string());
         map
     }
@@ -639,16 +654,106 @@ impl RiskEngine {
             return; // Denied
         };
 
-        if !self.check_order(&instrument, &order) {
+        let full_position_exit = self.is_full_position_exit(&command, &instrument, &order);
+
+        if !self.check_order(&instrument, &order, full_position_exit) {
             return; // Denied
         }
 
-        if !self.check_orders_risk(&instrument, &[order]) {
+        if !self.check_orders_risk(&instrument, &[order], full_position_exit) {
             return; // Denied
         }
 
         // Route through execution gateway for TradingState checks & throttling
         self.execution_gateway(&instrument, TradingCommand::SubmitOrder(command));
+    }
+
+    fn is_full_position_exit(
+        &self,
+        command: &SubmitOrder,
+        instrument: &InstrumentAny,
+        order: &OrderAny,
+    ) -> bool {
+        if !self
+            .config
+            .full_position_exit_venues
+            .contains(&instrument.id().venue)
+        {
+            return false;
+        }
+
+        if !Self::has_full_position_exit_intent(command) {
+            return false;
+        }
+
+        if command.instrument_id != order.instrument_id() {
+            return false;
+        }
+
+        if !Self::is_full_position_exit_instrument(instrument)
+            || !Self::is_full_position_exit_order(order)
+        {
+            return false;
+        }
+
+        self.full_position_exit_reduces(command, order)
+    }
+
+    fn has_full_position_exit_intent(command: &SubmitOrder) -> bool {
+        command
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool(PARAMS_CLOSE_POSITION))
+            .unwrap_or(false)
+    }
+
+    fn is_full_position_exit_instrument(instrument: &InstrumentAny) -> bool {
+        match instrument {
+            InstrumentAny::CryptoFuture(_) | InstrumentAny::CryptoPerpetual(_) => true,
+            InstrumentAny::PerpetualContract(_) => !instrument.is_inverse(),
+            _ => false,
+        }
+    }
+
+    fn is_full_position_exit_order(order: &OrderAny) -> bool {
+        matches!(
+            order.order_type(),
+            OrderType::StopMarket | OrderType::MarketIfTouched
+        ) && order.trigger_price().is_some()
+            && !order.is_reduce_only()
+            && order.quantity().is_positive()
+    }
+
+    fn full_position_exit_reduces(&self, command: &SubmitOrder, order: &OrderAny) -> bool {
+        let Some(position_id) = command.position_id else {
+            return false;
+        };
+        let position = {
+            let cache = self.cache.borrow();
+            if cache.position_id(&order.client_order_id()).copied() != Some(position_id) {
+                return false;
+            }
+            cache.position(&position_id).map(|position| {
+                (
+                    position.is_open(),
+                    position.instrument_id,
+                    position.side,
+                    position.quantity,
+                )
+            })
+        };
+        let Some((is_open, position_instrument_id, position_side, position_quantity)) = position
+        else {
+            return false;
+        };
+
+        is_open
+            && position_instrument_id == order.instrument_id()
+            && matches!(
+                (order.order_side(), position_side),
+                (OrderSide::Buy, PositionSide::Short) | (OrderSide::Sell, PositionSide::Long)
+            )
+            && order.would_reduce_only(position_side, position_quantity)
     }
 
     fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
@@ -706,7 +811,7 @@ impl RiskEngine {
                 return; // Denied
             };
 
-            if !self.check_order(instrument, order) {
+            if !self.check_order(instrument, order, false) {
                 return; // Denied
             }
         }
@@ -724,7 +829,7 @@ impl RiskEngine {
             return; // Denied
         };
 
-        if !self.check_orders_risk(&representative, &orders) {
+        if !self.check_orders_risk(&representative, &orders, false) {
             self.deny_order_list(
                 &orders,
                 &OrderDeniedReason::OrderListDenied {
@@ -894,7 +999,13 @@ impl RiskEngine {
         }
 
         // Check Quantity
-        reason = Self::check_quantity(&instrument, command.quantity, order.is_quote_quantity());
+        reason = Self::check_quantity(
+            &instrument,
+            command.quantity,
+            order.is_quote_quantity(),
+            false,
+        );
+
         if let Some(reason) = reason {
             self.reject_modify_order(&order, &reason.to_string());
             return false;
@@ -928,9 +1039,14 @@ impl RiskEngine {
         true
     }
 
-    fn check_order(&self, instrument: &InstrumentAny, order: &OrderAny) -> bool {
+    fn check_order(
+        &self,
+        instrument: &InstrumentAny,
+        order: &OrderAny,
+        full_position_exit: bool,
+    ) -> bool {
         if !self.check_order_price(instrument, order)
-            || !self.check_order_quantity(instrument, order)
+            || !self.check_order_quantity(instrument, order, full_position_exit)
         {
             return false; // Denied
         }
@@ -981,11 +1097,17 @@ impl RiskEngine {
         true
     }
 
-    fn check_order_quantity(&self, instrument: &InstrumentAny, order: &OrderAny) -> bool {
+    fn check_order_quantity(
+        &self,
+        instrument: &InstrumentAny,
+        order: &OrderAny,
+        full_position_exit: bool,
+    ) -> bool {
         let reason = Self::check_quantity(
             instrument,
             Some(order.quantity()),
             order.is_quote_quantity(),
+            full_position_exit,
         );
 
         if let Some(reason) = reason {
@@ -996,7 +1118,12 @@ impl RiskEngine {
         true
     }
 
-    fn check_orders_risk(&self, instrument: &InstrumentAny, orders: &[OrderAny]) -> bool {
+    fn check_orders_risk(
+        &self,
+        instrument: &InstrumentAny,
+        orders: &[OrderAny],
+        full_position_exit: bool,
+    ) -> bool {
         let mut orders_by_account: AHashMap<Option<AccountId>, Vec<&OrderAny>> = AHashMap::new();
         for order in orders {
             orders_by_account
@@ -1006,7 +1133,12 @@ impl RiskEngine {
         }
 
         for (account_id, account_orders) in &orders_by_account {
-            if !self.check_orders_risk_for_account(instrument, account_orders, *account_id) {
+            if !self.check_orders_risk_for_account(
+                instrument,
+                account_orders,
+                *account_id,
+                full_position_exit,
+            ) {
                 return false;
             }
         }
@@ -1023,6 +1155,7 @@ impl RiskEngine {
         instrument: &InstrumentAny,
         orders: &[&OrderAny],
         account_id: Option<AccountId>,
+        full_position_exit: bool,
     ) -> bool {
         let mut max_notional: Option<Money> = None;
 
@@ -1403,7 +1536,7 @@ impl RiskEngine {
             // price and may differ from the venue fill, and some venues enforce
             // distinct per-order-type minimums. The venue is authoritative for
             // quote-denominated sizing; rely on `min_notional`/`max_notional` below.
-            if !order.is_quote_quantity() {
+            if !order.is_quote_quantity() && !full_position_exit {
                 if let Some(max_quantity) = instrument.max_quantity()
                     && effective_quantity > max_quantity
                 {
@@ -1456,7 +1589,8 @@ impl RiskEngine {
             }
 
             // Check MAX notional per order limit
-            if let Some(max_notional_value) = max_notional
+            if !full_position_exit
+                && let Some(max_notional_value) = max_notional
                 && notional > max_notional_value
             {
                 self.deny_order(
@@ -1470,8 +1604,10 @@ impl RiskEngine {
                 return false; // Denied
             }
 
-            // Reduce-only orders may close residual positions below venue minimum
+            // Whole-position and reduce-only orders may close residual positions below the
+            // venue minimum
             if !order.is_reduce_only()
+                && !full_position_exit
                 && let Some(min_notional) = instrument.min_notional()
                 && notional.currency == min_notional.currency
                 && notional < min_notional
@@ -1488,7 +1624,8 @@ impl RiskEngine {
             }
 
             // Check MAX notional instrument limit
-            if let Some(max_notional) = instrument.max_notional()
+            if !full_position_exit
+                && let Some(max_notional) = instrument.max_notional()
                 && notional.currency == max_notional.currency
                 && notional > max_notional
             {
@@ -1533,6 +1670,7 @@ impl RiskEngine {
 
                 // Determine if order is position-reducing
                 let is_reducing = order.is_reduce_only()
+                    || full_position_exit
                     || (order.is_sell()
                         && (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw)
                     || (order.is_buy()
@@ -1685,12 +1823,13 @@ impl RiskEngine {
 
                 // Check if order reduces an existing position
                 let is_position_reducing = if order.is_buy() {
-                    let reducing =
-                        (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw;
+                    let reducing = full_position_exit
+                        || (cum_buy_qty_raw + effective_quantity.raw) <= available_short_qty_raw;
                     cum_buy_qty_raw += effective_quantity.raw;
                     reducing
                 } else if order.is_sell() {
                     let reducing = order.is_reduce_only()
+                        || full_position_exit
                         || (cum_sell_qty_raw + effective_quantity.raw) <= available_long_qty_raw;
                     cum_sell_qty_raw += effective_quantity.raw;
                     reducing
@@ -2000,6 +2139,7 @@ impl RiskEngine {
         instrument: &InstrumentAny,
         quantity: Option<Quantity>,
         is_quote_quantity: bool,
+        full_position_exit: bool,
     ) -> Option<OrderDeniedReason> {
         let quantity_val = quantity?;
 
@@ -2012,10 +2152,9 @@ impl RiskEngine {
             });
         }
 
-        // Base-quantity bounds are deliberately not applied to quote-denominated orders here,
-        // and they are not applied later either: `check_orders_risk_for_account` skips the same
-        // comparisons for them. Applicable notional limits are checked during account risk.
-        if is_quote_quantity {
+        // Base-quantity bounds do not apply to quote-denominated or validated whole-position
+        // exits. Applicable quote-quantity notional limits are checked during account risk.
+        if is_quote_quantity || full_position_exit {
             return None;
         }
 

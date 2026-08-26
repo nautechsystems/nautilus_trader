@@ -317,6 +317,8 @@ class LiveRiskEngineConfig:
     @property
     def max_notional_per_order(self) -> dict[str, str]: ...
     @property
+    def full_position_exit_venues(self) -> list[model.Venue]: ...
+    @property
     def debug(self) -> bool: ...
     def __new__(
         cls,
@@ -324,6 +326,7 @@ class LiveRiskEngineConfig:
         max_order_submit_rate: str | None = None,
         max_order_modify_rate: str | None = None,
         max_notional_per_order: typing.Mapping[str, typing.Any] | None = None,
+        full_position_exit_venues: typing.Sequence[model.Venue] | None = None,
         debug: bool | None = None,
     ) -> LiveRiskEngineConfig: ...
 

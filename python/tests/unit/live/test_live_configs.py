@@ -37,6 +37,7 @@ from nautilus_trader.live import QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig
 from nautilus_trader.model import BarIntervalType
 from nautilus_trader.model import ClientId
+from nautilus_trader.model import Venue
 
 
 def test_instrument_provider_config_defaults() -> None:
@@ -502,6 +503,7 @@ def test_live_risk_engine_config_defaults() -> None:
     config = LiveRiskEngineConfig()
 
     assert isinstance(config, LiveRiskEngineConfig)
+    assert config.full_position_exit_venues == []
 
 
 def test_live_risk_engine_config_explicit() -> None:
@@ -513,6 +515,7 @@ def test_live_risk_engine_config_explicit() -> None:
         max_order_submit_rate="10/00:00:01",
         max_order_modify_rate="20/00:00:02",
         max_notional_per_order={"BTCUSDT.BINANCE": 100_000},
+        full_position_exit_venues=[Venue("BINANCE")],
         debug=True,
     )
 
@@ -520,6 +523,7 @@ def test_live_risk_engine_config_explicit() -> None:
     assert config.max_order_submit_rate == "10/00:00:01"
     assert config.max_order_modify_rate == "20/00:00:02"
     assert config.max_notional_per_order == {"BTCUSDT.BINANCE": "100000"}
+    assert config.full_position_exit_venues == [Venue("BINANCE")]
     assert config.debug is True
 
 
