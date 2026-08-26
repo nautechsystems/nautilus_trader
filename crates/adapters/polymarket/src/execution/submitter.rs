@@ -37,7 +37,7 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 
 use super::{
-    order_builder::PolymarketOrderBuilder,
+    order_builder::{PolymarketOrderBuilder, signed_limit_order_quantity},
     parse::{adjust_market_buy_amount, calculate_market_price},
     types::{LimitOrderSubmitRequest, SignedLimitOrderSubmission},
 };
@@ -460,6 +460,7 @@ impl OrderSubmitter {
             order_type,
             post_only: request.post_only,
             expected_venue_order_id,
+            expected_base_qty: signed_limit_order_quantity(request.quantity.as_decimal()),
         })
     }
 

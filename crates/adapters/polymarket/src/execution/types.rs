@@ -23,6 +23,7 @@ use nautilus_model::{
     orders::OrderAny,
     types::{Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 use crate::{
     common::{consts::CANCEL_ALREADY_DONE, enums::PolymarketOrderType},
@@ -75,6 +76,7 @@ pub(crate) struct SignedLimitOrderSubmission {
     pub(crate) order_type: PolymarketOrderType,
     pub(crate) post_only: bool,
     pub(crate) expected_venue_order_id: VenueOrderId,
+    pub(crate) expected_base_qty: Decimal,
 }
 
 #[derive(Clone, Debug)]

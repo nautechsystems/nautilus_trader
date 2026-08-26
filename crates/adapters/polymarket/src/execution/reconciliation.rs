@@ -18,14 +18,16 @@
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use nautilus_core::{
-    UnixNanos, collections::AtomicMap, datetime::NANOSECONDS_IN_SECOND, time::AtomicTime,
+    UnixNanos, collections::AtomicMap, correctness::check_valid_string_ascii,
+    datetime::NANOSECONDS_IN_SECOND, time::AtomicTime,
 };
 use nautilus_model::{
-    enums::{LiquiditySide, OrderStatus, PositionSideSpecified},
-    identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
+    enums::{LiquiditySide, OrderSide, OrderStatus, PositionSideSpecified, TimeInForce},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Currency, Quantity},
+    types::{Currency, Price, Quantity, fixed::FIXED_PRECISION},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -33,14 +35,17 @@ use ustr::Ustr;
 use super::{
     order_fill_tracker::OrderFillTrackerMap,
     parse::{
-        build_maker_fill_report, instrument_fee_exponent, instrument_taker_fee, parse_fill_report,
-        parse_order_status_report, parse_timestamp,
+        MakerFillParseContext, OrderReportParseContext, TakerFillParseContext,
+        composite_trade_id_value, determine_order_side, instrument_fee_exponent,
+        instrument_taker_fee, parse_timestamp, parse_validated_fill_report,
+        parse_validated_maker_fill_report, parse_validated_order_status_report,
     },
 };
 use crate::{
     common::{
         consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
-        enums::{PolymarketLiquiditySide, PolymarketTradeStatus},
+        enums::{PolymarketLiquiditySide, PolymarketOutcome, PolymarketTradeStatus},
+        models::{PolymarketMakerOrder, is_owned_by_account},
     },
     http::{
         clob::PolymarketClobHttpClient,
@@ -59,9 +64,879 @@ pub(crate) struct FillContext<'a> {
     pub clock: &'static AtomicTime,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FillReportScope {
+    instrument_id: Option<InstrumentId>,
+    venue_order_id: Option<VenueOrderId>,
+    expected_order_side: Option<OrderSide>,
+}
+
+impl FillReportScope {
+    pub(crate) const fn new(
+        instrument_id: Option<InstrumentId>,
+        venue_order_id: Option<VenueOrderId>,
+    ) -> Self {
+        Self {
+            instrument_id,
+            venue_order_id,
+            expected_order_side: None,
+        }
+    }
+
+    pub(crate) const fn with_expected_order_side(
+        mut self,
+        expected_order_side: Option<OrderSide>,
+    ) -> Self {
+        self.expected_order_side = if self.venue_order_id.is_some() {
+            expected_order_side
+        } else {
+            None
+        };
+        self
+    }
+}
+
+fn validate_expected_order_side(
+    expected: Option<OrderSide>,
+    actual: OrderSide,
+    evidence: &str,
+) -> anyhow::Result<()> {
+    if let Some(expected) = expected {
+        anyhow::ensure!(
+            actual == expected,
+            "{evidence} side {actual} does not match known order side {expected}",
+        );
+    }
+    Ok(())
+}
+
+fn validate_target_trade_role(
+    trade: &PolymarketTradeReport,
+    venue_order_id: VenueOrderId,
+) -> anyhow::Result<bool> {
+    let target_is_taker = trade.taker_order_id == venue_order_id.as_str();
+    let target_maker_occurrences = trade
+        .maker_orders
+        .iter()
+        .filter(|order| order.order_id == venue_order_id.as_str())
+        .count();
+    let target_is_maker = target_maker_occurrences > 0;
+    if !target_is_taker && !target_is_maker {
+        return Ok(false);
+    }
+    anyhow::ensure!(
+        usize::from(target_is_taker) + target_maker_occurrences == 1,
+        "target order {venue_order_id} appears more than once in trade {}",
+        trade.id,
+    );
+    let declared_maker = trade.trader_side == PolymarketLiquiditySide::Maker;
+    anyhow::ensure!(
+        declared_maker == target_is_maker,
+        "trade {} trader_side {:?} contradicts target order {venue_order_id} participant role",
+        trade.id,
+        trade.trader_side,
+    );
+    Ok(true)
+}
+
+fn validate_maker_order_side(
+    trade: &PolymarketTradeReport,
+    maker_order: &PolymarketMakerOrder,
+) -> anyhow::Result<OrderSide> {
+    let derived_side = determine_order_side(
+        trade.trader_side,
+        trade.side,
+        trade.asset_id.as_str(),
+        maker_order.asset_id.as_str(),
+    );
+    let provider_side = maker_order
+        .side
+        .with_context(|| format!("REST maker order {} is missing side", maker_order.order_id))?;
+    anyhow::ensure!(
+        OrderSide::from(provider_side) == derived_side,
+        "provider maker order {} side {provider_side} contradicts derived side {derived_side}",
+        maker_order.order_id,
+    );
+    Ok(derived_side)
+}
+
+fn checked_venue_order_id(value: &str, evidence: &str) -> anyhow::Result<VenueOrderId> {
+    VenueOrderId::new_checked(value)
+        .with_context(|| format!("{evidence} has invalid venue order ID {value:?}"))
+}
+
+fn checked_trade_id(value: &str, evidence: &str) -> anyhow::Result<TradeId> {
+    TradeId::new_checked(value)
+        .with_context(|| format!("{evidence} has invalid trade ID {value:?}"))
+}
+
+#[derive(Clone, Copy)]
+struct ValidatedMakerReportIdentifiers {
+    venue_order_id: VenueOrderId,
+    trade_id: TradeId,
+}
+
+fn validate_maker_report_identifiers(
+    trade: &PolymarketTradeReport,
+    maker_order: &PolymarketMakerOrder,
+) -> anyhow::Result<ValidatedMakerReportIdentifiers> {
+    let venue_order_id = checked_venue_order_id(
+        &maker_order.order_id,
+        &format!("maker order in trade {}", trade.id),
+    )?;
+    check_valid_string_ascii(&trade.id, "trade.id")
+        .with_context(|| format!("maker trade {} has invalid trade ID source", trade.id))?;
+    let composite_trade_id = composite_trade_id_value(&trade.id, &maker_order.order_id);
+    let trade_id = checked_trade_id(
+        &composite_trade_id,
+        &format!("maker trade {} composite", trade.id),
+    )?;
+    Ok(ValidatedMakerReportIdentifiers {
+        venue_order_id,
+        trade_id,
+    })
+}
+
+fn validate_instrument_binding(
+    instrument: &InstrumentAny,
+    condition_id: &str,
+    outcome: PolymarketOutcome,
+) -> anyhow::Result<()> {
+    let InstrumentAny::BinaryOption(binary) = instrument else {
+        anyhow::bail!("expected Polymarket BinaryOption instrument, found {instrument:?}");
+    };
+    let instrument_condition = binary
+        .info
+        .as_ref()
+        .and_then(|info| info.get_str("condition_id"))
+        .context("Polymarket instrument is missing condition_id metadata")?;
+
+    anyhow::ensure!(
+        instrument_condition.eq_ignore_ascii_case(condition_id),
+        "provider condition {condition_id} does not match instrument condition {instrument_condition}",
+    );
+    let instrument_outcome = binary
+        .outcome
+        .context("Polymarket instrument is missing outcome metadata")?;
+    anyhow::ensure!(
+        instrument_outcome.as_str() == outcome.as_str(),
+        "provider outcome {outcome} does not match instrument outcome {instrument_outcome}",
+    );
+
+    Ok(())
+}
+
+fn validate_quantity_evidence(
+    value: Decimal,
+    precision: u8,
+    field: &str,
+    allow_zero: bool,
+) -> anyhow::Result<()> {
+    if allow_zero {
+        anyhow::ensure!(
+            value >= Decimal::ZERO,
+            "{field} {value} must be non-negative"
+        );
+    } else {
+        anyhow::ensure!(value > Decimal::ZERO, "{field} {value} must be positive");
+    }
+    let quantity = Quantity::from_decimal_dp(value, precision).with_context(|| {
+        format!("failed to represent {field} {value} with quantity precision {precision}")
+    })?;
+    anyhow::ensure!(
+        quantity.as_decimal() == value,
+        "{field} {value} is not exactly representable with quantity precision {precision}",
+    );
+    Ok(())
+}
+
+fn validate_price_evidence(value: Decimal, precision: u8, field: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        value > Decimal::ZERO && value < Decimal::ONE,
+        "{field} {value} must be greater than zero and less than one",
+    );
+    let price = Price::from_decimal_dp(value, precision).with_context(|| {
+        format!("failed to represent {field} {value} with price precision {precision}")
+    })?;
+    anyhow::ensure!(
+        price.as_decimal() == value,
+        "{field} {value} is not exactly representable with price precision {precision}",
+    );
+    Ok(())
+}
+
+fn validate_historical_price_evidence(value: Decimal, field: &str) -> anyhow::Result<Price> {
+    anyhow::ensure!(
+        value > Decimal::ZERO && value < Decimal::ONE,
+        "{field} {value} must be greater than zero and less than one",
+    );
+    let evidence = value.normalize();
+    anyhow::ensure!(
+        evidence.scale() <= u32::from(FIXED_PRECISION),
+        "historical {field} {value} exceeds the maximum representable price precision of {FIXED_PRECISION} decimals",
+    );
+    let price = Price::from_decimal(evidence)
+        .with_context(|| format!("failed to represent historical {field} {value}"))?;
+    anyhow::ensure!(
+        price.as_decimal() == value,
+        "historical {field} {value} is not exactly representable as a price",
+    );
+    Ok(price)
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ValidatedOrderRow {
+    venue_order_id: VenueOrderId,
+    ts_accepted: UnixNanos,
+    expire_time: Option<UnixNanos>,
+}
+
+fn parse_provider_order_expiration(
+    order: &PolymarketOpenOrder,
+) -> anyhow::Result<Option<UnixNanos>> {
+    match order.expiration.as_deref() {
+        None => Ok(None),
+        Some(value) => {
+            let seconds: u64 = value.parse().with_context(|| {
+                format!("provider order {} has invalid expiration {value}", order.id)
+            })?;
+
+            if seconds == 0 {
+                return Ok(None);
+            }
+            seconds
+                .checked_mul(NANOSECONDS_IN_SECOND)
+                .map(UnixNanos::from)
+                .map(Some)
+                .with_context(|| {
+                    format!("provider order {} has invalid expiration {value}", order.id)
+                })
+        }
+    }
+}
+
+fn validate_order_row_values(
+    order: &PolymarketOpenOrder,
+    price_precision: u8,
+    size_precision: u8,
+) -> anyhow::Result<ValidatedOrderRow> {
+    validate_quantity_evidence(
+        order.original_size,
+        size_precision,
+        &format!("provider order {} quantity", order.id),
+        false,
+    )?;
+    validate_quantity_evidence(
+        order.size_matched,
+        size_precision,
+        &format!("provider order {} matched quantity", order.id),
+        true,
+    )?;
+    validate_price_evidence(
+        order.price,
+        price_precision,
+        &format!("provider order {} price", order.id),
+    )?;
+    let ts_accepted = order
+        .created_at
+        .checked_mul(NANOSECONDS_IN_SECOND)
+        .with_context(|| {
+            format!(
+                "provider order {} created_at seconds {} overflow Unix nanoseconds",
+                order.id, order.created_at,
+            )
+        })?;
+    let expire_time = parse_provider_order_expiration(order)?;
+    anyhow::ensure!(
+        TimeInForce::from(order.order_type) != TimeInForce::Gtd || expire_time.is_some(),
+        "provider GTD order {} requires a valid positive expiration",
+        order.id,
+    );
+    Ok(ValidatedOrderRow {
+        venue_order_id: checked_venue_order_id(&order.id, "provider order")?,
+        ts_accepted: UnixNanos::from(ts_accepted),
+        expire_time,
+    })
+}
+
+fn validate_trade_values(
+    quantity: Decimal,
+    price: Decimal,
+    size_precision: u8,
+    quantity_field: &str,
+    price_field: &str,
+) -> anyhow::Result<Price> {
+    validate_quantity_evidence(quantity, size_precision, quantity_field, false)?;
+    validate_historical_price_evidence(price, price_field)
+}
+
+fn validate_pending_trade_values(
+    quantity: Decimal,
+    price: Decimal,
+    quantity_field: &str,
+    price_field: &str,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        quantity > Decimal::ZERO,
+        "{quantity_field} {quantity} must be positive"
+    );
+    anyhow::ensure!(
+        price > Decimal::ZERO && price < Decimal::ONE,
+        "{price_field} {price} must be greater than zero and less than one",
+    );
+    Ok(())
+}
+
+fn require_trade_timestamp(
+    ts_event: Option<UnixNanos>,
+    trade: &PolymarketTradeReport,
+) -> anyhow::Result<UnixNanos> {
+    ts_event.with_context(|| {
+        format!(
+            "selected trade {} has invalid match_time {}",
+            trade.id, trade.match_time,
+        )
+    })
+}
+
+fn resolve_target_instrument(
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    token_id: Ustr,
+    requested_instrument_id: Option<InstrumentId>,
+    evidence: &str,
+) -> anyhow::Result<InstrumentAny> {
+    let instrument = instruments.get_cloned(&token_id).with_context(|| {
+        requested_instrument_id.map_or_else(
+            || format!("{evidence} token {token_id} has no loaded Polymarket instrument"),
+            |requested_instrument_id| {
+                format!(
+                    "{evidence} token {token_id} has no loaded Polymarket instrument for requested instrument {requested_instrument_id}"
+                )
+            },
+        )
+    })?;
+
+    if let Some(requested_instrument_id) = requested_instrument_id {
+        anyhow::ensure!(
+            instrument.id() == requested_instrument_id,
+            "{evidence} resolves to instrument {}, not requested instrument {requested_instrument_id}",
+            instrument.id(),
+        );
+    }
+    Ok(instrument)
+}
+
+pub(super) fn validate_client_bound_order_quantity(
+    provider_order: &PolymarketOpenOrder,
+    cached_order: &OrderAny,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        cached_order.quantity().as_decimal() == provider_order.original_size,
+        "provider order quantity {} does not match cached order quantity {}",
+        provider_order.original_size,
+        cached_order.quantity(),
+    );
+    Ok(())
+}
+
+fn validate_client_bound_order_row(
+    provider_order: &PolymarketOpenOrder,
+    cached_order: &OrderAny,
+    provider_expire_time: Option<UnixNanos>,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        cached_order.order_side() == provider_order.side.into(),
+        "provider order side {} does not match cached order side {}",
+        provider_order.side,
+        cached_order.order_side(),
+    );
+    anyhow::ensure!(
+        cached_order.time_in_force() == provider_order.order_type.into(),
+        "provider order time in force {} does not match cached order time in force {}",
+        provider_order.order_type,
+        cached_order.time_in_force(),
+    );
+    validate_client_bound_order_quantity(provider_order, cached_order)?;
+    let cached_price = cached_order
+        .price()
+        .context("cached Limit order is missing price")?;
+    anyhow::ensure!(
+        cached_price.as_decimal() == provider_order.price,
+        "provider order price {} does not match cached order price {cached_price}",
+        provider_order.price,
+    );
+
+    let provider_expire_seconds = provider_expire_time.map(|value| value.as_seconds());
+    let cached_expire_seconds = cached_order
+        .expire_time()
+        .filter(|value| !value.is_zero())
+        .map(|value| value.as_seconds());
+    if cached_order.time_in_force() == TimeInForce::Gtd {
+        anyhow::ensure!(
+            cached_expire_seconds == provider_expire_seconds,
+            "provider order expiration seconds {provider_expire_seconds:?} do not match cached order expiration seconds {cached_expire_seconds:?}",
+        );
+    }
+
+    Ok(())
+}
+
+struct OrderRowResult {
+    report: Option<OrderStatusReport>,
+    counted_filtered: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct TargetOrderReportScope<'a> {
+    instrument_id: InstrumentId,
+    venue_order_id: VenueOrderId,
+    client_order_id: Option<ClientOrderId>,
+    cached_order: Option<&'a OrderAny>,
+}
+
+impl<'a> TargetOrderReportScope<'a> {
+    pub(crate) const fn new(
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        client_order_id: Option<ClientOrderId>,
+        cached_order: Option<&'a OrderAny>,
+    ) -> Self {
+        Self {
+            instrument_id,
+            venue_order_id,
+            client_order_id,
+            cached_order,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum OrderEvidenceScope<'a> {
+    Collection {
+        instrument_filter: Option<InstrumentId>,
+    },
+    Target {
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        client_order_id: Option<ClientOrderId>,
+        cached_order: Option<&'a OrderAny>,
+    },
+}
+
+fn build_order_report_from_order(
+    order: &PolymarketOpenOrder,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    ctx: &FillContext<'_>,
+    scope: OrderEvidenceScope<'_>,
+    ts_init: UnixNanos,
+    load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<OrderRowResult> {
+    let collection_load_ids = match scope {
+        OrderEvidenceScope::Collection {
+            instrument_filter: None,
+        } => load_ids,
+        _ => None,
+    };
+
+    if let OrderEvidenceScope::Target { venue_order_id, .. } = scope {
+        anyhow::ensure!(
+            order.id == venue_order_id.as_str(),
+            "provider venue order {} does not match requested venue order {venue_order_id}",
+            order.id,
+        );
+    }
+
+    if !is_owned_by_account(
+        &order.maker_address,
+        &order.owner,
+        ctx.user_address,
+        ctx.api_key,
+    ) {
+        return match scope {
+            OrderEvidenceScope::Collection { .. } => {
+                log::debug!("Dropping open order {} not owned by the account", order.id);
+                Ok(OrderRowResult {
+                    report: None,
+                    counted_filtered: true,
+                })
+            }
+            OrderEvidenceScope::Target { .. } => {
+                anyhow::bail!(
+                    "provider venue order {} is not owned by the account",
+                    order.id
+                )
+            }
+        };
+    }
+
+    let instrument = match scope {
+        OrderEvidenceScope::Target { instrument_id, .. } => resolve_target_instrument(
+            instruments,
+            order.asset_id,
+            Some(instrument_id),
+            &format!("provider venue order {}", order.id),
+        )?,
+        OrderEvidenceScope::Collection { instrument_filter } => match instruments
+            .get_cloned(&order.asset_id)
+        {
+            Some(instrument) => instrument,
+            None => {
+                let instrument_id =
+                    instrument_id_from_market_token(order.market.as_str(), order.asset_id.as_str());
+
+                if instrument_filter.is_some_and(|filter_id| {
+                    !polymarket_instrument_ids_equivalent(filter_id, instrument_id)
+                }) {
+                    return Ok(OrderRowResult {
+                        report: None,
+                        counted_filtered: false,
+                    });
+                }
+
+                if instrument_in_load_ids_scope(instrument_id, collection_load_ids) {
+                    anyhow::bail!(unmapped_in_scope_message(
+                        "open order",
+                        instrument_id,
+                        Some(&format!("token {}", order.asset_id)),
+                        collection_load_ids,
+                    ));
+                }
+                log::debug!("Dropping out-of-scope unmapped open order instrument {instrument_id}");
+                return Ok(OrderRowResult {
+                    report: None,
+                    counted_filtered: true,
+                });
+            }
+        },
+    };
+    let instrument_id = instrument.id();
+
+    if let OrderEvidenceScope::Collection {
+        instrument_filter: Some(filter_id),
+    } = scope
+        && !polymarket_instrument_ids_equivalent(filter_id, instrument_id)
+    {
+        return Ok(OrderRowResult {
+            report: None,
+            counted_filtered: false,
+        });
+    }
+
+    if matches!(
+        scope,
+        OrderEvidenceScope::Collection {
+            instrument_filter: None
+        }
+    ) && !instrument_in_load_ids_scope(instrument_id, collection_load_ids)
+    {
+        log::debug!("Dropping loaded out-of-scope open order instrument {instrument_id}");
+        return Ok(OrderRowResult {
+            report: None,
+            counted_filtered: true,
+        });
+    }
+
+    validate_instrument_binding(&instrument, order.market.as_str(), order.outcome)?;
+    let validated = validate_order_row_values(
+        order,
+        instrument.price_precision(),
+        instrument.size_precision(),
+    )?;
+    let (client_order_id, cached_order) = match scope {
+        OrderEvidenceScope::Collection { .. } => (None, None),
+        OrderEvidenceScope::Target {
+            client_order_id,
+            cached_order,
+            ..
+        } => (client_order_id, cached_order),
+    };
+
+    if let Some(cached_order) = cached_order {
+        validate_client_bound_order_row(order, cached_order, validated.expire_time)?;
+    }
+    let report = parse_validated_order_status_report(
+        order,
+        OrderReportParseContext {
+            instrument_id,
+            account_id: ctx.account_id,
+            client_order_id,
+            venue_order_id: validated.venue_order_id,
+            price_precision: instrument.price_precision(),
+            size_precision: instrument.size_precision(),
+            ts_accepted: validated.ts_accepted,
+            expire_time: validated.expire_time,
+            ts_init,
+        },
+    );
+    Ok(OrderRowResult {
+        report: Some(report),
+        counted_filtered: false,
+    })
+}
+
+pub(crate) fn build_target_order_report(
+    order: &PolymarketOpenOrder,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    ctx: &FillContext<'_>,
+    scope: TargetOrderReportScope<'_>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    build_order_report_from_order(
+        order,
+        instruments,
+        ctx,
+        OrderEvidenceScope::Target {
+            instrument_id: scope.instrument_id,
+            venue_order_id: scope.venue_order_id,
+            client_order_id: scope.client_order_id,
+            cached_order: scope.cached_order,
+        },
+        ts_init,
+        None,
+    )?
+    .report
+    .context("target order evidence was unexpectedly ignored")
+}
+
+#[derive(Clone, Copy)]
+enum TargetFillParticipant<'a> {
+    Taker {
+        venue_order_id: VenueOrderId,
+        trade_id: TradeId,
+    },
+    Maker {
+        maker_order: &'a PolymarketMakerOrder,
+        identifiers: ValidatedMakerReportIdentifiers,
+    },
+}
+
+struct AdmittedTargetFill<'a> {
+    participant: TargetFillParticipant<'a>,
+    instrument: InstrumentAny,
+    last_px: Price,
+    ts_event: UnixNanos,
+}
+
+#[derive(Clone, Copy)]
+enum TargetTradeClass {
+    Unrelated,
+    Pending,
+    Confirmed,
+    Failed,
+}
+
+struct TargetTradeAdmission<'a> {
+    class: TargetTradeClass,
+    confirmed_fill: Option<AdmittedTargetFill<'a>>,
+}
+
+fn classify_target_trade<'a>(
+    trade: &'a PolymarketTradeReport,
+    ctx: &FillContext<'_>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_id: Option<InstrumentId>,
+    venue_order_id: VenueOrderId,
+    expected_order_side: Option<OrderSide>,
+) -> anyhow::Result<TargetTradeAdmission<'a>> {
+    if !validate_target_trade_role(trade, venue_order_id)? {
+        return Ok(TargetTradeAdmission {
+            class: TargetTradeClass::Unrelated,
+            confirmed_fill: None,
+        });
+    }
+
+    let (participant, instrument, quantity, price, quantity_field, price_field) =
+        if trade.trader_side == PolymarketLiquiditySide::Maker {
+            let maker_order = trade
+                .maker_orders
+                .iter()
+                .find(|order| order.order_id == venue_order_id.as_str())
+                .context("validated target maker occurrence is missing")?;
+            anyhow::ensure!(
+                maker_order.is_owned_by(ctx.user_address, ctx.api_key),
+                "target maker order {} is not owned by the account",
+                maker_order.order_id,
+            );
+            let identifiers = validate_maker_report_identifiers(trade, maker_order)?;
+            let instrument = resolve_target_instrument(
+                instruments,
+                maker_order.asset_id,
+                instrument_id,
+                &format!(
+                    "target maker trade {} order {}",
+                    trade.id, maker_order.order_id
+                ),
+            )?;
+            validate_instrument_binding(&instrument, trade.market.as_str(), maker_order.outcome)?;
+            let order_side = validate_maker_order_side(trade, maker_order)?;
+            validate_expected_order_side(
+                expected_order_side,
+                order_side,
+                &format!("target maker order {}", maker_order.order_id),
+            )?;
+            (
+                TargetFillParticipant::Maker {
+                    maker_order,
+                    identifiers,
+                },
+                instrument,
+                maker_order.matched_amount,
+                maker_order.price,
+                format!("target maker order {} matched amount", maker_order.order_id),
+                format!("target maker order {} price", maker_order.order_id),
+            )
+        } else {
+            anyhow::ensure!(
+                is_owned_by_account(
+                    &trade.maker_address,
+                    &trade.owner,
+                    ctx.user_address,
+                    ctx.api_key,
+                ),
+                "target taker order {} is not owned by the account",
+                trade.taker_order_id,
+            );
+            let venue_order_id =
+                checked_venue_order_id(&trade.taker_order_id, "target taker trade")?;
+            let trade_id = checked_trade_id(&trade.id, "target taker trade")?;
+            let instrument = resolve_target_instrument(
+                instruments,
+                trade.asset_id,
+                instrument_id,
+                &format!("target taker trade {}", trade.id),
+            )?;
+            validate_instrument_binding(&instrument, trade.market.as_str(), trade.outcome)?;
+            validate_expected_order_side(
+                expected_order_side,
+                OrderSide::from(trade.side),
+                &format!("target taker order {}", trade.taker_order_id),
+            )?;
+            (
+                TargetFillParticipant::Taker {
+                    venue_order_id,
+                    trade_id,
+                },
+                instrument,
+                trade.size,
+                trade.price,
+                format!("target taker trade {} size", trade.id),
+                format!("target taker trade {} price", trade.id),
+            )
+        };
+
+    match trade.status {
+        PolymarketTradeStatus::Matched
+        | PolymarketTradeStatus::Mined
+        | PolymarketTradeStatus::Retrying => {
+            validate_pending_trade_values(
+                quantity,
+                price,
+                &format!("pending {quantity_field}"),
+                &format!("pending {price_field}"),
+            )?;
+            require_trade_timestamp(parse_timestamp(&trade.match_time), trade)?;
+            Ok(TargetTradeAdmission {
+                class: TargetTradeClass::Pending,
+                confirmed_fill: None,
+            })
+        }
+        PolymarketTradeStatus::Confirmed => {
+            let last_px = validate_trade_values(
+                quantity,
+                price,
+                instrument.size_precision(),
+                &quantity_field,
+                &price_field,
+            )?;
+            let ts_event = require_trade_timestamp(parse_timestamp(&trade.match_time), trade)?;
+            Ok(TargetTradeAdmission {
+                class: TargetTradeClass::Confirmed,
+                confirmed_fill: Some(AdmittedTargetFill {
+                    participant,
+                    instrument,
+                    last_px,
+                    ts_event,
+                }),
+            })
+        }
+        PolymarketTradeStatus::Failed => Ok(TargetTradeAdmission {
+            class: TargetTradeClass::Failed,
+            confirmed_fill: None,
+        }),
+    }
+}
+
+fn build_admitted_target_fill(
+    trade: &PolymarketTradeReport,
+    admitted: &AdmittedTargetFill<'_>,
+    ctx: &FillContext<'_>,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FillReport> {
+    let instrument_id = admitted.instrument.id();
+    let price_prec = admitted.last_px.precision;
+    let size_prec = admitted.instrument.size_precision();
+
+    match admitted.participant {
+        TargetFillParticipant::Maker {
+            maker_order,
+            identifiers,
+        } => parse_validated_maker_fill_report(
+            maker_order,
+            trade.trader_side,
+            trade.side,
+            trade.asset_id.as_str(),
+            MakerFillParseContext {
+                account_id: ctx.account_id,
+                instrument_id,
+                venue_order_id: identifiers.venue_order_id,
+                trade_id: identifiers.trade_id,
+                price_precision: price_prec,
+                size_precision: size_prec,
+                currency: ctx.pusd,
+                liquidity_side: LiquiditySide::Maker,
+                ts_event: admitted.ts_event,
+                ts_init,
+            },
+        )
+        .with_context(|| {
+            format!(
+                "failed to build target maker fill report for trade {} and order {}",
+                trade.id, maker_order.order_id,
+            )
+        }),
+        TargetFillParticipant::Taker {
+            venue_order_id,
+            trade_id,
+        } => {
+            let taker_fee_rate = instrument_taker_fee(&admitted.instrument);
+            let fee_exponent = instrument_fee_exponent(&admitted.instrument);
+            parse_validated_fill_report(
+                trade,
+                TakerFillParseContext {
+                    instrument_id,
+                    account_id: ctx.account_id,
+                    client_order_id: None,
+                    venue_order_id,
+                    trade_id,
+                    price_precision: price_prec,
+                    size_precision: size_prec,
+                    currency: ctx.pusd,
+                    taker_fee_rate,
+                    fee_exponent,
+                    ts_event: admitted.ts_event,
+                    ts_init,
+                },
+            )
+            .with_context(|| format!("failed to build target taker fill for trade {}", trade.id))
+        }
+    }
+}
+
 /// Counts of confirmed trade evidence dropped while building fill reports.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FillBuildDiscards {
+    /// Whether valid unsettled evidence for the requested venue order was found.
+    pub has_pending_target: bool,
     /// Fill entries dropped because their instrument is not loaded.
     pub unmapped_instruments: usize,
     /// In-scope historical fills dropped because their instrument is not loaded.
@@ -69,6 +944,25 @@ pub(crate) struct FillBuildDiscards {
     /// Confirmed maker trades dropped because no maker order in the match is
     /// owned by the account.
     pub unowned_maker_trades: usize,
+    /// Confirmed trades dropped from a bounded report because their event time is invalid.
+    pub untimestamped_trades: usize,
+}
+
+fn admit_selected_trade<'a>(
+    selected_trades: &mut AHashMap<&'a str, &'a PolymarketTradeReport>,
+    trade: &'a PolymarketTradeReport,
+) -> anyhow::Result<bool> {
+    if let Some(previous) = selected_trades.get(trade.id.as_str()) {
+        anyhow::ensure!(
+            *previous == trade,
+            "provider trade {} repeats with contradictory evidence",
+            trade.id,
+        );
+        return Ok(false);
+    }
+
+    selected_trades.insert(trade.id.as_str(), trade);
+    Ok(true)
 }
 
 /// Converts trade reports into fill reports: single implementation of maker/taker
@@ -77,14 +971,51 @@ pub(crate) fn build_fill_reports_from_trades(
     trades: &[PolymarketTradeReport],
     ctx: &FillContext<'_>,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    instrument_filter: Option<InstrumentId>,
+    scope: FillReportScope,
     ts_init: UnixNanos,
     load_ids: Option<&[InstrumentId]>,
+    lookback_start: Option<UnixNanos>,
 ) -> anyhow::Result<(Vec<FillReport>, FillBuildDiscards)> {
     let mut reports = Vec::new();
     let mut discards = FillBuildDiscards::default();
+    let mut selected_trades = AHashMap::new();
 
     for trade in trades {
+        if let Some(target_order_id) = scope.venue_order_id {
+            let admission = classify_target_trade(
+                trade,
+                ctx,
+                instruments,
+                scope.instrument_id,
+                target_order_id,
+                scope.expected_order_side,
+            )?;
+
+            if matches!(admission.class, TargetTradeClass::Unrelated) {
+                continue;
+            }
+
+            if !admit_selected_trade(&mut selected_trades, trade)? {
+                continue;
+            }
+
+            match admission.class {
+                TargetTradeClass::Unrelated | TargetTradeClass::Failed => continue,
+                TargetTradeClass::Pending => {
+                    discards.has_pending_target = true;
+                    continue;
+                }
+                TargetTradeClass::Confirmed => {
+                    let admitted = admission
+                        .confirmed_fill
+                        .as_ref()
+                        .context("confirmed target admission is missing fill evidence")?;
+                    reports.push(build_admitted_target_fill(trade, admitted, ctx, ts_init)?);
+                    continue;
+                }
+            }
+        }
+
         if trade.status != PolymarketTradeStatus::Confirmed {
             continue;
         }
@@ -97,6 +1028,20 @@ pub(crate) fn build_fill_reports_from_trades(
                 .iter()
                 .any(|mo| mo.is_owned_by(ctx.user_address, ctx.api_key))
             {
+                let ts_event = parse_timestamp(&trade.match_time);
+                let instrument_id =
+                    instrument_id_from_market_token(trade.market.as_str(), trade.asset_id.as_str());
+                let in_load_ids_scope = instrument_in_load_ids_scope(instrument_id, load_ids);
+
+                if !trade_in_lookback_window(
+                    ts_event,
+                    lookback_start,
+                    in_load_ids_scope,
+                    &trade.id,
+                    &mut discards,
+                ) {
+                    continue;
+                }
                 discards.unowned_maker_trades += 1;
                 log::debug!(
                     "Confirmed maker trade {} holds no maker order owned by the account",
@@ -105,14 +1050,20 @@ pub(crate) fn build_fill_reports_from_trades(
                 continue;
             }
 
+            let mut selected_maker_orders: Vec<(
+                &PolymarketMakerOrder,
+                InstrumentAny,
+                ValidatedMakerReportIdentifiers,
+                Price,
+            )> = Vec::new();
+
             for mo in &trade.maker_orders {
                 if !mo.is_owned_by(ctx.user_address, ctx.api_key) {
                     continue;
                 }
                 let token_id = mo.asset_id;
-                let instrument = instruments.get_cloned(&token_id);
-                let (instrument_id, price_prec, size_prec) = match instrument {
-                    Some(i) => (i.id(), i.price_precision(), i.size_precision()),
+                let instrument = match instruments.get_cloned(&token_id) {
+                    Some(instrument) => instrument,
                     None => {
                         classify_unmapped_historical(
                             &mut discards,
@@ -123,29 +1074,91 @@ pub(crate) fn build_fill_reports_from_trades(
                         continue;
                     }
                 };
+                let instrument_id = instrument.id();
 
-                if let Some(filter_id) = instrument_filter
-                    && instrument_id != filter_id
+                if scope
+                    .instrument_id
+                    .is_some_and(|requested| instrument_id != requested)
                 {
                     continue;
                 }
 
-                let ts_event =
-                    parse_timestamp(&trade.match_time).unwrap_or(ctx.clock.get_time_ns());
-                let report = build_maker_fill_report(
+                if !instrument_in_load_ids_scope(instrument_id, load_ids) {
+                    log::debug!(
+                        "Dropping loaded out-of-scope historical instrument {instrument_id}",
+                    );
+                    continue;
+                }
+
+                anyhow::ensure!(
+                    !selected_maker_orders
+                        .iter()
+                        .any(|(selected, _, _, _)| selected.order_id == mo.order_id),
+                    "maker order {} appears more than once in trade {}",
+                    mo.order_id,
+                    trade.id,
+                );
+
+                let identifiers = validate_maker_report_identifiers(trade, mo)?;
+
+                validate_instrument_binding(&instrument, trade.market.as_str(), mo.outcome)?;
+                validate_maker_order_side(trade, mo)?;
+                let last_px = validate_trade_values(
+                    mo.matched_amount,
+                    mo.price,
+                    instrument.size_precision(),
+                    &format!("maker order {} matched amount", mo.order_id),
+                    &format!("maker order {} price", mo.order_id),
+                )?;
+                selected_maker_orders.push((mo, instrument, identifiers, last_px));
+            }
+
+            if selected_maker_orders.is_empty() {
+                continue;
+            }
+
+            let ts_event = parse_timestamp(&trade.match_time);
+            let in_load_ids_scope = selected_maker_orders.iter().any(|(_, instrument, _, _)| {
+                instrument_in_load_ids_scope(instrument.id(), load_ids)
+            });
+
+            if !trade_in_lookback_window(
+                ts_event,
+                lookback_start,
+                in_load_ids_scope,
+                &trade.id,
+                &mut discards,
+            ) {
+                continue;
+            }
+
+            if !admit_selected_trade(&mut selected_trades, trade)? {
+                continue;
+            }
+            let ts_event = require_trade_timestamp(ts_event, trade)?;
+
+            for (mo, instrument, identifiers, last_px) in selected_maker_orders {
+                let instrument_id = instrument.id();
+                let price_prec = last_px.precision;
+                let size_prec = instrument.size_precision();
+
+                let report = parse_validated_maker_fill_report(
                     mo,
-                    &trade.id,
                     trade.trader_side,
                     trade.side,
                     trade.asset_id.as_str(),
-                    ctx.account_id,
-                    instrument_id,
-                    price_prec,
-                    size_prec,
-                    ctx.pusd,
-                    LiquiditySide::Maker,
-                    ts_event,
-                    ts_init,
+                    MakerFillParseContext {
+                        account_id: ctx.account_id,
+                        instrument_id,
+                        venue_order_id: identifiers.venue_order_id,
+                        trade_id: identifiers.trade_id,
+                        price_precision: price_prec,
+                        size_precision: size_prec,
+                        currency: ctx.pusd,
+                        liquidity_side: LiquiditySide::Maker,
+                        ts_event,
+                        ts_init,
+                    },
                 )
                 .with_context(|| {
                     format!(
@@ -156,45 +1169,95 @@ pub(crate) fn build_fill_reports_from_trades(
                 reports.push(report);
             }
         } else {
-            let token_id = trade.asset_id;
-            let instrument = instruments.get_cloned(&token_id);
-            let (instrument_id, price_prec, size_prec, taker_fee_rate, fee_exponent) =
-                match instrument {
-                    Some(i) => (
-                        i.id(),
-                        i.price_precision(),
-                        i.size_precision(),
-                        instrument_taker_fee(&i),
-                        instrument_fee_exponent(&i),
-                    ),
-                    None => {
-                        classify_unmapped_historical(
-                            &mut discards,
-                            load_ids,
-                            &trade.market,
-                            token_id.as_str(),
-                        );
-                        continue;
-                    }
-                };
+            if !is_owned_by_account(
+                &trade.maker_address,
+                &trade.owner,
+                ctx.user_address,
+                ctx.api_key,
+            ) {
+                log::debug!(
+                    "Dropping confirmed taker trade {} not owned by the account",
+                    trade.id
+                );
+                continue;
+            }
 
-            if let Some(filter_id) = instrument_filter
-                && instrument_id != filter_id
+            let token_id = trade.asset_id;
+            let instrument = match instruments.get_cloned(&token_id) {
+                Some(instrument) => instrument,
+                None => {
+                    classify_unmapped_historical(
+                        &mut discards,
+                        load_ids,
+                        &trade.market,
+                        token_id.as_str(),
+                    );
+                    continue;
+                }
+            };
+            let instrument_id = instrument.id();
+
+            if scope
+                .instrument_id
+                .is_some_and(|requested| instrument_id != requested)
             {
                 continue;
             }
 
-            let report = parse_fill_report(
+            if !instrument_in_load_ids_scope(instrument_id, load_ids) {
+                log::debug!("Dropping loaded out-of-scope historical instrument {instrument_id}",);
+                continue;
+            }
+
+            let venue_order_id = checked_venue_order_id(&trade.taker_order_id, "taker trade")?;
+            let trade_id = checked_trade_id(&trade.id, "taker trade")?;
+
+            validate_instrument_binding(&instrument, trade.market.as_str(), trade.outcome)?;
+            let last_px = validate_trade_values(
+                trade.size,
+                trade.price,
+                instrument.size_precision(),
+                &format!("taker trade {} size", trade.id),
+                &format!("taker trade {} price", trade.id),
+            )?;
+            let ts_event = parse_timestamp(&trade.match_time);
+            let in_load_ids_scope = instrument_in_load_ids_scope(instrument_id, load_ids);
+
+            if !trade_in_lookback_window(
+                ts_event,
+                lookback_start,
+                in_load_ids_scope,
+                &trade.id,
+                &mut discards,
+            ) {
+                continue;
+            }
+
+            if !admit_selected_trade(&mut selected_trades, trade)? {
+                continue;
+            }
+            let ts_event = require_trade_timestamp(ts_event, trade)?;
+            let price_prec = last_px.precision;
+            let size_prec = instrument.size_precision();
+            let taker_fee_rate = instrument_taker_fee(&instrument);
+            let fee_exponent = instrument_fee_exponent(&instrument);
+
+            let report = parse_validated_fill_report(
                 trade,
-                instrument_id,
-                ctx.account_id,
-                None,
-                price_prec,
-                size_prec,
-                ctx.pusd,
-                taker_fee_rate,
-                fee_exponent,
-                ts_init,
+                TakerFillParseContext {
+                    instrument_id,
+                    account_id: ctx.account_id,
+                    client_order_id: None,
+                    venue_order_id,
+                    trade_id,
+                    price_precision: price_prec,
+                    size_precision: size_prec,
+                    currency: ctx.pusd,
+                    taker_fee_rate,
+                    fee_exponent,
+                    ts_event,
+                    ts_init,
+                },
             )
             .with_context(|| format!("failed to build taker fill report for trade {}", trade.id))?;
             reports.push(report);
@@ -208,69 +1271,50 @@ pub(crate) fn build_fill_reports_from_trades(
 pub(crate) fn build_order_reports_from_orders(
     orders: &[PolymarketOpenOrder],
     instruments: &AtomicMap<Ustr, InstrumentAny>,
-    account_id: AccountId,
+    ctx: &FillContext<'_>,
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<(Vec<OrderStatusReport>, usize)> {
     let mut reports = Vec::new();
     let mut filtered = 0usize;
+    let mut selected_orders = AHashMap::new();
 
     for order in orders {
-        let token_id = order.asset_id;
-        let instrument = instruments.get_cloned(&token_id);
-        let (instrument_id, price_prec, size_prec) = match instrument {
-            Some(i) => (i.id(), i.price_precision(), i.size_precision()),
-            None => {
-                let instrument_id =
-                    instrument_id_from_market_token(order.market.as_str(), token_id.as_str());
+        let result = build_order_report_from_order(
+            order,
+            instruments,
+            ctx,
+            OrderEvidenceScope::Collection { instrument_filter },
+            ts_init,
+            load_ids,
+        )?;
 
-                if instrument_in_load_ids_scope(instrument_id, load_ids) {
-                    anyhow::bail!(unmapped_in_scope_message(
-                        "open order",
-                        instrument_id,
-                        Some(&format!("token {token_id}")),
-                        load_ids,
-                    ));
-                }
-                log::debug!("Dropping out-of-scope unmapped open order instrument {instrument_id}");
-                filtered += 1;
+        if let Some(report) = result.report {
+            if let Some(previous) = selected_orders.get(&report.venue_order_id) {
+                anyhow::ensure!(
+                    *previous == order,
+                    "provider venue order {} repeats with contradictory evidence",
+                    report.venue_order_id,
+                );
                 continue;
             }
-        };
-
-        if let Some(filter_id) = instrument_filter
-            && instrument_id != filter_id
-        {
-            continue;
+            selected_orders.insert(report.venue_order_id, order);
+            reports.push(report);
+        } else {
+            filtered += usize::from(result.counted_filtered);
         }
-
-        let report = parse_order_status_report(
-            order,
-            instrument_id,
-            account_id,
-            None,
-            price_prec,
-            size_prec,
-            ts_init,
-        );
-        reports.push(report);
     }
 
     Ok((reports, filtered))
 }
 
-/// Applies venue_order_id and time-range filters to fill reports.
-pub(crate) fn apply_fill_filters(
+/// Applies time-range filters to fill reports.
+pub(crate) fn apply_fill_time_filters(
     mut reports: Vec<FillReport>,
-    venue_order_id: Option<VenueOrderId>,
     start: Option<UnixNanos>,
     end: Option<UnixNanos>,
 ) -> Vec<FillReport> {
-    if let Some(vid) = venue_order_id {
-        reports.retain(|r| r.venue_order_id == vid);
-    }
-
     match (start, end) {
         (Some(s), Some(e)) => reports.retain(|r| r.ts_event >= s && r.ts_event <= e),
         (Some(s), None) => reports.retain(|r| r.ts_event >= s),
@@ -282,6 +1326,7 @@ pub(crate) fn apply_fill_filters(
 }
 
 /// Builds position status reports from Data API positions, filtering dust.
+#[cfg(test)]
 pub(crate) fn build_position_reports(
     positions: &[DataApiPosition],
     account_id: AccountId,
@@ -289,74 +1334,118 @@ pub(crate) fn build_position_reports(
 ) -> Vec<PositionStatusReport> {
     positions
         .iter()
-        .filter(|p| {
-            if p.size > Decimal::ZERO && p.size < DUST_POSITION_THRESHOLD {
-                log::debug!(
-                    "Filtering dust position: {}-{}, size={}",
-                    p.condition_id,
-                    p.asset,
-                    p.size
-                );
-            }
-            p.size >= DUST_POSITION_THRESHOLD
-        })
-        .filter_map(|p| {
-            let instrument_id = instrument_id_from_market_token(&p.condition_id, &p.asset);
-            let quantity = match Quantity::from_decimal_dp(p.size, USDC_DECIMALS as u8) {
-                Ok(quantity) => quantity,
-                Err(e) => {
-                    log::warn!(
-                        "Skipping invalid Data API position {}-{} size {}: {e}",
-                        p.condition_id,
-                        p.asset,
-                        p.size,
-                    );
-                    return None;
-                }
-            };
-            Some(PositionStatusReport::new(
-                account_id,
-                instrument_id,
-                PositionSideSpecified::Long,
-                quantity,
-                ts,
-                ts,
-                None,
-                None,
-                p.avg_price,
-            ))
-        })
+        .filter_map(|position| build_position_report(position, account_id, ts))
         .collect()
 }
 
-pub(crate) fn retain_mapped_position_reports(
-    reports: Vec<PositionStatusReport>,
-    instruments: &AtomicMap<Ustr, InstrumentAny>,
-    load_ids: Option<&[InstrumentId]>,
-) -> anyhow::Result<Vec<PositionStatusReport>> {
-    let mut kept = Vec::with_capacity(reports.len());
-
-    for report in reports {
-        if position_instrument_loaded(report.instrument_id, instruments) {
-            kept.push(report);
-            continue;
-        }
-
-        if instrument_in_load_ids_scope(report.instrument_id, load_ids) {
-            anyhow::bail!(unmapped_in_scope_message(
-                "position",
-                report.instrument_id,
-                None,
-                load_ids,
-            ));
-        }
-        log::debug!(
-            "Dropping out-of-scope unmapped position instrument {}",
-            report.instrument_id
-        );
+#[cfg(test)]
+fn build_position_report(
+    position: &DataApiPosition,
+    account_id: AccountId,
+    ts: UnixNanos,
+) -> Option<PositionStatusReport> {
+    if position_is_dust(position) {
+        return None;
     }
 
-    Ok(kept)
+    build_position_report_from_reportable_position(position, account_id, ts)
+}
+
+fn build_position_report_from_reportable_position(
+    position: &DataApiPosition,
+    account_id: AccountId,
+    ts: UnixNanos,
+) -> Option<PositionStatusReport> {
+    let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
+    let quantity = match Quantity::from_decimal_dp(position.size, USDC_DECIMALS as u8) {
+        Ok(quantity) => quantity,
+        Err(e) => {
+            log::warn!(
+                "Skipping invalid Data API position {}-{} size {}: {e}",
+                position.condition_id,
+                position.asset,
+                position.size,
+            );
+            return None;
+        }
+    };
+    Some(PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        quantity,
+        ts,
+        ts,
+        None,
+        None,
+        position.avg_price,
+    ))
+}
+
+pub(crate) fn build_reconciliation_position_reports(
+    positions: &[DataApiPosition],
+    account_id: AccountId,
+    ts: UnixNanos,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_filter: Option<InstrumentId>,
+    load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<Vec<PositionStatusReport>> {
+    let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
+    let mut reports = Vec::with_capacity(positions.len());
+
+    for position in positions {
+        if let Some(report) = build_reconciliation_position_report(
+            position,
+            account_id,
+            ts,
+            instruments,
+            instrument_filter,
+            collection_load_ids,
+        )? {
+            reports.push(report);
+        }
+    }
+
+    Ok(reports)
+}
+
+fn build_reconciliation_position_report(
+    position: &DataApiPosition,
+    account_id: AccountId,
+    ts: UnixNanos,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_filter: Option<InstrumentId>,
+    collection_load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<Option<PositionStatusReport>> {
+    let instrument_id = instrument_id_from_market_token(&position.condition_id, &position.asset);
+
+    if instrument_filter
+        .is_some_and(|filter_id| !polymarket_instrument_ids_equivalent(filter_id, instrument_id))
+    {
+        return Ok(None);
+    }
+
+    if !instrument_in_load_ids_scope(instrument_id, collection_load_ids) {
+        log::debug!("Dropping out-of-scope position instrument {instrument_id}");
+        return Ok(None);
+    }
+
+    if position_is_dust(position) {
+        return Ok(None);
+    }
+
+    if !position_instrument_loaded(&position.asset, instrument_id, instruments) {
+        anyhow::bail!(unmapped_in_scope_message(
+            "position",
+            instrument_id,
+            None,
+            collection_load_ids,
+        ));
+    }
+
+    Ok(build_position_report_from_reportable_position(
+        position, account_id, ts,
+    ))
 }
 
 /// Full reconciliation mass status generation.
@@ -387,16 +1476,10 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch orders for mass status")?;
 
-    let (mut order_reports, orders_filtered) = build_order_reports_from_orders(
-        &orders,
-        instruments,
-        ctx.account_id,
-        None,
-        ts_init,
-        load_ids,
-    )?;
+    let (mut order_reports, orders_filtered) =
+        build_order_reports_from_orders(&orders, instruments, ctx, None, ts_init, load_ids)?;
 
-    let mut trades = http_client
+    let trades = http_client
         .get_trades(trades_params_for_window(
             lookback_start,
             lookback_start.map(|_| ts_init),
@@ -404,33 +1487,15 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch trades for mass status")?;
 
-    let mut untimestamped_trades = 0usize;
-
-    if let Some(cutoff) = lookback_start {
-        trades.retain(|trade| match parse_timestamp(&trade.match_time) {
-            Some(ts_event) => ts_event >= cutoff,
-            None => {
-                if trade.status != PolymarketTradeStatus::Confirmed {
-                    return false;
-                }
-                let instrument_id =
-                    instrument_id_from_market_token(trade.market.as_str(), trade.asset_id.as_str());
-
-                if instrument_in_load_ids_scope(instrument_id, load_ids) {
-                    untimestamped_trades += 1;
-                } else {
-                    log::debug!(
-                        "Dropping out-of-scope historical trade {} with unparsable match_time",
-                        trade.id
-                    );
-                }
-                false
-            }
-        });
-    }
-
-    let (mut fill_reports, fill_discards) =
-        build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init, load_ids)?;
+    let (mut fill_reports, fill_discards) = build_fill_reports_from_trades(
+        &trades,
+        ctx,
+        instruments,
+        FillReportScope::new(None, None),
+        ts_init,
+        load_ids,
+        lookback_start,
+    )?;
 
     if fill_discards.unowned_maker_trades > 0 {
         log::error!(
@@ -447,21 +1512,26 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch positions for mass status")?;
 
-    let position_reports = retain_mapped_position_reports(
-        build_position_reports(&positions, ctx.account_id, ts_init),
+    let position_reports = build_reconciliation_position_reports(
+        &positions,
+        ctx.account_id,
+        ts_init,
         instruments,
+        None,
         load_ids,
     )?;
 
     log::debug!(
         "Generated mass status: {} orders ({} filtered), {} fills ({} instrument-filtered, \
-         {} in-scope historical misses, {} unowned maker trades), {} positions",
+         {} in-scope historical misses, {} unowned maker trades, {} untimestamped trades), {} \
+         positions",
         order_reports.len(),
         orders_filtered,
         fill_reports.len(),
         fill_discards.unmapped_instruments,
         fill_discards.in_scope_historical,
         fill_discards.unowned_maker_trades,
+        fill_discards.untimestamped_trades,
         position_reports.len(),
     );
 
@@ -478,7 +1548,7 @@ pub(crate) async fn generate_mass_status(
             .collect();
         let reports_complete = fill_discards.in_scope_historical == 0
             && fill_discards.unowned_maker_trades == 0
-            && untimestamped_trades == 0
+            && fill_discards.untimestamped_trades == 0
             && fill_reports
                 .iter()
                 .all(|report| reported_orders.contains(&report.venue_order_id));
@@ -517,9 +1587,29 @@ fn instrument_in_load_ids_scope(
     load_ids: Option<&[InstrumentId]>,
 ) -> bool {
     match load_ids {
-        Some(ids) if !ids.is_empty() => ids.contains(&instrument_id),
+        Some(ids) if !ids.is_empty() => ids.iter().any(|configured_id| {
+            polymarket_instrument_ids_equivalent(*configured_id, instrument_id)
+        }),
         _ => true,
     }
+}
+
+fn polymarket_instrument_ids_equivalent(left: InstrumentId, right: InstrumentId) -> bool {
+    if left == right {
+        return true;
+    }
+
+    if left.venue != right.venue {
+        return false;
+    }
+    let Some((left_condition, left_token)) = left.symbol.as_str().rsplit_once('-') else {
+        return false;
+    };
+    let Some((right_condition, right_token)) = right.symbol.as_str().rsplit_once('-') else {
+        return false;
+    };
+
+    left_condition.eq_ignore_ascii_case(right_condition) && left_token == right_token
 }
 
 fn unmapped_in_scope_message(
@@ -529,7 +1619,11 @@ fn unmapped_in_scope_message(
     load_ids: Option<&[InstrumentId]>,
 ) -> String {
     let hint = match load_ids {
-        Some(ids) if ids.contains(&instrument_id) => {
+        Some(ids)
+            if ids.iter().any(|configured_id| {
+                polymarket_instrument_ids_equivalent(*configured_id, instrument_id)
+            }) =>
+        {
             "this instrument is in instrument_config.load_ids but was not loaded"
         }
         _ => "set instrument_config.load_ids to the instruments this node should reconcile",
@@ -544,13 +1638,56 @@ fn unmapped_in_scope_message(
 }
 
 fn position_instrument_loaded(
+    token_id: &str,
     instrument_id: InstrumentId,
     instruments: &AtomicMap<Ustr, InstrumentAny>,
 ) -> bool {
-    let symbol = instrument_id.symbol.as_str();
-    symbol
-        .rsplit_once('-')
-        .is_some_and(|(_, token_id)| instruments.contains_key(&Ustr::from(token_id)))
+    instruments
+        .get_cloned(&Ustr::from(token_id))
+        .is_some_and(|instrument| {
+            polymarket_instrument_ids_equivalent(instrument.id(), instrument_id)
+        })
+}
+
+fn position_is_dust(position: &DataApiPosition) -> bool {
+    let is_dust = position.size < DUST_POSITION_THRESHOLD;
+
+    if is_dust && position.size > Decimal::ZERO {
+        log::debug!(
+            "Filtering dust position: {}-{}, size={}",
+            position.condition_id,
+            position.asset,
+            position.size
+        );
+    }
+
+    is_dust
+}
+
+fn trade_in_lookback_window(
+    ts_event: Option<UnixNanos>,
+    lookback_start: Option<UnixNanos>,
+    in_load_ids_scope: bool,
+    trade_id: &str,
+    discards: &mut FillBuildDiscards,
+) -> bool {
+    let Some(cutoff) = lookback_start else {
+        return true;
+    };
+
+    match ts_event {
+        Some(ts_event) => ts_event >= cutoff,
+        None => {
+            if in_load_ids_scope {
+                discards.untimestamped_trades += 1;
+            } else {
+                log::debug!(
+                    "Dropping out-of-scope historical trade {trade_id} with unparsable match_time"
+                );
+            }
+            false
+        }
+    }
 }
 
 fn classify_unmapped_historical(
@@ -640,6 +1777,188 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    const TEST_CONDITION_ID: &str =
+        "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917";
+    const TEST_TOKEN_ID: &str =
+        "71321045679252212594626385532706912750332728571942532289631379312455583992563";
+    const TEST_USER_ADDRESS: &str = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
+    const TEST_API_KEY: &str = "00000000-0000-0000-0000-000000000001";
+
+    fn test_instrument() -> InstrumentAny {
+        let def = crate::http::parse::PolymarketInstrumentDef {
+            symbol: Ustr::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}").as_str()),
+            token_id: Ustr::from(TEST_TOKEN_ID),
+            condition_id: Ustr::from(TEST_CONDITION_ID),
+            market_id: "test-market".to_string(),
+            question_id: None,
+            outcome: crate::common::enums::PolymarketOutcome::yes(),
+            question: "Test market?".to_string(),
+            description: None,
+            price_precision: 3,
+            tick_size: Decimal::new(1, 3),
+            min_size: None,
+            maker_fee: None,
+            taker_fee: None,
+            start_date: None,
+            event_start_time: None,
+            end_date: None,
+            active: true,
+            closed: false,
+            market_slug: None,
+            neg_risk: None,
+            resolution_source: None,
+            crypto_market_config: None,
+            fee_schedule: None,
+            game_id: None,
+        };
+
+        crate::http::parse::create_instrument_from_def(&def, UnixNanos::from(1))
+            .expect("valid test instrument")
+    }
+
+    fn test_instruments() -> AtomicMap<Ustr, InstrumentAny> {
+        let instruments = AtomicMap::new();
+        instruments.insert(Ustr::from(TEST_TOKEN_ID), test_instrument());
+        instruments
+    }
+
+    fn test_fill_context() -> FillContext<'static> {
+        FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: TEST_USER_ADDRESS,
+            api_key: TEST_API_KEY,
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        }
+    }
+
+    fn confirmed_taker_trade() -> PolymarketTradeReport {
+        serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
+            .expect("valid trade fixture")
+    }
+
+    fn open_order() -> PolymarketOpenOrder {
+        serde_json::from_str(include_str!("../../test_data/http_open_order.json"))
+            .expect("valid open-order fixture")
+    }
+
+    #[rstest]
+    fn foreign_confirmed_taker_trade_is_ignored() {
+        let mut trade = confirmed_taker_trade();
+        trade.maker_address = "0x1111111111111111111111111111111111111111".to_string();
+        trade.owner = "foreign-api-key".to_string();
+
+        let (reports, _) = build_fill_reports_from_trades(
+            &[trade],
+            &test_fill_context(),
+            &test_instruments(),
+            FillReportScope::new(None, None),
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .expect("foreign taker trade is outside local report scope");
+
+        assert!(reports.is_empty());
+    }
+
+    #[rstest]
+    fn confirmed_taker_trade_with_wrong_condition_fails_binding() {
+        let mut trade = confirmed_taker_trade();
+        trade.market =
+            Ustr::from("0x1111111111111111111111111111111111111111111111111111111111111111");
+
+        let error = build_fill_reports_from_trades(
+            &[trade],
+            &test_fill_context(),
+            &test_instruments(),
+            FillReportScope::new(None, None),
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .expect_err("owned trade with contradictory condition must fail");
+
+        assert!(error.to_string().contains("condition"));
+    }
+
+    #[rstest]
+    fn confirmed_taker_trade_with_wrong_outcome_fails_binding() {
+        let mut trade = confirmed_taker_trade();
+        trade.outcome = crate::common::enums::PolymarketOutcome::no();
+
+        let error = build_fill_reports_from_trades(
+            &[trade],
+            &test_fill_context(),
+            &test_instruments(),
+            FillReportScope::new(None, None),
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .expect_err("owned trade with contradictory outcome must fail");
+
+        assert!(error.to_string().contains("outcome"));
+    }
+
+    #[rstest]
+    fn owned_maker_leg_with_wrong_outcome_fails_binding() {
+        let mut trade = confirmed_taker_trade();
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        trade.maker_orders[0].owner = TEST_API_KEY.to_string();
+        trade.maker_orders[0].outcome = crate::common::enums::PolymarketOutcome::no();
+
+        let error = build_fill_reports_from_trades(
+            &[trade],
+            &test_fill_context(),
+            &test_instruments(),
+            FillReportScope::new(None, None),
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .expect_err("owned maker leg with contradictory outcome must fail");
+
+        assert!(error.to_string().contains("outcome"));
+    }
+
+    #[rstest]
+    fn owned_open_order_with_wrong_condition_fails_binding() {
+        let mut order = open_order();
+        order.market =
+            Ustr::from("0x1111111111111111111111111111111111111111111111111111111111111111");
+
+        let error = build_order_reports_from_orders(
+            &[order],
+            &test_instruments(),
+            &test_fill_context(),
+            None,
+            UnixNanos::from(1),
+            None,
+        )
+        .expect_err("owned open order with contradictory condition must fail");
+
+        assert!(error.to_string().contains("condition"));
+    }
+
+    #[rstest]
+    fn owned_open_order_with_wrong_outcome_fails_binding() {
+        let mut order = open_order();
+        order.outcome = crate::common::enums::PolymarketOutcome::no();
+
+        let error = build_order_reports_from_orders(
+            &[order],
+            &test_instruments(),
+            &test_fill_context(),
+            None,
+            UnixNanos::from(1),
+            None,
+        )
+        .expect_err("owned open order with contradictory outcome must fail");
+
+        assert!(error.to_string().contains("outcome"));
+    }
 
     #[rstest]
     fn caps_order_report_to_confirmed_companion_fills() {
@@ -752,8 +2071,8 @@ mod tests {
             market: Ustr::from("0xmarket"),
             original_size: rust_decimal_macros::dec!(10),
             outcome: crate::common::enums::PolymarketOutcome::yes(),
-            maker_address: "0xmaker".to_string(),
-            owner: "owner".to_string(),
+            maker_address: TEST_USER_ADDRESS.to_string(),
+            owner: TEST_API_KEY.to_string(),
             price: rust_decimal_macros::dec!(0.5),
             side: crate::common::enums::PolymarketOrderSide::Buy,
             size_matched: rust_decimal_macros::dec!(0),
@@ -769,7 +2088,7 @@ mod tests {
         let error = build_order_reports_from_orders(
             &[unmapped_open_order()],
             &AtomicMap::new(),
-            AccountId::from("POLY-001"),
+            &test_fill_context(),
             None,
             UnixNanos::from(1),
             None,
@@ -788,7 +2107,7 @@ mod tests {
         let error = build_order_reports_from_orders(
             &[unmapped_open_order()],
             &AtomicMap::new(),
-            AccountId::from("POLY-001"),
+            &test_fill_context(),
             None,
             UnixNanos::from(1),
             Some(std::slice::from_ref(&instrument_id)),
@@ -807,7 +2126,7 @@ mod tests {
         let (reports, filtered) = build_order_reports_from_orders(
             &[unmapped_open_order()],
             &AtomicMap::new(),
-            AccountId::from("POLY-001"),
+            &test_fill_context(),
             None,
             UnixNanos::from(1),
             Some(std::slice::from_ref(&scoped)),
@@ -816,28 +2135,5 @@ mod tests {
 
         assert!(reports.is_empty());
         assert_eq!(filtered, 1);
-    }
-
-    #[rstest]
-    fn in_scope_unmapped_position_errors() {
-        let reports = vec![PositionStatusReport::new(
-            AccountId::from("POLY-001"),
-            InstrumentId::from("0xmarket-token.POLYMARKET"),
-            PositionSideSpecified::Long,
-            Quantity::from("10.000000"),
-            UnixNanos::from(1),
-            UnixNanos::from(1),
-            None,
-            None,
-            None,
-        )];
-
-        let error = retain_mapped_position_reports(reports, &AtomicMap::new(), None)
-            .expect_err("in-scope position miss must fail");
-
-        let message = error.to_string();
-
-        assert!(message.contains("unmapped in-scope position"));
-        assert!(message.contains("set instrument_config.load_ids"));
     }
 }

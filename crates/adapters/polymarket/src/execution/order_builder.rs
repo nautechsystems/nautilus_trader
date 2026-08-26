@@ -413,6 +413,11 @@ fn to_fixed_decimal(d: Decimal) -> Decimal {
     Decimal::from(mantissa)
 }
 
+/// Returns the share quantity encoded into a signed limit order.
+pub(crate) fn signed_limit_order_quantity(quantity: Decimal) -> Decimal {
+    quantity.trunc_with_scale(LOT_SIZE_SCALE)
+}
+
 fn validate_immediate_buy_maker_amount(
     price: Decimal,
     quantity: Decimal,
@@ -428,7 +433,7 @@ fn validate_immediate_buy_maker_amount(
         return Ok(());
     }
 
-    let quantity = quantity.trunc_with_scale(LOT_SIZE_SCALE);
+    let quantity = signed_limit_order_quantity(quantity);
     let maker_amount = (quantity * price).normalize();
     if maker_amount.scale() > LOT_SIZE_SCALE {
         return Err(format!(
@@ -457,7 +462,7 @@ pub fn compute_maker_taker_amounts(
     tick_decimals: u32,
 ) -> (Decimal, Decimal) {
     let precision = tick_decimals + LOT_SIZE_SCALE;
-    let qty = quantity.trunc_with_scale(LOT_SIZE_SCALE);
+    let qty = signed_limit_order_quantity(quantity);
 
     match side {
         PolymarketOrderSide::Buy => {

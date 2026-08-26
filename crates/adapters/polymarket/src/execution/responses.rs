@@ -33,7 +33,7 @@ use super::{
     identity::{OrderIdentity, OrderIdentityRegistry},
     order_fill_tracker::{BufferedFill, FillCorrectionMetadata, OrderFillTrackerMap},
     pending::{PendingCancelTracker, PendingSubmitTracker},
-    reconciliation::cap_order_report_filled_qty,
+    reconciliation::{cap_order_report_filled_qty, validate_client_bound_order_quantity},
     reports::get_pusd_currency,
     submitter::{
         OrderSubmitter, SubmitResponseOutcome, is_fok_unfilled, submit_response_outcome,
@@ -43,6 +43,7 @@ use super::{
 };
 use crate::http::{
     error::{sanitize_error_text, strategy_rejection_reason},
+    models::PolymarketOpenOrder,
     query::{OrderResponse, OrderResponseStatus},
 };
 
@@ -220,6 +221,33 @@ pub(super) fn emit_market_order_submitted(
     emitter.emit_order_submitted(order);
 
     if !update_quantity || expected_base_qty.is_zero() {
+        return;
+    }
+
+    emit_signed_base_quantity_update(
+        order,
+        is_quote_qty,
+        side,
+        amount,
+        expected_base_qty,
+        size_precision,
+        emitter,
+        clock,
+    );
+}
+
+#[expect(clippy::too_many_arguments)]
+pub(super) fn emit_signed_base_quantity_update(
+    order: &mut OrderAny,
+    is_quote_qty: bool,
+    side: OrderSide,
+    amount: Quantity,
+    expected_base_qty: Decimal,
+    size_precision: u8,
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+) {
+    if expected_base_qty.is_zero() {
         return;
     }
 
@@ -937,8 +965,47 @@ pub(super) async fn check_fok_status(
         return;
     }
 
+    let ctx = FokRestStatusContext {
+        order,
+        fill_tracker,
+        order_identities,
+        emitter,
+        account_id,
+        size_precision,
+        price_precision,
+        clock,
+    };
+    handle_fok_rest_status(&venue_order, venue_order_id, &ctx);
+}
+
+struct FokRestStatusContext<'a> {
+    order: &'a OrderAny,
+    fill_tracker: &'a OrderFillTrackerMap,
+    order_identities: &'a OrderIdentityRegistry,
+    emitter: &'a ExecutionEventEmitter,
+    account_id: AccountId,
+    size_precision: u8,
+    price_precision: u8,
+    clock: &'static AtomicTime,
+}
+
+fn handle_fok_rest_status(
+    venue_order: &PolymarketOpenOrder,
+    venue_order_id: VenueOrderId,
+    ctx: &FokRestStatusContext<'_>,
+) {
+    let order_id = venue_order.id.as_str();
+
+    if ctx.order.order_type() == OrderType::Limit
+        && !ctx.order.is_quote_quantity()
+        && let Err(e) = validate_client_bound_order_quantity(venue_order, ctx.order)
+    {
+        log::warn!("FOK status check rejected contradictory order {order_id}: {e}");
+        return;
+    }
+
     let order_status = OrderStatus::from(venue_order.status);
-    let ts_now = clock.get_time_ns();
+    let ts_now = ctx.clock.get_time_ns();
 
     if matches!(
         order_status,
@@ -947,41 +1014,47 @@ pub(super) async fn check_fok_status(
             | OrderStatus::Filled
             | OrderStatus::Canceled
             | OrderStatus::Expired
-    ) && order_identities.mark_accepted(venue_order_id)
+    ) && ctx.order_identities.mark_accepted(venue_order_id)
     {
-        emitter.emit_order_accepted(order, venue_order_id, ts_now);
+        ctx.emitter
+            .emit_order_accepted(ctx.order, venue_order_id, ts_now);
     }
 
     match order_status {
         OrderStatus::Rejected => {
             log::debug!("FOK order {order_id} resolved via REST as Rejected");
-            emitter.emit_order_rejected(order, "FOK order unfilled", ts_now, false);
+            ctx.emitter
+                .emit_order_rejected(ctx.order, "FOK order unfilled", ts_now, false);
         }
         OrderStatus::Canceled => {
             log::debug!("FOK order {order_id} resolved via REST as Canceled");
-            emitter.emit_order_canceled(order, Some(venue_order_id), ts_now);
+            ctx.emitter
+                .emit_order_canceled(ctx.order, Some(venue_order_id), ts_now);
         }
         OrderStatus::Expired => {
             log::debug!("FOK order {order_id} resolved via REST as Expired");
-            emitter.emit_order_expired(order, Some(venue_order_id), ts_now);
+            ctx.emitter
+                .emit_order_expired(ctx.order, Some(venue_order_id), ts_now);
         }
         OrderStatus::Filled => {
-            let quantity = Quantity::from_decimal_dp(venue_order.original_size, size_precision)
-                .unwrap_or_else(|_| Quantity::zero(size_precision));
-            let filled_qty = Quantity::from_decimal_dp(venue_order.size_matched, size_precision)
-                .unwrap_or_else(|_| Quantity::zero(size_precision));
-            let confirmed_filled = fill_tracker
+            let quantity = Quantity::from_decimal_dp(venue_order.original_size, ctx.size_precision)
+                .unwrap_or_else(|_| Quantity::zero(ctx.size_precision));
+            let filled_qty =
+                Quantity::from_decimal_dp(venue_order.size_matched, ctx.size_precision)
+                    .unwrap_or_else(|_| Quantity::zero(ctx.size_precision));
+            let confirmed_filled = ctx
+                .fill_tracker
                 .get_cumulative_filled(&venue_order_id)
-                .unwrap_or_else(|| Quantity::zero(size_precision));
-            let price = Price::from_decimal_dp(venue_order.price, price_precision)
-                .unwrap_or_else(|_| Price::zero(price_precision));
+                .unwrap_or_else(|| Quantity::zero(ctx.size_precision));
+            let price = Price::from_decimal_dp(venue_order.price, ctx.price_precision)
+                .unwrap_or_else(|_| Price::zero(ctx.price_precision));
 
             let mut report = OrderStatusReport::new(
-                account_id,
-                order.instrument_id(),
-                Some(order.client_order_id()),
+                ctx.account_id,
+                ctx.order.instrument_id(),
+                Some(ctx.order.client_order_id()),
                 venue_order_id,
-                order.order_side(),
+                ctx.order.order_side(),
                 OrderType::Limit,
                 TimeInForce::Fok,
                 order_status,
@@ -998,7 +1071,7 @@ pub(super) async fn check_fok_status(
             log::debug!(
                 "FOK order {order_id} resolved via REST as Filled; deferring fill quantity until confirmation"
             );
-            emitter.send_order_status_report(report);
+            ctx.emitter.send_order_status_report(report);
         }
         OrderStatus::Accepted | OrderStatus::PartiallyFilled => {}
         _ => {}
@@ -1011,7 +1084,7 @@ mod tests {
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
         enums::{AccountType, LiquiditySide},
-        identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId},
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
         types::{Currency, Money},
@@ -1023,9 +1096,10 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{
-            PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOutcome,
-            PolymarketTradeStatus,
+            PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide,
+            PolymarketOrderStatus, PolymarketOutcome, PolymarketTradeStatus,
         },
+        execution::reconciliation::FillReportScope,
         http::{
             models::GammaMarket,
             parse::{create_instrument_from_def, parse_gamma_market},
@@ -1048,6 +1122,26 @@ mod tests {
         create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap()
     }
 
+    fn bind_instrument_to_trade(
+        instrument: &mut InstrumentAny,
+        trade: &crate::http::models::PolymarketTradeReport,
+    ) {
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("expected binary option test instrument");
+        };
+        binary.id =
+            InstrumentId::from(format!("{}-{}.POLYMARKET", trade.market, trade.asset_id).as_str());
+        binary.raw_symbol = Symbol::from(trade.asset_id.as_str());
+        binary.outcome = Some(trade.outcome.inner());
+        binary.info = Some(
+            serde_json::from_value(serde_json::json!({
+                "condition_id": trade.market.as_str(),
+                "token_id": trade.asset_id.as_str(),
+            }))
+            .expect("valid instrument binding metadata"),
+        );
+    }
+
     fn test_emitter() -> (
         ExecutionEventEmitter,
         tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -1065,15 +1159,41 @@ mod tests {
     }
 
     fn test_limit_order(client_order_id: &str, instrument_id: InstrumentId) -> OrderAny {
+        test_limit_order_with(
+            client_order_id,
+            instrument_id,
+            Quantity::new(10.0, 0),
+            Price::new(0.50, 4),
+            TimeInForce::Gtc,
+        )
+    }
+
+    fn test_fractional_fok_limit_order(instrument_id: InstrumentId) -> OrderAny {
+        test_limit_order_with(
+            "O-FOK-QUANTITY-MISMATCH",
+            instrument_id,
+            Quantity::from("23.45"),
+            Price::new(0.40, 4),
+            TimeInForce::Fok,
+        )
+    }
+
+    fn test_limit_order_with(
+        client_order_id: &str,
+        instrument_id: InstrumentId,
+        quantity: Quantity,
+        price: Price,
+        time_in_force: TimeInForce,
+    ) -> OrderAny {
         OrderAny::Limit(LimitOrder::new(
             TraderId::from("TESTER-001"),
             StrategyId::from("S-001"),
             instrument_id,
             ClientOrderId::from(client_order_id),
             OrderSide::Buy,
-            Quantity::new(10.0, 0),
-            Price::new(0.50, 4),
-            TimeInForce::Gtc,
+            quantity,
+            price,
+            time_in_force,
             None,
             false,
             false,
@@ -1190,6 +1310,36 @@ mod tests {
         );
 
         assert_eq!(fok_check_order_id(&response, TimeInForce::Fok), None);
+    }
+
+    #[rstest]
+    fn test_handle_fok_rest_status_rejects_contradictory_signed_quantity() {
+        let instrument = test_instrument();
+        let order = test_fractional_fok_limit_order(instrument.id());
+        let mut venue_order: PolymarketOpenOrder = load("http_open_order.json");
+        venue_order.id = "test-limit-fok-quantity-mismatch".to_string();
+        venue_order.status = PolymarketOrderStatus::Matched;
+        venue_order.original_size = Decimal::new(2_346, 2);
+        venue_order.size_matched = Decimal::new(2_346, 2);
+        let venue_order_id = VenueOrderId::from(venue_order.id.as_str());
+        let fill_tracker = OrderFillTrackerMap::new();
+        let order_identities = OrderIdentityRegistry::default();
+        let (emitter, mut receiver) = test_emitter();
+        let ctx = FokRestStatusContext {
+            order: &order,
+            fill_tracker: &fill_tracker,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            size_precision: instrument.size_precision(),
+            price_precision: instrument.price_precision(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        handle_fok_rest_status(&venue_order, venue_order_id, &ctx);
+
+        assert!(receiver.try_recv().is_err());
+        assert!(order_identities.get(&venue_order_id).is_none());
     }
 
     #[rstest]
@@ -1500,8 +1650,9 @@ mod tests {
             &[trade],
             &ctx,
             &instruments,
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1_000_000_000u64),
+            None,
             None,
         )
         .expect("non-confirmed trades do not build fill reports");
@@ -1511,9 +1662,10 @@ mod tests {
 
     #[rstest]
     fn test_confirmed_maker_trade_owned_by_case_variant_address_generates_fill_report() {
-        let instrument = test_instrument();
+        let mut instrument = test_instrument();
         let mut trade: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
         trade.trader_side = PolymarketLiquiditySide::Maker;
+        bind_instrument_to_trade(&mut instrument, &trade);
 
         // Recorded venue payloads carry EIP-55 checksummed (mixed-case) maker
         // addresses while configured funder addresses are commonly lowercase.
@@ -1545,8 +1697,9 @@ mod tests {
             &[trade],
             &ctx,
             &instruments,
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1_000_000_000u64),
+            None,
             None,
         )
         .expect("owned confirmed maker trade builds a fill report");
@@ -1576,7 +1729,7 @@ mod tests {
         let ctx = crate::execution::reconciliation::FillContext {
             account_id: AccountId::from("POLY-001"),
             user_address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
-            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            api_key: "00000000-0000-0000-0000-000000000001",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
@@ -1585,8 +1738,9 @@ mod tests {
             &[trade],
             &ctx,
             &instruments,
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1_000_000_000u64),
+            None,
             None,
         )
         .expect("unmapped instruments are counted rather than parsed");
@@ -1595,9 +1749,11 @@ mod tests {
         assert_eq!(
             discards,
             crate::execution::reconciliation::FillBuildDiscards {
+                has_pending_target: false,
                 unmapped_instruments: 1,
                 in_scope_historical: 1,
                 unowned_maker_trades: 0,
+                untimestamped_trades: 0,
             },
         );
     }
@@ -1624,8 +1780,9 @@ mod tests {
             &[trade],
             &ctx,
             &instruments,
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1_000_000_000u64),
+            None,
             None,
         )
         .expect("unowned maker trades are counted rather than parsed");
@@ -1649,6 +1806,7 @@ mod tests {
 
         let mut taker: crate::http::models::PolymarketTradeReport = load("http_trade_report.json");
         taker.id = "trade-unrepresentable-taker".to_string();
+        bind_instrument_to_trade(&mut instrument, &taker);
         let mut maker = taker.clone();
         maker.id = "trade-valid-maker".to_string();
         maker.trader_side = PolymarketLiquiditySide::Maker;
@@ -1659,7 +1817,7 @@ mod tests {
         let ctx = crate::execution::reconciliation::FillContext {
             account_id: AccountId::from("POLY-001"),
             user_address: &configured_address,
-            api_key: "ffffffff-ffff-ffff-ffff-ffffffffffff",
+            api_key: "00000000-0000-0000-0000-000000000001",
             pusd: Currency::pUSD(),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
         };
@@ -1668,8 +1826,9 @@ mod tests {
             &[maker.clone()],
             &ctx,
             &instruments,
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1_000_000_000u64),
+            None,
             None,
         )
         .expect("maker commission is zero and representable");
@@ -1677,8 +1836,9 @@ mod tests {
             &[maker, taker],
             &ctx,
             &instruments,
-            None,
+            FillReportScope::new(None, None),
             UnixNanos::from(1_000_000_000u64),
+            None,
             None,
         );
 
