@@ -1773,11 +1773,6 @@ impl BybitHttpClient {
             .store(use_spot_position_reports, Ordering::Relaxed);
     }
 
-    #[must_use]
-    pub(crate) fn use_spot_position_reports(&self) -> bool {
-        self.use_spot_position_reports.load(Ordering::Relaxed)
-    }
-
     pub fn cancel_all_requests(&self) {
         self.inner.cancel_all_requests();
     }
@@ -4697,7 +4692,8 @@ impl BybitHttpClient {
     ///
     /// # Errors
     ///
-    /// This function returns an error if the request fails.
+    /// This function returns an error if the request fails, or if SPOT position reports are enabled
+    /// and no instrument is specified, because wallet balances carry no pair identity.
     ///
     /// # References
     ///

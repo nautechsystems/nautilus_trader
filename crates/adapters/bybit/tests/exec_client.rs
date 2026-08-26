@@ -824,7 +824,7 @@ async fn test_exec_client_scoped_spot_position_reports_follow_config(
 
 #[rstest]
 #[tokio::test]
-async fn test_exec_client_mixed_unscoped_spot_reports_fail_before_derivative_request() {
+async fn test_exec_client_mixed_unscoped_position_reports_omit_spot() {
     let (addr, state) = start_test_server().await.unwrap();
     let mut config = create_test_exec_config(addr);
     config.product_types = vec![BybitProductType::Linear, BybitProductType::Spot];
@@ -833,7 +833,11 @@ async fn test_exec_client_mixed_unscoped_spot_reports_fail_before_derivative_req
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
     client.connect().await.unwrap();
 
-    client
+    // Measure against a post-connect baseline, since connect issues requests of its own.
+    let positions_before = state.position_requests.load(Ordering::Relaxed);
+    let wallet_before = state.wallet_balance_requests.load(Ordering::Relaxed);
+
+    let reports = client
         .generate_position_status_reports(&GeneratePositionStatusReports::new(
             UUID4::new(),
             UnixNanos::default(),
@@ -844,11 +848,49 @@ async fn test_exec_client_mixed_unscoped_spot_reports_fail_before_derivative_req
             None,
         ))
         .await
-        .expect_err("unscoped SPOT reports cannot be attributed to a pair");
+        .expect("derivative reports must succeed when SPOT coverage is unavailable");
 
-    assert_eq!(state.position_requests.load(Ordering::Relaxed), 0);
+    assert!(
+        reports
+            .iter()
+            .any(|report| report.instrument_id == "BTCUSDT-LINEAR.BYBIT".into())
+    );
+    // An unscoped LINEAR query is one request per settle coin (USDT, USDC); SPOT adds none.
+    assert_eq!(
+        state.position_requests.load(Ordering::Relaxed) - positions_before,
+        2,
+        "the LINEAR product type should still be requested"
+    );
+    // SPOT is served from wallet balances, so this is what proves it was omitted.
+    assert_eq!(
+        state.wallet_balance_requests.load(Ordering::Relaxed) - wallet_before,
+        0,
+        "no SPOT wallet balance request should be issued for a bulk report"
+    );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case("BTCUSDT-LINEAR.BYBIT", true)]
+#[case("BTCUSD-INVERSE.BYBIT", true)]
+#[case("ETHUSDT-SPOT.BYBIT", false)]
+#[case("BTCUSDT.BYBIT", false)]
+#[tokio::test]
+async fn test_exec_client_bulk_position_coverage_by_product_type(
+    #[case] instrument_id: &str,
+    #[case] expected: bool,
+) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let config = create_test_exec_config(addr);
+    let (client, _rx, _cache) = create_test_execution_client_with_config(config);
+
+    // An identifier carrying no recognized product-type suffix must fail closed: absence of a
+    // report from a bulk request is not evidence the position is flat.
+    assert_eq!(
+        client.provides_bulk_position_coverage(InstrumentId::from(instrument_id)),
+        expected
+    );
 }
 
 #[rstest]

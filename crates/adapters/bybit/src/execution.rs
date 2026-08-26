@@ -279,6 +279,12 @@ impl BybitExecutionClient {
         })
     }
 
+    const fn provides_bulk_position_coverage_for_product_type(
+        product_type: BybitProductType,
+    ) -> bool {
+        !matches!(product_type, BybitProductType::Spot)
+    }
+
     fn resolve_position_idx(
         &self,
         instrument_id: InstrumentId,
@@ -596,6 +602,13 @@ impl ExecutionClient for BybitExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        // Resolve the suffix directly rather than through `get_product_type_for_instrument`, whose
+        // Linear fallback would claim coverage for an identifier this adapter cannot classify.
+        BybitProductType::from_suffix(instrument_id.symbol.as_str())
+            .is_some_and(Self::provides_bulk_position_coverage_for_product_type)
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -1074,15 +1087,11 @@ impl ExecutionClient for BybitExecutionClient {
                 .await?;
             reports.append(&mut fetched);
         } else {
-            if self.http_client.use_spot_position_reports()
-                && self.product_types().contains(&BybitProductType::Spot)
-            {
-                anyhow::bail!(
-                    "SPOT wallet balances carry no pair identity and cannot be attributed for a bulk position report request"
-                );
-            }
-
             for product_type in self.product_types() {
+                if !Self::provides_bulk_position_coverage_for_product_type(product_type) {
+                    continue;
+                }
+
                 let mut fetched = self
                     .http_client
                     .request_position_status_reports(self.core.account_id, product_type, None)
@@ -1123,8 +1132,9 @@ impl ExecutionClient for BybitExecutionClient {
         let position_reports_fut = async {
             let mut reports = Vec::new();
             let product_types = self.product_types();
-            let skip_spot = self.http_client.use_spot_position_reports()
-                && product_types.contains(&BybitProductType::Spot);
+            let skip_spot = product_types.iter().any(|product_type| {
+                !Self::provides_bulk_position_coverage_for_product_type(*product_type)
+            });
 
             if skip_spot {
                 log::warn!(
@@ -1133,7 +1143,7 @@ impl ExecutionClient for BybitExecutionClient {
             }
 
             for product_type in product_types {
-                if skip_spot && product_type == BybitProductType::Spot {
+                if !Self::provides_bulk_position_coverage_for_product_type(product_type) {
                     continue;
                 }
 
