@@ -47,6 +47,7 @@ Released on TBD (UTC).
 - Fixed reconnect-buffered socket messages stalling or being overtaken by newer messages
 - Fixed Betfair stream readiness, liveness, subscription replay, and reconnect reconciliation
 - Fixed Betfair modify recovery after ambiguous REST outcomes and instruction failures
+- Fixed Betfair terminal order identity across reconnects, late fills, void corrections, and replacements
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
 - Fixed Bybit rate limiting causing expired requests, venue rejections, and inconsistent order state
 - Fixed Hyperliquid execution disconnect cleanup

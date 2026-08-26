@@ -177,8 +177,9 @@ Startup:
 4. Generate startup mass status from `listCurrentOrders`.
 5. Reconcile order and fill reports into the execution engine.
 
-Cached open orders with venue identity are restored as already accepted, so startup or resync does
-not emit another `OrderAccepted`.
+Cached open orders with venue identity are restored as already accepted. The adapter also restores
+retained identity for up to 10,000 recent closed cached orders. Neither path emits another
+`OrderAccepted`.
 
 On every stream reconnect, the adapter repeats the order-and-fill mass-status fetch over a recent
 window. It halts new-order submissions after transport loss or a server `connectionClosed` status
@@ -325,29 +326,48 @@ while a replacement is pending and the REST call later returns any definitive re
 ### Recovering an ambiguous modification
 
 When the REST response is lost or ambiguous, the adapter resolves the modification from the OCM
-stream, or from the next `listCurrentOrders` reconciliation when the stream stays silent:
+stream or from a confirming `listCurrentOrders` result. Only a fully paginated reconciliation can
+prove that the original order remained unchanged or closed without a replacement:
 
 - A bet listed under the same `customerOrderRef` with a different Bet ID promotes the pending
-  replace and emits `OrderUpdated` carrying the new Bet ID, its price, and the original size.
+  replace. Both active and closed listings emit `OrderUpdated` carrying the new Bet ID, its price,
+  and the original size. An active listing is then withheld from the resolving report set, while a
+  closed listing follows the update through its terminal order status report.
 - A bet whose active size (matched plus remaining) has fallen to at least the requested size but
-  below the original emits `OrderUpdated` carrying the reduced size. A smaller active size is a
-  lapse or void rather than the requested reduction, and an unchanged one means Betfair has not
-  applied the reduction yet, so both leave the command in flight.
+  below the original confirms the reduction. An active listing emits `OrderUpdated` carrying the
+  reduced size, while a closed listing carries the confirmed size in its terminal report without an
+  `OrderUpdated`. A smaller active size is a lapse or void rather than the requested reduction, and
+  an unchanged one means Betfair has not applied the reduction yet, so both leave the command in
+  flight.
 
 Whichever channel resolves the modification first wins, and the others become no-ops, so a size
 reduction confirmed by the stream is not repeated when its REST response finally returns.
 
-A listing that still carries only the original bet proves nothing about a request that may still be
-running, so the order stays `PENDING_UPDATE`. A definitive modification failure discards the pending
-state, so a later lapse cannot be mistaken for the requested reduction.
+A listing that still carries only the original bet proves nothing while the REST request may still
+be running, so the order stays `PENDING_UPDATE`. After the REST result becomes ambiguous, a fully
+paginated reconciliation that shows the original Bet ID still executable emits
+`OrderModifyRejected`, retains its active report, and clears the pending replacement. If
+`customerOrderRef` uniquely resolves to the pending order, the same reconciliation with a closed
+original Bet ID and no replacement clears the pending state and lets the terminal report carry the
+cancellation. If `customerOrderRef` does not resolve uniquely, the adapter cannot identify a
+possible new Bet ID, so the replacement remains pending. A definitive modification failure also
+clears the pending state, so a later lapse cannot be mistaken for the requested reduction.
 
-Reconciliation withholds two order status reports so the resolved state reaches the strategy once,
-through the order event rather than through a report:
+Reconciliation withholds order status reports that would duplicate or contradict the resolved state:
 
-- The superseded replace leg, whose `CANCELED` report would otherwise cancel the live order.
-- The resolved order's own report on the pass that resolves it, because that order is still pending
-  locally while reconciliation runs. Later passes, including terminal reports, carry the reduced
-  size rather than Betfair's original stake.
+- The superseded replace leg on the resolving pass, whether the replacement is active or terminal,
+  because its `CANCELED` report would otherwise cancel the logical order.
+- The active report that produced `OrderUpdated`, because the order is still pending locally while
+  reconciliation runs.
+
+Reports retained alongside `OrderModifyRejected` and terminal reports follow the normal report path.
+A terminal replacement report follows its `OrderUpdated` into the retained terminal lifecycle. A
+terminal reduction resolves without `OrderUpdated`; that report and later reports carry the confirmed
+size rather than Betfair's original stake.
+
+The resolving pass suppresses a historical Bet ID as described above. Once the logical replacement
+order is terminal, later explicit and mass-status queries retain order status reports for its
+historical Bet IDs.
 
 ## Order command failures and retries
 
@@ -364,7 +384,7 @@ Betfair provides separate values for logical order correlation and request dedup
 Client order IDs longer than 32 characters use their last 32 characters as `customerOrderRef`.
 Keep those suffixes distinct across tracked orders. A new submission whose reference matches
 another tracked order emits `OrderDenied` before `OrderSubmitted` or HTTP dispatch with
-`VALIDATION_FAILED: customerOrderRef <ref> collides with another active order`; in an order list,
+`VALIDATION_FAILED: customerOrderRef <ref> collides with another tracked order`; in an order list,
 only the colliding leg is denied.
 :::
 
@@ -449,6 +469,14 @@ The adapter handles several edge cases when processing fills from the stream:
 - **Replacement fills**: a fill reported against an old Bet ID updates the same logical order once
   without replacing its current Bet ID. A partial fill received while an order is `PENDING_UPDATE`
   or `PENDING_CANCEL` updates its filled quantity while preserving the pending command state.
+- **Late terminal corrections**: the adapter retains correlation and per-Bet fill and void state for
+  the 10,000 most recent terminal identities, including identities restored from closed cached
+  orders. Locally owned identities and external terminal Bet IDs share this bound. Delayed fills and
+  void corrections for an unambiguous retained order emit direct order events. After applying a
+  delayed fill to a canceled order, the adapter emits `OrderCanceled` again to preserve the terminal
+  state. If the same update carries void corrections, the cancel precedes those corrections.
+  Correlation and deduplication state expire together, so an older replay can return through the
+  report path.
 - **Gap-window fills**: a fill that completes and rolls off the unmatched book during a
   stream disconnect is recovered by the post-reconnect mass-status reconciliation; see
   [Post-reconnect reconciliation](#post-reconnect-reconciliation).

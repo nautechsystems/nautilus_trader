@@ -54,7 +54,11 @@ use nautilus_betfair::{
     provider::{BetfairInstrumentProvider, NavigationFilter},
 };
 use nautilus_common::{
-    actor::DataActor, enums::Environment, providers::InstrumentProvider, timer::TimeEvent,
+    actor::DataActor,
+    enums::Environment,
+    messages::system::{SocketState, SocketStateChanged},
+    providers::InstrumentProvider,
+    timer::TimeEvent,
 };
 use nautilus_core::UUID4;
 use nautilus_live::{
@@ -85,6 +89,7 @@ use serde::Deserialize;
 use ustr::Ustr;
 
 const RECONNECT_REPLACE_TIMER: &str = "betfair-live-reconnect-replace";
+const USER_STREAM_ENDPOINT: &str = "betfair-user-streams";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -143,6 +148,8 @@ struct LiveExecutionState {
     updated: usize,
     canceled: usize,
     filled: usize,
+    socket_connected: usize,
+    socket_disconnected: usize,
     accepted_bet_id: Option<BetId>,
     updated_bet_id: Option<BetId>,
     bet_ids: HashSet<BetId>,
@@ -152,6 +159,7 @@ struct LiveExecutionState {
 #[derive(Debug, Clone, Default)]
 struct LiveExecutionProbe {
     state: Arc<Mutex<LiveExecutionState>>,
+    completion: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,6 +168,20 @@ enum LiveExecutionScenario {
     InvalidReplace,
     ReconnectReplaceCancel,
     ReplaceFill,
+    ReconnectReplaceDuringRecovery,
+}
+
+impl LiveExecutionScenario {
+    fn reconnects(self) -> bool {
+        matches!(
+            self,
+            Self::ReconnectReplaceCancel | Self::ReconnectReplaceDuringRecovery
+        )
+    }
+
+    fn expects_fill(self) -> bool {
+        self == Self::ReplaceFill
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,6 +281,16 @@ impl LiveStressProbe {
 }
 
 impl LiveExecutionProbe {
+    fn record_socket_state(&self, socket_state: SocketState) -> bool {
+        let mut state = self.state.lock().unwrap();
+        let count = match socket_state {
+            SocketState::Connected => &mut state.socket_connected,
+            SocketState::Disconnected => &mut state.socket_disconnected,
+        };
+        *count += 1;
+        *count == 1
+    }
+
     fn record_accepted(&self, bet_id: BetId) -> bool {
         let mut state = self.state.lock().unwrap();
         state.record_bet_id(Some(bet_id.clone()));
@@ -276,41 +308,61 @@ impl LiveExecutionProbe {
     }
 
     fn record_canceled(&self, bet_id: Option<BetId>) {
-        let mut state = self.state.lock().unwrap();
-        state.record_bet_id(bet_id);
-        state.canceled += 1;
+        {
+            let mut state = self.state.lock().unwrap();
+            state.record_bet_id(bet_id);
+            state.canceled += 1;
+        }
+        self.completion.notify_one();
     }
 
     fn record_filled(&self, bet_id: BetId) {
-        let mut state = self.state.lock().unwrap();
-        state.record_bet_id(Some(bet_id));
-        state.filled += 1;
-        let failure = if state.updated != 1 {
-            Some(format!(
-                "replacement fill arrived after {} order updates",
-                state.updated,
-            ))
-        } else if state.filled != 1 {
-            Some("duplicate replacement fill event".to_string())
-        } else {
-            None
-        };
+        {
+            let mut state = self.state.lock().unwrap();
+            state.record_bet_id(Some(bet_id));
+            state.filled += 1;
+            let failure = if state.updated != 1 {
+                Some(format!(
+                    "replacement fill arrived after {} order updates",
+                    state.updated,
+                ))
+            } else if state.filled != 1 {
+                Some("duplicate replacement fill event".to_string())
+            } else {
+                None
+            };
 
-        if state.failure.is_none() {
-            state.failure = failure;
+            if state.failure.is_none() {
+                state.failure = failure;
+            }
         }
+        self.completion.notify_one();
     }
 
     fn fail(&self, reason: impl Into<String>) {
-        let mut state = self.state.lock().unwrap();
-        if state.failure.is_none() {
-            state.failure = Some(reason.into());
+        {
+            let mut state = self.state.lock().unwrap();
+            if state.failure.is_none() {
+                state.failure = Some(reason.into());
+            }
         }
+        self.completion.notify_one();
     }
 
     fn finished(&self) -> bool {
         let state = self.state.lock().unwrap();
         state.canceled == 1 || state.filled == 1 || state.failure.is_some()
+    }
+
+    async fn wait_finished(&self) {
+        loop {
+            let notified = self.completion.notified();
+
+            if self.finished() {
+                return;
+            }
+            notified.await;
+        }
     }
 
     fn snapshot(&self) -> LiveExecutionState {
@@ -335,6 +387,8 @@ struct LiveExecutionLifecycle {
     replace_price: Price,
     scenario: LiveExecutionScenario,
     probe: LiveExecutionProbe,
+    reconnect_requested: bool,
+    replace_requested: bool,
 }
 
 impl LiveExecutionLifecycle {
@@ -349,7 +403,8 @@ impl LiveExecutionLifecycle {
             LiveExecutionScenario::InvalidReplace => Price::from("2.57"),
             LiveExecutionScenario::ReplaceFill => Price::from("1.01"),
             LiveExecutionScenario::ReplaceCancel
-            | LiveExecutionScenario::ReconnectReplaceCancel => Price::from("980"),
+            | LiveExecutionScenario::ReconnectReplaceCancel
+            | LiveExecutionScenario::ReconnectReplaceDuringRecovery => Price::from("980"),
         };
         Self {
             core: StrategyCore::new(StrategyConfig {
@@ -362,10 +417,14 @@ impl LiveExecutionLifecycle {
             replace_price,
             scenario,
             probe,
+            reconnect_requested: false,
+            replace_requested: false,
         }
     }
 
     fn request_replace(&mut self) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.replace_requested, "replace already requested");
+        self.replace_requested = true;
         self.modify_order(
             self.client_order_id,
             None,
@@ -375,10 +434,33 @@ impl LiveExecutionLifecycle {
             None,
         )
     }
+
+    fn request_reconnect(&mut self) -> anyhow::Result<()> {
+        anyhow::ensure!(!self.reconnect_requested, "reconnect already requested");
+        self.reconnect_requested = true;
+        self.reconnect_socket(ClientId::from("BETFAIR"), USER_STREAM_ENDPOINT)
+    }
+
+    fn is_requested_user_stream_state(&self, event: &SocketStateChanged) -> bool {
+        self.reconnect_requested
+            && event.client_id == *BETFAIR_CLIENT_ID
+            && event.endpoint.as_str() == USER_STREAM_ENDPOINT
+    }
+
+    fn should_replace_during_recovery(
+        &self,
+        socket_state: SocketState,
+        first_observation: bool,
+    ) -> bool {
+        self.scenario == LiveExecutionScenario::ReconnectReplaceDuringRecovery
+            && socket_state == SocketState::Disconnected
+            && first_observation
+    }
 }
 
 impl DataActor for LiveExecutionLifecycle {
     fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_socket_state(None);
         let order = OrderTestBuilder::new(OrderType::Limit)
             .trader_id(TraderId::from("BETFAIR-LIVE-TESTER"))
             .strategy_id(StrategyId::from("BETFAIR-LIVE-SMOKE"))
@@ -398,6 +480,21 @@ impl DataActor for LiveExecutionLifecycle {
         }
         Ok(())
     }
+
+    fn on_socket_state(&mut self, event: &SocketStateChanged) -> anyhow::Result<()> {
+        if !self.is_requested_user_stream_state(event) {
+            return Ok(());
+        }
+
+        let first = self.probe.record_socket_state(event.state);
+        if self.should_replace_during_recovery(event.state, first)
+            && let Err(e) = self.request_replace()
+        {
+            self.probe
+                .fail(format!("replace during recovery failed: {e}"));
+        }
+        Ok(())
+    }
 }
 
 nautilus_strategy!(LiveExecutionLifecycle, {
@@ -405,9 +502,9 @@ nautilus_strategy!(LiveExecutionLifecycle, {
         let bet_id = event.venue_order_id.to_string();
 
         if self.probe.record_accepted(bet_id) {
-            let result = if self.scenario == LiveExecutionScenario::ReconnectReplaceCancel {
-                self.reconnect_socket(ClientId::from("BETFAIR"), "betfair-user-streams")
-                    .and_then(|()| {
+            let result = match self.scenario {
+                LiveExecutionScenario::ReconnectReplaceCancel => {
+                    self.request_reconnect().and_then(|()| {
                         let replace_at = self.clock().timestamp_ns() + 5_000_000_000;
                         self.clock().set_time_alert_ns(
                             RECONNECT_REPLACE_TIMER,
@@ -416,8 +513,11 @@ nautilus_strategy!(LiveExecutionLifecycle, {
                             None,
                         )
                     })
-            } else {
-                self.request_replace()
+                }
+                LiveExecutionScenario::ReconnectReplaceDuringRecovery => self.request_reconnect(),
+                LiveExecutionScenario::ReplaceCancel
+                | LiveExecutionScenario::InvalidReplace
+                | LiveExecutionScenario::ReplaceFill => self.request_replace(),
             };
 
             if let Err(e) = result {
@@ -434,7 +534,7 @@ nautilus_strategy!(LiveExecutionLifecycle, {
                 event.client_order_id
             ));
         } else if self.probe.record_updated(bet_id)
-            && self.scenario != LiveExecutionScenario::ReplaceFill
+            && !self.scenario.expects_fill()
             && let Err(e) = self.cancel_order(event.client_order_id, Some(*BETFAIR_CLIENT_ID), None)
         {
             self.probe.fail(format!("cancel_order failed: {e}"));
@@ -465,7 +565,7 @@ nautilus_strategy!(LiveExecutionLifecycle, {
     }
 
     fn on_order_filled(&mut self, event: &OrderFilled) {
-        if self.scenario == LiveExecutionScenario::ReplaceFill {
+        if self.scenario.expects_fill() {
             self.probe.record_filled(event.venue_order_id.to_string());
         } else {
             self.probe.fail(format!(
@@ -792,6 +892,7 @@ async fn live_replace_cancelled_not_placed() {
 #[case(LiveExecutionScenario::InvalidReplace)]
 #[case(LiveExecutionScenario::ReconnectReplaceCancel)]
 #[case(LiveExecutionScenario::ReplaceFill)]
+#[case(LiveExecutionScenario::ReconnectReplaceDuringRecovery)]
 #[tokio::test]
 #[ignore = "runs a production LiveNode and mutates orders on the configured live Betfair account"]
 async fn live_execution_client_replace_via_stream(#[case] scenario: LiveExecutionScenario) {
@@ -844,12 +945,10 @@ async fn live_execution_client_replace_via_stream(#[case] scenario: LiveExecutio
     let monitor_probe = probe.clone();
 
     let monitor = tokio::spawn(async move {
-        let deadline = Instant::now() + Duration::from_secs(60);
-        while !monitor_probe.finished() && Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_millis(200)).await;
-        }
-
-        if !monitor_probe.finished() {
+        if tokio::time::timeout(Duration::from_secs(60), monitor_probe.wait_finished())
+            .await
+            .is_err()
+        {
             monitor_probe.fail("live execution lifecycle timed out");
         }
         stop_handle.stop();
@@ -871,10 +970,8 @@ async fn live_execution_client_replace_via_stream(#[case] scenario: LiveExecutio
         &cleanup_client,
         &customer_order_ref,
         &known_bet_ids,
-        run_result.is_err()
-            || run_result.as_ref().is_ok_and(|result| result.is_err())
-            || state.failure.is_some(),
-        if scenario == LiveExecutionScenario::ReplaceFill {
+        live_run_failed(&run_result) || state.failure.is_some(),
+        if scenario.expects_fill() {
             stake
         } else {
             Decimal::ZERO
@@ -890,6 +987,13 @@ async fn live_execution_client_replace_via_stream(#[case] scenario: LiveExecutio
         panic!("live execution lifecycle failed: {failure}");
     }
     assert_eq!(state.accepted, 1);
+    if scenario.reconnects() {
+        assert_eq!(state.socket_disconnected, 1);
+        assert_eq!(state.socket_connected, 1);
+    } else {
+        assert_eq!(state.socket_disconnected, 0);
+        assert_eq!(state.socket_connected, 0);
+    }
 
     match scenario {
         LiveExecutionScenario::InvalidReplace => {
@@ -900,16 +1004,11 @@ async fn live_execution_client_replace_via_stream(#[case] scenario: LiveExecutio
         }
         LiveExecutionScenario::ReplaceCancel
         | LiveExecutionScenario::ReconnectReplaceCancel
-        | LiveExecutionScenario::ReplaceFill => {
+        | LiveExecutionScenario::ReplaceFill
+        | LiveExecutionScenario::ReconnectReplaceDuringRecovery => {
             assert_eq!(state.updated, 1);
-            assert_eq!(
-                state.canceled,
-                usize::from(scenario != LiveExecutionScenario::ReplaceFill),
-            );
-            assert_eq!(
-                state.filled,
-                usize::from(scenario == LiveExecutionScenario::ReplaceFill),
-            );
+            assert_eq!(state.canceled, usize::from(!scenario.expects_fill()),);
+            assert_eq!(state.filled, usize::from(scenario.expects_fill()),);
             assert_eq!(
                 known_bet_ids.len(),
                 2,
@@ -942,7 +1041,7 @@ async fn live_execution_client_replace_via_stream(#[case] scenario: LiveExecutio
                 Some(&client_order_id),
             );
 
-            if scenario == LiveExecutionScenario::ReplaceFill {
+            if scenario.expects_fill() {
                 assert_eq!(order.status(), OrderStatus::Filled);
                 assert_eq!(order.filled_qty(), Quantity::from(stake.to_string()));
             } else {
@@ -1070,9 +1169,7 @@ async fn run_live_execution_stress(
         &cleanup_client,
         &customer_order_refs,
         &known_bet_ids,
-        run_result.is_err()
-            || run_result.as_ref().is_ok_and(|result| result.is_err())
-            || failure.is_some(),
+        live_run_failed(&run_result) || failure.is_some(),
         Decimal::ZERO,
     )
     .await;
@@ -1167,6 +1264,10 @@ async fn run_live_execution_stress(
     }
 
     Ok(())
+}
+
+fn live_run_failed<T, E>(result: &Result<anyhow::Result<T>, E>) -> bool {
+    !matches!(result, Ok(Ok(_)))
 }
 
 fn build_live_execution_node(

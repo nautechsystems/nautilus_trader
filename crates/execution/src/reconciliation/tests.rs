@@ -3130,6 +3130,40 @@ fn test_reconcile_canceled_suppressed_for_previously_promoted_venue_order_id(
 }
 
 #[rstest]
+fn test_reconcile_terminal_replaced_leg_ignores_price_drift(instrument: InstrumentAny) {
+    let client_order_id = ClientOrderId::from("O-001");
+    let old_venue_order_id = VenueOrderId::from("V-001");
+    let new_venue_order_id = VenueOrderId::from("V-002");
+    let account_id = AccountId::from("SIM-001");
+    let mut order = build_order_promoted_to_new_leg(
+        &instrument,
+        client_order_id,
+        old_venue_order_id,
+        new_venue_order_id,
+        account_id,
+    );
+    let canceled = TestOrderEventStubs::canceled(&order, account_id, Some(new_venue_order_id));
+    order.apply(canceled).unwrap();
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        old_venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Canceled,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+    report.price = Some(Price::from("1.50000"));
+
+    let result = reconcile_order_report(&order, &report, Some(&instrument), UnixNanos::default());
+
+    assert_eq!(order.status(), OrderStatus::Canceled);
+    assert_eq!(order.venue_order_id(), Some(new_venue_order_id));
+    assert_eq!(order.price(), Some(Price::from("1.00000")));
+    assert!(result.is_none());
+}
+
+#[rstest]
 fn test_reconcile_canceled_forwarded_for_current_venue_order_id(instrument: InstrumentAny) {
     // After the same V-001 -> V-002 promotion, a genuine cancel of the live
     // successor (V-002, the current cached leg) must still be forwarded.

@@ -569,6 +569,24 @@ impl FillTracker {
         cumulative > previous
     }
 
+    /// Returns whether a cumulative Betfair fill update has not yet been applied.
+    #[must_use]
+    pub fn has_unseen_fill(&self, uo: &UnmatchedOrder) -> bool {
+        let size_matched = normalize_betfair_quantity(uo.sm.unwrap_or(Decimal::ZERO));
+        let cumulative = if self.has_fill_lots(&uo.id) {
+            size_matched + normalize_betfair_quantity(uo.sv.unwrap_or(Decimal::ZERO))
+        } else {
+            size_matched
+        };
+        let previous = self
+            .filled_qty
+            .get(&uo.id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+        let order_qty = normalize_betfair_quantity(resolve_stream_order_quantity(uo.s, uo));
+        cumulative > previous && cumulative <= order_qty
+    }
+
     pub(crate) fn sync_fill_lot(
         &mut self,
         bet_id: &str,
