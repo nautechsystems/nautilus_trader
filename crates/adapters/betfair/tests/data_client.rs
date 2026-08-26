@@ -463,6 +463,8 @@ async fn test_data_client_deduplicates_same_market_subscription() {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx) = create_test_data_client(addr, stream_port);
+    let (observation_tx, observation_rx) = tokio::sync::oneshot::channel();
+    let (teardown_tx, teardown_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
         let (mut reader, write_half) = accept_and_auth(&listener).await;
@@ -479,13 +481,13 @@ async fn test_data_client_deduplicates_same_market_subscription() {
         )
         .await;
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        drop(write_half);
-
-        (
+        let observation = (
             first_line.trim().to_string(),
             matches!(second_result, Ok(Ok(bytes)) if bytes > 0),
-        )
+        );
+        let _ = observation_tx.send(observation);
+        let _ = teardown_rx.await;
+        drop(write_half);
     });
 
     client.connect().await.unwrap();
@@ -529,15 +531,17 @@ async fn test_data_client_deduplicates_same_market_subscription() {
     client.subscribe_book_deltas(first_cmd).unwrap();
     client.subscribe_book_deltas(second_cmd).unwrap();
 
-    let (first_msg, saw_second_message) = server.await.unwrap();
+    let (first_msg, saw_second_message) = observation_rx.await.unwrap();
+    client.disconnect().await.unwrap();
+    let _ = teardown_tx.send(());
+    server.await.unwrap();
+
     let json: Value = serde_json::from_str(&first_msg).unwrap();
     assert_eq!(json["op"], "marketSubscription");
     assert!(
         !saw_second_message,
         "Expected only one subscription for the same market"
     );
-
-    client.disconnect().await.unwrap();
 }
 
 #[rstest]
