@@ -93,7 +93,7 @@ use nautilus_model::{
     events::{AccountState, OrderAccepted, OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId,
-        TraderId, VenueOrderId,
+        TraderId, Venue, VenueOrderId,
     },
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -771,6 +771,7 @@ fn build_config(addr: SocketAddr) -> LighterExecutionClientConfig {
         rest_quota_per_min: None,
         sendtx_quota_per_min: None,
         transport_backend: Default::default(),
+        venue: None,
     }
 }
 
@@ -926,7 +927,7 @@ fn build_client_with_cache(
     let core = ExecutionClientCore::new(
         trader_id(),
         client_id(),
-        *LIGHTER_VENUE,
+        config.resolved_venue(),
         OmsType::Netting,
         account_id(),
         AccountType::Margin,
@@ -1453,6 +1454,31 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
 
     client.disconnect().await.expect("disconnect");
     assert!(registry.handle(client_id(), endpoint).is_none());
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_reports_configured_venue_on_socket_state() {
+    let (addr, _state) = start_server().await;
+    let venue = Venue::new("LIGHTER_ALT");
+    let mut config = build_config(addr);
+    config.venue = Some(venue);
+    let (system_sender, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_sender);
+    let (mut client, _rx, _cache) = build_client_with(config);
+
+    client.connect().await.expect("connect");
+
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .expect("timed out waiting for a socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+
+    assert_eq!(client.venue(), venue);
+    assert_eq!(change.venue, Some(venue));
+
+    client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]

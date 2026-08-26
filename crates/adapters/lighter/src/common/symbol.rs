@@ -21,7 +21,7 @@
 //! on every WebSocket frame and outbound transaction.
 
 use dashmap::DashMap;
-use nautilus_model::identifiers::{InstrumentId, Symbol};
+use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
 use ustr::Ustr;
 
 use super::{consts::LIGHTER_VENUE, enums::LighterProductType};
@@ -34,15 +34,27 @@ pub const SPOT_SUFFIX: &str = "-SPOT";
 
 /// Builds a Nautilus [`InstrumentId`] from a venue symbol and product type.
 ///
-/// The venue symbol is upper-cased and combined with the product suffix
-/// (`-PERP` or `-SPOT`) before being qualified by the Lighter venue.
+/// Qualifies the instrument id with [`LIGHTER_VENUE`].
 #[must_use]
 pub fn format_instrument_id(venue_symbol: &str, product_type: LighterProductType) -> InstrumentId {
+    format_instrument_id_with_venue(venue_symbol, product_type, *LIGHTER_VENUE)
+}
+
+/// Builds a Nautilus [`InstrumentId`] with the given venue qualifier.
+///
+/// The venue symbol is upper-cased and combined with the product suffix
+/// (`-PERP` or `-SPOT`) before being qualified by `venue`.
+#[must_use]
+pub fn format_instrument_id_with_venue(
+    venue_symbol: &str,
+    product_type: LighterProductType,
+    venue: Venue,
+) -> InstrumentId {
     let suffix = product_suffix(product_type);
     let trimmed = venue_symbol.trim();
     let upper = trimmed.to_ascii_uppercase();
     let symbol = format!("{upper}{suffix}");
-    InstrumentId::new(Symbol::from_str_unchecked(&symbol), *LIGHTER_VENUE)
+    InstrumentId::new(Symbol::from_str_unchecked(&symbol), venue)
 }
 
 /// Returns the venue-native symbol for an instrument id by stripping any
@@ -96,18 +108,42 @@ fn canonical_symbol_key(venue_symbol: &str) -> Ustr {
 /// as relists must be coordinated by the caller (e.g. quiesce consumers
 /// before reinserting) to avoid concurrent readers observing partial
 /// state.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct MarketRegistry {
+    venue: Venue,
     by_index: DashMap<i16, InstrumentId>,
     by_id: DashMap<InstrumentId, i16>,
     by_raw_symbol: DashMap<(Ustr, LighterProductType), InstrumentId>,
 }
 
+impl Default for MarketRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MarketRegistry {
-    /// Returns a new empty registry.
+    /// Returns a new empty registry that qualifies instrument ids with [`LIGHTER_VENUE`].
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self::new_with_venue(*LIGHTER_VENUE)
+    }
+
+    /// Returns a new empty registry that qualifies instrument ids with `venue`.
+    #[must_use]
+    pub fn new_with_venue(venue: Venue) -> Self {
+        Self {
+            venue,
+            by_index: DashMap::new(),
+            by_id: DashMap::new(),
+            by_raw_symbol: DashMap::new(),
+        }
+    }
+
+    /// Returns the venue used to qualify registered instrument ids.
+    #[must_use]
+    pub const fn venue(&self) -> Venue {
+        self.venue
     }
 
     /// Registers a market and returns the resulting [`InstrumentId`].
@@ -122,7 +158,8 @@ impl MarketRegistry {
         venue_symbol: &str,
         product_type: LighterProductType,
     ) -> InstrumentId {
-        let instrument_id = format_instrument_id(venue_symbol, product_type);
+        let instrument_id =
+            format_instrument_id_with_venue(venue_symbol, product_type, self.venue);
         let canonical = canonical_symbol_key(venue_symbol);
 
         // Evict any prior mapping that shared this market_index but pointed
@@ -231,6 +268,14 @@ mod tests {
     }
 
     #[rstest]
+    fn format_instrument_id_uses_provided_venue() {
+        let venue = Venue::new("LIGHTER_ALT");
+        let id = format_instrument_id_with_venue("eth", LighterProductType::Perp, venue);
+        assert_eq!(id.symbol.as_str(), "ETH-PERP");
+        assert_eq!(id.venue, venue);
+    }
+
+    #[rstest]
     #[case::leading("  ETH", "ETH-PERP")]
     #[case::trailing("ETH  ", "ETH-PERP")]
     #[case::both_sides("  eth  ", "ETH-PERP")]
@@ -269,6 +314,24 @@ mod tests {
             Some(LighterProductType::Spot),
         );
         assert_eq!(product_type_from_instrument_id(&none), None);
+    }
+
+    #[rstest]
+    fn registry_qualifies_instrument_ids_with_configured_venue() {
+        let default_registry = MarketRegistry::new();
+        let alt_venue = Venue::new("LIGHTER_ALT");
+        let alt_registry = MarketRegistry::new_with_venue(alt_venue);
+
+        let default_id = default_registry.insert(0, "ETH", LighterProductType::Perp);
+        let alt_id = alt_registry.insert(0, "ETH", LighterProductType::Perp);
+
+        assert_eq!(default_registry.venue(), *LIGHTER_VENUE);
+        assert_eq!(alt_registry.venue(), alt_venue);
+        assert_eq!(default_id.venue, *LIGHTER_VENUE);
+        assert_eq!(alt_id.venue, alt_venue);
+        assert_eq!(default_id.symbol.as_str(), "ETH-PERP");
+        assert_eq!(alt_id.symbol.as_str(), "ETH-PERP");
+        assert_ne!(default_id, alt_id);
     }
 
     #[rstest]

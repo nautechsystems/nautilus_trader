@@ -15,7 +15,7 @@
 
 //! Python bindings for Lighter configuration.
 
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, Venue};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 
@@ -42,6 +42,7 @@ impl LighterDataClientConfig {
         update_instruments_interval_mins = None,
         rest_quota_per_min = None,
         transport_backend = None,
+        venue = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -57,6 +58,7 @@ impl LighterDataClientConfig {
         update_instruments_interval_mins: Option<u64>,
         rest_quota_per_min: Option<u32>,
         transport_backend: Option<TransportBackend>,
+        venue: Option<Venue>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -73,6 +75,7 @@ impl LighterDataClientConfig {
                 .unwrap_or(defaults.update_instruments_interval_mins),
             rest_quota_per_min,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            venue,
         }
     }
 
@@ -106,6 +109,7 @@ impl LighterExecutionClientConfig {
         rest_quota_per_min = None,
         sendtx_quota_per_min = None,
         transport_backend = None,
+        venue = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -123,6 +127,7 @@ impl LighterExecutionClientConfig {
         rest_quota_per_min: Option<u32>,
         sendtx_quota_per_min: Option<u32>,
         transport_backend: Option<TransportBackend>,
+        venue: Option<Venue>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -141,6 +146,7 @@ impl LighterExecutionClientConfig {
             rest_quota_per_min,
             sendtx_quota_per_min,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            venue,
         }
     }
 

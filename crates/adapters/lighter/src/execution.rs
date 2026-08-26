@@ -80,7 +80,7 @@ use crate::{
     common::{
         consts::{
             DISCONNECT_TIMEOUT, LIGHTER_ERROR_CODE_INVALID_NONCE, LIGHTER_MAX_BATCH_TX,
-            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE,
+            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
         },
         credential::{Credential, scrub_auth},
         enums::{
@@ -250,7 +250,8 @@ impl LighterExecutionClient {
         )
         .context("failed to resolve Lighter credentials")?;
 
-        let registry = Arc::new(MarketRegistry::new());
+        let venue = config.resolved_venue();
+        let registry = Arc::new(MarketRegistry::new_with_venue(venue));
 
         // One transaction limiter shared across the HTTP and WebSocket sendTx
         // paths so their combined rate honours the single per-account venue bucket.
@@ -278,7 +279,7 @@ impl LighterExecutionClient {
         );
         let ws_client = ws_client.with_socket_control(SocketControl::new(
             core.client_id,
-            Some(*LIGHTER_VENUE),
+            Some(venue),
             USER_STREAMS_ENDPOINT,
         ));
 
@@ -3659,7 +3660,7 @@ impl ExecutionClient for LighterExecutionClient {
     }
 
     fn venue(&self) -> Venue {
-        *LIGHTER_VENUE
+        self.core.venue
     }
 
     fn oms_type(&self) -> OmsType {
@@ -4803,7 +4804,7 @@ impl ExecutionClient for LighterExecutionClient {
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
             self.core.account_id,
-            *LIGHTER_VENUE,
+            self.core.venue,
             ts_init,
             None,
         );
@@ -5870,6 +5871,7 @@ mod tests {
     };
     use nautilus_common::{
         cache::Cache,
+        clients::ExecutionClient,
         clock::TestClock,
         factories::OrderFactory,
         messages::{ExecutionEvent, ExecutionReport as EngineExecutionReport},
@@ -5880,7 +5882,7 @@ mod tests {
         enums::{LiquiditySide, OrderStatus, TimeInForce},
         events::{OrderCanceled, OrderEventAny, OrderPendingCancel, OrderTriggered},
         identifiers::{
-            InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
+            InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
         },
         instruments::CryptoPerpetual,
         orders::{LimitOrder, OrderList},
@@ -5977,6 +5979,7 @@ mod tests {
             rest_quota_per_min: None,
             sendtx_quota_per_min: None,
             transport_backend: Default::default(),
+            venue: None,
         }
     }
 
@@ -5999,6 +6002,19 @@ mod tests {
             Some("0-1700003600".to_string()),
         );
         assert_eq!(format_between_timestamps(None, None, now), None);
+    }
+
+    #[rstest]
+    fn execution_client_uses_configured_venue() {
+        let venue = Venue::new("LIGHTER_ALT");
+        let config = LighterExecutionClientConfig {
+            venue: Some(venue),
+            ..test_config()
+        };
+        let (client, _, _) = create_execution_client_with_config(config);
+
+        assert_eq!(client.venue(), venue);
+        assert_eq!(client.registry.venue(), venue);
     }
 
     #[rstest]
@@ -6131,7 +6147,7 @@ mod tests {
         let core = ExecutionClientCore::new(
             trader_id(),
             client_id(),
-            *LIGHTER_VENUE,
+            config.resolved_venue(),
             OmsType::Netting,
             account_id(),
             AccountType::Margin,

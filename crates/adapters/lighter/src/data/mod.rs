@@ -63,7 +63,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
-        consts::{DISCONNECT_TIMEOUT, LIGHTER_VENUE},
+        consts::DISCONNECT_TIMEOUT,
         credential::Credential,
         enums::{LighterCandleResolution, LighterMarketStatus},
         rate_limit::resolve_quota,
@@ -125,7 +125,8 @@ impl LighterDataClient {
     pub fn new(client_id: ClientId, config: LighterDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let socket_factory = SocketControlFactory::new(client_id, Some(*LIGHTER_VENUE));
+        let venue = config.resolved_venue();
+        let socket_factory = SocketControlFactory::new(client_id, Some(venue));
 
         let credential = if config.has_credentials() {
             // Mirror `has_credentials()`: a blank or whitespace-only `private_key`
@@ -146,7 +147,7 @@ impl LighterDataClient {
             None
         };
 
-        let registry = Arc::new(MarketRegistry::new());
+        let registry = Arc::new(MarketRegistry::new_with_venue(venue));
 
         let raw_http = LighterRawHttpClient::new_with_quotas(
             config.environment,
@@ -185,7 +186,7 @@ impl LighterDataClient {
     }
 
     fn venue(&self) -> Venue {
-        *LIGHTER_VENUE
+        self.config.resolved_venue()
     }
 
     /// Returns `true` when the data client holds resolved Lighter credentials.
@@ -1721,7 +1722,7 @@ mod tests {
             TradeTick,
         },
         enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
-        identifiers::{InstrumentId, Symbol, TradeId},
+        identifiers::{InstrumentId, Symbol, TradeId, Venue},
         instruments::{CryptoPerpetual, CurrencyPair},
         types::{Currency, Price, Quantity},
     };
@@ -1734,7 +1735,10 @@ mod tests {
         *,
     };
     use crate::{
-        common::enums::{LighterFundingResolution, LighterProductType},
+        common::{
+            consts::LIGHTER_VENUE,
+            enums::{LighterFundingResolution, LighterProductType},
+        },
         http::query::{LighterFundingsQuery, LighterRecentTradesQuery},
     };
 
@@ -1794,6 +1798,24 @@ mod tests {
         assert_eq!(
             client.ws_client.url(),
             "wss://mainnet.zklighter.elliot.ai/stream?readonly=true",
+        );
+    }
+
+    #[rstest]
+    fn test_new_uses_configured_venue_for_identity_and_instruments() {
+        let venue = Venue::new("LIGHTER_ALT");
+        let config = LighterDataClientConfig {
+            venue: Some(venue),
+            ..Default::default()
+        };
+        let client = create_data_client_with_receiver_and_config_for_test(config).0;
+        let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
+
+        assert_eq!(client.venue(), venue);
+        assert_eq!(DataClient::venue(&client), Some(venue));
+        assert_eq!(
+            instrument_id,
+            InstrumentId::new(Symbol::new("ETH-PERP"), venue),
         );
     }
 

@@ -44,6 +44,8 @@ class LighterDataClientConfig:
     def rest_quota_per_min(self) -> int | None: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def venue(self) -> model.Venue | None: ...
     def __init__(
         self,
         base_url_http: str | None = None,
@@ -58,6 +60,7 @@ class LighterDataClientConfig:
         update_instruments_interval_mins: int | None = None,
         rest_quota_per_min: int | None = None,
         transport_backend: network.TransportBackend | None = None,
+        venue: model.Venue | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -93,6 +96,8 @@ class LighterExecutionClientConfig:
     def sendtx_quota_per_min(self) -> int | None: ...
     @property
     def transport_backend(self) -> network.TransportBackend: ...
+    @property
+    def venue(self) -> model.Venue | None: ...
     def __init__(
         self,
         account_id: model.AccountId,
@@ -109,6 +114,7 @@ class LighterExecutionClientConfig:
         rest_quota_per_min: int | None = None,
         sendtx_quota_per_min: int | None = None,
         transport_backend: network.TransportBackend | None = None,
+        venue: model.Venue | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

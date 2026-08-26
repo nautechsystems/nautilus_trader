@@ -102,7 +102,8 @@ Lighter identifies markets by numeric `market_index` values. The adapter bootstr
 | Spot              | `{BASE}/{QUOTE}-SPOT.LIGHTER` | `ETH/USDC-SPOT.LIGHTER` | Raw venue symbol `ETH/USDC`. |
 
 The suffix separates spot and perpetual listings. Outbound requests strip it and use the cached
-`market_index`; spot symbols retain the venue pair.
+`market_index`; spot symbols retain the venue pair. A configured `venue` override replaces the
+`.LIGHTER` qualifier (for example `ETH-PERP.LIGHTER_ALT`).
 
 ## Environments
 
@@ -163,6 +164,47 @@ Lighter API keys authorize trading, private account access, and some withdrawal 
 the private key in a secret manager or protected environment configuration. Do not commit it to a
 repository or share it in logs.
 :::
+
+## Multiple Lighter-protocol hosts
+
+A second Lighter-protocol host in the same node needs its own `venue` on the data
+client and on the matching live execution client or sandbox client. Unset keeps
+`LIGHTER`. Pass distinct client names into `add_data_client` /
+`add_exec_client`; `None` both resolve to `"LIGHTER"` and the second
+registration fails.
+
+```python
+from nautilus_trader.adapters.lighter import LighterDataClientConfig
+from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
+from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import BookType
+from nautilus_trader.model import Currency
+from nautilus_trader.model import Money
+from nautilus_trader.model import Venue
+
+alt_venue = Venue("LIGHTER_ALT")
+alt_data = LighterDataClientConfig(
+    base_url_http="https://example-lighter-host",
+    base_url_ws="wss://example-lighter-host/stream",
+    venue=alt_venue,
+)
+sandbox_alt = SandboxExecutionClientConfig(
+    venue=alt_venue,
+    starting_balances=[Money(100000.0, Currency.from_str("USDC"))],
+    book_type=BookType.L2_MBP,
+    trade_execution=True,
+    queue_position=True,
+)
+alt_exec = LighterExecutionClientConfig(
+    account_id=AccountId.from_str("LIGHTER-ALT-001"),
+    venue=alt_venue,
+)
+```
+
+Instrument ids from `alt_data` use that venue, for example `ETH-PERP.LIGHTER_ALT`.
+A host on another L2 chain also needs a `chain_id` override for signed
+transactions; that is not covered here.
 
 ## Integrator attribution
 
@@ -716,6 +758,7 @@ endpoints.
 | `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.         |
 | `rest_quota_per_min`               | `None`    | REST quota override; unset keeps 60 req/min.             |
 | `transport_backend`                | Default   | WebSocket transport backend.                             |
+| `venue`                            | `None`    | Optional venue override; unset keeps `LIGHTER`.          |
 
 ### Execution client configuration options
 
@@ -735,6 +778,7 @@ endpoints.
 | `rest_quota_per_min`        | `None`        | REST quota override; unset keeps 60 req/min.             |
 | `sendtx_quota_per_min`      | `None`        | Transaction quota override; unset keeps 60 req/min.      |
 | `transport_backend`         | Default       | WebSocket transport backend.                             |
+| `venue`                     | `None`        | Optional venue override; unset keeps `LIGHTER`.          |
 
 ### Configuration example
 

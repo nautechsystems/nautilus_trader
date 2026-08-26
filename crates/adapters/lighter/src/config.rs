@@ -18,11 +18,12 @@
 use std::fmt::Debug;
 
 use nautilus_core::string::secret::REDACTED;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, Venue};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
 use crate::common::{
+    consts::LIGHTER_VENUE,
     credential::credential_env_vars,
     enums::LighterEnvironment,
     urls::{lighter_http_base_url, lighter_ws_url},
@@ -75,6 +76,12 @@ pub struct LighterDataClientConfig {
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Optional venue override for this client.
+    ///
+    /// Unset keeps [`LIGHTER_VENUE`]. Set this when `base_url_http` /
+    /// `base_url_ws` point at a second Lighter-protocol host so instrument
+    /// ids and engine routing do not collide with the default venue.
+    pub venue: Option<Venue>,
 }
 
 #[cfg(feature = "python")]
@@ -89,6 +96,7 @@ nautilus_core::impl_pyo3_config_getters!(LighterDataClientConfig {
     update_instruments_interval_mins: u64,
     rest_quota_per_min: Option<u32>,
     transport_backend: TransportBackend,
+    venue: Option<Venue>,
 });
 
 impl Default for LighterDataClientConfig {
@@ -137,6 +145,12 @@ impl LighterDataClientConfig {
 
         has_key && has_account && has_secret
     }
+
+    /// Returns the configured venue, defaulting to [`LIGHTER_VENUE`].
+    #[must_use]
+    pub fn resolved_venue(&self) -> Venue {
+        self.venue.unwrap_or(*LIGHTER_VENUE)
+    }
 }
 
 impl Debug for LighterDataClientConfig {
@@ -157,6 +171,7 @@ impl Debug for LighterDataClientConfig {
             )
             .field("rest_quota_per_min", &self.rest_quota_per_min)
             .field("transport_backend", &self.transport_backend)
+            .field("venue", &self.venue)
             .finish()
     }
 }
@@ -244,6 +259,11 @@ pub struct LighterExecutionClientConfig {
     /// WebSocket transport backend.
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Optional venue override for this client.
+    ///
+    /// Unset keeps [`LIGHTER_VENUE`]. Must match the paired data client's
+    /// venue so submit routing and instrument ids stay on one host.
+    pub venue: Option<Venue>,
 }
 
 #[cfg(feature = "python")]
@@ -260,6 +280,7 @@ nautilus_core::impl_pyo3_config_getters!(LighterExecutionClientConfig {
     rest_quota_per_min: Option<u32>,
     sendtx_quota_per_min: Option<u32>,
     transport_backend: TransportBackend,
+    venue: Option<Venue>,
 });
 
 impl Default for LighterExecutionClientConfig {
@@ -285,6 +306,7 @@ impl Debug for LighterExecutionClientConfig {
             .field("rest_quota_per_min", &self.rest_quota_per_min)
             .field("sendtx_quota_per_min", &self.sendtx_quota_per_min)
             .field("transport_backend", &self.transport_backend)
+            .field("venue", &self.venue)
             .finish()
     }
 }
@@ -318,6 +340,12 @@ impl LighterExecutionClientConfig {
         self.base_url_ws
             .clone()
             .unwrap_or_else(|| lighter_ws_url(self.environment).to_string())
+    }
+
+    /// Returns the configured venue, defaulting to [`LIGHTER_VENUE`].
+    #[must_use]
+    pub fn resolved_venue(&self) -> Venue {
+        self.venue.unwrap_or(*LIGHTER_VENUE)
     }
 }
 
@@ -421,6 +449,7 @@ mod tests {
             rest_quota_per_min: None,
             sendtx_quota_per_min: None,
             transport_backend: TransportBackend::default(),
+            venue: None,
         };
 
         let dbg_out = format!("{config:?}");
@@ -438,5 +467,43 @@ mod tests {
         };
 
         assert_eq!(config.ws_url(), "wss://mainnet.zklighter.elliot.ai/stream");
+    }
+
+    #[rstest]
+    fn data_config_resolved_venue_defaults_to_lighter() {
+        let config = LighterDataClientConfig::default();
+
+        assert!(config.venue.is_none());
+        assert_eq!(config.resolved_venue(), *LIGHTER_VENUE);
+    }
+
+    #[rstest]
+    fn data_config_resolved_venue_uses_override() {
+        let venue = Venue::new("LIGHTER_ALT");
+        let config = LighterDataClientConfig {
+            venue: Some(venue),
+            ..Default::default()
+        };
+
+        assert_eq!(config.resolved_venue(), venue);
+    }
+
+    #[rstest]
+    fn exec_config_resolved_venue_defaults_to_lighter() {
+        let config = LighterExecutionClientConfig::default();
+
+        assert!(config.venue.is_none());
+        assert_eq!(config.resolved_venue(), *LIGHTER_VENUE);
+    }
+
+    #[rstest]
+    fn exec_config_resolved_venue_uses_override() {
+        let venue = Venue::new("LIGHTER_ALT");
+        let config = LighterExecutionClientConfig {
+            venue: Some(venue),
+            ..Default::default()
+        };
+
+        assert_eq!(config.resolved_venue(), venue);
     }
 }

@@ -35,7 +35,7 @@ use crate::{
         parse::{
             parse_millis_to_nanos, parse_secs_to_nanos, price_from_decimal, quantity_from_decimal,
         },
-        symbol::{MarketRegistry, format_instrument_id},
+        symbol::{MarketRegistry, format_instrument_id_with_venue},
     },
     http::models::{
         LighterCandle, LighterFunding, LighterFundingDirection, LighterOrderBook,
@@ -447,7 +447,11 @@ fn parse_perp_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let order_book = &detail.order_book;
-    let instrument_id = format_instrument_id(order_book.symbol.as_str(), order_book.market_type);
+    let instrument_id = format_instrument_id_with_venue(
+        order_book.symbol.as_str(),
+        order_book.market_type,
+        registry.venue(),
+    );
     let raw_symbol = Symbol::from_ustr_unchecked(order_book.symbol);
     let (base_currency, quote_currency) = symbol_currencies(order_book.symbol.as_str(), "USDC");
     let settlement_currency = quote_currency;
@@ -499,7 +503,11 @@ fn parse_spot_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let order_book = &detail.order_book;
-    let instrument_id = format_instrument_id(order_book.symbol.as_str(), order_book.market_type);
+    let instrument_id = format_instrument_id_with_venue(
+        order_book.symbol.as_str(),
+        order_book.market_type,
+        registry.venue(),
+    );
     let raw_symbol = Symbol::from_ustr_unchecked(order_book.symbol);
     let (base_currency, quote_currency) = spot_symbol_currencies(order_book.symbol.as_str())?;
     let price_increment = price_increment(detail.price_decimals)?;
@@ -1322,6 +1330,23 @@ mod tests {
         assert_eq!(book.best_bid_size(), Some(Quantity::from("3.4125")));
         assert_eq!(book.best_ask_price(), Some(Price::from("2361.32")));
         assert_eq!(book.best_ask_size(), Some(Quantity::from("0.0317")));
+    }
+
+    #[rstest]
+    fn test_parse_order_book_details_instruments_uses_registry_venue() {
+        let venue = Venue::new("LIGHTER_ALT");
+        let registry = MarketRegistry::new_with_venue(venue);
+        let details = vec![stub_perp_detail("ETH", 0)];
+
+        let instruments =
+            parse_order_book_details_instruments(&registry, &details, &[], UnixNanos::from(1))
+                .unwrap();
+
+        let expected = InstrumentId::new(Symbol::new("ETH-PERP"), venue);
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(instruments[0].id(), expected);
+        assert_eq!(registry.market_index(&expected), Some(0));
+        assert_eq!(registry.market_index(&instrument_id("ETH-PERP")), None);
     }
 
     #[rstest]

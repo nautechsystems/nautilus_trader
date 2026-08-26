@@ -30,7 +30,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::consts::{LIGHTER, LIGHTER_VENUE},
+    common::consts::LIGHTER,
     config::{LighterDataClientConfig, LighterExecutionClientConfig},
     data::LighterDataClient,
     execution::LighterExecutionClient,
@@ -143,7 +143,7 @@ impl ExecutionClientFactory for LighterExecutionClientFactory {
         let core = ExecutionClientCore::new(
             trader_id,
             ClientId::from(name),
-            *LIGHTER_VENUE,
+            lighter_config.resolved_venue(),
             OmsType::Netting,
             lighter_config.account_id,
             AccountType::Margin,
@@ -172,11 +172,13 @@ mod tests {
         cache::Cache,
         clock::TestClock,
         factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+        live::runner::replace_data_event_sender,
     };
-    use nautilus_model::identifiers::{AccountId, TraderId};
+    use nautilus_model::identifiers::{AccountId, TraderId, Venue};
     use rstest::rstest;
 
     use super::*;
+    use crate::common::consts::LIGHTER_VENUE;
 
     const PRIVATE_KEY_HEX: &str =
         "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
@@ -254,6 +256,52 @@ mod tests {
             .expect("expected client to construct");
 
         assert!(!client.is_connected());
+        assert_eq!(client.venue(), *LIGHTER_VENUE);
+    }
+
+    #[rstest]
+    fn test_lighter_execution_client_factory_uses_configured_venue() {
+        let factory = LighterExecutionClientFactory::new();
+        let venue = Venue::new("LIGHTER_ALT");
+        let config = LighterExecutionClientConfig::builder()
+            .account_id(AccountId::from("LIGHTER-001"))
+            .account_index(12_345)
+            .api_key_index(5)
+            .private_key(PRIVATE_KEY_HEX.to_string())
+            .venue(venue)
+            .build();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let client = factory
+            .create(
+                TraderId::from("TRADER-001"),
+                "LIGHTER-ALT",
+                &config,
+                cache.into(),
+            )
+            .expect("expected client to construct");
+
+        assert_eq!(client.venue(), venue);
+    }
+
+    #[rstest]
+    fn test_lighter_data_client_factory_uses_configured_venue() {
+        let factory = LighterDataClientFactory::new();
+        let venue = Venue::new("LIGHTER_ALT");
+        let config = LighterDataClientConfig {
+            venue: Some(venue),
+            ..Default::default()
+        };
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+
+        let client = factory
+            .create("LIGHTER-ALT", &config, cache.into(), clock)
+            .expect("expected data client to construct");
+
+        assert_eq!(client.venue(), Some(venue));
     }
 
     #[rstest]

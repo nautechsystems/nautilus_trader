@@ -30,9 +30,41 @@ from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
 
 
 lighter_exec_tester = load_example_module("lighter", "exec_tester")
+
+
+def test_lighter_data_config_venue_defaults_to_none() -> None:
+    config = LighterDataClientConfig()
+
+    assert config.venue is None
+
+
+def test_lighter_data_config_venue_override() -> None:
+    venue = Venue("LIGHTER_ALT")
+    config = LighterDataClientConfig(venue=venue)
+
+    assert config.venue == venue
+
+
+def test_lighter_exec_config_venue_defaults_to_none() -> None:
+    config = LighterExecutionClientConfig(
+        account_id=AccountId.from_str("LIGHTER-001"),
+    )
+
+    assert config.venue is None
+
+
+def test_lighter_exec_config_venue_override() -> None:
+    venue = Venue("LIGHTER_ALT")
+    config = LighterExecutionClientConfig(
+        account_id=AccountId.from_str("LIGHTER-001"),
+        venue=venue,
+    )
+
+    assert config.venue == venue
 
 
 def test_lighter_factories_expose_python_names() -> None:
@@ -44,6 +76,37 @@ def test_lighter_factories_expose_python_names() -> None:
 
     assert data_factory.name() == LIGHTER
     assert exec_factory.name() == LIGHTER
+
+
+def test_live_node_accepts_two_lighter_exec_clients_with_distinct_venues() -> None:
+    trader_id = TraderId.from_str("TESTER-001")
+    rh_venue = Venue("LIGHTER_RH")
+
+    node = (
+        LiveNode.builder("LIGHTER-DUAL-EXEC-PYTEST-001", trader_id, Environment.LIVE)
+        .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .with_reconciliation(False)
+        .add_exec_client(
+            "LIGHTER",
+            LighterExecutionClientFactory(),
+            LighterExecutionClientConfig(
+                account_id=AccountId.from_str("LIGHTER-001"),
+                environment=LighterEnvironment.TESTNET,
+            ),
+        )
+        .add_exec_client(
+            "LIGHTER_RH",
+            LighterExecutionClientFactory(),
+            LighterExecutionClientConfig(
+                account_id=AccountId.from_str("LIGHTER_RH-001"),
+                environment=LighterEnvironment.TESTNET,
+                venue=rh_venue,
+            ),
+        )
+        .build()
+    )
+
+    assert node.trader_id == trader_id
 
 
 def test_live_node_builder_accepts_lighter_data_factory() -> None:

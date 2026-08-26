@@ -78,7 +78,7 @@ use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarSpecification, BarType, Data, OrderBookDeltas},
     enums::{AggregationSource, BarAggregation, BookAction, BookType, PriceType, RecordFlag},
-    identifiers::{ClientId, InstrumentId},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::Instrument,
     orderbook::{OrderBook, analysis::book_check_integrity},
     types::Price,
@@ -2118,6 +2118,25 @@ async fn test_socket_state_events_survive_websocket_client_replacement() {
 
     client.disconnect().await.expect("disconnect");
     assert!(registry.handle(client_id(), endpoint).is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_socket_state_events_use_configured_venue() {
+    let (addr, state) = start_server().await;
+    let venue = Venue::new("LIGHTER_ALT");
+    let mut config = build_config(addr);
+    config.venue = Some(venue);
+    let (mut client, _rx, mut system_rx) = build_client_with_system_events(config);
+
+    client.connect().await.expect("connect");
+    let change = next_socket_state(&mut system_rx).await;
+
+    assert_eq!(DataClient::venue(&client), Some(venue));
+    assert_eq!(change.venue, Some(venue));
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
 }
 
 #[rstest]
