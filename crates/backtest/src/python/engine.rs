@@ -31,9 +31,9 @@ use nautilus_core::{
     UUID4, UnixNanos,
     python::{to_pyruntime_err, to_pytype_err, to_pyvalue_err},
 };
-use nautilus_execution::{
-    models::latency::{LatencyModelAny, StaticLatencyModel},
-    python::{fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle},
+use nautilus_execution::python::{
+    fee::pyobject_to_fee_model_handle, fill::pyobject_to_fill_model_handle,
+    latency::pyobject_to_latency_model_any,
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::DefiData;
@@ -227,7 +227,7 @@ impl PyBacktestEngine {
             .transpose()?
             .unwrap_or_default();
         let latency_model = latency_model
-            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(py, obj.bind(py))))
+            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
             .transpose()?
             .map(Into::into);
         let modules = modules
@@ -1685,20 +1685,6 @@ pub(crate) fn pyobject_to_simulation_module_any(
     let type_name = obj.get_type().name()?;
     Err(to_pytype_err(format!(
         "Cannot convert {type_name} to SimulationModule"
-    )))
-}
-
-pub(crate) fn pyobject_to_latency_model_any(
-    _py: Python,
-    obj: &Bound<'_, PyAny>,
-) -> PyResult<LatencyModelAny> {
-    if let Ok(m) = obj.extract::<StaticLatencyModel>() {
-        return Ok(LatencyModelAny::Static(m));
-    }
-
-    let type_name = obj.get_type().name()?;
-    Err(to_pytype_err(format!(
-        "Cannot convert {type_name} to LatencyModel"
     )))
 }
 

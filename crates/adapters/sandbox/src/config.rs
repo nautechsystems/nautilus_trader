@@ -18,7 +18,7 @@
 use ahash::AHashMap;
 use nautilus_execution::{
     matching_engine::config::OrderMatchingEngineConfig,
-    models::{fee::FeeModelAny, fill::FillModelAny},
+    models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModelAny},
 };
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
@@ -85,6 +85,14 @@ pub struct SandboxExecutionClientConfig {
         deserialize_with = "deserialize_fill_model"
     )]
     pub fill_model: Option<FillModelAny>,
+    /// The latency model for sandbox matching engines.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_latency_model",
+        deserialize_with = "deserialize_latency_model"
+    )]
+    pub latency_model: Option<LatencyModelAny>,
     /// If True, account balances won't change (frozen).
     #[builder(default)]
     pub frozen_account: bool,
@@ -225,11 +233,42 @@ where
     }
 }
 
+fn serialize_latency_model<S>(
+    latency_model: &Option<LatencyModelAny>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match latency_model {
+        None => serializer.serialize_none(),
+        Some(_) => Err(serde::ser::Error::custom(
+            "SandboxExecutionClientConfig.latency_model is runtime-only and cannot be serialized",
+        )),
+    }
+}
+
+fn deserialize_latency_model<'de, D>(deserializer: D) -> Result<Option<LatencyModelAny>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<IgnoredAny>::deserialize(deserializer)?;
+
+    match value {
+        None => Ok(None),
+        Some(_) => Err(de::Error::custom(
+            "SandboxExecutionClientConfig.latency_model must be configured at runtime, not deserialized",
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
     use nautilus_execution::models::{
         fee::{FeeModelAny, ProbabilityPriceFeeModel},
         fill::FillModelAny,
+        latency::{LatencyModelAny, StaticLatencyModel},
     };
     use rstest::rstest;
 
@@ -247,6 +286,7 @@ mod tests {
         assert_eq!(config.book_type, expected.book_type);
         assert!(config.fee_model.is_none());
         assert!(config.fill_model.is_none());
+        assert!(config.latency_model.is_none());
         assert_eq!(config.bar_execution, expected.bar_execution);
         assert_eq!(config.trade_execution, expected.trade_execution);
         assert_eq!(config.use_position_ids, expected.use_position_ids);
@@ -295,6 +335,14 @@ mod tests {
     }
 
     #[rstest]
+    fn test_exec_config_toml_rejects_latency_model_field() {
+        let result =
+            toml::from_str::<SandboxExecutionClientConfig>("latency_model = \"runtime-only\"");
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
     fn test_exec_config_toml_rejects_serializing_runtime_fee_model() {
         let config = SandboxExecutionClientConfig {
             fee_model: Some(FeeModelAny::ProbabilityPrice(ProbabilityPriceFeeModel)),
@@ -310,6 +358,23 @@ mod tests {
     fn test_exec_config_toml_rejects_serializing_runtime_fill_model() {
         let config = SandboxExecutionClientConfig {
             fill_model: Some(FillModelAny::Default(Default::default())),
+            ..SandboxExecutionClientConfig::default()
+        };
+
+        let result = toml::Value::try_from(&config);
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_rejects_serializing_runtime_latency_model() {
+        let config = SandboxExecutionClientConfig {
+            latency_model: Some(LatencyModelAny::Static(StaticLatencyModel::new(
+                UnixNanos::default(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ))),
             ..SandboxExecutionClientConfig::default()
         };
 

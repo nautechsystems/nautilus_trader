@@ -34,6 +34,7 @@ class SandboxExecutionClientConfig:
         use_reduce_only: bool = True,
         fee_model: typing.Any | None = None,
         fill_model: typing.Any | None = None,
+        latency_model: typing.Any | None = None,
         queue_position: bool = False,
         liquidity_consumption: bool = False,
         bar_adaptive_high_low_ordering: bool = False,
@@ -61,6 +62,8 @@ class SandboxExecutionClientConfig:
     def fee_model(self) -> typing.Any | None: ...
     @property
     def fill_model(self) -> typing.Any | None: ...
+    @property
+    def latency_model(self) -> typing.Any | None: ...
     @property
     def frozen_account(self) -> bool: ...
     @property
