@@ -45,8 +45,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::data_types::{
-    PolymarketRtdsCryptoPrice, PolymarketRtdsCryptoTwap, PolymarketRtdsEquityPrice,
+use crate::{
+    common::parse::deserialize_crypto_twap_value,
+    data_types::{PolymarketRtdsCryptoPrice, PolymarketRtdsCryptoTwap, PolymarketRtdsEquityPrice},
 };
 
 const POLYMARKET_RTDS_HEARTBEAT_SECS: u64 = 5;
@@ -233,9 +234,12 @@ struct CryptoPayloadRaw {
 struct CryptoTwapPayloadRaw {
     symbol: String,
     timestamp: u64,
-    #[serde(rename = "value", default)]
-    #[allow(dead_code, reason = "display-only field modeled for wire conformance")]
-    display_value: Option<serde::de::IgnoredAny>,
+    #[serde(rename = "value", deserialize_with = "deserialize_crypto_twap_value")]
+    #[allow(
+        dead_code,
+        reason = "display-only field validated for wire conformance, never published"
+    )]
+    display_value: Decimal,
     full_accuracy_value: String,
     window_s: u32,
 }
@@ -2245,10 +2249,13 @@ mod tests {
 
     #[rstest]
     #[case::missing(None)]
-    #[case::nonnumeric(Some(json!("not-a-number")))]
+    #[case::null(Some(json!(null)))]
     #[case::boolean(Some(json!(true)))]
     #[case::object(Some(json!({"future": "format"})))]
-    fn test_handle_crypto_twap_update_ignores_non_authoritative_display_value(
+    #[case::array(Some(json!([1, 2])))]
+    #[case::nonnumeric(Some(json!("not-a-number")))]
+    #[case::empty_string(Some(json!("")))]
+    fn test_handle_crypto_twap_update_rejects_invalid_display_value(
         #[case] display_value: Option<serde_json::Value>,
     ) {
         let (feed, mut rx) = make_feed();
@@ -2268,19 +2275,36 @@ mod tests {
             }
         }
 
-        feed.handle_text_message(&update.to_string())
-            .expect("display value must not veto the exact signed-E18 observation");
-        let DataEvent::Data(NautilusData::Custom(custom)) =
-            rx.try_recv().expect("custom data event")
-        else {
-            panic!("expected custom data event");
-        };
-        let payload = custom
-            .data
-            .as_any()
-            .downcast_ref::<PolymarketRtdsCryptoTwap>()
-            .expect("PolymarketRtdsCryptoTwap");
-        assert_eq!(payload.value, dec!(65000.123456789012345678));
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("invalid display value must fail visibly");
+        let message = error.to_string();
+
+        assert!(message.contains("`value`"), "{message}");
+        assert!(!message.contains("full_accuracy_value"), "{message}");
+        assert!(!message.contains("signed E18 integer"), "{message}");
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_handle_crypto_twap_update_validates_display_value_before_full_accuracy_value() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("BTC/USD", 60))
+            .expect("track 60-second TWAP");
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_TWAP_SIXTY_UPDATE_FIXTURE)
+                .expect("parse TWAP fixture");
+        update["payload"]["value"] = json!({"future": "format"});
+        update["payload"]["full_accuracy_value"] = json!("invalid");
+
+        let error = feed
+            .handle_text_message(&update.to_string())
+            .expect_err("display value must be validated before the exact value");
+        let message = error.to_string();
+
+        assert!(message.contains("`value`"), "{message}");
+        assert!(!message.contains("full_accuracy_value"), "{message}");
+        assert!(!message.contains("signed E18 integer"), "{message}");
         assert!(rx.try_recv().is_err());
     }
 
