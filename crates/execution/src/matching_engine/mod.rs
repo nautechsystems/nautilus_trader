@@ -141,7 +141,6 @@ pub struct OrderMatchingEngine {
     precision_mismatch_streak: u32,
     instrument_close: Option<InstrumentClose>,
     pending_resolution: bool,
-    settlement_price: Option<Price>,
     expiration_processed: bool,
     option_settlement_failed: bool,
     option_settlement_warning: Option<&'static str>,
@@ -233,7 +232,6 @@ impl OrderMatchingEngine {
             precision_mismatch_streak: 0,
             instrument_close: None,
             pending_resolution: false,
-            settlement_price: None,
             expiration_processed: false,
             option_settlement_failed: false,
             option_settlement_warning: None,
@@ -300,7 +298,6 @@ impl OrderMatchingEngine {
         self.instrument_close = None;
         self.market_status = MarketStatus::Open;
         self.pending_resolution = false;
-        self.settlement_price = None;
         self.expiration_processed = false;
         self.option_settlement_failed = false;
         self.option_settlement_warning = None;
@@ -449,10 +446,6 @@ impl OrderMatchingEngine {
             log::error!("Failed to query fill model spread behavior: {e}");
             false
         })
-    }
-
-    pub fn set_settlement_price(&mut self, price: Price) {
-        self.settlement_price = Some(price);
     }
 
     fn snapshot_queue_position(&mut self, order: &OrderAny, price: Price) {
@@ -2488,7 +2481,7 @@ impl OrderMatchingEngine {
         };
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        let close_price_fallback = close.as_ref().map(|c| c.close_price);
+        let close_price = close.as_ref().map(|close| close.close_price);
 
         for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
             let client_order_id =
@@ -2536,8 +2529,7 @@ impl OrderMatchingEngine {
             self.account_ids.insert(trader_id, account_id);
             self.generate_order_accepted(&order, venue_order_id);
 
-            let fill_price = self.settlement_price.or(close_price_fallback);
-            if let Some(fill_price) = fill_price {
+            if let Some(fill_price) = close_price {
                 if let Err(e) = self.apply_fills(
                     &order,
                     &[(fill_price, quantity)],
@@ -2557,7 +2549,7 @@ impl OrderMatchingEngine {
     /// Liquidates all open positions for this instrument.
     ///
     /// Cancels open orders if `cancel_open_orders` is true, then closes every open
-    /// position at best bid/ask or the settlement price, emitting accepted and filled
+    /// position at best bid/ask, emitting accepted and filled
     /// events for each synthetic close order.
     ///
     /// # Panics
@@ -2622,9 +2614,9 @@ impl OrderMatchingEngine {
         for (trader_id, strategy_id, account_id, position_id, closing_side, quantity) in positions {
             // Pre-check: ensure a price source is available before emitting events.
             let has_price = if closing_side == OrderSide::Sell {
-                self.best_bid_price().is_some() || self.settlement_price.is_some()
+                self.best_bid_price().is_some()
             } else {
-                self.best_ask_price().is_some() || self.settlement_price.is_some()
+                self.best_ask_price().is_some()
             };
 
             if !has_price {

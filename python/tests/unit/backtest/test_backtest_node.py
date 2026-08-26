@@ -109,6 +109,35 @@ def test_node_installs_configured_margin_model() -> None:
         node.dispose()
 
 
+def test_node_uses_margin_account_default_leverage() -> None:
+    """
+    Test node uses the low-level margin account leverage default.
+    """
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+        base_currency=Currency.from_str("USD"),
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        dispose_on_completion=False,
+    )
+    node = BacktestNode([config])
+
+    try:
+        assert len(node.run()) == 1
+        account = node.get_engine_cache(config.id).account_for_venue(Venue("SIM"))
+
+        assert account.default_leverage == Decimal(10)
+    finally:
+        node.dispose()
+
+
 def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
     """
     Test node applies configured latency during execution.

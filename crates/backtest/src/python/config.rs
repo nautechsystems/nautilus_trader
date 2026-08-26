@@ -303,7 +303,6 @@ impl BacktestVenueConfig {
         latency_model = None,
         fee_model = None,
         price_protection_points = None,
-        settlement_prices = None,
         liquidation_enabled = None,
         liquidation_trigger_ratio = None,
         liquidation_cancel_open_orders = None,
@@ -340,7 +339,6 @@ impl BacktestVenueConfig {
         latency_model: Option<Py<PyAny>>,
         fee_model: Option<Py<PyAny>>,
         price_protection_points: Option<u32>,
-        settlement_prices: Option<HashMap<InstrumentId, f64>>,
         liquidation_enabled: Option<bool>,
         liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: Option<bool>,
@@ -399,7 +397,6 @@ impl BacktestVenueConfig {
             .maybe_latency_model(latency_model)
             .maybe_fee_model(fee_model)
             .maybe_price_protection_points(price_protection_points)
-            .maybe_settlement_prices(settlement_prices.map(|m| m.into_iter().collect()))
             .maybe_liquidation_enabled(liquidation_enabled)
             .maybe_liquidation_trigger_ratio(liquidation_trigger_ratio)
             .maybe_liquidation_cancel_open_orders(liquidation_cancel_open_orders)
@@ -541,7 +538,7 @@ impl BacktestVenueConfig {
 
     #[getter]
     #[pyo3(name = "default_leverage")]
-    fn py_default_leverage(&self) -> Decimal {
+    fn py_default_leverage(&self) -> Option<Decimal> {
         self.default_leverage()
     }
 
@@ -601,13 +598,6 @@ impl BacktestVenueConfig {
     #[pyo3(name = "price_protection_points")]
     fn py_price_protection_points(&self) -> u32 {
         self.price_protection_points()
-    }
-
-    #[getter]
-    #[pyo3(name = "settlement_prices")]
-    fn py_settlement_prices(&self) -> Option<HashMap<InstrumentId, f64>> {
-        self.settlement_prices()
-            .map(|prices| prices.iter().map(|(key, value)| (*key, *value)).collect())
     }
 
     #[getter]

@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Removed `DeriveExecFactoryConfig`; pass `DeriveExecutionClientConfig` directly to the factory
 - Removed `HyperliquidExecFactoryConfig`; pass `HyperliquidExecutionClientConfig` directly to the factory
 - Removed `trader_id` from adapter execution client configs and factory construction
+- Removed backtest `settlement_prices` configuration and setters; use `InstrumentClose` expiry data
 - Renamed `ImportableExecAlgorithmConfig` to `ImportableExecutionAlgorithmConfig`
 - Renamed `LiveDataClientConfig` to `DataClientConfig`
 - Renamed `LiveExecClientConfig` to `ExecutionClientConfig`
@@ -30,6 +31,8 @@ Released on TBD (UTC).
 - Renamed `BetfairExecConfig` to `BetfairExecutionClientConfig`
 - Changed Rust backtest margin parameters to `MarginModelHandle`
 - Changed Rust backtest latency parameters to `LatencyModelHandle`
+- Changed contract expiry to use `InstrumentClose.close_price` for futures, binary contracts, and option close legs
+- Changed omitted backtest leverage to 10x for margin and 1x for cash; set `default_leverage=1` for prior behavior
 - Changed Rust `MarginModel` implementations to require `Send + Sync` and `name()`
 - Changed `Strategy.cancel_all_orders` to associated orders by default (#4470), thanks for reporting @zurpet
 - Changed `ExecutionClientFactory::create` to receive the node's `TraderId`

@@ -100,6 +100,26 @@ USD = Currency.from_str("USD")
 USDT = Currency.from_str("USDT")
 
 
+def test_add_venue_uses_margin_account_default_leverage() -> None:
+    """
+    Test direct add venue uses the margin account leverage default.
+    """
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    venue = Venue("SIM")
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money.from_str("1_000_000 USD")],
+        base_currency=USD,
+    )
+    engine.run()
+    account = engine.cache.account_for_venue(venue)
+
+    assert account.default_leverage == Decimal(10)
+    engine.dispose()
+
+
 @pytest.mark.parametrize(
     ("margin_model", "expected_margin"),
     [

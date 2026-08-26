@@ -27,7 +27,6 @@ use nautilus_model::{
     },
     enums::{BookType, OtoTriggerMode},
     identifiers::{InstrumentId, Venue},
-    instruments::Instrument,
     types::Money,
 };
 use nautilus_persistence::backend::{catalog::ParquetDataCatalog, session::QueryResult};
@@ -250,7 +249,7 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             .book_type(venue_config.book_type())
             .starting_balances(starting_balances)
             .maybe_base_currency(venue_config.base_currency())
-            .default_leverage(default_leverage)
+            .maybe_default_leverage(default_leverage)
             .leverages(leverages)
             .maybe_margin_model(margin_model)
             .modules(modules)
@@ -302,22 +301,6 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
 
         for instrument in instruments {
             engine.add_instrument(&instrument)?;
-        }
-    }
-
-    for venue_config in config.venues() {
-        let Some(settlement_prices) = venue_config.settlement_prices() else {
-            continue;
-        };
-        let venue = Venue::from(venue_config.name().as_str());
-
-        for (instrument_id, raw_price) in settlement_prices {
-            let price = {
-                let cache = engine.kernel().cache.borrow();
-                let instrument = cache.try_instrument(instrument_id)?;
-                instrument.make_price(*raw_price)
-            };
-            engine.set_settlement_price(venue, *instrument_id, price)?;
         }
     }
 

@@ -57,7 +57,6 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId, Venue},
     instruments::{Instrument, InstrumentAny},
     position::Position,
-    types::Price,
 };
 #[cfg(feature = "python")]
 use nautilus_system::trader::Trader;
@@ -321,27 +320,6 @@ impl BacktestEngine {
 
         log::info!("Adding exchange {venue} to engine");
 
-        Ok(())
-    }
-
-    /// Sets the settlement price for the specified venue instrument.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the venue has not been added to the engine.
-    pub fn set_settlement_price(
-        &mut self,
-        venue: Venue,
-        instrument_id: InstrumentId,
-        price: Price,
-    ) -> anyhow::Result<()> {
-        let exchange = self
-            .venues
-            .get_mut(&venue)
-            .ok_or_else(|| anyhow::anyhow!("Unknown venue {venue}"))?;
-        exchange
-            .borrow_mut()
-            .set_settlement_price(instrument_id, price);
         Ok(())
     }
 

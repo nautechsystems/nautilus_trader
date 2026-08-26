@@ -296,7 +296,7 @@ class BacktestVenueConfig:
     @property
     def base_currency(self) -> model.Currency | None: ...
     @property
-    def default_leverage(self) -> decimal.Decimal: ...
+    def default_leverage(self) -> decimal.Decimal | None: ...
     @property
     def leverages(self) -> dict[model.InstrumentId, decimal.Decimal] | None: ...
     @property
@@ -311,8 +311,6 @@ class BacktestVenueConfig:
     def fee_model(self) -> typing.Any | None: ...
     @property
     def price_protection_points(self) -> int: ...
-    @property
-    def settlement_prices(self) -> dict[model.InstrumentId, float] | None: ...
     @property
     def liquidation_enabled(self) -> bool: ...
     @property
@@ -351,7 +349,6 @@ class BacktestVenueConfig:
         latency_model: typing.Any | None = None,
         fee_model: typing.Any | None = None,
         price_protection_points: int | None = None,
-        settlement_prices: typing.Mapping[model.InstrumentId, float] | None = None,
         liquidation_enabled: bool | None = None,
         liquidation_trigger_ratio: float | None = None,
         liquidation_cancel_open_orders: bool | None = None,
@@ -431,7 +428,6 @@ class BacktestEngine:
         frozen_account: bool = False,
         oto_trigger_mode: model.OtoTriggerMode = model.OtoTriggerMode.PARTIAL,
         price_protection_points: int | None = None,
-        settlement_prices: typing.Mapping[model.InstrumentId, model.Price] | None = None,
         liquidation_enabled: bool = False,
         liquidation_trigger_ratio: float | None = None,
         liquidation_cancel_open_orders: bool = True,

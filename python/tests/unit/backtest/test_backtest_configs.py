@@ -179,6 +179,7 @@ def test_venue_config_required_params() -> None:
     assert config.account_type == AccountType.MARGIN
     assert config.book_type == BookType.L1_MBP
     assert config.starting_balances == ["1_000_000 USD"]
+    assert config.default_leverage is None
 
 
 def test_venue_config_optional_params() -> None:
@@ -222,7 +223,6 @@ def test_venue_config_optional_params() -> None:
         fill_model=fill_model,
         latency_model=latency_model,
         price_protection_points=7,
-        settlement_prices={instrument_id: 50_000.0},
     )
     assert config.name == "BINANCE"
     assert config.routing is True
@@ -251,7 +251,6 @@ def test_venue_config_optional_params() -> None:
     assert isinstance(config.modules[0], FXRolloverInterestModule)
     assert config.fee_model is None
     assert config.price_protection_points == 7
-    assert config.settlement_prices == {instrument_id: 50_000.0}
 
 
 @pytest.mark.parametrize("margin_model", [StandardMarginModel(), LeveragedMarginModel()])

@@ -150,7 +150,6 @@ pub struct SimulatedExchange {
     instruments: AHashMap<InstrumentId, InstrumentAny>,
     matching_engines: IndexMap<InstrumentId, OrderMatchingEngine>,
     last_raw_id: u32,
-    settlement_prices: AHashMap<InstrumentId, Price>,
     pending_funding_rates: BTreeMap<(UnixNanos, InstrumentId), FundingRateUpdate>,
     funding_settlements: BTreeSet<(UnixNanos, InstrumentId)>,
     leverages: AHashMap<InstrumentId, Decimal>,
@@ -238,7 +237,6 @@ impl SimulatedExchange {
             instruments: AHashMap::new(),
             matching_engines: IndexMap::new(),
             last_raw_id: 0,
-            settlement_prices: config.settlement_prices,
             pending_funding_rates: BTreeMap::new(),
             funding_settlements: BTreeSet::new(),
             leverages: config.leverages,
@@ -302,11 +300,6 @@ impl SimulatedExchange {
     /// Sets the latency model for the exchange.
     pub fn set_latency_model(&mut self, latency_model: LatencyModelHandle) {
         self.latency_model = Some(latency_model);
-    }
-
-    /// Sets the settlement price for the given instrument.
-    pub fn set_settlement_price(&mut self, instrument_id: InstrumentId, price: Price) {
-        self.settlement_prices.insert(instrument_id, price);
     }
 
     /// Returns the configured book type for this venue.
@@ -1057,9 +1050,6 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&close.instrument_id) {
-            if let Some(price) = self.settlement_prices.get(&close.instrument_id) {
-                matching_engine.set_settlement_price(*price);
-            }
             matching_engine.process_instrument_close(close);
         } else {
             panic!("Matching engine should be initialized");
@@ -1975,6 +1965,29 @@ mod tests {
         }
 
         SimulatedExchange::new(config, cache, clock).unwrap()
+    }
+
+    #[rstest]
+    #[case(AccountType::Margin, Decimal::from(10))]
+    #[case(AccountType::Cash, Decimal::ONE)]
+    fn test_default_leverage_uses_account_type(
+        #[case] account_type: AccountType,
+        #[case] expected: Decimal,
+    ) {
+        let config = SimulatedVenueConfig::builder()
+            .venue(Venue::new("SIM"))
+            .oms_type(OmsType::Netting)
+            .account_type(account_type)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000 USD")])
+            .build()
+            .unwrap();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+
+        let exchange = SimulatedExchange::new(config, cache, clock).unwrap();
+
+        assert_eq!(exchange.default_leverage, expected);
     }
 
     fn query_order() -> TradingCommand {

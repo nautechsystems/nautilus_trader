@@ -47,7 +47,7 @@ use nautilus_model::{
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{AccountId, ActorId, ClientId, ExecAlgorithmId, InstrumentId, TraderId, Venue},
     python::instruments::pyobject_to_instrument_any,
-    types::{Currency, Money, Price},
+    types::{Currency, Money},
 };
 use nautilus_portfolio::python::PyPortfolio;
 #[cfg(feature = "examples")]
@@ -164,7 +164,6 @@ impl PyBacktestEngine {
             frozen_account = false,
             oto_trigger_mode = OtoTriggerMode::Partial,
             price_protection_points = None,
-            settlement_prices = None,
             liquidation_enabled = false,
             liquidation_trigger_ratio = None,
             liquidation_cancel_open_orders = true,
@@ -208,15 +207,11 @@ impl PyBacktestEngine {
         frozen_account: bool,
         oto_trigger_mode: OtoTriggerMode,
         price_protection_points: Option<u32>,
-        settlement_prices: Option<HashMap<InstrumentId, Price>>,
         liquidation_enabled: bool,
         liquidation_trigger_ratio: Option<f64>,
         liquidation_cancel_open_orders: bool,
     ) -> PyResult<()> {
         let leverages: AHashMap<InstrumentId, Decimal> = leverages
-            .map(|m| m.into_iter().collect())
-            .unwrap_or_default();
-        let settlement_prices: AHashMap<InstrumentId, Price> = settlement_prices
             .map(|m| m.into_iter().collect())
             .unwrap_or_default();
         let margin_model = margin_model
@@ -288,12 +283,6 @@ impl PyBacktestEngine {
             .map_err(config_error_to_pyvalue_err)?;
 
         self.0.add_venue(sim_config).map_err(to_pyruntime_err)?;
-
-        for (instrument_id, price) in settlement_prices {
-            self.0
-                .set_settlement_price(venue, instrument_id, price)
-                .map_err(to_pyruntime_err)?;
-        }
 
         Ok(())
     }
@@ -1936,7 +1925,6 @@ mod model_tests {
                     false,
                     false,
                     OtoTriggerMode::Partial,
-                    None,
                     None,
                     false,
                     None,
