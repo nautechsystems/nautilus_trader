@@ -1325,32 +1325,6 @@ pub(crate) fn apply_fill_time_filters(
     reports
 }
 
-/// Builds position status reports from Data API positions, filtering dust.
-#[cfg(test)]
-pub(crate) fn build_position_reports(
-    positions: &[DataApiPosition],
-    account_id: AccountId,
-    ts: UnixNanos,
-) -> Vec<PositionStatusReport> {
-    positions
-        .iter()
-        .filter_map(|position| build_position_report(position, account_id, ts))
-        .collect()
-}
-
-#[cfg(test)]
-fn build_position_report(
-    position: &DataApiPosition,
-    account_id: AccountId,
-    ts: UnixNanos,
-) -> Option<PositionStatusReport> {
-    if position_is_dust(position) {
-        return None;
-    }
-
-    build_position_report_from_reportable_position(position, account_id, ts)
-}
-
 fn build_position_report_from_reportable_position(
     position: &DataApiPosition,
     account_id: AccountId,
@@ -1841,6 +1815,48 @@ mod tests {
     fn open_order() -> PolymarketOpenOrder {
         serde_json::from_str(include_str!("../../test_data/http_open_order.json"))
             .expect("valid open-order fixture")
+    }
+
+    fn data_api_positions() -> Vec<DataApiPosition> {
+        serde_json::from_str(include_str!(
+            "../../test_data/data_api_positions_response.json"
+        ))
+        .expect("valid Data API position fixture")
+    }
+
+    #[rstest]
+    #[case(0, Decimal::new(55, 2))]
+    #[case(2, Decimal::new(3, 1))]
+    fn test_build_position_report_carries_values(
+        #[case] position_index: usize,
+        #[case] expected_avg_price: Decimal,
+    ) {
+        let positions = data_api_positions();
+        let report = build_position_report_from_reportable_position(
+            &positions[position_index],
+            AccountId::from("POLYMARKET-001"),
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .expect("fixture position is reportable");
+
+        assert!(report.is_long());
+        assert_eq!(report.avg_px_open, Some(expected_avg_price));
+        assert_eq!(report.quantity.precision, USDC_DECIMALS as u8);
+    }
+
+    #[rstest]
+    fn test_build_position_report_handles_missing_avg_price() {
+        let mut position = data_api_positions().remove(0);
+        position.avg_price = None;
+
+        let report = build_position_report_from_reportable_position(
+            &position,
+            AccountId::from("POLYMARKET-001"),
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .expect("fixture position is reportable");
+
+        assert_eq!(report.avg_px_open, None);
     }
 
     #[rstest]
