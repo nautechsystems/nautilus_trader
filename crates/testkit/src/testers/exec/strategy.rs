@@ -1927,6 +1927,11 @@ impl ExecTester {
             anyhow::bail!("No instrument loaded");
         };
 
+        if self.config.dry_run {
+            log_warn!("Dry run, skipping open position");
+            return Ok(());
+        }
+
         if net_qty == Decimal::ZERO {
             log_warn!("Open position with zero quantity, skipping");
             return Ok(());

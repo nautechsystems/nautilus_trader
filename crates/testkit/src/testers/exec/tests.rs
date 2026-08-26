@@ -385,6 +385,42 @@ fn test_open_position_on_start_submits_market_order_after_first_quote(
 }
 
 #[rstest]
+#[case(false)]
+#[case(true)]
+fn test_open_position_on_start_dry_run_does_not_submit_market_order(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] open_position_on_first_quote: bool,
+) {
+    config.instrument_id = instrument.id();
+    config.dry_run = true;
+    config.open_position_on_start_qty = Some(Decimal::ONE);
+    config.open_position_on_first_quote = open_position_on_first_quote;
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.subscribe_quotes = true;
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+    let risk_saver = capture_risk_commands();
+
+    tester.on_instrument(&instrument).unwrap();
+    if open_position_on_first_quote {
+        assert_eq!(tester.pending_open_position_qty, Some(Decimal::ONE));
+        tester.on_quote(&quote_for(instrument_id)).unwrap();
+    }
+
+    let order_count = tester
+        .cache()
+        .client_order_ids(None, Some(&instrument_id), None, None)
+        .len();
+    assert!(tester.pending_open_position_qty.is_none());
+    assert!(submit_orders(&risk_saver).is_empty());
+    assert_eq!(order_count, 0);
+}
+
+#[rstest]
 fn test_open_position_on_start_ignores_quote_before_instrument(mut config: ExecTesterConfig) {
     config.open_position_on_start_qty = Some(Decimal::from(1));
     config.open_position_on_first_quote = true;

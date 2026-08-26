@@ -54,6 +54,10 @@ from nautilus_trader.model import TraderId
 from nautilus_trader.testkit import ExecTesterConfig
 
 
+# WARNING: With DRY_RUN = False, this tester submits orders to the configured
+# environment and may use real funds. Set DRY_RUN = True to connect without
+# submitting orders or sending shutdown cancel/close commands.
+DRY_RUN = False
 POLYMARKET = "POLYMARKET"
 DEFAULT_GAMMA_URL = "https://gamma-api.polymarket.com"
 TRADER_ID = TraderId.from_str("TESTER-001")
@@ -145,7 +149,7 @@ def main() -> None:
             close_positions_qty_precision=2,
             close_positions_time_in_force=TimeInForce.IOC,
             reduce_only_on_stop=False,
-            dry_run=False,  # Set True to log intended order flow without submitting orders
+            dry_run=DRY_RUN,
             log_data=False,
         ),
     )

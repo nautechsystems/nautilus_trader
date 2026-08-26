@@ -62,6 +62,10 @@ enum IbExecutionSpecProfile {
     UnsupportedFlags,
 }
 
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
+const DRY_RUN: bool = false;
 const TRADER_ID: &str = "IB-EXEC-TESTER-001";
 const NODE_NAME: &str = "IB-EXEC-TESTER-001";
 const STRATEGY_ID: &str = "IB-EXEC-TESTER-001";
@@ -190,6 +194,7 @@ fn exec_tester_config_for_profile(
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .log_data(false);
 
     match profile {

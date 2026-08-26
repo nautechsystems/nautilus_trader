@@ -16,8 +16,6 @@
 //! Example demonstrating live execution testing with the Lighter adapter.
 //!
 //! Edit the constants below to change the environment, target instrument, and order size.
-//! By default this connects in dry-run mode. Set `DRY_RUN` to `false` to allow
-//! real orders.
 //!
 //! Run with: `cargo run --example lighter-exec-tester --package nautilus-lighter --features examples`
 //!
@@ -42,8 +40,9 @@ use nautilus_model::{
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
-// DRY_RUN connects to the venue, but ExecTester skips order submission and
-// shutdown cancel/close commands.
+// WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
+// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// submitting orders or sending shutdown cancel/close commands.
 const DRY_RUN: bool = false;
 const LIGHTER_ENVIRONMENT: LighterEnvironment = LighterEnvironment::Mainnet;
 const TRADER_ID: &str = "TESTER-001";
@@ -110,6 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        .dry_run(DRY_RUN)
         .subscribe_quotes(true)
         .subscribe_trades(false)
         .subscribe_book(false)
@@ -122,7 +122,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .use_post_only(true)
         .cancel_orders_on_stop(true)
         .close_positions_on_stop(true)
-        .dry_run(DRY_RUN)
         .log_data(false)
         .build()?;
 
