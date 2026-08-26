@@ -1615,6 +1615,26 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         }
 
         let client = self.ib_client.as_ref().context("IB client not connected")?;
+        let exec_sender = get_exec_event_sender();
+        let clock = get_atomic_clock_realtime();
+        let account_id = self.core.account_id;
+        let target_order = match self.core.get_order(&cmd.client_order_id).and_then(|order| {
+            Self::validate_cancel_order_target(&cmd, &order)?;
+            Ok(order)
+        }) {
+            Ok(order) => Arc::new(order),
+            Err(e) => {
+                let reason = format!("Failed to resolve cancel order target: {e:#}");
+                Self::send_order_cancel_rejected(
+                    &cmd,
+                    &reason,
+                    &exec_sender,
+                    clock.get_time_ns(),
+                    account_id,
+                )?;
+                return Ok(());
+            }
+        };
 
         let order_id_map = Arc::clone(&self.order_id_map);
         let venue_order_id_map = Arc::clone(&self.venue_order_id_map);
@@ -1622,15 +1642,13 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let trader_id_map = Arc::clone(&self.trader_id_map);
         let strategy_id_map = Arc::clone(&self.strategy_id_map);
         let pending_cancel_orders = Arc::clone(&self.pending_cancel_orders);
-        let exec_sender = get_exec_event_sender();
-        let clock = get_atomic_clock_realtime();
-        let account_id = self.core.account_id;
         let client_clone = client.as_arc().clone();
         let request_timeout_secs = self.config.request_timeout;
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) = Self::handle_cancel_order_async(
                 &cmd,
+                &target_order,
                 &client_clone,
                 &order_id_map,
                 &venue_order_id_map,
@@ -2049,13 +2067,44 @@ impl InteractiveBrokersExecutionClient {
         );
     }
 
-    /// Handles cancel all orders asynchronously.
+    fn validate_cancel_order_target(
+        cmd: &CancelOrder,
+        target_order: &OrderAny,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            cmd.client_order_id == target_order.client_order_id(),
+            "command client order ID {} does not match cached order {}",
+            cmd.client_order_id,
+            target_order.client_order_id()
+        );
+        anyhow::ensure!(
+            cmd.instrument_id == target_order.instrument_id(),
+            "command instrument ID {} does not match cached order {}",
+            cmd.instrument_id,
+            target_order.instrument_id()
+        );
+
+        // Command actor IDs identify the requester and are not ownership evidence.
+        if let (Some(command_venue_order_id), Some(target_venue_order_id)) =
+            (cmd.venue_order_id.as_ref(), target_order.venue_order_id())
+        {
+            anyhow::ensure!(
+                command_venue_order_id == &target_venue_order_id,
+                "command venue order ID {command_venue_order_id} does not match cached order {target_venue_order_id}"
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Handles cancel order asynchronously.
     ///
     /// # Errors
     ///
-    /// Returns an error if the global cancel request fails.
+    /// Returns an error if broker order resolution or identity caching fails.
     async fn handle_cancel_order_async(
         cmd: &CancelOrder,
+        target_order: &OrderAny,
         client: &Arc<Client>,
         order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
         venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
@@ -2085,6 +2134,7 @@ impl InteractiveBrokersExecutionClient {
         Self::cache_cancel_order_tracking(
             ib_order_id,
             cmd,
+            target_order,
             order_id_map,
             venue_order_id_map,
             instrument_id_map,

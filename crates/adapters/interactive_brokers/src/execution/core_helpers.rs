@@ -227,6 +227,7 @@ impl InteractiveBrokersExecutionClient {
     pub(super) fn cache_cancel_order_tracking(
         ib_order_id: i32,
         cmd: &CancelOrder,
+        target_order: &OrderAny,
         order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
         venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
         instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
@@ -240,15 +241,15 @@ impl InteractiveBrokersExecutionClient {
         instrument_id_map
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?
-            .insert(ib_order_id, cmd.instrument_id);
+            .insert(ib_order_id, target_order.instrument_id());
         trader_id_map
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock trader ID map"))?
-            .insert(ib_order_id, cmd.trader_id);
+            .insert(ib_order_id, target_order.trader_id());
         strategy_id_map
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock strategy ID map"))?
-            .insert(ib_order_id, cmd.strategy_id);
+            .insert(ib_order_id, target_order.strategy_id());
         venue_order_id_map
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?

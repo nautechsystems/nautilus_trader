@@ -31,7 +31,7 @@ use nautilus_model::{
         Venue, VenueOrderId,
     },
     instruments::{InstrumentAny, OptionSpread, stubs::equity_aapl},
-    orders::{OrderList, builder::OrderTestBuilder},
+    orders::{OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     types::{Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -101,6 +101,29 @@ fn create_test_limit_order(client_order_id: ClientOrderId) -> OrderAny {
         .quantity(Quantity::from(1))
         .submit(true)
         .build()
+}
+
+fn create_test_accepted_limit_order(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+) -> OrderAny {
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("100.00"))
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+    order.apply(accepted).unwrap();
+    order
 }
 
 fn create_tracked_order_context(
@@ -1966,9 +1989,61 @@ fn test_emit_order_pending_cancel_is_idempotent() {
     );
 }
 
+#[rstest]
+fn cancel_order_target_validation_rejects_identity_conflicts() {
+    let trader_id = TraderId::from("TRADER-TARGET");
+    let target_strategy_id = StrategyId::from("STRATEGY-TARGET");
+    let client_order_id = ClientOrderId::from("O-TARGET-001");
+    let instrument_id = create_test_stock_instrument();
+    let venue_order_id = VenueOrderId::from("PERM-456");
+    let target_order = create_test_accepted_limit_order(
+        trader_id,
+        target_strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        AccountId::from("IB-001"),
+    );
+
+    let command = |instrument_id, venue_order_id| {
+        CancelOrder::new(
+            trader_id,
+            Some(*IB_CLIENT_ID),
+            StrategyId::from("OPERATOR-001"),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            UUID4::new(),
+            UnixNanos::new(1),
+            None,
+            None,
+        )
+    };
+
+    let error = InteractiveBrokersExecutionClient::validate_cancel_order_target(
+        &command(create_test_leg_instrument(), venue_order_id),
+        &target_order,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("command instrument ID"));
+
+    let error = InteractiveBrokersExecutionClient::validate_cancel_order_target(
+        &command(instrument_id, VenueOrderId::from("PERM-999")),
+        &target_order,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("command venue order ID"));
+}
+
+#[rstest]
+#[case("TRADER-RESTORED", "STRATEGY-RESTORED")]
+#[case("TRADER-OPERATOR", "OPERATOR-001")]
 #[tokio::test]
-async fn test_cancel_order_recovery_tracks_resolved_order_identity() {
-    let (client, mut exec_receiver, _) = create_test_execution_client();
+async fn test_cancel_order_recovery_tracks_resolved_order_identity(
+    #[case] requesting_trader_id: &str,
+    #[case] requesting_strategy_id: &str,
+) {
+    let (client, mut exec_receiver, cache) = create_test_execution_client();
     let spread = create_test_option_spread();
     let instrument_id = spread.id;
     client
@@ -1982,26 +2057,43 @@ async fn test_cancel_order_recovery_tracks_resolved_order_identity() {
     assert!(client.strategy_id_map.lock().unwrap().is_empty());
 
     let trader_id = TraderId::from("TRADER-RESTORED");
-    let strategy_id = StrategyId::from("STRATEGY-RESTORED");
+    let target_strategy_id = StrategyId::from("STRATEGY-RESTORED");
     let client_order_id = ClientOrderId::from("O-RESTORED-001");
-    let cmd = CancelOrder::new(
+    let venue_order_id = VenueOrderId::from("PERM-456");
+    let target_order = create_test_accepted_limit_order(
         trader_id,
-        Some(*IB_CLIENT_ID),
-        strategy_id,
+        target_strategy_id,
         instrument_id,
         client_order_id,
-        Some(VenueOrderId::from("PERM-456")),
+        venue_order_id,
+        client.core.account_id,
+    );
+    cache
+        .borrow_mut()
+        .add_order(target_order, None, Some(*IB_CLIENT_ID), false)
+        .unwrap();
+    let target_order = client.core.get_order(&client_order_id).unwrap();
+
+    let cmd = CancelOrder::new(
+        TraderId::from(requesting_trader_id),
+        Some(*IB_CLIENT_ID),
+        StrategyId::from(requesting_strategy_id),
+        instrument_id,
+        client_order_id,
+        Some(venue_order_id),
         UUID4::new(),
         UnixNanos::new(1),
         None,
         None,
     );
+    InteractiveBrokersExecutionClient::validate_cancel_order_target(&cmd, &target_order).unwrap();
     // Raw order ID returned after resolving PERM-456.
     let resolved_order_id = 7001;
 
     InteractiveBrokersExecutionClient::cache_cancel_order_tracking(
         resolved_order_id,
         &cmd,
+        &target_order,
         &client.order_id_map,
         &client.venue_order_id_map,
         &client.instrument_id_map,
@@ -2039,7 +2131,7 @@ async fn test_cancel_order_recovery_tracks_resolved_order_identity() {
     match exec_receiver.try_recv().unwrap() {
         ExecutionEvent::Order(OrderEventAny::PendingCancel(event)) => {
             assert_eq!(event.trader_id, trader_id);
-            assert_eq!(event.strategy_id, strategy_id);
+            assert_eq!(event.strategy_id, target_strategy_id);
             assert_eq!(event.instrument_id, instrument_id);
             assert_eq!(event.client_order_id, client_order_id);
         }
@@ -2081,7 +2173,7 @@ async fn test_cancel_order_recovery_tracks_resolved_order_identity() {
     match exec_receiver.try_recv().unwrap() {
         ExecutionEvent::Order(OrderEventAny::Canceled(event)) => {
             assert_eq!(event.trader_id, trader_id);
-            assert_eq!(event.strategy_id, strategy_id);
+            assert_eq!(event.strategy_id, target_strategy_id);
             assert_eq!(event.instrument_id, instrument_id);
             assert_eq!(event.client_order_id, client_order_id);
             assert_eq!(event.venue_order_id, Some(VenueOrderId::from("PERM-456")));
