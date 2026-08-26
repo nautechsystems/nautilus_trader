@@ -26,8 +26,10 @@ use std::{
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
+        mpsc,
     },
     task::{Context, Poll, Waker},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -91,13 +93,6 @@ use crate::{
     node::{LiveNode, LiveNodeHandle, NodeRunMode, config::RoutingConfig},
     python::config::coerce_json_config,
 };
-
-struct SendPtr<T>(*mut T);
-
-// SAFETY: the owner of a `SendPtr` holds the only reference to the pointee for the pointer's
-// lifetime, and the pointee outlives every use.
-#[allow(unsafe_code)]
-unsafe impl<T> Send for SendPtr<T> {}
 
 /// Python-facing wrapper owning a [`LiveNode`].
 ///
@@ -267,18 +262,33 @@ impl std::task::Wake for BlockingWake {
 /// Wake state shared between a hosted run and the callback that resumes it.
 #[derive(Debug, Default)]
 struct RunWakeState {
-    /// The asyncio future the awaiting task is currently suspended on.
-    pending: Mutex<Option<Py<PyAny>>>,
-    /// Set when a wake arrives, so a wake racing the suspend is not lost.
-    woken: AtomicBool,
+    pending: Mutex<Option<RunSuspension>>,
+    closed: AtomicBool,
+}
+
+#[derive(Debug)]
+struct RunSuspension {
+    generation: u64,
+    future: Py<PyAny>,
 }
 
 impl RunWakeState {
-    /// Resolves the suspended future, resuming the awaiting task.
-    fn resume(&self, py: Python<'_>) -> PyResult<()> {
-        let Some(future) = self.pending.lock().expect(MUTEX_POISONED).take() else {
+    fn suspend(&self, generation: u64, future: Py<PyAny>) {
+        *self.pending.lock().expect(MUTEX_POISONED) = Some(RunSuspension { generation, future });
+    }
+
+    fn resume(&self, py: Python<'_>, generation: u64) -> PyResult<()> {
+        let mut pending = self.pending.lock().expect(MUTEX_POISONED);
+        let Some(suspension) = pending.as_ref() else {
             return Ok(());
         };
+
+        if self.closed.load(Ordering::Acquire) || suspension.generation != generation {
+            return Ok(());
+        }
+
+        let future = pending.take().expect("suspension presence checked").future;
+        drop(pending);
 
         let future = future.bind(py);
         if !future
@@ -290,6 +300,11 @@ impl RunWakeState {
 
         Ok(())
     }
+
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.pending.lock().expect(MUTEX_POISONED).take();
+    }
 }
 
 /// Callable scheduled on the host event loop to resume a hosted run.
@@ -300,17 +315,53 @@ struct PyNodeRunWake {
 
 #[pymethods]
 impl PyNodeRunWake {
-    fn __call__(&self, py: Python<'_>) -> PyResult<()> {
-        self.state.resume(py)
+    fn __call__(&self, py: Python<'_>, generation: u64) -> PyResult<()> {
+        self.state.resume(py, generation)
     }
 }
 
-/// Waker that resumes a hosted run from whichever thread completed the work.
-struct HostLoopWaker {
-    event_loop: Py<PyAny>,
-    wake_callback: Py<PyAny>,
-    state: Arc<RunWakeState>,
+enum HostWakeSignal {
+    Resume(u64),
+    Shutdown,
+}
+
+struct HostWakeControl {
+    sender: mpsc::Sender<HostWakeSignal>,
+    active: AtomicBool,
     handle: LiveNodeHandle,
+}
+
+impl HostWakeControl {
+    fn resume(&self, generation: u64) {
+        if !self.active.load(Ordering::Acquire) {
+            return;
+        }
+
+        if self
+            .sender
+            .send(HostWakeSignal::Resume(generation))
+            .is_err()
+            && self.active.swap(false, Ordering::AcqRel)
+        {
+            // Nothing can resume a suspended run once the wake pump is gone. Request a stop,
+            // but the awaiting task may remain suspended.
+            log::error!("Hosted run wake pump stopped unexpectedly, stopping node");
+            self.handle.stop();
+        }
+    }
+
+    fn close(&self) {
+        if self.active.swap(false, Ordering::AcqRel) {
+            let _ = self.sender.send(HostWakeSignal::Shutdown);
+        }
+    }
+}
+
+/// Waker that signals the host wake pump from whichever thread completed the work.
+struct HostLoopWaker {
+    generation: u64,
+    scheduled: AtomicBool,
+    control: Arc<HostWakeControl>,
 }
 
 impl std::task::Wake for HostLoopWaker {
@@ -319,30 +370,124 @@ impl std::task::Wake for HostLoopWaker {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        // Futures may wake redundantly. Scheduling only on the false-to-true edge keeps at most
-        // one callback outstanding, so a stale callback cannot resolve a later suspension.
-        if self
-            .state
-            .woken
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
-            return;
+        if !self.scheduled.swap(true, Ordering::AcqRel) {
+            self.control.resume(self.generation);
         }
-
-        Python::attach(|py| {
-            if let Err(e) = self.event_loop.bind(py).call_method1(
-                intern!(py, "call_soon_threadsafe"),
-                (self.wake_callback.bind(py),),
-            ) {
-                // Nothing can resume the run once the host loop is gone, so request a stop and
-                // leave the awaiting task to surface the failure.
-                log::error!("Failed to schedule hosted run wake-up, stopping node: {e}");
-                self.handle.stop();
-            }
-        });
     }
 }
+
+/// Moves Python scheduling off the dependency thread that invoked the waker.
+struct HostWakePump {
+    control: Arc<HostWakeControl>,
+    thread: Option<thread::JoinHandle<()>>,
+}
+
+impl HostWakePump {
+    fn start(
+        event_loop: Py<PyAny>,
+        wake_callback: Py<PyAny>,
+        handle: LiveNodeHandle,
+    ) -> PyResult<Self> {
+        let (sender, receiver) = mpsc::channel();
+        let control = Arc::new(HostWakeControl {
+            sender,
+            active: AtomicBool::new(true),
+            handle: handle.clone(),
+        });
+
+        let control_for_thread = control.clone();
+
+        let thread = thread::Builder::new()
+            .name("nautilus-host-wake".to_string())
+            .spawn(move || {
+                while let Ok(signal) = receiver.recv() {
+                    match signal {
+                        HostWakeSignal::Resume(generation) => {
+                            if !control_for_thread.active.load(Ordering::Acquire) {
+                                continue;
+                            }
+
+                            let Some(result) = Python::try_attach(|py| {
+                                event_loop.bind(py).call_method1(
+                                    intern!(py, "call_soon_threadsafe"),
+                                    (wake_callback.bind(py), generation),
+                                )?;
+                                Ok::<(), PyErr>(())
+                            }) else {
+                                log::error!(
+                                    "Python unavailable while scheduling hosted run wake-up, stopping node"
+                                );
+                                handle.stop();
+                                break;
+                            };
+
+                            if let Err(e) = result {
+                                log::error!(
+                                    "Failed to schedule hosted run wake-up, stopping node: {e}"
+                                );
+                                handle.stop();
+                                break;
+                            }
+                        }
+                        HostWakeSignal::Shutdown => break,
+                    }
+                }
+
+                control_for_thread.active.store(false, Ordering::Release);
+            })
+            .map_err(|e| to_pyruntime_err(format!("failed to start hosted run wake pump: {e}")))?;
+
+        Ok(Self {
+            control,
+            thread: Some(thread),
+        })
+    }
+
+    fn waker(&self, generation: u64) -> Waker {
+        Waker::from(Arc::new(HostLoopWaker {
+            generation,
+            scheduled: AtomicBool::new(false),
+            control: self.control.clone(),
+        }))
+    }
+
+    fn close(&self) {
+        self.control.close();
+    }
+
+    fn join(&mut self, py: Option<Python<'_>>) {
+        let Some(thread) = self.thread.take() else {
+            return;
+        };
+        let mut thread = Some(thread);
+
+        let result = match py {
+            Some(py) => py.detach(|| thread.take().expect("thread presence checked").join()),
+            None => Python::try_attach(|py| {
+                py.detach(|| thread.take().expect("thread presence checked").join())
+            })
+            .unwrap_or_else(|| thread.take().expect("thread presence checked").join()),
+        };
+
+        if result.is_err() {
+            log::error!("Hosted run wake pump panicked while stopping");
+        }
+    }
+}
+
+impl Drop for HostWakePump {
+    fn drop(&mut self) {
+        self.close();
+        self.join(None);
+    }
+}
+
+struct SendPtr<T>(*mut T);
+
+// SAFETY: the owner of a `SendPtr` holds the only reference to the pointee for the pointer's
+// lifetime, and the pointee outlives every use.
+#[allow(unsafe_code)]
+unsafe impl<T> Send for SendPtr<T> {}
 
 /// Awaitable driving a [`LiveNode`] on the host's asyncio event loop.
 ///
@@ -356,8 +501,9 @@ pub struct PyNodeRun {
     owner: Rc<RefCell<Option<LiveNode>>>,
     handle: LiveNodeHandle,
     event_loop: Py<PyAny>,
-    waker: Waker,
+    wake_pump: HostWakePump,
     state: Arc<RunWakeState>,
+    generation: u64,
     pending_throw: Option<PyErr>,
 }
 
@@ -376,7 +522,7 @@ impl Debug for PyNodeRun {
 
 impl Drop for PyNodeRun {
     fn drop(&mut self) {
-        self.restore_node();
+        self.restore_node(None);
     }
 }
 
@@ -390,7 +536,7 @@ impl PyNodeRun {
         owner: Rc<RefCell<Option<LiveNode>>>,
         event_loop: Bound<'_, PyAny>,
         state: Arc<RunWakeState>,
-        wake_callback: Py<PyAny>,
+        wake_pump: HostWakePump,
     ) -> Self {
         let handle = node.handle();
         let mut node = Box::new(node);
@@ -404,21 +550,15 @@ impl PyNodeRun {
             unsafe { (*ptr.0).run_with_mode(NodeRunMode::Hosted).await }
         });
 
-        let waker = Waker::from(Arc::new(HostLoopWaker {
-            event_loop: event_loop.clone().unbind(),
-            wake_callback,
-            state: state.clone(),
-            handle: handle.clone(),
-        }));
-
         Self {
             future: Some(future),
             node: Some(node),
             owner,
             handle,
             event_loop: event_loop.unbind(),
-            waker,
+            wake_pump,
             state,
+            generation: 0,
             pending_throw: None,
         }
     }
@@ -427,8 +567,11 @@ impl PyNodeRun {
     ///
     /// Releases the per-thread run guard here rather than only on drop, so a completed run does
     /// not block the next one until the coroutine object happens to be collected.
-    fn restore_node(&mut self) {
+    fn restore_node(&mut self, py: Option<Python<'_>>) {
+        self.state.close();
+        self.wake_pump.close();
         self.future = None;
+        self.wake_pump.join(py);
 
         if let Some(node) = self.node.take() {
             *self.owner.borrow_mut() = Some(*node);
@@ -470,7 +613,8 @@ impl PyNodeRun {
                 if let Err(e) = result {
                     log::error!("Hosted run failed during inline shutdown: {e}");
                 }
-                self.restore_node();
+
+                self.restore_node(Some(py));
                 return;
             }
 
@@ -492,17 +636,24 @@ impl PyNodeRun {
             return Err(to_pyruntime_err("Hosted run has already completed"));
         };
 
-        self.state.woken.store(false, Ordering::Release);
+        let generation = self
+            .generation
+            .checked_add(1)
+            .ok_or_else(|| to_pyruntime_err("Hosted run wake generation exhausted"))?;
+        self.generation = generation;
 
-        // Timers and the reactor are only reachable inside the runtime context.
+        // A distinct waker prevents a late wake from an older poll resuming this suspension
+        let waker = self.wake_pump.waker(generation);
+
+        // Timers and the reactor are only reachable inside the runtime context
         let poll = {
             let _guard = get_runtime().enter();
-            future.as_mut().poll(&mut Context::from_waker(&self.waker))
+            future.as_mut().poll(&mut Context::from_waker(&waker))
         };
 
         match poll {
             Poll::Ready(result) => {
-                self.restore_node();
+                self.restore_node(Some(py));
 
                 if let Err(e) = &result {
                     log::error!("Hosted run failed: {e}");
@@ -523,13 +674,8 @@ impl PyNodeRun {
                     .call_method0(intern!(py, "create_future"))?;
                 suspended.setattr(intern!(py, "_asyncio_future_blocking"), true)?;
 
-                *self.state.pending.lock().expect(MUTEX_POISONED) =
-                    Some(suspended.clone().unbind());
-
-                // A wake between the poll and publishing the future would otherwise be lost.
-                if self.state.woken.swap(false, Ordering::AcqRel) {
-                    self.state.resume(py)?;
-                }
+                // `call_soon_threadsafe` queues the callback, so this publishes before it can run
+                self.state.suspend(generation, suspended.clone().unbind());
 
                 Ok(Some(suspended.unbind()))
             }
@@ -823,6 +969,7 @@ impl PyLiveNode {
         // it. `PyNodeRun` restores the node on drop, covering the paths after this point.
         let driver = node_run_driver(py)?.clone_ref(py);
         let state = Arc::new(RunWakeState::default());
+
         let wake_callback = Py::new(
             py,
             PyNodeRunWake {
@@ -831,12 +978,18 @@ impl PyLiveNode {
         )?
         .into_any();
 
+        let wake_pump = HostWakePump::start(
+            event_loop.clone().unbind(),
+            wake_callback,
+            self.handle.clone(),
+        )?;
+
         let node = self
             .inner
             .borrow_mut()
             .take()
             .ok_or_else(node_consumed_err)?;
-        let run = PyNodeRun::new(node, self.inner.clone(), event_loop, state, wake_callback);
+        let run = PyNodeRun::new(node, self.inner.clone(), event_loop, state, wake_pump);
         HOSTED_RUN_ACTIVE.set(true);
 
         driver.call1(py, (Py::new(py, run)?,))
@@ -1552,6 +1705,155 @@ fn stop_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> 
     .map_err(to_pyruntime_err)
 }
 
+/// Creates a Python config instance from a config path and config dictionary.
+///
+/// This helper is shared between `add_actor_from_config` and `add_strategy_from_config`.
+/// It handles:
+/// 1. Importing the config class from the module path
+/// 2. Converting the `HashMap<String, serde_json::Value>` to a Python dict
+/// 3. Trying kwargs-first construction, falling back to default + setattr
+/// 4. Calling `__post_init__` for dataclasses when using the setattr path
+fn create_config_instance<'py>(
+    py: Python<'py>,
+    config_path: &str,
+    config: &HashMap<String, serde_json::Value>,
+) -> anyhow::Result<Option<Bound<'py, PyAny>>> {
+    if config_path.is_empty() && config.is_empty() {
+        log::debug!("No config_path or empty config, using None");
+        return Ok(None);
+    }
+
+    let config_parts: Vec<&str> = config_path.split(':').collect();
+    if config_parts.len() != 2 {
+        anyhow::bail!("config_path must be in format 'module.path:ClassName', was {config_path}");
+    }
+    let (config_module_name, config_class_name) = (config_parts[0], config_parts[1]);
+
+    log::debug!(
+        "Importing config class from module: {config_module_name} class: {config_class_name}"
+    );
+
+    let config_module = py
+        .import(config_module_name)
+        .map_err(|e| anyhow::anyhow!("Failed to import config module {config_module_name}: {e}"))?;
+    let config_class = config_module
+        .getattr(config_class_name)
+        .map_err(|e| anyhow::anyhow!("Failed to get config class {config_class_name}: {e}"))?;
+
+    // Convert config dict to Python dict
+    let py_dict = PyDict::new(py);
+
+    for (key, value) in config {
+        let py_value = config_value_to_py(py, key, value)?;
+        py_dict.set_item(key, py_value)?;
+    }
+
+    log::debug!("Created config dict: {py_dict:?}");
+
+    // Try kwargs first, then default constructor with setattr
+    let config_instance = match config_class.call((), Some(&py_dict)) {
+        Ok(instance) => {
+            log::debug!("Created config instance with kwargs");
+            instance
+        }
+        Err(kwargs_err) => {
+            log::debug!("Failed to create config with kwargs: {kwargs_err}");
+
+            match config_class.call0() {
+                Ok(instance) => {
+                    log::debug!("Created default config instance, setting attributes");
+                    for (key, value) in config {
+                        let py_value = config_value_to_py(py, key, value)?;
+
+                        if let Err(setattr_err) = instance.setattr(key, py_value) {
+                            log::warn!("Failed to set attribute {key}: {setattr_err}");
+                        }
+                    }
+
+                    // Only call __post_init__ if it exists (setattr path
+                    // needs it, kwargs path already triggered it via __init__)
+                    if instance.hasattr("__post_init__")? {
+                        instance.call_method0("__post_init__")?;
+                    }
+
+                    instance
+                }
+                Err(default_err) => {
+                    anyhow::bail!(
+                        "Failed to create config instance. \
+                         Tried kwargs: {kwargs_err}, default: {default_err}"
+                    );
+                }
+            }
+        }
+    };
+
+    log::debug!("Created config instance: {config_instance:?}");
+
+    Ok(Some(config_instance))
+}
+
+fn config_value_to_py<'py>(
+    py: Python<'py>,
+    key: &str,
+    value: &serde_json::Value,
+) -> anyhow::Result<Bound<'py, PyAny>> {
+    if key == "actor_id"
+        && let Some(actor_id) = value.as_str()
+    {
+        return Ok(ActorId::new_checked(actor_id)?
+            .into_pyobject(py)?
+            .into_any());
+    }
+
+    let json_str = serde_json::to_string(value)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
+    Ok(PyModule::import(py, "json")?
+        .call_method("loads", (json_str,), None)?
+        .into_any())
+}
+
+/// Extracts an optional boolean attribute from a Python config object.
+///
+/// Returns `None` if the attribute doesn't exist or isn't a bool,
+/// without raising an error (config fields are optional overrides).
+fn extract_bool_config_attr(config_obj: &Bound<'_, PyAny>, attr: &str) -> Option<bool> {
+    config_obj
+        .getattr(attr)
+        .ok()
+        .and_then(|val| val.extract::<bool>().ok())
+}
+
+fn extract_external_order_claims_config_attr(
+    config_obj: &Bound<'_, PyAny>,
+) -> anyhow::Result<Option<Vec<InstrumentId>>> {
+    let Ok(claims) = config_obj.getattr("external_order_claims") else {
+        return Ok(None);
+    };
+
+    if claims.is_none() {
+        return Ok(None);
+    }
+
+    if let Ok(claims) = claims.extract::<Vec<InstrumentId>>() {
+        return Ok(Some(claims));
+    }
+
+    let claim_strings = claims
+        .extract::<Vec<String>>()
+        .map_err(|e| anyhow::anyhow!("Invalid `external_order_claims` type: {e}"))?;
+    let claims = claim_strings
+        .into_iter()
+        .map(|claim| {
+            InstrumentId::from_str(&claim).map_err(|e| {
+                anyhow::anyhow!("Invalid `external_order_claims` instrument ID {claim}: {e}")
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(Some(claims))
+}
+
 #[cfg(feature = "examples")]
 type BuiltinActorRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
 
@@ -2087,155 +2389,6 @@ impl PyLiveNodeBuilder {
     }
 }
 
-/// Creates a Python config instance from a config path and config dictionary.
-///
-/// This helper is shared between `add_actor_from_config` and `add_strategy_from_config`.
-/// It handles:
-/// 1. Importing the config class from the module path
-/// 2. Converting the `HashMap<String, serde_json::Value>` to a Python dict
-/// 3. Trying kwargs-first construction, falling back to default + setattr
-/// 4. Calling `__post_init__` for dataclasses when using the setattr path
-fn create_config_instance<'py>(
-    py: Python<'py>,
-    config_path: &str,
-    config: &HashMap<String, serde_json::Value>,
-) -> anyhow::Result<Option<Bound<'py, PyAny>>> {
-    if config_path.is_empty() && config.is_empty() {
-        log::debug!("No config_path or empty config, using None");
-        return Ok(None);
-    }
-
-    let config_parts: Vec<&str> = config_path.split(':').collect();
-    if config_parts.len() != 2 {
-        anyhow::bail!("config_path must be in format 'module.path:ClassName', was {config_path}");
-    }
-    let (config_module_name, config_class_name) = (config_parts[0], config_parts[1]);
-
-    log::debug!(
-        "Importing config class from module: {config_module_name} class: {config_class_name}"
-    );
-
-    let config_module = py
-        .import(config_module_name)
-        .map_err(|e| anyhow::anyhow!("Failed to import config module {config_module_name}: {e}"))?;
-    let config_class = config_module
-        .getattr(config_class_name)
-        .map_err(|e| anyhow::anyhow!("Failed to get config class {config_class_name}: {e}"))?;
-
-    // Convert config dict to Python dict
-    let py_dict = PyDict::new(py);
-
-    for (key, value) in config {
-        let py_value = config_value_to_py(py, key, value)?;
-        py_dict.set_item(key, py_value)?;
-    }
-
-    log::debug!("Created config dict: {py_dict:?}");
-
-    // Try kwargs first, then default constructor with setattr
-    let config_instance = match config_class.call((), Some(&py_dict)) {
-        Ok(instance) => {
-            log::debug!("Created config instance with kwargs");
-            instance
-        }
-        Err(kwargs_err) => {
-            log::debug!("Failed to create config with kwargs: {kwargs_err}");
-
-            match config_class.call0() {
-                Ok(instance) => {
-                    log::debug!("Created default config instance, setting attributes");
-                    for (key, value) in config {
-                        let py_value = config_value_to_py(py, key, value)?;
-
-                        if let Err(setattr_err) = instance.setattr(key, py_value) {
-                            log::warn!("Failed to set attribute {key}: {setattr_err}");
-                        }
-                    }
-
-                    // Only call __post_init__ if it exists (setattr path
-                    // needs it, kwargs path already triggered it via __init__)
-                    if instance.hasattr("__post_init__")? {
-                        instance.call_method0("__post_init__")?;
-                    }
-
-                    instance
-                }
-                Err(default_err) => {
-                    anyhow::bail!(
-                        "Failed to create config instance. \
-                         Tried kwargs: {kwargs_err}, default: {default_err}"
-                    );
-                }
-            }
-        }
-    };
-
-    log::debug!("Created config instance: {config_instance:?}");
-
-    Ok(Some(config_instance))
-}
-
-fn config_value_to_py<'py>(
-    py: Python<'py>,
-    key: &str,
-    value: &serde_json::Value,
-) -> anyhow::Result<Bound<'py, PyAny>> {
-    if key == "actor_id"
-        && let Some(actor_id) = value.as_str()
-    {
-        return Ok(ActorId::new_checked(actor_id)?
-            .into_pyobject(py)?
-            .into_any());
-    }
-
-    let json_str = serde_json::to_string(value)
-        .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
-    Ok(PyModule::import(py, "json")?
-        .call_method("loads", (json_str,), None)?
-        .into_any())
-}
-
-/// Extracts an optional boolean attribute from a Python config object.
-///
-/// Returns `None` if the attribute doesn't exist or isn't a bool,
-/// without raising an error (config fields are optional overrides).
-fn extract_bool_config_attr(config_obj: &Bound<'_, PyAny>, attr: &str) -> Option<bool> {
-    config_obj
-        .getattr(attr)
-        .ok()
-        .and_then(|val| val.extract::<bool>().ok())
-}
-
-fn extract_external_order_claims_config_attr(
-    config_obj: &Bound<'_, PyAny>,
-) -> anyhow::Result<Option<Vec<InstrumentId>>> {
-    let Ok(claims) = config_obj.getattr("external_order_claims") else {
-        return Ok(None);
-    };
-
-    if claims.is_none() {
-        return Ok(None);
-    }
-
-    if let Ok(claims) = claims.extract::<Vec<InstrumentId>>() {
-        return Ok(Some(claims));
-    }
-
-    let claim_strings = claims
-        .extract::<Vec<String>>()
-        .map_err(|e| anyhow::anyhow!("Invalid `external_order_claims` type: {e}"))?;
-    let claims = claim_strings
-        .into_iter()
-        .map(|claim| {
-            InstrumentId::from_str(&claim).map_err(|e| {
-                anyhow::anyhow!("Invalid `external_order_claims` instrument ID {claim}: {e}")
-            })
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-
-    Ok(Some(claims))
-}
-
 #[cfg(all(test, feature = "python"))]
 #[allow(
     clippy::await_holding_refcell_ref,
@@ -2250,7 +2403,7 @@ mod tests {
         fmt::Debug,
         rc::Rc,
         sync::{
-            Arc,
+            Arc, Mutex, TryLockError,
             atomic::{AtomicBool, AtomicUsize, Ordering},
             mpsc,
         },
@@ -3502,6 +3655,261 @@ class ClaimsStrategy(Strategy):
             acquired_before_stop.load(Ordering::SeqCst),
             "worker thread should acquire the GIL while LiveNode::run is blocked"
         );
+    }
+
+    #[rstest]
+    fn test_host_loop_waker_coalesces_redundant_wakes() {
+        let (waker, receiver, _) = host_loop_waker_probe();
+
+        std::task::Wake::wake(waker.clone());
+        let consuming_wake = receiver.recv_timeout(Duration::from_secs(1));
+        std::task::Wake::wake_by_ref(&waker);
+        let redundant_wake = receiver.try_recv();
+
+        assert!(matches!(
+            consuming_wake,
+            Ok(super::HostWakeSignal::Resume(7))
+        ));
+        assert!(matches!(redundant_wake, Err(mpsc::TryRecvError::Empty)));
+    }
+
+    #[rstest]
+    fn test_host_loop_waker_ignores_wake_after_close() {
+        let (waker, receiver, handle) = host_loop_waker_probe();
+        waker.control.close();
+
+        std::task::Wake::wake_by_ref(&waker);
+
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            super::HostWakeSignal::Shutdown
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        assert!(!handle.should_stop());
+    }
+
+    #[rstest]
+    fn test_host_loop_waker_stops_node_when_pump_is_gone() {
+        let (waker, receiver, handle) = host_loop_waker_probe();
+        drop(receiver);
+
+        std::task::Wake::wake_by_ref(&waker);
+
+        assert!(!waker.control.active.load(Ordering::Acquire));
+        assert!(handle.should_stop());
+    }
+
+    fn host_loop_waker_probe() -> (
+        Arc<super::HostLoopWaker>,
+        mpsc::Receiver<super::HostWakeSignal>,
+        crate::node::LiveNodeHandle,
+    ) {
+        let (sender, receiver) = mpsc::channel();
+        let handle = crate::node::LiveNodeHandle::new();
+        let control = Arc::new(super::HostWakeControl {
+            sender,
+            active: AtomicBool::new(true),
+            handle: handle.clone(),
+        });
+        let waker = Arc::new(super::HostLoopWaker {
+            generation: 7,
+            scheduled: AtomicBool::new(false),
+            control,
+        });
+
+        (waker, receiver, handle)
+    }
+
+    #[rstest]
+    fn test_host_loop_waker_breaks_gil_dependency_lock_cycle() {
+        Python::initialize();
+
+        let (waker, mut wake_pump, event_loop) = Python::attach(|py| {
+            let event_loop = py
+                .import("asyncio")
+                .unwrap()
+                .call_method0("new_event_loop")
+                .unwrap();
+            let state = Arc::new(super::RunWakeState::default());
+            let wake_callback = Py::new(py, super::PyNodeRunWake { state })
+                .unwrap()
+                .into_any();
+            let event_loop = event_loop.unbind();
+            let wake_pump = super::HostWakePump::start(
+                event_loop.clone_ref(py),
+                wake_callback,
+                crate::node::LiveNodeHandle::new(),
+            )
+            .unwrap();
+            let waker = wake_pump.waker(1);
+
+            (waker, wake_pump, event_loop)
+        });
+        let (start_tx, start_rx) = mpsc::channel();
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let dependency_lock = Arc::new(Mutex::new(()));
+        let dependency_lock_for_thread = dependency_lock.clone();
+        let wake_thread = thread::spawn(move || {
+            let _guard = dependency_lock_for_thread.lock().unwrap();
+            locked_tx.send(()).unwrap();
+            start_rx.recv().unwrap();
+            waker.wake_by_ref();
+        });
+        locked_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("wake thread should hold the dependency lock");
+
+        let dependency_released_while_gil_held = Python::attach(|_| {
+            start_tx.send(()).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(1);
+
+            loop {
+                match dependency_lock.try_lock() {
+                    Ok(_) => break true,
+                    Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                        thread::yield_now();
+                    }
+                    Err(TryLockError::WouldBlock) => break false,
+                    Err(TryLockError::Poisoned(e)) => {
+                        panic!("dependency lock should not be poisoned: {e}");
+                    }
+                }
+            }
+        });
+        wake_thread.join().unwrap();
+        Python::attach(|py| {
+            wake_pump.close();
+            wake_pump.join(Some(py));
+            event_loop.bind(py).call_method0("close").unwrap();
+        });
+
+        assert!(dependency_released_while_gil_held);
+    }
+
+    #[rstest]
+    fn test_run_wake_state_ignores_stale_generation() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let event_loop = py
+                .import("asyncio")
+                .unwrap()
+                .call_method0("new_event_loop")
+                .unwrap();
+            let future = event_loop.call_method0("create_future").unwrap();
+            let state = super::RunWakeState::default();
+            state.suspend(2, future.clone().unbind());
+
+            state.resume(py, 1).unwrap();
+            let done_after_stale: bool = future.call_method0("done").unwrap().extract().unwrap();
+            state.resume(py, 2).unwrap();
+            let done_after_current: bool = future.call_method0("done").unwrap().extract().unwrap();
+            event_loop.call_method0("close").unwrap();
+
+            assert!(!done_after_stale);
+            assert!(done_after_current);
+        });
+    }
+
+    #[rstest]
+    fn test_host_wake_pump_resumes_current_suspension() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let asyncio = py.import("asyncio").unwrap();
+            let event_loop = asyncio.call_method0("new_event_loop").unwrap();
+            let future = event_loop.call_method0("create_future").unwrap();
+            let state = Arc::new(super::RunWakeState::default());
+            state.suspend(7, future.clone().unbind());
+            let wake_callback = Py::new(py, super::PyNodeRunWake { state })
+                .unwrap()
+                .into_any();
+            let mut wake_pump = super::HostWakePump::start(
+                event_loop.clone().unbind(),
+                wake_callback,
+                crate::node::LiveNodeHandle::new(),
+            )
+            .unwrap();
+
+            wake_pump.waker(7).wake_by_ref();
+            let wait_for = asyncio.call_method1("wait_for", (&future, 1.0)).unwrap();
+            let result = event_loop
+                .call_method1("run_until_complete", (wait_for,))
+                .unwrap();
+            wake_pump.close();
+            wake_pump.join(Some(py));
+            event_loop.call_method0("close").unwrap();
+
+            assert!(result.is_none());
+        });
+    }
+
+    #[rstest]
+    fn test_host_wake_pump_stops_node_when_loop_is_closed() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let event_loop = py
+                .import("asyncio")
+                .unwrap()
+                .call_method0("new_event_loop")
+                .unwrap();
+            event_loop.call_method0("close").unwrap();
+            let state = Arc::new(super::RunWakeState::default());
+            let wake_callback = Py::new(py, super::PyNodeRunWake { state })
+                .unwrap()
+                .into_any();
+            let handle = crate::node::LiveNodeHandle::new();
+            let mut wake_pump =
+                super::HostWakePump::start(event_loop.unbind(), wake_callback, handle.clone())
+                    .unwrap();
+
+            wake_pump.waker(1).wake_by_ref();
+            wake_pump.join(Some(py));
+
+            assert!(handle.should_stop());
+        });
+    }
+
+    #[rstest]
+    fn test_hosted_run_completes_after_stop() {
+        Python::initialize();
+
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_delay_shutdown_secs(0)
+            .with_timeout_connection(0)
+            .with_timeout_disconnection_secs(0)
+            .build()
+            .map(PyLiveNode::new)
+            .unwrap();
+
+        Python::attach(|py| {
+            let locals = PyDict::new(py);
+            let py_node = Py::new(py, node).unwrap();
+            locals.set_item("node", &py_node).unwrap();
+            py.run(
+                pyo3::ffi::c_str!(
+                    "import asyncio\n\nasync def run_node():\n    handle = node.handle()\n    asyncio.get_running_loop().call_soon(handle.stop)\n    await asyncio.wait_for(node.run_async(), timeout=5)\n\nasyncio.run(run_node())"
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+
+            let node = py_node.borrow(py);
+            assert!(!node.is_consumed());
+            assert_eq!(
+                node.node().unwrap().state(),
+                crate::node::NodeState::Stopped
+            );
+        });
+        get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]
