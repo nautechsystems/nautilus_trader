@@ -99,14 +99,38 @@ impl StreamLifecycleState {
 }
 
 #[derive(Debug)]
+struct LifecycleState {
+    value: AtomicU8,
+    changed: watch::Sender<()>,
+}
+
+impl LifecycleState {
+    fn new(state: StreamLifecycleState) -> Self {
+        Self {
+            value: AtomicU8::new(state as u8),
+            changed: watch::channel(()).0,
+        }
+    }
+
+    fn get(&self) -> StreamLifecycleState {
+        StreamLifecycleState::from_atomic(&self.value)
+    }
+
+    fn set(&self, state: StreamLifecycleState) {
+        self.value.store(state as u8, Ordering::Release);
+        self.changed.send_replace(());
+    }
+}
+
+#[derive(Debug)]
 struct ProtocolLifecycle {
     transport_connected: AtomicBool,
-    authenticated: AtomicU8,
-    market: AtomicU8,
+    authenticated: LifecycleState,
+    market: LifecycleState,
     market_was_current: AtomicBool,
     market_requires_image: AtomicBool,
     market_image_tainted: AtomicBool,
-    order: AtomicU8,
+    order: LifecycleState,
     order_was_current: AtomicBool,
     order_requires_image: AtomicBool,
     order_image_tainted: AtomicBool,
@@ -116,12 +140,12 @@ impl Default for ProtocolLifecycle {
     fn default() -> Self {
         Self {
             transport_connected: AtomicBool::new(false),
-            authenticated: AtomicU8::new(StreamLifecycleState::Disconnected as u8),
-            market: AtomicU8::new(StreamLifecycleState::Idle as u8),
+            authenticated: LifecycleState::new(StreamLifecycleState::Disconnected),
+            market: LifecycleState::new(StreamLifecycleState::Idle),
             market_was_current: AtomicBool::new(false),
             market_requires_image: AtomicBool::new(false),
             market_image_tainted: AtomicBool::new(false),
-            order: AtomicU8::new(StreamLifecycleState::Idle as u8),
+            order: LifecycleState::new(StreamLifecycleState::Idle),
             order_was_current: AtomicBool::new(false),
             order_requires_image: AtomicBool::new(false),
             order_image_tainted: AtomicBool::new(false),
@@ -133,24 +157,17 @@ impl ProtocolLifecycle {
     fn on_transport(&self, state: SocketState, market_id: u64, order_id: u64) {
         let connected = state == SocketState::Connected;
         self.transport_connected.store(connected, Ordering::Release);
-        self.authenticated.store(
-            if connected {
-                StreamLifecycleState::Pending
-            } else {
-                StreamLifecycleState::Disconnected
-            } as u8,
-            Ordering::Release,
-        );
-        self.market.store(
-            subscription_transport_state(connected, market_id) as u8,
-            Ordering::Release,
-        );
+        self.authenticated.set(if connected {
+            StreamLifecycleState::Pending
+        } else {
+            StreamLifecycleState::Disconnected
+        });
+        self.market
+            .set(subscription_transport_state(connected, market_id));
         self.market_was_current.store(false, Ordering::Release);
         self.market_image_tainted.store(false, Ordering::Release);
-        self.order.store(
-            subscription_transport_state(connected, order_id) as u8,
-            Ordering::Release,
-        );
+        self.order
+            .set(subscription_transport_state(connected, order_id));
         self.order_was_current.store(false, Ordering::Release);
         self.order_image_tainted.store(false, Ordering::Release);
     }
@@ -168,30 +185,24 @@ impl ProtocolLifecycle {
         };
 
         if id == AUTH_REQUEST_ID {
-            self.authenticated.store(next as u8, Ordering::Release);
+            self.authenticated.set(next);
         } else if id == market_id {
-            self.market.store(
-                if next == StreamLifecycleState::Active {
-                    StreamLifecycleState::Pending
-                } else {
-                    next
-                } as u8,
-                Ordering::Release,
-            );
+            self.market.set(if next == StreamLifecycleState::Active {
+                StreamLifecycleState::Pending
+            } else {
+                next
+            });
         } else if id == order_id {
-            self.order.store(
-                if next == StreamLifecycleState::Active {
-                    StreamLifecycleState::Pending
-                } else {
-                    next
-                } as u8,
-                Ordering::Release,
-            );
+            self.order.set(if next == StreamLifecycleState::Active {
+                StreamLifecycleState::Pending
+            } else {
+                next
+            });
         }
     }
 
     fn on_change(
-        state: &AtomicU8,
+        state: &LifecycleState,
         was_current: &AtomicBool,
         requires_image: &AtomicBool,
         status: Option<i32>,
@@ -202,12 +213,13 @@ impl ProtocolLifecycle {
         let initial = change_type == Some(ChangeType::SubImage)
             || (change_type == Some(ChangeType::ResubDelta)
                 && !requires_image.load(Ordering::Acquire));
+
         if status == Some(STREAM_DEGRADED_STATUS) {
-            state.store(StreamLifecycleState::Degraded as u8, Ordering::Release);
+            state.set(StreamLifecycleState::Degraded);
             return;
         }
 
-        let current = StreamLifecycleState::from_atomic(state);
+        let current = state.get();
 
         if status.is_none()
             && complete
@@ -219,7 +231,7 @@ impl ProtocolLifecycle {
                 requires_image.store(false, Ordering::Release);
             }
             was_current.store(true, Ordering::Release);
-            state.store(StreamLifecycleState::Active as u8, Ordering::Release);
+            state.set(StreamLifecycleState::Active);
         }
     }
 }
@@ -231,6 +243,19 @@ const fn subscription_transport_state(connected: bool, id: u64) -> StreamLifecyc
         StreamLifecycleState::Idle
     } else {
         StreamLifecycleState::Pending
+    }
+}
+
+async fn wait_for_lifecycle_state(state: &LifecycleState, expected: StreamLifecycleState) {
+    let mut changed_rx = state.changed.subscribe();
+    loop {
+        if state.get() == expected {
+            return;
+        }
+        changed_rx
+            .changed()
+            .await
+            .expect("lifecycle sender lives as long as the borrowed client");
     }
 }
 
@@ -436,7 +461,7 @@ impl BetfairStreamClient {
                         return;
                     }
 
-                    let lifecycle_state = StreamLifecycleState::from_atomic(&lifecycle_h.market);
+                    let lifecycle_state = lifecycle_h.market.get();
                     if lifecycle_state == StreamLifecycleState::Degraded
                         && mcm.ct != Some(ChangeType::SubImage)
                     {
@@ -525,7 +550,7 @@ impl BetfairStreamClient {
                         return;
                     }
 
-                    let lifecycle_state = StreamLifecycleState::from_atomic(&lifecycle_h.order);
+                    let lifecycle_state = lifecycle_h.order.get();
                     if lifecycle_state == StreamLifecycleState::Degraded
                         && lifecycle_h.order_requires_image.load(Ordering::Acquire)
                         && ocm.ct != Some(ChangeType::SubImage)
@@ -800,9 +825,7 @@ impl BetfairStreamClient {
         // Advance the active ID before clearing clocks so that any in-flight MCMs
         // from the previous subscription are immediately rejected by the handler.
         self.market_active_sub_id.store(id, Ordering::SeqCst);
-        self.lifecycle
-            .market
-            .store(StreamLifecycleState::Pending as u8, Ordering::Release);
+        self.lifecycle.market.set(StreamLifecycleState::Pending);
         self.lifecycle
             .market_was_current
             .store(false, Ordering::Release);
@@ -865,9 +888,7 @@ impl BetfairStreamClient {
         let _state = lock_stream_state(&self.order_state_lock);
         let id = self.request_id.fetch_add(1, Ordering::Relaxed);
         self.order_active_sub_id.store(id, Ordering::SeqCst);
-        self.lifecycle
-            .order
-            .store(StreamLifecycleState::Pending as u8, Ordering::Release);
+        self.lifecycle.order.set(StreamLifecycleState::Pending);
         self.lifecycle
             .order_was_current
             .store(false, Ordering::Release);
@@ -921,17 +942,50 @@ impl BetfairStreamClient {
 
     #[must_use]
     pub fn authentication_state(&self) -> StreamLifecycleState {
-        StreamLifecycleState::from_atomic(&self.lifecycle.authenticated)
+        self.lifecycle.authenticated.get()
     }
 
     #[must_use]
     pub fn market_subscription_state(&self) -> StreamLifecycleState {
-        StreamLifecycleState::from_atomic(&self.lifecycle.market)
+        self.lifecycle.market.get()
     }
 
     #[must_use]
     pub fn order_subscription_state(&self) -> StreamLifecycleState {
-        StreamLifecycleState::from_atomic(&self.lifecycle.order)
+        self.lifecycle.order.get()
+    }
+
+    /// Waits for the authentication lifecycle component to equal `expected`.
+    ///
+    /// Returns immediately if the component is already in the exact expected state;
+    /// otherwise waits for a later transition. A transient expected state that is
+    /// replaced before this task observes it can be missed because transitions are not
+    /// recorded as history. This method has no internal timeout; callers wanting a
+    /// bound should wrap it in [`tokio::time::timeout`].
+    pub async fn wait_for_authentication_state(&self, expected: StreamLifecycleState) {
+        wait_for_lifecycle_state(&self.lifecycle.authenticated, expected).await;
+    }
+
+    /// Waits for the market subscription lifecycle component to equal `expected`.
+    ///
+    /// Returns immediately if the component is already in the exact expected state;
+    /// otherwise waits for a later transition. A transient expected state that is
+    /// replaced before this task observes it can be missed because transitions are not
+    /// recorded as history. This method has no internal timeout; callers wanting a
+    /// bound should wrap it in [`tokio::time::timeout`].
+    pub async fn wait_for_market_subscription_state(&self, expected: StreamLifecycleState) {
+        wait_for_lifecycle_state(&self.lifecycle.market, expected).await;
+    }
+
+    /// Waits for the order subscription lifecycle component to equal `expected`.
+    ///
+    /// Returns immediately if the component is already in the exact expected state;
+    /// otherwise waits for a later transition. A transient expected state that is
+    /// replaced before this task observes it can be missed because transitions are not
+    /// recorded as history. This method has no internal timeout; callers wanting a
+    /// bound should wrap it in [`tokio::time::timeout`].
+    pub async fn wait_for_order_subscription_state(&self, expected: StreamLifecycleState) {
+        wait_for_lifecycle_state(&self.lifecycle.order, expected).await;
     }
 
     #[must_use]
@@ -1363,9 +1417,7 @@ fn reissue_market_subscription(
     };
 
     active_id.store(id, Ordering::SeqCst);
-    lifecycle
-        .market
-        .store(StreamLifecycleState::Pending as u8, Ordering::Release);
+    lifecycle.market.set(StreamLifecycleState::Pending);
     lifecycle.market_was_current.store(false, Ordering::Release);
     lifecycle
         .market_requires_image
@@ -1415,9 +1467,7 @@ fn reissue_order_subscription(
     };
 
     active_id.store(id, Ordering::SeqCst);
-    lifecycle
-        .order
-        .store(StreamLifecycleState::Pending as u8, Ordering::Release);
+    lifecycle.order.set(StreamLifecycleState::Pending);
     lifecycle.order_was_current.store(false, Ordering::Release);
     lifecycle
         .order_requires_image
@@ -1658,12 +1708,8 @@ mod tests {
         let market_active_id = AtomicU64::new(11);
         let order_active_id = AtomicU64::new(13);
         let lifecycle = ProtocolLifecycle::default();
-        lifecycle
-            .market
-            .store(StreamLifecycleState::Degraded as u8, Ordering::Release);
-        lifecycle
-            .order
-            .store(StreamLifecycleState::Degraded as u8, Ordering::Release);
+        lifecycle.market.set(StreamLifecycleState::Degraded);
+        lifecycle.order.set(StreamLifecycleState::Degraded);
         let (market_sub_tx, _market_sub_rx) = watch::channel(None::<MarketSubscription>);
         let (order_sub_tx, _order_sub_rx) = watch::channel(None::<OrderSubscription>);
         let (market_clk_tx, _market_clk_rx) = watch::channel(None::<String>);
@@ -1695,8 +1741,8 @@ mod tests {
                 request_id.load(Ordering::Acquire),
                 market_active_id.load(Ordering::Acquire),
                 order_active_id.load(Ordering::Acquire),
-                StreamLifecycleState::from_atomic(&lifecycle.market),
-                StreamLifecycleState::from_atomic(&lifecycle.order),
+                lifecycle.market.get(),
+                lifecycle.order.get(),
             ),
             (
                 17,

@@ -23,10 +23,8 @@
 //!   server-side drop
 
 use std::{
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
+    fmt::Debug,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -44,7 +42,6 @@ use nautilus_betfair::{
         },
     },
 };
-use nautilus_common::testing::wait_until_async;
 use nautilus_network::socket::TcpMessageHandler;
 use rstest::rstest;
 use tokio::{
@@ -53,7 +50,82 @@ use tokio::{
         TcpListener,
         tcp::{OwnedReadHalf, OwnedWriteHalf},
     },
+    sync::watch,
 };
+
+/// Circuit breaker for a logical phase, not routine synchronization.
+///
+/// Waits are event-driven and unbounded on their own; this bound exists only so a
+/// genuine regression reports the expected and observed state instead of hanging
+/// until the harness kills the process. It is deliberately well below the harness
+/// slow-test thresholds so that diagnostic still fires, and far above the ~2s
+/// scheduling gaps that made the previous wall-clock waits flaky under load.
+const PHASE_TIMEOUT: Duration = Duration::from_secs(15);
+
+async fn wait_for_authentication_state(
+    client: &BetfairStreamClient,
+    expected: StreamLifecycleState,
+) {
+    tokio::time::timeout(
+        PHASE_TIMEOUT,
+        client.wait_for_authentication_state(expected),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "timed out waiting for authentication state {expected:?}, observed {:?}",
+            client.authentication_state()
+        )
+    });
+}
+
+async fn wait_for_market_state(client: &BetfairStreamClient, expected: StreamLifecycleState) {
+    tokio::time::timeout(
+        PHASE_TIMEOUT,
+        client.wait_for_market_subscription_state(expected),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "timed out waiting for market subscription state {expected:?}, observed {:?}",
+            client.market_subscription_state()
+        )
+    });
+}
+
+async fn wait_for_order_state(client: &BetfairStreamClient, expected: StreamLifecycleState) {
+    tokio::time::timeout(
+        PHASE_TIMEOUT,
+        client.wait_for_order_subscription_state(expected),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "timed out waiting for order subscription state {expected:?}, observed {:?}",
+            client.order_subscription_state()
+        )
+    });
+}
+
+async fn wait_for_watch<T, F>(mut rx: watch::Receiver<T>, expected: &str, predicate: F)
+where
+    T: Debug,
+    F: Fn(&T) -> bool,
+{
+    let wait = async {
+        while !predicate(&rx.borrow_and_update()) {
+            rx.changed().await.expect("test signal sender dropped");
+        }
+    };
+    tokio::time::timeout(PHASE_TIMEOUT, wait)
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "timed out waiting for {expected}, observed {:?}",
+                *rx.borrow()
+            )
+        });
+}
 
 async fn bind() -> (u16, TcpListener) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -167,11 +239,7 @@ async fn test_authentication_rejection_is_correlated() {
     )
     .await
     .unwrap();
-    wait_until_async(
-        || async { client.authentication_state() == StreamLifecycleState::Rejected },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_authentication_state(&client, StreamLifecycleState::Rejected).await;
 
     assert_eq!(
         client.authentication_state(),
@@ -225,11 +293,7 @@ async fn test_subscription_rejection_is_correlated() {
     .await
     .unwrap();
     client.subscribe_orders(None, None).await.unwrap();
-    wait_until_async(
-        || async { client.order_subscription_state() == StreamLifecycleState::Rejected },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_order_state(&client, StreamLifecycleState::Rejected).await;
 
     assert_eq!(
         client.order_subscription_state(),
@@ -321,25 +385,13 @@ async fn test_degraded_initial_image_reissues_order_subscription() {
     )
     .await
     .unwrap();
-    wait_until_async(
-        || async { client.is_authenticated() },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_authentication_state(&client, StreamLifecycleState::Active).await;
     client.subscribe_orders(None, None).await.unwrap();
-    wait_until_async(
-        || async { client.order_subscription_state() == StreamLifecycleState::Degraded },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_order_state(&client, StreamLifecycleState::Degraded).await;
     assert!(!client.is_order_ready());
 
     recover_tx.send(()).unwrap();
-    wait_until_async(
-        || async { client.order_subscription_state() == StreamLifecycleState::Pending },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_order_state(&client, StreamLifecycleState::Pending).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(
         client.order_subscription_state(),
@@ -348,7 +400,7 @@ async fn test_degraded_initial_image_reissues_order_subscription() {
     assert!(!client.is_order_ready());
 
     image_tx.send(()).unwrap();
-    wait_until_async(|| async { client.is_order_ready() }, Duration::from_secs(2)).await;
+    wait_for_order_state(&client, StreamLifecycleState::Active).await;
     assert!(client.is_order_ready());
     client.close().await;
     let (original_id, replacement) = server.await.unwrap();
@@ -472,10 +524,8 @@ async fn test_market_subscription_lifecycle_degrades_and_recovers() {
         (id, replacement, final_sub)
     });
 
-    let degraded_forwarded = Arc::new(AtomicBool::new(false));
-    let degraded_forwarded_handler = Arc::clone(&degraded_forwarded);
-    let stale_forwarded = Arc::new(AtomicBool::new(false));
-    let stale_forwarded_handler = Arc::clone(&stale_forwarded);
+    let (degraded_forwarded_tx, degraded_forwarded) = watch::channel(false);
+    let (stale_forwarded_tx, stale_forwarded) = watch::channel(false);
     let client = BetfairStreamClient::connect(
         &test_credential(),
         "tok".to_string(),
@@ -484,25 +534,21 @@ async fn test_market_subscription_lifecycle_degrades_and_recovers() {
                 .windows(b"unreliable-clock".len())
                 .any(|window| window == b"unreliable-clock")
             {
-                degraded_forwarded_handler.store(true, Ordering::Release);
+                degraded_forwarded_tx.send_replace(true);
             }
 
             if data
                 .windows(b"stale-clock".len())
                 .any(|window| window == b"stale-clock")
             {
-                stale_forwarded_handler.store(true, Ordering::Release);
+                stale_forwarded_tx.send_replace(true);
             }
         }),
         plain_config(port),
     )
     .await
     .unwrap();
-    wait_until_async(
-        || async { client.is_authenticated() },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_authentication_state(&client, StreamLifecycleState::Active).await;
     client
         .subscribe_markets(Default::default(), Default::default(), None, None)
         .await
@@ -512,38 +558,22 @@ async fn test_market_subscription_lifecycle_degrades_and_recovers() {
         StreamLifecycleState::Pending
     );
 
-    wait_until_async(
-        || async { client.is_market_ready() },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_state(&client, StreamLifecycleState::Active).await;
     assert!(client.is_market_ready());
 
     degrade_tx.send(()).unwrap();
-    wait_until_async(
-        || async { client.market_subscription_state() == StreamLifecycleState::Degraded },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_state(&client, StreamLifecycleState::Degraded).await;
     assert!(!client.is_market_ready());
-    assert!(!degraded_forwarded.load(Ordering::Acquire));
+    assert!(!*degraded_forwarded.borrow());
     recover_tx.send(()).unwrap();
-    wait_until_async(
-        || async { client.market_subscription_state() == StreamLifecycleState::Pending },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_state(&client, StreamLifecycleState::Pending).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(client.is_active());
     assert!(!client.is_market_ready());
-    assert!(!stale_forwarded.load(Ordering::Acquire));
+    assert!(!*stale_forwarded.borrow());
 
     finish_tx.send(()).unwrap();
-    wait_until_async(
-        || async { client.is_market_ready() },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_state(&client, StreamLifecycleState::Active).await;
     assert!(client.is_market_ready());
     client.close().await;
     let (original_id, replacement, final_sub) = server.await.unwrap();
@@ -611,14 +641,13 @@ async fn test_stale_subscription_change_is_not_forwarded() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     });
 
-    let stale_forwarded = Arc::new(AtomicBool::new(false));
-    let stale_forwarded_handler = Arc::clone(&stale_forwarded);
+    let (stale_forwarded_tx, stale_forwarded) = watch::channel(false);
     let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
         if data
             .windows(b"stale-clock".len())
             .any(|window| window == b"stale-clock")
         {
-            stale_forwarded_handler.store(true, Ordering::Release);
+            stale_forwarded_tx.send_replace(true);
         }
     });
     let client = BetfairStreamClient::connect(
@@ -629,24 +658,16 @@ async fn test_stale_subscription_change_is_not_forwarded() {
     )
     .await
     .unwrap();
-    wait_until_async(
-        || async { client.is_authenticated() },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_authentication_state(&client, StreamLifecycleState::Active).await;
     client
         .subscribe_markets(Default::default(), Default::default(), None, None)
         .await
         .unwrap();
-    wait_until_async(
-        || async { client.is_market_ready() },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_market_state(&client, StreamLifecycleState::Active).await;
     server.await.unwrap();
 
     assert!(client.is_market_ready());
-    assert!(!stale_forwarded.load(Ordering::Acquire));
+    assert!(!*stale_forwarded.borrow());
     client.close().await;
 }
 
@@ -1093,8 +1114,7 @@ async fn test_stream_status_message_keeps_client_active() {
     // counting frames cannot distinguish "MCM after status was processed"
     // from "only the connection frame was processed". Instead, set a flag
     // when we observe the unique post-status marker `clk-after-status`.
-    let recovery_seen = Arc::new(AtomicBool::new(false));
-    let recovery_seen_handler = Arc::clone(&recovery_seen);
+    let (recovery_seen_tx, recovery_seen) = watch::channel(false);
 
     let server = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
@@ -1138,7 +1158,7 @@ async fn test_stream_status_message_keeps_client_active() {
             .windows(b"clk-after-status".len())
             .any(|w| w == b"clk-after-status")
         {
-            recovery_seen_handler.store(true, Ordering::Relaxed);
+            recovery_seen_tx.send_replace(true);
         }
     });
     let cred = test_credential();
@@ -1147,17 +1167,10 @@ async fn test_stream_status_message_keeps_client_active() {
             .await
             .unwrap();
 
-    wait_until_async(
-        || {
-            let r = Arc::clone(&recovery_seen);
-            async move { r.load(Ordering::Relaxed) }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_watch(recovery_seen.clone(), "recovery marker", |seen| *seen).await;
 
     assert!(
-        recovery_seen.load(Ordering::Relaxed),
+        *recovery_seen.borrow(),
         "MCM after a non-closing status frame must reach the handler"
     );
     assert!(
@@ -1281,8 +1294,7 @@ async fn test_stream_invalid_json_does_not_drop_connection() {
     // the recovery MCM was received: the connection frame plus the malformed
     // line could already satisfy `>= 2`. Watch for the unique recovery
     // marker instead.
-    let recovery_seen = Arc::new(AtomicBool::new(false));
-    let recovery_seen_handler = Arc::clone(&recovery_seen);
+    let (recovery_seen_tx, recovery_seen) = watch::channel(false);
 
     let server = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
@@ -1319,7 +1331,7 @@ async fn test_stream_invalid_json_does_not_drop_connection() {
             .windows(b"clk-recovery".len())
             .any(|w| w == b"clk-recovery")
         {
-            recovery_seen_handler.store(true, Ordering::Relaxed);
+            recovery_seen_tx.send_replace(true);
         }
     });
     let cred = test_credential();
@@ -1328,17 +1340,10 @@ async fn test_stream_invalid_json_does_not_drop_connection() {
             .await
             .unwrap();
 
-    wait_until_async(
-        || {
-            let r = Arc::clone(&recovery_seen);
-            async move { r.load(Ordering::Relaxed) }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_watch(recovery_seen.clone(), "recovery marker", |seen| *seen).await;
 
     assert!(
-        recovery_seen.load(Ordering::Relaxed),
+        *recovery_seen.borrow(),
         "recovery MCM after a malformed line must reach the handler"
     );
     assert!(
@@ -1395,8 +1400,7 @@ async fn test_subscribe_orders_sends_subscription() {
 async fn test_mcm_data_reaches_handler() {
     let (port, listener) = bind().await;
 
-    let received = Arc::new(AtomicUsize::new(0));
-    let received2 = Arc::clone(&received);
+    let (received_tx, received) = watch::channel(0_usize);
 
     let server = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
@@ -1418,7 +1422,7 @@ async fn test_mcm_data_reaches_handler() {
     });
 
     let handler: TcpMessageHandler = Arc::new(move |_data: &[u8]| {
-        received2.fetch_add(1, Ordering::Relaxed);
+        received_tx.send_modify(|count| *count += 1);
     });
     let cred = test_credential();
     let client =
@@ -1428,16 +1432,12 @@ async fn test_mcm_data_reaches_handler() {
 
     server.await.unwrap();
 
-    wait_until_async(
-        || {
-            let r = Arc::clone(&received);
-            async move { r.load(Ordering::Relaxed) > 0 }
-        },
-        Duration::from_secs(2),
-    )
+    wait_for_watch(received.clone(), "received frame count > 0", |count| {
+        *count > 0
+    })
     .await;
 
-    assert!(received.load(Ordering::Relaxed) > 0);
+    assert!(*received.borrow() > 0);
     client.close().await;
 }
 
@@ -1449,6 +1449,7 @@ async fn test_segmented_mcm_survives_fragmented_and_coalesced_transport() {
     let (port, listener) = bind().await;
     let received = Arc::new(Mutex::new(Vec::new()));
     let received_handler = Arc::clone(&received);
+    let (received_count_tx, received_count) = watch::channel(0_usize);
 
     let server = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
@@ -1484,10 +1485,9 @@ async fn test_segmented_mcm_survives_fragmented_and_coalesced_transport() {
 
     let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
         if let Ok(StreamMessage::MarketChange(message)) = stream_decode(data) {
-            received_handler
-                .lock()
-                .unwrap()
-                .push(message.segment_type.unwrap());
+            let mut received = received_handler.lock().unwrap();
+            received.push(message.segment_type.unwrap());
+            received_count_tx.send_replace(received.len());
         }
     });
     let client = BetfairStreamClient::connect(
@@ -1499,13 +1499,9 @@ async fn test_segmented_mcm_survives_fragmented_and_coalesced_transport() {
     .await
     .unwrap();
 
-    wait_until_async(
-        || {
-            let received = Arc::clone(&received);
-            async move { received.lock().unwrap().len() == SEQUENCE_COUNT * 3 }
-        },
-        Duration::from_secs(5),
-    )
+    wait_for_watch(received_count, "all segmented market changes", |count| {
+        *count == SEQUENCE_COUNT * 3
+    })
     .await;
 
     client.close().await;
@@ -1527,16 +1523,14 @@ async fn test_segmented_mcm_survives_fragmented_and_coalesced_transport() {
 async fn test_reconnect_resends_auth_and_subscription_with_clk() {
     let (port, listener) = bind().await;
 
-    let reconnected = Arc::new(AtomicBool::new(false));
+    let (reconnected_tx, reconnected) = watch::channel(false);
     let reconnect_auth_key = Arc::new(tokio::sync::Mutex::new(String::new()));
     let reconnect_clk = Arc::new(tokio::sync::Mutex::new(String::new()));
-    let mcm_received = Arc::new(AtomicBool::new(false));
+    let (mcm_received_tx, mcm_received) = watch::channel(false);
 
-    let reconnected2 = Arc::clone(&reconnected);
     let reconnect_auth_key2 = Arc::clone(&reconnect_auth_key);
     let reconnect_clk2 = Arc::clone(&reconnect_clk);
-    let mcm_received_server = Arc::clone(&mcm_received);
-    let mcm_received_handler = Arc::clone(&mcm_received);
+    let mcm_received_server = mcm_received.clone();
 
     let server = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
@@ -1559,14 +1553,7 @@ async fn test_reconnect_resends_auth_and_subscription_with_clk() {
         .await;
 
         // Wait until the client has processed the MCM and stored the clk
-        wait_until_async(
-            || {
-                let r = Arc::clone(&mcm_received_server);
-                async move { r.load(Ordering::Relaxed) }
-            },
-            Duration::from_secs(2),
-        )
-        .await;
+        wait_for_watch(mcm_received_server, "market change received", |seen| *seen).await;
 
         // Drop the connection to trigger reconnect
         drop(write_half);
@@ -1593,14 +1580,14 @@ async fn test_reconnect_resends_auth_and_subscription_with_clk() {
             *reconnect_clk2.lock().await = clk.to_string();
         }
 
-        reconnected2.store(true, Ordering::Relaxed);
+        reconnected_tx.send_replace(true);
         drop(write_half);
     });
 
     let cred = test_credential();
     let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
         if data.windows(b"clk-xyz".len()).any(|w| w == b"clk-xyz") {
-            mcm_received_handler.store(true, Ordering::Relaxed);
+            mcm_received_tx.send_replace(true);
         }
     });
     let config = BetfairStreamConfig {
@@ -1621,19 +1608,9 @@ async fn test_reconnect_resends_auth_and_subscription_with_clk() {
 
     server.await.unwrap();
 
-    wait_until_async(
-        || {
-            let r = Arc::clone(&reconnected);
-            async move { r.load(Ordering::Relaxed) }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_watch(reconnected.clone(), "client reconnect", |seen| *seen).await;
 
-    assert!(
-        reconnected.load(Ordering::Relaxed),
-        "client should have reconnected"
-    );
+    assert!(*reconnected.borrow(), "client should have reconnected");
 
     let auth_key = reconnect_auth_key.lock().await;
     assert_eq!(
@@ -1749,15 +1726,13 @@ async fn test_subscribe_after_close_returns_error() {
 async fn test_reconnect_replays_both_subscriptions() {
     let (port, listener) = bind().await;
 
-    let reconnected = Arc::new(AtomicBool::new(false));
+    let (reconnected_tx, reconnected) = watch::channel(false);
     let reconnect_ops: Arc<tokio::sync::Mutex<Vec<String>>> =
         Arc::new(tokio::sync::Mutex::new(Vec::new()));
-    let mcm_received = Arc::new(AtomicBool::new(false));
+    let (mcm_received_tx, mcm_received) = watch::channel(false);
 
-    let reconnected2 = Arc::clone(&reconnected);
     let reconnect_ops2 = Arc::clone(&reconnect_ops);
-    let mcm_received_server = Arc::clone(&mcm_received);
-    let mcm_received_handler = Arc::clone(&mcm_received);
+    let mcm_received_server = mcm_received.clone();
 
     let server = tokio::spawn(async move {
         // First connection
@@ -1771,14 +1746,7 @@ async fn test_reconnect_replays_both_subscriptions() {
         read_line(&mut reader).await; // order sub
 
         write_line(&mut write_half, r#"{"op":"mcm","pt":1000,"clk":"ckX"}"#).await;
-        wait_until_async(
-            || {
-                let r = Arc::clone(&mcm_received_server);
-                async move { r.load(Ordering::Relaxed) }
-            },
-            Duration::from_secs(2),
-        )
-        .await;
+        wait_for_watch(mcm_received_server, "market change received", |seen| *seen).await;
         drop(write_half);
         drop(reader);
 
@@ -1800,14 +1768,14 @@ async fn test_reconnect_replays_both_subscriptions() {
             }
         }
 
-        reconnected2.store(true, Ordering::Relaxed);
+        reconnected_tx.send_replace(true);
         drop(write_half);
     });
 
     let cred = test_credential();
     let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
         if data.windows(b"ckX".len()).any(|w| w == b"ckX") {
-            mcm_received_handler.store(true, Ordering::Relaxed);
+            mcm_received_tx.send_replace(true);
         }
     });
     let config = BetfairStreamConfig {
@@ -1827,14 +1795,7 @@ async fn test_reconnect_replays_both_subscriptions() {
 
     server.await.unwrap();
 
-    wait_until_async(
-        || {
-            let r = Arc::clone(&reconnected);
-            async move { r.load(Ordering::Relaxed) }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_watch(reconnected, "both subscriptions replayed", |seen| *seen).await;
 
     let ops = reconnect_ops.lock().await;
     assert!(ops.contains(&"authentication".to_string()));
@@ -1851,10 +1812,9 @@ async fn test_reconnect_replays_both_subscriptions() {
 async fn test_request_reconnect_uses_updated_auth_and_clk() {
     let (port, listener) = bind().await;
 
-    let mcm_received = Arc::new(AtomicBool::new(false));
+    let (mcm_received_tx, mcm_received) = watch::channel(false);
 
-    let mcm_received_server = Arc::clone(&mcm_received);
-    let mcm_received_handler = Arc::clone(&mcm_received);
+    let mcm_received_server = mcm_received.clone();
 
     let server = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
@@ -1875,14 +1835,7 @@ async fn test_request_reconnect_uses_updated_auth_and_clk() {
         )
         .await;
 
-        wait_until_async(
-            || {
-                let r = Arc::clone(&mcm_received_server);
-                async move { r.load(Ordering::Relaxed) }
-            },
-            Duration::from_secs(2),
-        )
-        .await;
+        wait_for_watch(mcm_received_server, "market change received", |seen| *seen).await;
 
         let (socket, _) = listener.accept().await.unwrap();
         let (read_half, _write_half) = socket.into_split();
@@ -1904,7 +1857,7 @@ async fn test_request_reconnect_uses_updated_auth_and_clk() {
     let cred = test_credential();
     let handler: TcpMessageHandler = Arc::new(move |data: &[u8]| {
         if data.windows(b"clk1".len()).any(|w| w == b"clk1") {
-            mcm_received_handler.store(true, Ordering::Relaxed);
+            mcm_received_tx.send_replace(true);
         }
     });
     let config = BetfairStreamConfig {
@@ -1922,14 +1875,7 @@ async fn test_request_reconnect_uses_updated_auth_and_clk() {
         .await
         .unwrap();
 
-    wait_until_async(
-        || {
-            let r = Arc::clone(&mcm_received);
-            async move { r.load(Ordering::Relaxed) }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    wait_for_watch(mcm_received, "market change received", |seen| *seen).await;
 
     client.update_auth("test-app-key", "refreshed-token".to_string());
     assert!(client.request_reconnect());
