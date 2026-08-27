@@ -34,7 +34,12 @@ impl ZScore {
     /// series. When `std` is 0, `value` is 0.
     #[new]
     #[pyo3(signature = (period, price_type=None))]
-    fn py_new(period: usize, price_type: Option<PriceType>) -> PyResult<Self> {
+    fn py_new(period: i64, price_type: Option<PriceType>) -> PyResult<Self> {
+        if period < 0 {
+            return Err(to_pyvalue_err("`period` must be at least 2"));
+        }
+
+        let period = usize::try_from(period).map_err(to_pyvalue_err)?;
         Self::new_checked(period, price_type).map_err(to_pyvalue_err)
     }
 

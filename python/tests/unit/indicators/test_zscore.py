@@ -17,6 +17,7 @@ Test zscore behavior.
 """
 
 from collections import deque
+from math import isnan
 from math import sqrt
 
 import pytest
@@ -32,7 +33,7 @@ def _batch_zscore(window: list[float]) -> tuple[float, float, float]:
     m2 = sum((x - mean) ** 2 for x in window)
     std = (m2 / (n - 1)) ** 0.5
     x = window[-1]
-    z = (x - mean) / std if std > 0.0 else 0.0
+    z = 0.0 if std == 0.0 else (x - mean) / std
     return mean, std, z
 
 
@@ -76,6 +77,8 @@ def test_invalid_period_raises_value_error() -> None:
         ZScore(1)
     with pytest.raises(ValueError, match="`period` must be at least 2"):
         ZScore(0)
+    with pytest.raises(ValueError, match="`period` must be at least 2"):
+        ZScore(-1)
 
 
 def test_price_type_readback() -> None:
@@ -184,6 +187,22 @@ def test_constant_series_is_zero() -> None:
     assert indicator.std == 0.0
     assert indicator.value == 0.0
     assert indicator.mean == 3.0
+
+
+def test_non_finite_input_propagates_to_value() -> None:
+    """
+    Test non-finite inputs do not produce a neutral z-score.
+    """
+    # Arrange
+    indicator = ZScore(2)
+
+    # Act
+    indicator.update_raw(1.0)
+    indicator.update_raw(float("nan"))
+
+    # Assert
+    assert isnan(indicator.std)
+    assert isnan(indicator.value)
 
 
 def test_handle_quote_tick_updates_indicator() -> None:

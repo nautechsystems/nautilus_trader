@@ -163,10 +163,10 @@ impl ZScore {
             })
             .sum();
         self.std = (m2 / (n - 1.0)).sqrt();
-        self.value = if self.std > 0.0 {
-            (value - self.mean) / self.std
-        } else {
+        self.value = if self.std == 0.0 {
             0.0
+        } else {
+            (value - self.mean) / self.std
         };
     }
 }
@@ -201,7 +201,7 @@ mod tests {
             .sum();
         let std = (m2 / (n - 1.0)).sqrt();
         let x = *window.last().unwrap();
-        let z = if std > 0.0 { (x - mean) / std } else { 0.0 };
+        let z = if std == 0.0 { 0.0 } else { (x - mean) / std };
         (mean, std, z)
     }
 
@@ -246,6 +246,26 @@ mod tests {
         assert_eq!(z.std, 0.0);
         assert_eq!(z.value, 0.0);
         assert_eq!(z.mean, 3.0);
+    }
+
+    #[rstest]
+    fn zscore_preserves_non_finite_value() {
+        let mut z = ZScore::new(2, None);
+        z.update_raw(1.0);
+        z.update_raw(f64::NAN);
+
+        assert!(z.std.is_nan());
+        assert!(z.value.is_nan());
+    }
+
+    #[rstest]
+    fn zscore_propagates_non_finite_arithmetic() {
+        let mut z = ZScore::new(2, None);
+        z.update_raw(f64::MAX);
+        z.update_raw(f64::MAX);
+
+        assert!(z.std.is_infinite());
+        assert!(z.value.is_nan());
     }
 
     #[rstest]
