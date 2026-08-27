@@ -898,15 +898,31 @@ fn modify_order_rejects_when_client_not_ready() {
 
 #[rstest]
 fn cancel_order_rejects_when_client_not_ready() {
-    let (client, mut rx, _) = create_test_execution_client();
-    let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
+    let (client, mut rx, cache) = create_test_execution_client();
+    let target_trader_id = TraderId::from("TRADER-TARGET");
+    let target_strategy_id = StrategyId::from("STRATEGY-TARGET");
+    let instrument_id = create_test_stock_instrument();
+    let client_order_id = ClientOrderId::from("O-IB-001");
+    let venue_order_id = VenueOrderId::from("1001");
+    let order = create_test_accepted_limit_order(
+        target_trader_id,
+        target_strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        client.core.account_id,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*IB_CLIENT_ID), false)
+        .unwrap();
     let cmd = CancelOrder::new(
-        client.core.trader_id,
+        TraderId::from("TRADER-REQUESTER"),
         Some(client.core.client_id),
-        order.strategy_id(),
-        order.instrument_id(),
-        order.client_order_id(),
-        Some(VenueOrderId::from("1001")),
+        StrategyId::from("STRATEGY-REQUESTER"),
+        instrument_id,
+        client_order_id,
+        Some(venue_order_id),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -917,11 +933,11 @@ fn cancel_order_rejects_when_client_not_ready() {
 
     match next_order_event(&mut rx) {
         OrderEventAny::CancelRejected(event) => {
-            assert_eq!(event.trader_id, client.core.trader_id);
-            assert_eq!(event.client_order_id, order.client_order_id());
-            assert_eq!(event.instrument_id, order.instrument_id());
-            assert_eq!(event.strategy_id, order.strategy_id());
-            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
+            assert_eq!(event.trader_id, target_trader_id);
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.instrument_id, instrument_id);
+            assert_eq!(event.strategy_id, target_strategy_id);
+            assert_eq!(event.venue_order_id, Some(venue_order_id));
             assert_eq!(event.account_id, Some(client.core.account_id));
             assert_eq!(event.ts_init, event.ts_event);
             assert!(!event.reconciliation);
@@ -1953,6 +1969,7 @@ fn test_emit_order_pending_cancel_is_idempotent() {
     InteractiveBrokersExecutionClient::emit_order_pending_cancel(
         order_id,
         client_order_id,
+        VenueOrderId::from("PERM-456"),
         &instrument_id_map,
         &trader_id_map,
         &strategy_id_map,
@@ -1965,6 +1982,7 @@ fn test_emit_order_pending_cancel_is_idempotent() {
     InteractiveBrokersExecutionClient::emit_order_pending_cancel(
         order_id,
         client_order_id,
+        VenueOrderId::from("PERM-456"),
         &instrument_id_map,
         &trader_id_map,
         &strategy_id_map,
@@ -1975,11 +1993,12 @@ fn test_emit_order_pending_cancel_is_idempotent() {
     )
     .unwrap();
 
-    let first = exec_receiver.try_recv().unwrap();
-    assert!(matches!(
-        first,
-        ExecutionEvent::Order(OrderEventAny::PendingCancel(_))
-    ));
+    match exec_receiver.try_recv().unwrap() {
+        ExecutionEvent::Order(OrderEventAny::PendingCancel(event)) => {
+            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("PERM-456")));
+        }
+        event => panic!("Expected OrderPendingCancel, was {event:?}"),
+    }
     assert!(exec_receiver.try_recv().is_err());
     assert!(
         pending_cancel_orders
@@ -2036,6 +2055,85 @@ fn cancel_order_target_validation_rejects_identity_conflicts() {
 }
 
 #[rstest]
+fn cancel_tracking_blocks_preexisting_route_until_identity_complete() {
+    let order_id = 7001;
+    let trader_id = TraderId::from("TRADER-TARGET");
+    let strategy_id = StrategyId::from("STRATEGY-TARGET");
+    let instrument_id = create_test_stock_instrument();
+    let client_order_id = ClientOrderId::from("O-TARGET-001");
+    let venue_order_id = VenueOrderId::from("PERM-456");
+    let target_order = create_test_accepted_limit_order(
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        AccountId::from("IB-001"),
+    );
+    let cmd = CancelOrder::new(
+        trader_id,
+        Some(*IB_CLIENT_ID),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        Some(venue_order_id),
+        UUID4::new(),
+        UnixNanos::new(1),
+        None,
+        None,
+    );
+    let order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let venue_order_id_map = Arc::new(Mutex::new(AHashMap::from_iter([(
+        order_id,
+        client_order_id,
+    )])));
+    let instrument_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let trader_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let strategy_id_map = Arc::new(Mutex::new(AHashMap::new()));
+
+    let writer_order_id_map = Arc::clone(&order_id_map);
+    let writer_venue_order_id_map = Arc::clone(&venue_order_id_map);
+    let writer_instrument_id_map = Arc::clone(&instrument_id_map);
+    let writer_trader_id_map = Arc::clone(&trader_id_map);
+    let writer_strategy_id_map = Arc::clone(&strategy_id_map);
+    let strategy_guard = strategy_id_map.lock().unwrap();
+
+    let writer = std::thread::spawn(move || {
+        InteractiveBrokersExecutionClient::cache_cancel_order_tracking(
+            order_id,
+            &cmd,
+            &target_order,
+            &writer_order_id_map,
+            &writer_venue_order_id_map,
+            &writer_instrument_id_map,
+            &writer_trader_id_map,
+            &writer_strategy_id_map,
+        )
+    });
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+
+    while !trader_id_map.lock().unwrap().contains_key(&order_id) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "tracking writer stalled"
+        );
+        std::thread::yield_now();
+    }
+    assert!(matches!(
+        venue_order_id_map.try_lock(),
+        Err(std::sync::TryLockError::WouldBlock)
+    ));
+
+    drop(strategy_guard);
+    writer.join().unwrap().unwrap();
+    assert_eq!(
+        venue_order_id_map.lock().unwrap().get(&order_id),
+        Some(&client_order_id)
+    );
+}
+
+#[rstest]
 #[case("TRADER-RESTORED", "STRATEGY-RESTORED")]
 #[case("TRADER-OPERATOR", "OPERATOR-001")]
 #[tokio::test]
@@ -2087,7 +2185,7 @@ async fn test_cancel_order_recovery_tracks_resolved_order_identity(
         None,
     );
     InteractiveBrokersExecutionClient::validate_cancel_order_target(&cmd, &target_order).unwrap();
-    // Raw order ID returned after resolving PERM-456.
+    // Raw order ID returned after resolving PERM-456
     let resolved_order_id = 7001;
 
     InteractiveBrokersExecutionClient::cache_cancel_order_tracking(
@@ -2134,6 +2232,7 @@ async fn test_cancel_order_recovery_tracks_resolved_order_identity(
             assert_eq!(event.strategy_id, target_strategy_id);
             assert_eq!(event.instrument_id, instrument_id);
             assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.venue_order_id, Some(venue_order_id));
         }
         other => panic!("unexpected event: {other:?}"),
     }

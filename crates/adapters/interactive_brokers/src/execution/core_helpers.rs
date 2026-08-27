@@ -234,6 +234,17 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
     ) -> anyhow::Result<()> {
+        let mut venue_map = venue_order_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+        if let Some(existing_client_order_id) = venue_map.get(&ib_order_id) {
+            anyhow::ensure!(
+                *existing_client_order_id == cmd.client_order_id,
+                "IB order ID {ib_order_id} is already mapped to client order {existing_client_order_id}"
+            );
+        }
+        venue_map.remove(&ib_order_id);
+
         order_id_map
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?
@@ -250,10 +261,7 @@ impl InteractiveBrokersExecutionClient {
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock strategy ID map"))?
             .insert(ib_order_id, target_order.strategy_id());
-        venue_order_id_map
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?
-            .insert(ib_order_id, cmd.client_order_id);
+        venue_map.insert(ib_order_id, cmd.client_order_id);
 
         Ok(())
     }
