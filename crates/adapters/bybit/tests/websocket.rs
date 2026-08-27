@@ -37,7 +37,7 @@ use futures_util::StreamExt;
 use nautilus_bybit::{
     common::enums::{
         BybitBboSideType, BybitEnvironment, BybitOrderSide, BybitOrderType, BybitProductType,
-        BybitTimeInForce,
+        BybitTimeInForce, BybitTriggerType,
     },
     websocket::{
         client::BybitWebSocketClient,
@@ -3124,16 +3124,16 @@ async fn test_batch_amend_order_with_order_iv() {
     let orders = vec![BybitWsAmendOrderParams {
         category: BybitProductType::Option,
         symbol: Ustr::from("BTC-30JUN25-100000-C"),
-        order_id: None,
+        order_id: Some("venue-option-amend".to_string()),
         order_link_id: Some("option-test-1".to_string()),
-        qty: None,
-        price: None,
-        trigger_price: None,
-        take_profit: None,
-        stop_loss: None,
-        tp_trigger_by: None,
-        sl_trigger_by: None,
-        order_iv: Some("0.90".to_string()),
+        qty: Some("0.23".to_string()),
+        price: Some("510.5".to_string()),
+        trigger_price: Some("505.5".to_string()),
+        take_profit: Some("530.5".to_string()),
+        stop_loss: Some("490.5".to_string()),
+        tp_trigger_by: Some(BybitTriggerType::MarkPrice),
+        sl_trigger_by: Some(BybitTriggerType::IndexPrice),
+        order_iv: Some("0.91".to_string()),
     }];
 
     let result = client.batch_amend_orders(orders).await;
@@ -3146,10 +3146,25 @@ async fn test_batch_amend_order_with_order_iv() {
 
     let msg = &messages[0];
     let args = msg.get("args").unwrap().as_array().unwrap();
-    let order = &args[0];
-
-    assert_eq!(order["orderIv"], "0.90");
-    assert_eq!(order["orderLinkId"], "option-test-1");
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0]["category"], "option");
+    assert_eq!(
+        args[0]["request"][0],
+        json!({
+            "symbol": "BTC-30JUN25-100000-C",
+            "orderId": "venue-option-amend",
+            "orderLinkId": "option-test-1",
+            "qty": "0.23",
+            "price": "510.5",
+            "triggerPrice": "505.5",
+            "takeProfit": "530.5",
+            "stopLoss": "490.5",
+            "tpTriggerBy": "MarkPrice",
+            "slTriggerBy": "IndexPrice",
+            "orderIv": "0.91",
+        })
+    );
+    assert!(args[0]["request"][0].get("category").is_none());
 
     client.close().await.unwrap();
 }

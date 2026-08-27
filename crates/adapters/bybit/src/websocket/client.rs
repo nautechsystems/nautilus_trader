@@ -79,9 +79,10 @@ use crate::{
         error::{BybitWsError, BybitWsResult},
         handler::{BybitWsFeedHandler, BybitWsOrderCommand, HandlerCommand},
         messages::{
-            BybitAuthRequest, BybitSubscription, BybitWsAmendOrderParams, BybitWsBatchCancelItem,
-            BybitWsBatchCancelOrderArgs, BybitWsBatchPlaceItem, BybitWsBatchPlaceOrderArgs,
-            BybitWsCancelOrderParams, BybitWsMessage, BybitWsPlaceOrderParams,
+            BybitAuthRequest, BybitSubscription, BybitWsAmendOrderParams, BybitWsBatchAmendItem,
+            BybitWsBatchAmendOrderArgs, BybitWsBatchCancelItem, BybitWsBatchCancelOrderArgs,
+            BybitWsBatchPlaceItem, BybitWsBatchPlaceOrderArgs, BybitWsCancelOrderParams,
+            BybitWsMessage, BybitWsPlaceOrderParams,
         },
     },
 };
@@ -1623,24 +1624,50 @@ impl BybitWebSocketClient {
             ));
         }
 
-        let commands = orders
-            .chunks(chunk_limit)
-            .zip(req_ids)
-            .map(|(orders, req_id)| {
-                Ok(BybitWsOrderCommand {
-                    req_id,
-                    op: BybitWsOrderRequestOp::AmendBatch,
-                    category,
-                    weight: batch_weight(category, orders.len()),
-                    referer: None,
-                    args: orders
-                        .iter()
-                        .map(serde_json::to_value)
-                        .collect::<Result<Vec<_>, _>>()?,
-                })
-            })
-            .collect::<BybitWsResult<Vec<_>>>()?;
+        let mut commands = Vec::with_capacity(req_ids.len());
+        for (orders, req_id) in orders.chunks(chunk_limit).zip(req_ids) {
+            commands.push(Self::build_batch_amend_command(orders.to_vec(), req_id)?);
+        }
         self.send_cmd(HandlerCommand::SendOrders { commands }).await
+    }
+
+    fn build_batch_amend_command(
+        orders: Vec<BybitWsAmendOrderParams>,
+        req_id: String,
+    ) -> BybitWsResult<BybitWsOrderCommand> {
+        let category = orders[0].category;
+        let order_count = orders.len();
+
+        let request_items = orders
+            .into_iter()
+            .map(|order| BybitWsBatchAmendItem {
+                symbol: order.symbol,
+                order_id: order.order_id,
+                order_link_id: order.order_link_id,
+                qty: order.qty,
+                price: order.price,
+                trigger_price: order.trigger_price,
+                take_profit: order.take_profit,
+                stop_loss: order.stop_loss,
+                tp_trigger_by: order.tp_trigger_by,
+                sl_trigger_by: order.sl_trigger_by,
+                order_iv: order.order_iv,
+            })
+            .collect();
+
+        let args = BybitWsBatchAmendOrderArgs {
+            category,
+            request: request_items,
+        };
+
+        Ok(BybitWsOrderCommand {
+            req_id,
+            op: BybitWsOrderRequestOp::AmendBatch,
+            category,
+            weight: batch_weight(category, order_count),
+            referer: None,
+            args: vec![serde_json::to_value(args)?],
+        })
     }
 
     /// Batch cancels multiple orders via WebSocket, returning the request ID for correlation.
@@ -2407,16 +2434,16 @@ mod tests {
         let amend_template = BybitWsAmendOrderParams {
             category: BybitProductType::Option,
             symbol: Ustr::from("BTC-30JUN25-100000-C"),
-            order_id: None,
+            order_id: Some("venue-option-amend".to_string()),
             order_link_id: None,
-            qty: Some("0.2".to_string()),
-            price: Some("510".to_string()),
-            trigger_price: None,
-            take_profit: None,
-            stop_loss: None,
-            tp_trigger_by: None,
-            sl_trigger_by: None,
-            order_iv: Some("0.90".to_string()),
+            qty: Some("0.23".to_string()),
+            price: Some("510.5".to_string()),
+            trigger_price: Some("505.5".to_string()),
+            take_profit: Some("530.5".to_string()),
+            stop_loss: Some("490.5".to_string()),
+            tp_trigger_by: Some(crate::common::enums::BybitTriggerType::MarkPrice),
+            sl_trigger_by: Some(crate::common::enums::BybitTriggerType::IndexPrice),
+            order_iv: Some("0.91".to_string()),
         };
         let amend_order_link_ids = (0..6)
             .map(|index| format!("option-amend-{index}"))
@@ -2445,7 +2472,35 @@ mod tests {
             &amend_req_ids,
             BybitWsOrderRequestOp::AmendBatch,
             &amend_order_link_ids,
-            batch_direct_items,
+            batch_nested_items,
+        );
+        assert!(commands.iter().all(|command| command.args.len() == 1));
+        assert!(
+            commands
+                .iter()
+                .all(|command| command.args[0]["category"] == "option")
+        );
+        assert_eq!(
+            commands[0].args[0]["request"][0],
+            serde_json::json!({
+                "symbol": "BTC-30JUN25-100000-C",
+                "orderId": "venue-option-amend",
+                "orderLinkId": "option-amend-0",
+                "qty": "0.23",
+                "price": "510.5",
+                "triggerPrice": "505.5",
+                "takeProfit": "530.5",
+                "stopLoss": "490.5",
+                "tpTriggerBy": "MarkPrice",
+                "slTriggerBy": "IndexPrice",
+                "orderIv": "0.91",
+            })
+        );
+        assert!(
+            commands
+                .iter()
+                .flat_map(batch_nested_items)
+                .all(|order| order.get("category").is_none())
         );
 
         let cancel_order_link_ids = (0..6)
@@ -2521,10 +2576,6 @@ mod tests {
 
     fn batch_nested_items(command: &BybitWsOrderCommand) -> &[Value] {
         command.args[0]["request"].as_array().unwrap()
-    }
-
-    fn batch_direct_items(command: &BybitWsOrderCommand) -> &[Value] {
-        &command.args
     }
 
     #[rstest]

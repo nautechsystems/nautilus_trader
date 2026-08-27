@@ -65,7 +65,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures fill reconciliation treating history outside venue retention as complete
 - Fixed Binance Futures whole-position exits denied by placeholder bounds (#4746), thanks for reporting @hashtagdenis
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
-- Fixed Bybit option batch chunk sizes to respect the five-order venue limit
+- Fixed Bybit option batch limits and WebSocket batch amend payloads
 - Fixed Bybit rate limiting causing expired requests, venue rejections, and inconsistent order state
 - Fixed Hyperliquid execution disconnect cleanup
 - Fixed Hyperliquid market order prices in order list submits
