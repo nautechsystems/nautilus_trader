@@ -4617,7 +4617,7 @@ impl OrderMatchingEngine {
             let cache = self.cache.as_ref().borrow();
 
             if let Some(position) = cache.position_for_order(&order.client_order_id()) {
-                let position = position.cloned();
+                let position = position.clone_without_events();
                 return (Some(position.id), Some(position));
             }
 
@@ -4632,7 +4632,8 @@ impl OrderMatchingEngine {
             let cache = self.cache.as_ref().borrow();
             venue_position_id
                 .as_ref()
-                .and_then(|position_id| cache.position_owned(position_id))
+                .and_then(|position_id| cache.position(position_id))
+                .map(|position| position.clone_without_events())
         };
 
         (venue_position_id, position)
@@ -4640,7 +4641,7 @@ impl OrderMatchingEngine {
 
     fn position_for_order_in_cache(&self, cache: &Cache, order: &OrderAny) -> Option<Position> {
         if let Some(position) = cache.position_for_order(&order.client_order_id()) {
-            return Some(position.cloned());
+            return Some(position.clone_without_events());
         }
 
         if self.oms_type == OmsType::Netting {
@@ -4649,7 +4650,7 @@ impl OrderMatchingEngine {
             );
             return cache
                 .position(&position_id)
-                .map(|position| position.cloned());
+                .map(|position| position.clone_without_events());
         }
 
         if self.oms_type == OmsType::Hedging
@@ -4673,7 +4674,7 @@ impl OrderMatchingEngine {
             )
             .into_iter()
             .find(|position| order.would_reduce_only(position.side, position.quantity))
-            .map(|position| position.cloned())
+            .map(|position| position.clone_without_events())
     }
 
     fn apply_fills(

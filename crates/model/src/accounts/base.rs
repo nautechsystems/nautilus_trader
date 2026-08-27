@@ -78,6 +78,20 @@ impl BaseAccount {
         }
     }
 
+    #[must_use]
+    pub(crate) fn clone_without_events(&self) -> Self {
+        Self {
+            id: self.id,
+            account_type: self.account_type,
+            base_currency: self.base_currency,
+            calculate_account_state: self.calculate_account_state,
+            events: Vec::new(),
+            commissions: self.commissions.clone(),
+            balances: self.balances.clone(),
+            balances_starting: self.balances_starting.clone(),
+        }
+    }
+
     /// Returns a reference to the `AccountBalance` for the specified currency, or `None` if absent.
     ///
     /// # Panics

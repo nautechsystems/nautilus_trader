@@ -82,6 +82,8 @@ Released on TBD (UTC).
 - Allowed `DataActor` implementations without native `Component` state
 - Improved Betfair stream lifecycle test synchronization (#4849), thanks @folknor
 - Improved dYdX retry timeout test coverage (#4835), thanks @folknor
+- Optimized `OrderMatchingEngine` queue tracking and liquidity consumption
+- Optimized risk, execution, and portfolio processing for accounts and positions with long histories
 - Optimized Betfair subscription test teardown (#4837), thanks @folknor
 - Optimized Hyperliquid startup reconciliation to skip inactive dexes (#4861), thanks for reporting @nah294
 - Optimized Polymarket quote parsing across WebSocket inputs

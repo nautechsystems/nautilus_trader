@@ -1204,9 +1204,13 @@ impl RiskEngine {
             let cache = self.cache.borrow();
 
             if let Some(account_id) = account_id {
-                cache.account_owned(&account_id)
+                cache
+                    .account(&account_id)
+                    .map(|account| account.clone_without_events())
             } else {
-                cache.account_for_venue_owned(&instrument.id().venue)
+                cache
+                    .account_for_venue(&instrument.id().venue)
+                    .map(|account| account.clone_without_events())
             }
         };
 

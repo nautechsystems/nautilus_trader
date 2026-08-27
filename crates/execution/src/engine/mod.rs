@@ -3670,7 +3670,10 @@ impl ExecutionEngine {
             let position_events = self.handle_position_update(&instrument, fill.clone(), oms_type);
             let position_id = fill.position_id.unwrap();
             (
-                self.cache.borrow().position_owned(&position_id),
+                self.cache
+                    .borrow()
+                    .position(&position_id)
+                    .map(|position| position.clone_without_events()),
                 position_events,
             )
         };

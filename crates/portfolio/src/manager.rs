@@ -96,7 +96,11 @@ impl AccountsManager {
                 .id
         };
 
-        let position = self.cache.borrow().position_owned(&position_id);
+        let position = self
+            .cache
+            .borrow()
+            .position(&position_id)
+            .map(|position| position.clone_without_events());
 
         let pnls = match account.calculate_pnls(instrument, fill, position) {
             Ok(pnls) => pnls,

@@ -120,6 +120,18 @@ impl MarginAccount {
         }
     }
 
+    #[must_use]
+    pub(crate) fn clone_without_events(&self) -> Self {
+        Self {
+            base: self.base.clone_without_events(),
+            leverages: self.leverages.clone(),
+            margins: self.margins.clone(),
+            account_margins: self.account_margins.clone(),
+            default_leverage: self.default_leverage,
+            margin_model: self.margin_model.clone(),
+        }
+    }
+
     pub fn set_margin_model(&mut self, model: MarginModelHandle) {
         self.margin_model = model;
     }

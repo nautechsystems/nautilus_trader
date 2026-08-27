@@ -187,6 +187,56 @@ impl Position {
         item
     }
 
+    /// Returns a copy without stored events, adjustments, replay events, fill voids, or trade IDs.
+    ///
+    /// # Warning
+    ///
+    /// Use this copy only as transient read state. Applying events or caching this copy can bypass
+    /// replay and duplicate-fill checks and discard position history.
+    #[must_use]
+    pub fn clone_without_events(&self) -> Self {
+        Self {
+            events: Vec::new(),
+            adjustments: Vec::new(),
+            replay_events: Vec::new(),
+            fill_voids: Vec::new(),
+            trader_id: self.trader_id,
+            strategy_id: self.strategy_id,
+            instrument_id: self.instrument_id,
+            id: self.id,
+            account_id: self.account_id,
+            opening_order_id: self.opening_order_id,
+            closing_order_id: self.closing_order_id,
+            entry: self.entry,
+            side: self.side,
+            signed_qty: self.signed_qty,
+            quantity: self.quantity,
+            peak_qty: self.peak_qty,
+            price_precision: self.price_precision,
+            size_precision: self.size_precision,
+            multiplier: self.multiplier,
+            is_inverse: self.is_inverse,
+            is_currency_pair: self.is_currency_pair,
+            instrument_class: self.instrument_class,
+            base_currency: self.base_currency,
+            quote_currency: self.quote_currency,
+            settlement_currency: self.settlement_currency,
+            ts_init: self.ts_init,
+            ts_opened: self.ts_opened,
+            ts_last: self.ts_last,
+            ts_closed: self.ts_closed,
+            duration_ns: self.duration_ns,
+            avg_px_open: self.avg_px_open,
+            avg_px_close: self.avg_px_close,
+            realized_return: self.realized_return,
+            realized_pnl: self.realized_pnl,
+            trade_ids: AHashSet::new(),
+            buy_qty: self.buy_qty,
+            sell_qty: self.sell_qty,
+            commissions: self.commissions.clone(),
+        }
+    }
+
     /// Purges all order fill events for the given client order ID and recalculates derived state.
     ///
     /// # Warning
@@ -1457,7 +1507,7 @@ mod tests {
             CryptoFuture, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny, stubs::*,
         },
         orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
-        position::{Position, fold_net_position},
+        position::{Position, PositionFillVoid, fold_net_position},
         stubs::*,
         types::{Currency, Money, Price, Quantity},
     };
@@ -1472,6 +1522,97 @@ mod tests {
     fn test_position_short_display(stub_position_short: Position) {
         let display = format!("{stub_position_short}");
         assert_eq!(display, "Position(SHORT 1 AUD/USD.SIM, id=1)");
+    }
+
+    #[rstest]
+    #[case::open(false)]
+    #[case::closed(true)]
+    fn test_clone_without_events_preserves_current_state(
+        mut stub_position_long: Position,
+        #[case] close: bool,
+    ) {
+        let adjustment = PositionAdjusted::new(
+            stub_position_long.trader_id,
+            stub_position_long.strategy_id,
+            stub_position_long.instrument_id,
+            stub_position_long.id,
+            stub_position_long.account_id,
+            PositionAdjustmentType::Funding,
+            None,
+            Some(Money::from_decimal(dec!(1.25), stub_position_long.settlement_currency).unwrap()),
+            Some("clone-test".into()),
+            uuid4(),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        );
+        stub_position_long.apply_adjustment(adjustment);
+
+        if close {
+            let closing_fill = OrderFilledSpec::builder()
+                .trader_id(stub_position_long.trader_id)
+                .strategy_id(stub_position_long.strategy_id)
+                .instrument_id(stub_position_long.instrument_id)
+                .client_order_id(ClientOrderId::from("CLONE-CLOSE"))
+                .venue_order_id(VenueOrderId::from("CLONE-CLOSE"))
+                .account_id(stub_position_long.account_id)
+                .trade_id(TradeId::from("CLONE-CLOSE"))
+                .order_side(OrderSide::Sell)
+                .order_type(OrderType::Market)
+                .last_qty(stub_position_long.quantity)
+                .last_px(Price::from("1.0012"))
+                .currency(stub_position_long.settlement_currency)
+                .position_id(stub_position_long.id)
+                .ts_event(UnixNanos::from(3))
+                .ts_init(UnixNanos::from(3))
+                .build();
+            stub_position_long.apply(&closing_fill);
+        }
+
+        let source_fill = stub_position_long.events[0].clone();
+        let fill_voided = OrderFillVoidedSpec::builder()
+            .trader_id(source_fill.trader_id)
+            .strategy_id(source_fill.strategy_id)
+            .instrument_id(source_fill.instrument_id)
+            .client_order_id(source_fill.client_order_id)
+            .venue_order_id(source_fill.venue_order_id)
+            .account_id(source_fill.account_id)
+            .trade_id(source_fill.trade_id)
+            .voided_qty(source_fill.last_qty)
+            .order_side(source_fill.order_side)
+            .order_type(source_fill.order_type)
+            .last_px(source_fill.last_px)
+            .currency(source_fill.currency)
+            .liquidity_side(source_fill.liquidity_side)
+            .position_id(stub_position_long.id)
+            .build();
+        stub_position_long.fill_voids.push(PositionFillVoid {
+            event: fill_voided,
+            voided_qty: source_fill.last_qty,
+            commission_voided: source_fill.commission,
+        });
+
+        let cloned = stub_position_long.clone_without_events();
+        let mut expected = stub_position_long.clone();
+        expected.events.clear();
+        expected.adjustments.clear();
+        expected.replay_events.clear();
+        expected.fill_voids.clear();
+        expected.trade_ids.clear();
+
+        assert!(!stub_position_long.events.is_empty());
+        assert!(!stub_position_long.adjustments.is_empty());
+        assert!(!stub_position_long.replay_events.is_empty());
+        assert!(!stub_position_long.fill_voids.is_empty());
+        assert!(!stub_position_long.trade_ids.is_empty());
+        assert!(cloned.events.is_empty());
+        assert!(cloned.adjustments.is_empty());
+        assert!(cloned.replay_events.is_empty());
+        assert!(cloned.fill_voids.is_empty());
+        assert!(cloned.trade_ids.is_empty());
+        assert_eq!(
+            serde_json::to_value(cloned).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
     }
 
     #[rstest]

@@ -111,6 +111,14 @@ impl WalletAccount {
         Self::new_checked(event, calculate_account_state).expect_display(FAILED)
     }
 
+    #[must_use]
+    pub(crate) fn clone_without_events(&self) -> Self {
+        Self {
+            base: self.base.clone_without_events(),
+            balances_locked: self.balances_locked.clone(),
+        }
+    }
+
     /// Updates the locked balance for the given instrument and currency.
     ///
     /// # Errors
