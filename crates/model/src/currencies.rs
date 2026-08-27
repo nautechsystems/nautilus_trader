@@ -24,10 +24,11 @@
 //!   1 XRP = 1,000,000 drops, confirming the six-decimal allowance for XRP.
 //! - Tezos protocol reference (<https://tezos.gitlab.io/active/numismatics.html>):
 //!   1 tez = 1,000,000 mutez, informing the six-decimal precision for XTZ.
-//! - Stablecoin contract metadata on Etherscan for USDC, USDP, and BRZ
+//! - Stablecoin contract metadata for USDC, USDP, BRZ, and USDG
 //!   (e.g. <https://etherscan.io/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48#readContract>,
 //!   <https://etherscan.io/token/0x8e870d67f660d95d5be530380d0ec0bd388289e1#readContract>,
-//!   <https://etherscan.io/token/0x01d33fd36ec67c6ada32cf36b31e88ee190b1839#readContract>):
+//!   <https://etherscan.io/token/0x01d33fd36ec67c6ada32cf36b31e88ee190b1839#readContract>,
+//!   <https://github.com/paxosglobal/usdg-contract/blob/5afb581e076f69ae46eb2e360f4dc63a71514a78/contracts/USDG.sol>):
 //!   each exposes 6-18 on-chain decimals; we clamp to an 8-decimal internal default.
 
 use std::{
@@ -137,6 +138,7 @@ static XRP_LOCK: OnceLock<Currency> = OnceLock::new();
 static XTZ_LOCK: OnceLock<Currency> = OnceLock::new();
 static USDC_LOCK: OnceLock<Currency> = OnceLock::new();
 static USDC_POS_LOCK: OnceLock<Currency> = OnceLock::new();
+static USDG_LOCK: OnceLock<Currency> = OnceLock::new();
 static USDP_LOCK: OnceLock<Currency> = OnceLock::new();
 static PUSD_LOCK: OnceLock<Currency> = OnceLock::new();
 static USDT_LOCK: OnceLock<Currency> = OnceLock::new();
@@ -1204,6 +1206,18 @@ impl Currency {
 
     #[allow(non_snake_case)]
     #[must_use]
+    pub fn USDG() -> Self {
+        *USDG_LOCK.get_or_init(|| Self {
+            code: Ustr::from("USDG"),
+            precision: 8,
+            iso4217: 0,
+            name: Ustr::from("Global Dollar"),
+            currency_type: CurrencyType::Crypto,
+        })
+    }
+
+    #[allow(non_snake_case)]
+    #[must_use]
     pub fn USDP() -> Self {
         *USDP_LOCK.get_or_init(|| Self {
             code: Ustr::from("USDP"),
@@ -1331,6 +1345,7 @@ pub static CURRENCY_MAP: LazyLock<Mutex<HashMap<String, Currency>>> = LazyLock::
     map.insert(Currency::XTZ().code.to_string(), Currency::XTZ());
     map.insert(Currency::USDC().code.to_string(), Currency::USDC());
     map.insert(Currency::USDC_POS().code.to_string(), Currency::USDC_POS());
+    map.insert(Currency::USDG().code.to_string(), Currency::USDG());
     map.insert(Currency::USDP().code.to_string(), Currency::USDP());
     map.insert(Currency::pUSD().code.to_string(), Currency::pUSD());
     map.insert(Currency::USDT().code.to_string(), Currency::USDT());
@@ -1344,6 +1359,19 @@ mod tests {
 
     use super::*;
     use crate::enums::CurrencyType;
+
+    #[rstest]
+    fn test_usdg_currency_invariants() {
+        let usdg = Currency::USDG();
+        assert_eq!(usdg.code.as_str(), "USDG");
+        assert_eq!(usdg.precision, 8);
+        assert_eq!(usdg.iso4217, 0);
+        assert_eq!(usdg.name.as_str(), "Global Dollar");
+        assert_eq!(usdg.currency_type, CurrencyType::Crypto);
+        assert_eq!(Currency::try_from_str("USDG"), Some(usdg));
+        assert_eq!(Currency::from("USDG"), usdg);
+        assert_eq!(Currency::USDG(), usdg);
+    }
 
     #[rstest]
     fn test_pusd_currency_invariants() {

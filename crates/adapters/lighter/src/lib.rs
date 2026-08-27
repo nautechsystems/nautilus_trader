@@ -15,8 +15,8 @@
 
 //! [NautilusTrader](https://nautilustrader.io) adapter for the [Lighter](https://lighter.xyz) DEX.
 //!
-//! The `nautilus-lighter` crate provides integration with the Lighter API for trading
-//! perpetual futures and spot markets on a zk-rollup decentralized exchange.
+//! The `nautilus-lighter` crate provides integration with the Lighter protocol for trading
+//! perpetual futures and spot markets on the Lighter and Robinhood Chain deployments.
 //!
 //! # NautilusTrader
 //!
@@ -44,17 +44,21 @@
 //!
 //! # Integrator attribution
 //!
-//! On mainnet, submitted create and modify order transactions carry the NautilusTrader integrator
-//! account index in Lighter's `L2TxAttributes`. This helps us gauge real usage of the integration
-//! and prioritize ongoing maintenance. Maker and taker integrator fees are set to zero, so
-//! attribution adds no trading cost. Testnet create and modify transactions leave
+//! On Lighter Mainnet, submitted create and modify order transactions carry the NautilusTrader
+//! integrator account index in Lighter's `L2TxAttributes`. This helps us gauge real usage of the
+//! integration and prioritize ongoing maintenance. Maker and taker integrator fees are set to zero,
+//! so attribution adds no trading cost. Lighter Testnet and both Robinhood environments leave
 //! `L2TxAttributes` empty.
 //!
 //! Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to
-//! mainnet orders. During startup, the mainnet execution client submits the required zero-fee
-//! approval for the configured L2 account. The testnet client does not submit an approval. See the
-//! [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
-//! for approval and revocation details.
+//! Lighter Mainnet orders. During startup, the execution client submits the required zero-fee
+//! approval for the configured L2 account. Lighter Testnet and Robinhood clients do not submit an
+//! approval.
+//!
+//! Robinhood Mainnet instead applies the `NAUTILUS` referral to the account's public L1 address
+//! during execution-client startup. Application failures log a warning and do not block trading.
+//! Robinhood Testnet does not apply a referral. See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter.html#integrator-attribution)
+//! for attribution and revocation details.
 
 #![warn(rustc::all)]
 #![deny(unsafe_code)]

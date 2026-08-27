@@ -87,7 +87,7 @@ inside the same event-driven runtime.
 The example reads credentials from environment variables and keeps the strategy
 parameters as editable Rust constants. It defaults to
 `LighterEnvironment::Testnet`, so follow the
-[testnet account setup](../integrations/lighter.md#testnet-account-setup) and set the testnet
+[account and API key setup](../integrations/lighter.md#account-and-api-key-setup) and set the testnet
 Lighter credentials:
 
 ```bash

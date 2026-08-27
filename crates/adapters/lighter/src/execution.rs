@@ -75,27 +75,25 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use zeroize::Zeroizing;
 
 use crate::{
     common::{
-        consts::{
-            DISCONNECT_TIMEOUT, LIGHTER_ERROR_CODE_INVALID_NONCE, LIGHTER_MAX_BATCH_TX,
-            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE,
-        },
+        consts::{DISCONNECT_TIMEOUT, LIGHTER_ERROR_CODE_INVALID_NONCE, LIGHTER_MAX_BATCH_TX},
         credential::{Credential, scrub_auth},
+        deployment,
         enums::{
-            LighterAccountTier, LighterEnvironment, LighterPositionMarginMode, LighterProductType,
-            LighterTxStatus, LighterTxType,
+            LighterAccountTier, LighterPositionMarginMode, LighterProductType, LighterTxStatus,
+            LighterTxType,
         },
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
         symbol::{MarketRegistry, product_type_from_instrument_id},
-        urls::lighter_chain_id,
     },
     config::LighterExecutionClientConfig,
     http::{
         client::{LIGHTER_REST_PAGE_SIZE, LighterHttpClient, LighterRawHttpClient},
         error::LighterHttpError,
-        models::LighterSendTxRequest,
+        models::{LighterAccountDetail, LighterSendTxRequest},
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
             LighterSortDirection, LighterTradeSortBy, LighterTradesQuery,
@@ -170,9 +168,10 @@ const AUTH_TOKEN_REFRESH_BACKOFF: AuthTokenRefreshBackoff = AuthTokenRefreshBack
 };
 const NONCE_REFRESH_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(1);
 const NONCE_REFRESH_RETRY_MAX_DELAY: Duration = Duration::from_secs(30);
-// Bounds the informational tier-detection call so a slow or failing
-// `/account` endpoint cannot stall connect for the HTTP retry budget.
-const ACCOUNT_TIER_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
+// Bounds the startup account snapshot so a slow or failing `/account`
+// endpoint cannot stall connect for the HTTP retry budget.
+const ACCOUNT_SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(10);
+const REFERRAL_ATTRIBUTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Attribution window for a bare venue error frame. The frame carries no
 /// `tx_hash` or cloid; if the oldest pending sendTx was submitted within
@@ -242,15 +241,33 @@ impl LighterExecutionClient {
         core: ExecutionClientCore,
         config: LighterExecutionClientConfig,
     ) -> anyhow::Result<Self> {
-        let credential = Credential::resolve(
+        anyhow::ensure!(
+            core.venue == config.resolved_venue(),
+            "Lighter execution core venue {} does not match configured venue {}",
+            core.venue,
+            config.resolved_venue(),
+        );
+
+        anyhow::ensure!(
+            config.account_id.get_issuer() == core.venue,
+            "Lighter account ID issuer {} does not match configured venue {}",
+            config.account_id.get_issuer(),
+            core.venue,
+        );
+
+        let credential = Credential::resolve_for_deployment(
             config.private_key.clone(),
             config.account_index,
             config.api_key_index,
+            config.deployment,
             config.environment,
         )
         .context("failed to resolve Lighter credentials")?;
 
-        let registry = Arc::new(MarketRegistry::new());
+        let registry = Arc::new(MarketRegistry::new_with_venue_and_settlement_currency(
+            core.venue,
+            config.settlement_currency(),
+        ));
 
         // One transaction limiter shared across the HTTP and WebSocket sendTx
         // paths so their combined rate honours the single per-account venue bucket.
@@ -258,27 +275,29 @@ impl LighterExecutionClient {
 
         let raw_http = LighterRawHttpClient::new_with_quotas(
             config.environment,
-            config.base_url_http.clone(),
+            Some(config.http_url()),
             config.http_timeout_secs,
             config.proxy_url.clone(),
             resolve_quota(config.rest_quota_per_min),
             Some(Arc::clone(&tx_rate_limiter)),
         )
         .context("failed to construct Lighter raw HTTP client")?;
+
         let http_client =
             LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
 
         let ws_client = LighterWebSocketClient::new(
-            config.base_url_ws.clone(),
+            Some(config.ws_url()),
             config.environment,
             Arc::clone(&registry),
             config.transport_backend,
             config.ws_timeout_secs,
             config.proxy_url.clone(),
         );
+
         let ws_client = ws_client.with_socket_control(SocketControl::new(
             core.client_id,
-            Some(*LIGHTER_VENUE),
+            Some(core.venue),
             USER_STREAMS_ENDPOINT,
         ));
 
@@ -441,42 +460,43 @@ impl LighterExecutionClient {
         Ok(())
     }
 
-    // Logs the venue-reported account tier in blue. Informational only: the
-    // active quotas are resolved from config at construction, never raised here
-    // (the higher venue limits require registering the caller IP, so the tier
-    // alone does not guarantee them). The call is bounded by
-    // ACCOUNT_TIER_DETECT_TIMEOUT and failures are swallowed, so detection
-    // cannot fail connect or stall it for the HTTP retry budget.
-    async fn detect_account_tier(&self) {
+    async fn fetch_account_detail(&self) -> Option<LighterAccountDetail> {
         let Some(credential) = &self.credential else {
-            return;
+            return None;
         };
         let account_index = credential.account_index();
 
-        let detail = match tokio::time::timeout(
-            ACCOUNT_TIER_DETECT_TIMEOUT,
+        match tokio::time::timeout(
+            ACCOUNT_SNAPSHOT_TIMEOUT,
             self.http_client.get_account_detail(account_index),
         )
         .await
         {
-            Ok(Ok(detail)) => detail,
+            Ok(Ok(detail)) => Some(detail),
             Ok(Err(e)) => {
                 log::warn!(
-                    "Failed to detect Lighter account tier for account_index={account_index}; \
-                     continuing at the configured REST quota: {e}"
+                    "Failed to fetch Lighter account detail for account_index={account_index}; \
+                     continuing startup without account metadata: {e}"
                 );
-                return;
+                None
             }
             Err(_) => {
                 log::warn!(
-                    "Lighter account tier detection timed out after {}s for \
-                     account_index={account_index}; continuing at the configured REST quota",
-                    ACCOUNT_TIER_DETECT_TIMEOUT.as_secs()
+                    "Lighter account detail timed out after {}s for account_index={account_index}; \
+                     continuing startup without account metadata",
+                    ACCOUNT_SNAPSHOT_TIMEOUT.as_secs()
                 );
-                return;
+                None
             }
-        };
+        }
+    }
 
+    // Logs the venue-reported account tier in blue. Informational only: the
+    // active quotas are resolved from config at construction, never raised here
+    // (the higher venue limits require registering the caller IP, so the tier
+    // alone does not guarantee them).
+    fn detect_account_tier(&self, detail: &LighterAccountDetail) {
+        let account_index = detail.account_index;
         let code = detail.account_type;
         let tier = LighterAccountTier::from_code(code);
         let standard_rest = LighterAccountTier::Standard
@@ -510,6 +530,44 @@ impl LighterExecutionClient {
         }
     }
 
+    async fn apply_referral_attribution(
+        &self,
+        detail: &LighterAccountDetail,
+    ) -> anyhow::Result<()> {
+        let Some(referral_code) =
+            deployment::referral_code(self.config.deployment, self.config.environment)
+        else {
+            return Ok(());
+        };
+
+        let Some(credential) = &self.credential else {
+            return Ok(());
+        };
+
+        anyhow::ensure!(
+            !detail.l1_address.trim().is_empty(),
+            "Lighter account detail returned an empty L1 address"
+        );
+
+        let auth_token = Zeroizing::new(
+            build_auth_token_for(credential)
+                .context("failed to mint Lighter auth token for referral attribution")?,
+        );
+        let referral_code = Zeroizing::new(referral_code.to_string());
+
+        self.http_client
+            .use_referral(
+                &detail.l1_address,
+                referral_code.as_str(),
+                auth_token.as_str(),
+            )
+            .await
+            .context("failed to apply Lighter referral code")?;
+
+        log::debug!("Applied Robinhood Chain referral attribution");
+        Ok(())
+    }
+
     /// Returns `Ok(true)` if this credential's `api_key_index` is maker-only.
     /// Maker-only keys cannot submit `ApproveIntegrator`, so the caller skips
     /// the integrator auto-approval when `true`.
@@ -526,9 +584,11 @@ impl LighterExecutionClient {
     }
 
     async fn submit_integrator_auto_approval(&self) -> anyhow::Result<()> {
-        if self.config.environment == LighterEnvironment::Testnet {
+        let Some(integrator_account_index) =
+            deployment::integrator_account_index(self.config.deployment, self.config.environment)
+        else {
             return Ok(());
-        }
+        };
 
         let Some(credential) = &self.credential else {
             return Ok(());
@@ -548,14 +608,16 @@ impl LighterExecutionClient {
             Ok(false) => {}
             Err(e) => {
                 maker_only_check_failed = true;
+
                 log::debug!(
-                    "Lighter maker-only api key check failed; attempting integrator approval \
-                     anyway: {e:?}"
+                    "Unable to determine whether the Lighter API key is maker-only; proceeding \
+                     with integrator auto-approval: {e:?}"
                 );
             }
         }
 
-        let mut approval = self.prepare_integrator_auto_approval(credential)?;
+        let mut approval =
+            self.prepare_integrator_auto_approval(credential, integrator_account_index)?;
 
         let request = LighterSendTxRequest::new(
             LighterTxType::ApproveIntegrator as u8,
@@ -587,6 +649,7 @@ impl LighterExecutionClient {
                 )));
             }
         };
+
         let _ = self.dispatch.nonce_manager.ack_success(
             credential.account_index(),
             approval.api_key_index,
@@ -597,7 +660,7 @@ impl LighterExecutionClient {
         log::debug!(
             "Submitted Lighter integrator approval: integrator={}, nonce={}, \
              api_key_index={}, approval_expiry={}, tx_hash={}",
-            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            integrator_account_index,
             approval.nonce,
             approval.api_key_index,
             approval.approval_expiry,
@@ -609,6 +672,7 @@ impl LighterExecutionClient {
     fn prepare_integrator_auto_approval(
         &self,
         credential: &Credential,
+        integrator_account_index: u64,
     ) -> anyhow::Result<PreparedIntegratorApproval> {
         let ReservedTxContext {
             context,
@@ -622,7 +686,7 @@ impl LighterExecutionClient {
 
         let tx = ApproveIntegratorTxInfo {
             context,
-            integrator_account_index: LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX as i64,
+            integrator_account_index: integrator_account_index as i64,
             max_perps_taker_fee: INTEGRATOR_AUTO_APPROVAL_MAX_FEE_TICK,
             max_perps_maker_fee: INTEGRATOR_AUTO_APPROVAL_MAX_FEE_TICK,
             max_spot_taker_fee: INTEGRATOR_AUTO_APPROVAL_MAX_FEE_TICK,
@@ -633,10 +697,11 @@ impl LighterExecutionClient {
 
         let signed = sign_tx(
             &tx,
-            lighter_chain_id(self.config.environment),
+            self.config.chain_id(),
             &credential.private_key()?,
             fresh_k(),
         );
+
         let tx_info = TxInfoJson::approve_integrator(&tx, &signed, "");
 
         Ok(PreparedIntegratorApproval {
@@ -1452,7 +1517,11 @@ impl LighterExecutionClient {
     fn fanout_dispatch_context(&self, credential: &Credential) -> FanoutDispatchContext {
         FanoutDispatchContext {
             clock: self.clock,
-            environment: self.config.environment,
+            chain_id: self.config.chain_id(),
+            integrator_account_index: deployment::integrator_account_index(
+                self.config.deployment,
+                self.config.environment,
+            ),
             emitter: self.emitter.clone(),
             credential: credential.clone(),
             http_client: self.http_client.clone(),
@@ -1762,6 +1831,7 @@ impl LighterExecutionClient {
 
         let mut rollback_guard =
             TxDispatchGuard::new(self.dispatch.clone(), credential, None, captured_nonce);
+
         let tx = ModifyOrderTxInfo {
             context,
             market_index,
@@ -1769,12 +1839,15 @@ impl LighterExecutionClient {
             base_amount,
             price: price_ticks,
             trigger_price: trigger_price_ticks,
-            attributes: integrator_attributes(self.config.environment),
+            attributes: integrator_attributes(deployment::integrator_account_index(
+                self.config.deployment,
+                self.config.environment,
+            )),
         };
 
         let signed = sign_tx(
             &tx,
-            lighter_chain_id(self.config.environment),
+            self.config.chain_id(),
             &credential.private_key()?,
             fresh_k(),
         );
@@ -1782,6 +1855,7 @@ impl LighterExecutionClient {
         let tx_info_str = TxInfoJson::modify_order(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter modify tx_info JSON")?;
+
         rollback_guard.disarm();
 
         Ok(PreparedModifyOrder {
@@ -1838,12 +1912,14 @@ impl LighterExecutionClient {
             context,
             mut send_reservation,
         } = self.build_tx_context(credential)?;
+
         let connection_epoch = send_reservation.connection_epoch;
 
         let captured_nonce = context.nonce;
         let captured_api_key_index = context.api_key_index;
         let mut rollback_guard =
             TxDispatchGuard::new(self.dispatch.clone(), credential, None, captured_nonce);
+
         let tx = UpdateLeverageTxInfo {
             context,
             market_index,
@@ -1854,13 +1930,15 @@ impl LighterExecutionClient {
 
         let signed = sign_tx(
             &tx,
-            lighter_chain_id(self.config.environment),
+            self.config.chain_id(),
             &credential.private_key()?,
             fresh_k(),
         );
+
         let tx_info_str = TxInfoJson::update_leverage(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter update_leverage tx_info JSON")?;
+
         rollback_guard.disarm();
         let captured_tx_hash = signed.tx_hash_hex();
 
@@ -2383,7 +2461,8 @@ struct CancelOrderPlan {
 #[derive(Clone)]
 struct FanoutDispatchContext {
     clock: &'static AtomicTime,
-    environment: crate::common::enums::LighterEnvironment,
+    chain_id: u32,
+    integrator_account_index: Option<u64>,
     emitter: ExecutionEventEmitter,
     credential: Credential,
     http_client: LighterHttpClient,
@@ -2502,6 +2581,7 @@ impl FanoutDispatchContext {
                 return Err(e);
             }
         };
+
         let nonce = context.nonce;
         let api_key_index = context.api_key_index;
         let mut rollback_guard = TxDispatchGuard::new(
@@ -2511,6 +2591,7 @@ impl FanoutDispatchContext {
             nonce,
         )
         .with_order_identity(cloid);
+
         let tx = CreateOrderTxInfo {
             context,
             order: OrderInfo {
@@ -2525,17 +2606,20 @@ impl FanoutDispatchContext {
                 trigger_price: plan.trigger_price,
                 order_expiry: plan.order_expiry,
             },
-            attributes: integrator_attributes(self.environment),
+            attributes: integrator_attributes(self.integrator_account_index),
         };
+
         let signed = sign_tx(
             &tx,
-            lighter_chain_id(self.environment),
+            self.chain_id,
             &self.credential.private_key()?,
             fresh_k(),
         );
+
         let tx_info =
             serde_json::value::RawValue::from_string(TxInfoJson::create_order(&tx, &signed))
                 .context("failed to wrap signed Lighter tx_info JSON")?;
+
         rollback_guard.disarm();
 
         Ok(PreparedCreateOrder {
@@ -2613,25 +2697,30 @@ impl FanoutDispatchContext {
             context,
             send_reservation,
         } = self.build_tx_context()?;
+
         let nonce = context.nonce;
         let api_key_index = context.api_key_index;
         let mut rollback_guard =
             TxDispatchGuard::new(self.dispatch.clone(), &self.credential, None, nonce);
+
         let tx = CancelOrderTxInfo {
             context,
             market_index: plan.market_index,
             index: plan.venue_index,
             skip_nonce: 0,
         };
+
         let signed = sign_tx(
             &tx,
-            lighter_chain_id(self.environment),
+            self.chain_id,
             &self.credential.private_key()?,
             fresh_k(),
         );
+
         let tx_info =
             serde_json::value::RawValue::from_string(TxInfoJson::cancel_order(&tx, &signed))
                 .context("failed to wrap signed Lighter cancel tx_info JSON")?;
+
         rollback_guard.disarm();
 
         Ok(PreparedCancelOrder {
@@ -3498,14 +3587,13 @@ fn rollback_tx_dispatch_indices(
     }
 }
 
-fn integrator_attributes(environment: LighterEnvironment) -> L2TxAttributes {
-    match environment {
-        LighterEnvironment::Mainnet => L2TxAttributes {
-            integrator_account_index: LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+fn integrator_attributes(integrator_account_index: Option<u64>) -> L2TxAttributes {
+    integrator_account_index.map_or_else(L2TxAttributes::default, |integrator_account_index| {
+        L2TxAttributes {
+            integrator_account_index,
             ..Default::default()
-        },
-        LighterEnvironment::Testnet => L2TxAttributes::default(),
-    }
+        }
+    })
 }
 
 fn command_failure_reason(failure: &CommandFailure) -> &str {
@@ -3659,7 +3747,7 @@ impl ExecutionClient for LighterExecutionClient {
     }
 
     fn venue(&self) -> Venue {
-        *LIGHTER_VENUE
+        self.core.venue
     }
 
     fn oms_type(&self) -> OmsType {
@@ -3737,7 +3825,7 @@ impl ExecutionClient for LighterExecutionClient {
             anyhow::bail!(
                 "Lighter execution client requires credentials; \
                  set private_key, account_index, and api_key_index in the config \
-                 (or the LIGHTER_{{MAINNET,TESTNET}}_* environment variables)"
+                 or use the deployment-specific credential environment variables"
             );
         }
 
@@ -3767,7 +3855,31 @@ impl ExecutionClient for LighterExecutionClient {
         // Auto-approval is an HTTP transaction prepared before the replacement WebSocket exists
         self.nonce_ready_connection_epoch
             .store(self.ws_client.connection_epoch(), Ordering::Release);
-        self.detect_account_tier().await;
+        let account_detail = self.fetch_account_detail().await;
+        if let Some(detail) = &account_detail {
+            self.detect_account_tier(detail);
+
+            match tokio::time::timeout(
+                REFERRAL_ATTRIBUTION_TIMEOUT,
+                self.apply_referral_attribution(detail),
+            )
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => {
+                    log::warn!(
+                        "Robinhood Chain referral attribution failed; continuing startup: {e:?}"
+                    );
+                }
+                Err(_) => {
+                    log::warn!(
+                        "Robinhood Chain referral attribution timed out after {}s; continuing \
+                         startup",
+                        REFERRAL_ATTRIBUTION_TIMEOUT.as_secs()
+                    );
+                }
+            }
+        }
 
         if let Err(e) = self.submit_integrator_auto_approval().await {
             // Bail on venue 21149 ("integrator is not approved") so the
@@ -4803,7 +4915,7 @@ impl ExecutionClient for LighterExecutionClient {
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
             self.core.account_id,
-            *LIGHTER_VENUE,
+            self.core.venue,
             ts_init,
             None,
         );
@@ -5890,7 +6002,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{LighterEnvironment, LighterProductType},
+        common::{
+            consts::LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            enums::{LighterDeployment, LighterEnvironment, LighterProductType},
+        },
         http::models::{LighterNextNonce, LighterTx},
         signing::tx::TX_HASH_BYTES,
     };
@@ -5971,6 +6086,8 @@ mod tests {
             base_url_ws: Some("ws://127.0.0.1:1/stream".to_string()),
             proxy_url: None,
             environment: LighterEnvironment::Testnet,
+            deployment: LighterDeployment::Lighter,
+            venue: None,
             http_timeout_secs: 1,
             ws_timeout_secs: 1,
             market_order_slippage_bps: 50,
@@ -6128,10 +6245,11 @@ mod tests {
         tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     ) {
         let cache = Rc::new(RefCell::new(Cache::default()));
+        let venue = config.resolved_venue();
         let core = ExecutionClientCore::new(
             trader_id(),
             client_id(),
-            *LIGHTER_VENUE,
+            venue,
             OmsType::Netting,
             account_id(),
             AccountType::Margin,
@@ -8992,7 +9110,7 @@ mod tests {
     #[rstest]
     fn integrator_attributes_tag_mainnet_orders() {
         assert_eq!(
-            integrator_attributes(LighterEnvironment::Mainnet),
+            integrator_attributes(Some(LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX)),
             L2TxAttributes {
                 integrator_account_index: LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
                 ..Default::default()
@@ -9002,8 +9120,20 @@ mod tests {
 
     #[rstest]
     fn integrator_attributes_leave_testnet_orders_unattributed() {
+        assert_eq!(integrator_attributes(None), L2TxAttributes::default());
+    }
+
+    #[rstest]
+    fn robinhood_orders_keep_default_l2_attributes() {
+        let mut config = test_config();
+        config.deployment = LighterDeployment::Robinhood;
+        config.environment = LighterEnvironment::Mainnet;
+
         assert_eq!(
-            integrator_attributes(LighterEnvironment::Testnet),
+            integrator_attributes(deployment::integrator_account_index(
+                config.deployment,
+                config.environment,
+            )),
             L2TxAttributes::default(),
         );
     }

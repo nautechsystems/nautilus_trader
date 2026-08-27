@@ -24,9 +24,9 @@ is not intended for production trading.
 
 Settings are the module-level constants below. Required environment variables:
 - DATABENTO_API_KEY.
-- LIGHTER_TESTNET_ACCOUNT_INDEX, LIGHTER_TESTNET_API_KEY_INDEX, and
-  LIGHTER_TESTNET_API_SECRET for the testnet environment (the default).
-- LIGHTER_ACCOUNT_INDEX, LIGHTER_API_KEY_INDEX, and LIGHTER_API_SECRET for mainnet.
+- Lighter credentials from the namespace selected by the deployment and environment:
+  `LIGHTER_*`, `LIGHTER_TESTNET_*`, `LIGHTER_ROBINHOOD_*`, or
+  `LIGHTER_ROBINHOOD_TESTNET_*`.
 
 """
 
@@ -38,8 +38,10 @@ from pathlib import Path
 from nautilus_trader.adapters.databento import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento import DatabentoDataClientFactory
 from nautilus_trader.adapters.lighter import LIGHTER
+from nautilus_trader.adapters.lighter import LIGHTER_ROBINHOOD
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
 from nautilus_trader.adapters.lighter import LighterDataClientFactory
+from nautilus_trader.adapters.lighter import LighterDeployment
 from nautilus_trader.adapters.lighter import LighterEnvironment
 from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
 from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
@@ -54,10 +56,12 @@ from nautilus_trader.trading import CompositeMarketMakerConfig
 
 
 LIGHTER_ENVIRONMENT = LighterEnvironment.TESTNET
+LIGHTER_DEPLOYMENT = LighterDeployment.LIGHTER
+VENUE = LIGHTER if LIGHTER_DEPLOYMENT == LighterDeployment.LIGHTER else LIGHTER_ROBINHOOD
 TRADER_ID = TraderId.from_str("TESTER-001")
-ACCOUNT_ID = AccountId.from_str("LIGHTER-001")
+ACCOUNT_ID = AccountId.from_str(f"{VENUE}-001")
 STRATEGY_ID = StrategyId.from_str("NVDA_COMPOSITE_MM-001")
-INSTRUMENT_ID = InstrumentId.from_str(f"NVDA-PERP.{LIGHTER}")
+INSTRUMENT_ID = InstrumentId.from_str(f"NVDA-PERP.{VENUE}")
 SIGNAL_INSTRUMENT_ID = InstrumentId.from_str("NVDA.EQUS")
 
 MAX_POSITION = "0.20"
@@ -95,16 +99,20 @@ def main() -> None:
             ),
         )
         .add_data_client(
-            None,
+            VENUE,
             LighterDataClientFactory(),
-            LighterDataClientConfig(environment=LIGHTER_ENVIRONMENT),
+            LighterDataClientConfig(
+                environment=LIGHTER_ENVIRONMENT,
+                deployment=LIGHTER_DEPLOYMENT,
+            ),
         )
         .add_exec_client(
-            None,
+            VENUE,
             LighterExecutionClientFactory(),
             LighterExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 environment=LIGHTER_ENVIRONMENT,
+                deployment=LIGHTER_DEPLOYMENT,
             ),
         )
         .build()

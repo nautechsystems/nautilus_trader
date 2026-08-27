@@ -15,12 +15,12 @@
 
 //! Python bindings for Lighter configuration.
 
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, Venue};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 
 use crate::{
-    common::enums::LighterEnvironment,
+    common::enums::{LighterDeployment, LighterEnvironment},
     config::{LighterDataClientConfig, LighterExecutionClientConfig},
 };
 
@@ -42,6 +42,8 @@ impl LighterDataClientConfig {
         update_instruments_interval_mins = None,
         rest_quota_per_min = None,
         transport_backend = None,
+        deployment = None,
+        venue = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -57,16 +59,20 @@ impl LighterDataClientConfig {
         update_instruments_interval_mins: Option<u64>,
         rest_quota_per_min: Option<u32>,
         transport_backend: Option<TransportBackend>,
+        deployment: Option<LighterDeployment>,
+        venue: Option<Venue>,
     ) -> Self {
         let defaults = Self::default();
         Self {
-            base_url_http,
-            base_url_ws,
-            proxy_url,
             environment: environment.unwrap_or(defaults.environment),
+            deployment: deployment.unwrap_or(defaults.deployment),
+            venue,
             account_index,
             api_key_index,
             private_key,
+            base_url_http,
+            base_url_ws,
+            proxy_url,
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
@@ -106,6 +112,8 @@ impl LighterExecutionClientConfig {
         rest_quota_per_min = None,
         sendtx_quota_per_min = None,
         transport_backend = None,
+        deployment = None,
+        venue = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -123,9 +131,14 @@ impl LighterExecutionClientConfig {
         rest_quota_per_min: Option<u32>,
         sendtx_quota_per_min: Option<u32>,
         transport_backend: Option<TransportBackend>,
+        deployment: Option<LighterDeployment>,
+        venue: Option<Venue>,
     ) -> Self {
         let defaults = Self::default();
         Self {
+            environment: environment.unwrap_or(defaults.environment),
+            deployment: deployment.unwrap_or(defaults.deployment),
+            venue,
             account_id,
             account_index,
             api_key_index,
@@ -133,7 +146,6 @@ impl LighterExecutionClientConfig {
             base_url_http,
             base_url_ws,
             proxy_url,
-            environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
             market_order_slippage_bps: market_order_slippage_bps

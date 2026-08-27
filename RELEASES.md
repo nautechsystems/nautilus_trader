@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added instrument-scoped order fill-voided event topics
 - Added Rust model handles for custom backtest margin and latency implementations
 - Added live socket state events and targeted reconnect controls across adapters
+- Added Lighter support for Robinhood Chain with deployment-specific venues and credentials
 - Added OKX instrument cache reconciliation and WebSocket instrument updates
 - Added Polymarket market descriptions to `instrument.info` (#4840), thanks for reporting @mystic-io
 - Added Polymarket quote ticks from `best_bid_ask` market events
@@ -40,6 +41,7 @@ Released on TBD (UTC).
 - Changed `SimulatedExecutionClientFactory::create` to receive the node's `TraderId`
 - Changed adapter execution account configs to use `account_id` instead of factory arguments
 - Changed adapter execution factories to use no-argument constructors
+- Changed Lighter client configs (Rust); complete struct literals must add `deployment` and `venue` or use builders
 - Changed Polymarket Gamma models to expose resolution metadata (#4842), thanks @seungpyoson
 - Changed Polymarket REST reconciliation to reject unbound or invalid reports (#4831), thanks @seungpyoson
 
@@ -66,7 +68,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid market order prices in order list submits
 - Fixed Interactive Brokers adaptive limit orders parsed as market orders (#4830), thanks @mameikagou
 - Fixed L2/L3 matching against deleted book touches (#4819), thanks @SoYuCry
-- Fixed Lighter testnet orders by omitting mainnet-only integrator attribution (#4834), thanks @Buff2out
+- Fixed Lighter Testnet orders by omitting mainnet-only integrator attribution (#4834), thanks @Buff2out
 - Fixed OKX WebSocket submissions omitting `reduceOnly` (#4827), thanks for reporting @silarin
 - Fixed OKX ambiguous submissions, subscription recovery, and triggered child reconciliation
 - Fixed OKX conditional order identity, replay deduplication, and post-trigger cancellation
@@ -104,7 +106,7 @@ Released on TBD (UTC).
 
 - Updated maintained examples and tutorials for current APIs and removed unsupported variants
 - Documented behavioral model dispatch and native model extension boundaries
-- Documented Lighter testnet account and API key setup
+- Documented Lighter Testnet account and API key setup
 - Documented OKX instrument cache reconciliation and WebSocket update behavior
 - Documented Polymarket quote sources and order book feed interaction
 

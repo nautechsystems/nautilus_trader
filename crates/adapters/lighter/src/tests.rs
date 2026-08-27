@@ -20,7 +20,10 @@ use nautilus_model::identifiers::ClientId;
 use rstest::rstest;
 
 use crate::{
-    common::{credential::Credential, enums::LighterEnvironment},
+    common::{
+        credential::Credential,
+        enums::{LighterDeployment, LighterEnvironment},
+    },
     config::LighterDataClientConfig,
     data::LighterDataClient,
 };
@@ -31,50 +34,146 @@ const PRIVATE_KEY_HEX_ALT: &str =
     "1c9f1074d35e9cbbdeae3abe5fab5c84d5b9e3cc9c27ed50bae8d3f2e4b9c201f9e4b5d6c7f80112";
 const LIGHTER_ENV_CASE_VAR: &str = "NAUTILUS_LIGHTER_TEST_ENV_CASE";
 const LIGHTER_ENV_RESTORE_VAR: &str = "NAUTILUS_LIGHTER_TEST_ENV_RESTORE";
-const LIGHTER_ENV_VARS: [&str; 6] = [
+const LIGHTER_ENV_VARS: [&str; 12] = [
     "LIGHTER_API_KEY_INDEX",
     "LIGHTER_API_SECRET",
     "LIGHTER_ACCOUNT_INDEX",
     "LIGHTER_TESTNET_API_KEY_INDEX",
     "LIGHTER_TESTNET_API_SECRET",
     "LIGHTER_TESTNET_ACCOUNT_INDEX",
+    "LIGHTER_ROBINHOOD_API_KEY_INDEX",
+    "LIGHTER_ROBINHOOD_API_SECRET",
+    "LIGHTER_ROBINHOOD_ACCOUNT_INDEX",
+    "LIGHTER_ROBINHOOD_TESTNET_API_KEY_INDEX",
+    "LIGHTER_ROBINHOOD_TESTNET_API_SECRET",
+    "LIGHTER_ROBINHOOD_TESTNET_ACCOUNT_INDEX",
 ];
-const ENV_ABSENT: [Option<&str>; 6] = [None; 6];
-const ENV_MAINNET_SECRET: [Option<&str>; 6] = [None, Some(PRIVATE_KEY_HEX), None, None, None, None];
-const ENV_MAINNET_BLANK_SECRET: [Option<&str>; 6] = [None, Some("   "), None, None, None, None];
-const ENV_MAINNET_INVALID_SECRET: [Option<&str>; 6] =
-    [None, Some("not-hex"), None, None, None, None];
-const ENV_TESTNET: [Option<&str>; 6] = [
+const ENV_ABSENT: [Option<&str>; 12] = [None; 12];
+const ENV_MAINNET_SECRET: [Option<&str>; 12] = [
+    None,
+    Some(PRIVATE_KEY_HEX),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+];
+const ENV_MAINNET_BLANK_SECRET: [Option<&str>; 12] = [
+    None,
+    Some("   "),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+];
+const ENV_MAINNET_INVALID_SECRET: [Option<&str>; 12] = [
+    None,
+    Some("not-hex"),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+];
+const ENV_TESTNET: [Option<&str>; 12] = [
     None,
     None,
     None,
     Some("6"),
     Some(PRIVATE_KEY_HEX),
     Some("23456"),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
 ];
-const ENV_PRESENT: [Option<&str>; 6] = [
+const ENV_ROBINHOOD_MAINNET: [Option<&str>; 12] = [
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some("7"),
+    Some(PRIVATE_KEY_HEX_ALT),
+    Some("34567"),
+    None,
+    None,
+    None,
+];
+const ENV_ROBINHOOD_TESTNET: [Option<&str>; 12] = [
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    Some("8"),
+    Some(PRIVATE_KEY_HEX_ALT),
+    Some("45678"),
+];
+const ENV_PRESENT: [Option<&str>; 12] = [
     Some("5"),
     Some(PRIVATE_KEY_HEX),
     Some("12345"),
     Some("6"),
     Some(PRIVATE_KEY_HEX),
     Some("23456"),
-];
-const ENV_RESTORE_BASELINE: [Option<&str>; 6] = [
-    Some("5"),
-    Some(PRIVATE_KEY_HEX),
-    Some("12345"),
-    None,
-    None,
-    None,
-];
-const ENV_PRESENT_ALT: [Option<&str>; 6] = [
     Some("7"),
     Some(PRIVATE_KEY_HEX_ALT),
     Some("34567"),
     Some("8"),
     Some(PRIVATE_KEY_HEX_ALT),
     Some("45678"),
+];
+const ENV_RESTORE_BASELINE: [Option<&str>; 12] = [
+    Some("5"),
+    Some(PRIVATE_KEY_HEX),
+    Some("12345"),
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+    None,
+];
+const ENV_PRESENT_ALT: [Option<&str>; 12] = [
+    Some("7"),
+    Some(PRIVATE_KEY_HEX_ALT),
+    Some("34567"),
+    Some("8"),
+    Some(PRIVATE_KEY_HEX_ALT),
+    Some("45678"),
+    Some("9"),
+    Some(PRIVATE_KEY_HEX_ALT),
+    Some("56789"),
+    Some("10"),
+    Some(PRIVATE_KEY_HEX_ALT),
+    Some("67890"),
 ];
 
 const CREDENTIAL_ENV_CHILD: &str = "tests::credential_environment_child";
@@ -89,8 +188,22 @@ fn credential_environment_cases_are_isolated() {
         ("config_blank", ENV_ABSENT),
         ("config_testnet", ENV_TESTNET),
         ("config_mismatch", ENV_TESTNET),
+        ("config_lighter_deployment_mismatch", ENV_ROBINHOOD_MAINNET),
+        ("config_robinhood_mainnet", ENV_ROBINHOOD_MAINNET),
+        ("config_robinhood_testnet", ENV_ROBINHOOD_TESTNET),
+        ("config_robinhood_mismatch", ENV_RESTORE_BASELINE),
         ("credential_mainnet", ENV_PRESENT),
         ("credential_testnet", ENV_PRESENT),
+        ("credential_robinhood_mainnet", ENV_PRESENT),
+        ("credential_robinhood_testnet", ENV_PRESENT),
+        (
+            "credential_lighter_deployment_mismatch",
+            ENV_ROBINHOOD_MAINNET,
+        ),
+        (
+            "credential_robinhood_deployment_mismatch",
+            ENV_RESTORE_BASELINE,
+        ),
         ("credential_blank_fallback", ENV_MAINNET_SECRET),
         ("credential_blank_absent", ENV_ABSENT),
         ("credential_blank_env", ENV_MAINNET_BLANK_SECRET),
@@ -98,6 +211,8 @@ fn credential_environment_cases_are_isolated() {
         ("data_partial", ENV_ABSENT),
         ("data_config", ENV_ABSENT),
         ("data_blank_fallback", ENV_MAINNET_SECRET),
+        ("data_robinhood_mainnet", ENV_ROBINHOOD_MAINNET),
+        ("data_robinhood_testnet", ENV_ROBINHOOD_TESTNET),
     ];
 
     for (case, environment) in cases {
@@ -134,11 +249,88 @@ fn credential_environment_child() {
         Ok("config_mismatch") => {
             assert!(!LighterDataClientConfig::default().has_credentials());
         }
+        Ok("config_lighter_deployment_mismatch") => {
+            assert!(!LighterDataClientConfig::default().has_credentials());
+        }
+        Ok("config_robinhood_mainnet") => {
+            let config = LighterDataClientConfig {
+                deployment: LighterDeployment::Robinhood,
+                ..Default::default()
+            };
+            assert!(config.has_credentials());
+        }
+        Ok("config_robinhood_testnet") => {
+            let config = LighterDataClientConfig {
+                environment: LighterEnvironment::Testnet,
+                deployment: LighterDeployment::Robinhood,
+                ..Default::default()
+            };
+            assert!(config.has_credentials());
+        }
+        Ok("config_robinhood_mismatch") => {
+            let config = LighterDataClientConfig {
+                deployment: LighterDeployment::Robinhood,
+                ..Default::default()
+            };
+            assert!(!config.has_credentials());
+        }
         Ok("credential_mainnet") => {
-            assert_resolved_environment(LighterEnvironment::Mainnet, 5, 12_345);
+            assert_resolved_credentials(
+                LighterDeployment::Lighter,
+                LighterEnvironment::Mainnet,
+                5,
+                12_345,
+                PRIVATE_KEY_HEX,
+            );
         }
         Ok("credential_testnet") => {
-            assert_resolved_environment(LighterEnvironment::Testnet, 6, 23_456);
+            assert_resolved_credentials(
+                LighterDeployment::Lighter,
+                LighterEnvironment::Testnet,
+                6,
+                23_456,
+                PRIVATE_KEY_HEX,
+            );
+        }
+        Ok("credential_robinhood_mainnet") => {
+            assert_resolved_credentials(
+                LighterDeployment::Robinhood,
+                LighterEnvironment::Mainnet,
+                7,
+                34_567,
+                PRIVATE_KEY_HEX_ALT,
+            );
+        }
+        Ok("credential_robinhood_testnet") => {
+            assert_resolved_credentials(
+                LighterDeployment::Robinhood,
+                LighterEnvironment::Testnet,
+                8,
+                45_678,
+                PRIVATE_KEY_HEX_ALT,
+            );
+        }
+        Ok("credential_lighter_deployment_mismatch") => {
+            let credential = Credential::resolve_for_deployment(
+                None,
+                None,
+                None,
+                LighterDeployment::Lighter,
+                LighterEnvironment::Mainnet,
+            )
+            .unwrap();
+            assert!(credential.is_none());
+        }
+        Ok("credential_robinhood_deployment_mismatch") => {
+            let credential = Credential::resolve_for_deployment(
+                None,
+                None,
+                None,
+                LighterDeployment::Robinhood,
+                LighterEnvironment::Mainnet,
+            )
+            .unwrap();
+            assert!(credential.is_none());
         }
         Ok("credential_blank_fallback") => assert_blank_private_key_falls_back(),
         Ok("credential_blank_absent") => {
@@ -190,6 +382,21 @@ fn credential_environment_child() {
                 api_key_index: Some(5),
                 account_index: Some(12_345),
                 private_key: Some("   ".to_string()),
+                ..Default::default()
+            };
+            assert!(create_data_client(config).has_credentials());
+        }
+        Ok("data_robinhood_mainnet") => {
+            let config = LighterDataClientConfig {
+                deployment: LighterDeployment::Robinhood,
+                ..Default::default()
+            };
+            assert!(create_data_client(config).has_credentials());
+        }
+        Ok("data_robinhood_testnet") => {
+            let config = LighterDataClientConfig {
+                environment: LighterEnvironment::Testnet,
+                deployment: LighterDeployment::Robinhood,
                 ..Default::default()
             };
             assert!(create_data_client(config).has_credentials());
@@ -262,12 +469,14 @@ fn assert_blank_configs_lack_credentials() {
     }
 }
 
-fn assert_resolved_environment(
+fn assert_resolved_credentials(
+    deployment: LighterDeployment,
     environment: LighterEnvironment,
     api_key_index: u8,
     account_index: i64,
+    private_key: &str,
 ) {
-    let credential = Credential::resolve(None, None, None, environment)
+    let credential = Credential::resolve_for_deployment(None, None, None, deployment, environment)
         .unwrap()
         .unwrap();
     assert!(
@@ -278,7 +487,7 @@ fn assert_resolved_environment(
         credential.account_index() == account_index,
         "resolved account index differed",
     );
-    assert_private_key(&credential, PRIVATE_KEY_HEX);
+    assert_private_key(&credential, private_key);
 }
 
 fn assert_blank_private_key_falls_back() {
@@ -316,7 +525,7 @@ fn assert_restore_child_succeeds(mode: &str) {
     assert_child_succeeds(&mut command, mode);
 }
 
-fn test_command(test_name: &str, environment: [Option<&str>; 6]) -> Command {
+fn test_command(test_name: &str, environment: [Option<&str>; 12]) -> Command {
     let mut command = Command::new(std::env::current_exe().expect("test executable must exist"));
     command.arg(test_name).arg("--exact").arg("--ignored");
 
@@ -341,7 +550,7 @@ fn assert_child_succeeds(command: &mut Command, case: &str) {
     );
 }
 
-fn assert_environment(expected: &[Option<&str>; 6]) {
+fn assert_environment(expected: &[Option<&str>; 12]) {
     let matches = LIGHTER_ENV_VARS
         .iter()
         .zip(expected)

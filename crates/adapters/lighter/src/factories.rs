@@ -30,7 +30,7 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::consts::{LIGHTER, LIGHTER_VENUE},
+    common::consts::LIGHTER,
     config::{LighterDataClientConfig, LighterExecutionClientConfig},
     data::LighterDataClient,
     execution::LighterExecutionClient,
@@ -143,7 +143,7 @@ impl ExecutionClientFactory for LighterExecutionClientFactory {
         let core = ExecutionClientCore::new(
             trader_id,
             ClientId::from(name),
-            *LIGHTER_VENUE,
+            lighter_config.resolved_venue(),
             OmsType::Netting,
             lighter_config.account_id,
             AccountType::Margin,
@@ -172,11 +172,19 @@ mod tests {
         cache::Cache,
         clock::TestClock,
         factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+        live::runner::replace_data_event_sender,
+        messages::DataEvent,
     };
-    use nautilus_model::identifiers::{AccountId, TraderId};
+    use nautilus_model::identifiers::{AccountId, ClientId, TraderId, Venue};
     use rstest::rstest;
 
     use super::*;
+    use crate::common::{
+        consts::{
+            LIGHTER_CLIENT_ID, LIGHTER_ROBINHOOD_CLIENT_ID, LIGHTER_ROBINHOOD_VENUE, LIGHTER_VENUE,
+        },
+        enums::LighterDeployment,
+    };
 
     const PRIVATE_KEY_HEX: &str =
         "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
@@ -254,6 +262,146 @@ mod tests {
             .expect("expected client to construct");
 
         assert!(!client.is_connected());
+    }
+
+    #[rstest]
+    fn test_factories_preserve_client_ids_and_custom_venue() {
+        let venue = Venue::from("LIGHTER_CUSTOM");
+        let data_config = LighterDataClientConfig {
+            deployment: LighterDeployment::Robinhood,
+            venue: Some(venue),
+            ..Default::default()
+        };
+
+        let exec_config = LighterExecutionClientConfig::builder()
+            .account_id(AccountId::from("LIGHTER_CUSTOM-001"))
+            .deployment(LighterDeployment::Robinhood)
+            .venue(venue)
+            .build();
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(data_tx);
+
+        let data_client = LighterDataClientFactory::new()
+            .create("RH-DATA", &data_config, cache.clone().into(), clock)
+            .expect("expected data client to construct");
+        let exec_client = LighterExecutionClientFactory::new()
+            .create(
+                TraderId::from("TRADER-001"),
+                "RH-EXEC",
+                &exec_config,
+                cache.into(),
+            )
+            .expect("expected execution client to construct");
+
+        assert_eq!(data_client.client_id(), ClientId::from("RH-DATA"));
+        assert_eq!(data_client.venue(), Some(venue));
+        assert_eq!(exec_client.client_id(), ClientId::from("RH-EXEC"));
+        assert_eq!(exec_client.venue(), venue);
+        assert_eq!(
+            exec_client.account_id(),
+            AccountId::from("LIGHTER_CUSTOM-001")
+        );
+    }
+
+    #[rstest]
+    fn test_factories_preserve_distinct_deployment_identities() {
+        let lighter_data_config = LighterDataClientConfig::default();
+        let robinhood_data_config = LighterDataClientConfig {
+            deployment: LighterDeployment::Robinhood,
+            ..Default::default()
+        };
+
+        let lighter_exec_config = exec_config();
+
+        let robinhood_exec_config = LighterExecutionClientConfig::builder()
+            .account_id(AccountId::from("LIGHTER_ROBINHOOD-001"))
+            .account_index(12_345)
+            .api_key_index(5)
+            .private_key(PRIVATE_KEY_HEX.to_string())
+            .deployment(LighterDeployment::Robinhood)
+            .build();
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(data_tx);
+
+        let lighter_data = LighterDataClientFactory::new()
+            .create(
+                LIGHTER_CLIENT_ID.as_str(),
+                &lighter_data_config,
+                cache.clone().into(),
+                Rc::new(RefCell::new(TestClock::new())),
+            )
+            .expect("expected Lighter data client to construct");
+
+        let robinhood_data = LighterDataClientFactory::new()
+            .create(
+                LIGHTER_ROBINHOOD_CLIENT_ID.as_str(),
+                &robinhood_data_config,
+                cache.clone().into(),
+                Rc::new(RefCell::new(TestClock::new())),
+            )
+            .expect("expected Robinhood data client to construct");
+
+        let lighter_exec = LighterExecutionClientFactory::new()
+            .create(
+                TraderId::from("TRADER-001"),
+                LIGHTER_CLIENT_ID.as_str(),
+                &lighter_exec_config,
+                cache.clone().into(),
+            )
+            .expect("expected Lighter execution client to construct");
+
+        let robinhood_exec = LighterExecutionClientFactory::new()
+            .create(
+                TraderId::from("TRADER-001"),
+                LIGHTER_ROBINHOOD_CLIENT_ID.as_str(),
+                &robinhood_exec_config,
+                cache.into(),
+            )
+            .expect("expected Robinhood execution client to construct");
+
+        assert_eq!(lighter_data.client_id(), *LIGHTER_CLIENT_ID);
+        assert_eq!(lighter_data.venue(), Some(*LIGHTER_VENUE));
+        assert_eq!(robinhood_data.client_id(), *LIGHTER_ROBINHOOD_CLIENT_ID);
+        assert_eq!(robinhood_data.venue(), Some(*LIGHTER_ROBINHOOD_VENUE));
+        assert_eq!(lighter_exec.client_id(), *LIGHTER_CLIENT_ID);
+        assert_eq!(lighter_exec.account_id(), AccountId::from("LIGHTER-001"));
+        assert_eq!(lighter_exec.venue(), *LIGHTER_VENUE);
+        assert_eq!(robinhood_exec.client_id(), *LIGHTER_ROBINHOOD_CLIENT_ID);
+        assert_eq!(
+            robinhood_exec.account_id(),
+            AccountId::from("LIGHTER_ROBINHOOD-001")
+        );
+        assert_eq!(robinhood_exec.venue(), *LIGHTER_ROBINHOOD_VENUE);
+    }
+
+    #[rstest]
+    fn test_execution_factory_rejects_account_issuer_venue_mismatch() {
+        let config = LighterExecutionClientConfig::builder()
+            .deployment(LighterDeployment::Robinhood)
+            .build();
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let result = LighterExecutionClientFactory::new().create(
+            TraderId::from("TRADER-001"),
+            "RH-EXEC",
+            &config,
+            cache.into(),
+        );
+
+        let error = match result {
+            Ok(_) => panic!("mismatched account issuer should fail"),
+            Err(e) => e,
+        };
+
+        assert!(error.to_string().contains(
+            "account ID issuer LIGHTER does not match configured venue LIGHTER_ROBINHOOD"
+        ));
     }
 
     #[rstest]

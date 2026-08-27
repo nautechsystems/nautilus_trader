@@ -397,10 +397,18 @@ impl LighterWebSocketClient {
         let subscriptions = self.subscriptions.clone();
         let subscription_args = Arc::clone(&self.subscription_args);
         let cmd_tx_for_reconnect = cmd_tx.clone();
+        let settlement_currency = self.registry.settlement_currency();
 
         let task = get_runtime().spawn(async move {
-            let mut handler =
-                FeedHandler::new(Arc::clone(&signal), cmd_rx, raw_rx, out_tx, subscriptions);
+            let mut handler = FeedHandler::new_with_settlement_currency(
+                Arc::clone(&signal),
+                cmd_rx,
+                raw_rx,
+                out_tx,
+                subscriptions,
+                settlement_currency,
+            );
+
             handler.set_command_sender(cmd_tx_for_reconnect.clone());
 
             let restore_subscriptions = || {

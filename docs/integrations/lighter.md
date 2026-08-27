@@ -2,7 +2,8 @@
 
 [Lighter](https://lighter.xyz) is a decentralized central-limit-order-book exchange for spot and
 perpetual futures. The venue settles through an Ethereum zero-knowledge rollup, while matching and
-sequencing run off-chain.
+sequencing run off-chain. The adapter also supports the Robinhood Chain deployment of the Lighter
+protocol.
 
 The NautilusTrader Lighter adapter is implemented by the `nautilus-lighter` crate. It provides
 Rust data and execution clients, typed REST and WebSocket models, and an in-tree L2 transaction
@@ -26,17 +27,17 @@ The main components are:
 - `LighterDataClientFactory` and `LighterExecutionClientFactory`: live-node factory wiring.
 
 The Python surface is intentionally narrow. The Python extension exposes configuration,
-environment selection, factory classes, and integrator revocation; data and execution clients are
-consumed through the Rust trait surface.
+deployment and environment selection, factory classes, and integrator revocation; data and
+execution clients are consumed through the Rust trait surface.
 
 ## Examples
 
 Python examples live in
 [`examples/live/lighter/`](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/lighter/)
 and run out of the box: settings live in module-level constants at the top of each file, and
-running a script connects and starts immediately. The default environment is testnet; edit the
-`LIGHTER_ENVIRONMENT` constant to use mainnet. The execution tester places real orders by default
-(`dry_run=False`), stated in a warning at the top of the module.
+running a script connects and starts immediately. Edit `LIGHTER_DEPLOYMENT` and
+`LIGHTER_ENVIRONMENT` to select a deployment and environment. The execution tester places real
+orders by default (`dry_run=False`), stated in a warning at the top of the module.
 
 From the repository root:
 
@@ -46,8 +47,8 @@ From the repository root:
 ```
 
 Rust examples live under `crates/adapters/lighter/examples/`. Both testers connect when run. The
-execution tester has `DRY_RUN = false` in its source, so the command below can submit live mainnet
-orders:
+execution tester has `DRY_RUN = false` and selects Lighter Mainnet in its source, so the command
+below can submit live orders:
 
 ```bash
 cargo run --example lighter-data-tester --package nautilus-lighter --features examples
@@ -56,14 +57,16 @@ cargo run --example lighter-exec-tester --package nautilus-lighter --features ex
 
 :::warning
 Examples can connect to live venues. Execution examples with live order flow enabled can submit
-orders when pointed at a funded mainnet account. Review the selected instrument, quantity, and
-environment before running them.
+orders when pointed at a funded account on either mainnet deployment. Review the selected
+instrument, quantity, and environment before running them.
 :::
 
 For emergency account cleanup, `cargo run --bin lighter-flatten -p nautilus-lighter` cancels open
-orders and closes positions for the configured Lighter account. It scans all registered markets, so
-the standard 60 req/min REST quota can make the run take several minutes. Review the active account
-and positions first because it is account-wide, not strategy-scoped.
+orders and closes positions for the selected deployment account. It scans all registered markets,
+so the standard 60 req/min REST quota can make the run take several minutes. Review the active
+account and positions first because it is account-wide, not strategy-scoped. Set
+`LIGHTER_DEPLOYMENT` to `lighter` or `robinhood` and `LIGHTER_ENVIRONMENT` to `mainnet` or `testnet`;
+omitted selectors default to Lighter Mainnet and select the matching credential namespace.
 
 ## Product support
 
@@ -96,63 +99,105 @@ The current adapter scope is deliberately narrower than the venue's full transac
 Lighter identifies markets by numeric `market_index` values. The adapter bootstraps the mapping from
 `GET /api/v1/orderBookDetails`, then converts the raw venue symbol into a Nautilus `InstrumentId`.
 
-| Venue product     | Nautilus symbol format        | Example                 | Notes                        |
-| ----------------- | ----------------------------- | ----------------------- | ---------------------------- |
-| Perpetual futures | `{BASE}-PERP.LIGHTER`         | `BTC-PERP.LIGHTER`      | Raw venue symbol `BTC`.      |
-| Spot              | `{BASE}/{QUOTE}-SPOT.LIGHTER` | `ETH/USDC-SPOT.LIGHTER` | Raw venue symbol `ETH/USDC`. |
+| Deployment product  | Nautilus symbol format                  | Example                            | Notes                    |
+| ------------------- | --------------------------------------- | ---------------------------------- | ------------------------ |
+| Lighter perpetual   | `{BASE}-PERP.LIGHTER`                   | `BTC-PERP.LIGHTER`                 | Raw venue symbol `BTC`.  |
+| Lighter spot        | `{BASE}/{QUOTE}-SPOT.LIGHTER`           | `ETH/USDC-SPOT.LIGHTER`            | Raw symbol `ETH/USDC`.   |
+| Robinhood perpetual | `{BASE}-PERP.LIGHTER_ROBINHOOD`         | `SNDK-PERP.LIGHTER_ROBINHOOD`      | Raw venue symbol `SNDK`. |
+| Robinhood spot      | `{BASE}/{QUOTE}-SPOT.LIGHTER_ROBINHOOD` | `SNDK/USDG-SPOT.LIGHTER_ROBINHOOD` | Raw symbol `SNDK/USDG`.  |
 
 The suffix separates spot and perpetual listings. Outbound requests strip it and use the cached
 `market_index`; spot symbols retain the venue pair.
 
-## Environments
+## Deployments and environments
 
-| Environment | REST URL                              | WebSocket URL                              | Chain ID |
-| ----------- | ------------------------------------- | ------------------------------------------ | -------- |
-| Mainnet     | `https://mainnet.zklighter.elliot.ai` | `wss://mainnet.zklighter.elliot.ai/stream` | 304      |
-| Testnet     | `https://testnet.zklighter.elliot.ai` | `wss://testnet.zklighter.elliot.ai/stream` | 300      |
+| Deployment | Environment | REST URL                              | WebSocket URL                              | L2 signing chain ID | Settlement | Default venue       |
+| ---------- | ----------- | ------------------------------------- | ------------------------------------------ | ------------------- | ---------- | ------------------- |
+| Lighter    | Mainnet     | `https://mainnet.zklighter.elliot.ai` | `wss://mainnet.zklighter.elliot.ai/stream` | 304                 | USDC       | `LIGHTER`           |
+| Lighter    | Testnet     | `https://testnet.zklighter.elliot.ai` | `wss://testnet.zklighter.elliot.ai/stream` | 300                 | USDC       | `LIGHTER`           |
+| Robinhood  | Mainnet     | `https://api.rh.lighter.xyz`          | `wss://api.rh.lighter.xyz/stream`          | 466324              | USDG       | `LIGHTER_ROBINHOOD` |
+| Robinhood  | Testnet     | `https://api.rh-testnet.lighter.xyz`  | `wss://api.rh-testnet.lighter.xyz/stream`  | 300                 | USDG       | `LIGHTER_ROBINHOOD` |
 
-Use `LighterEnvironment::Mainnet` or `LighterEnvironment::Testnet` in data and execution
-configuration. URL overrides are available for private gateways or local test fixtures.
+These chain IDs are Lighter L2 signing-domain values, not EVM network chain IDs.
 
-## Testnet account setup
+Use `LighterDeployment::Lighter` or `LighterDeployment::Robinhood` to select the protocol
+deployment. Use `LighterEnvironment::Mainnet` or `LighterEnvironment::Testnet` to select its
+environment. The deployment and environment together control the default URLs, chain ID,
+settlement currency, default venue, and attribution policy. Robinhood Testnet and Lighter Testnet
+both use chain ID 300, so the adapter does not infer deployment behavior from the numeric chain ID.
 
-Public market data does not require a Lighter account. To use private account streams or the
-execution client on testnet, create an account and a user API key:
+URL overrides are available for private gateways and local test fixtures. They replace only the
+transport endpoint. The selected deployment and environment still control transaction signing,
+settlement currency, and attribution policy.
 
-1. Open the official [Lighter testnet app](https://testnet.app.lighter.xyz/), connect an Ethereum
-   wallet, and select **Create Account**. Approve the requested wallet signatures.
-1. Follow Lighter's [account-index lookup](https://apidocs.lighter.xyz/docs/get-started#find-your-account-index),
-   using the testnet API and the same wallet address:
+### Custom venue identity
+
+Set `venue` on both data and execution configs when separate Lighter-protocol endpoints must have
+distinct Nautilus identities. This scopes instruments, cache entries, message topics, socket state,
+and execution routing without changing the selected deployment's protocol behavior. `ClientId`
+remains the name supplied when registering each client.
+
+The shared factory name remains `LIGHTER` for compatibility. When routing a Robinhood client by
+`ClientId`, register it as `LIGHTER_ROBINHOOD`; the Rust and Python examples derive this name from
+`LIGHTER_DEPLOYMENT`. Explicit custom client names remain supported.
+
+The execution `account_id` issuer must equal the resolved venue because Nautilus routes account
+commands by issuer. For example, venue `LIGHTER_RH_ALT` requires an account ID such as
+`LIGHTER_RH_ALT-001`. A custom venue does not enable a custom chain ID or custom attribution.
+
+## Account and API key setup
+
+Public market data does not require an account. Private account streams and execution require an
+account index, an API key index, and the API private key from the same deployment and environment.
+Each row below has a separate account and API-key namespace:
+
+| Deployment | Environment | Account and API key page                                        | Account issuer      | Credential prefix             |
+| ---------- | ----------- | --------------------------------------------------------------- | ------------------- | ----------------------------- |
+| Lighter    | Mainnet     | [Lighter Mainnet](https://app.lighter.xyz/apikeys)              | `LIGHTER`           | `LIGHTER_*`                   |
+| Lighter    | Testnet     | [Lighter Testnet](https://testnet.app.lighter.xyz/apikeys)      | `LIGHTER`           | `LIGHTER_TESTNET_*`           |
+| Robinhood  | Mainnet     | [Robinhood Mainnet](https://robinhoodchain.lighter.xyz/apikeys) | `LIGHTER_ROBINHOOD` | `LIGHTER_ROBINHOOD_*`         |
+| Robinhood  | Testnet     | [Robinhood Testnet](https://rhctestnet.lighter.xyz/apikeys)     | `LIGHTER_ROBINHOOD` | `LIGHTER_ROBINHOOD_TESTNET_*` |
+
+Do not mix an account index or API key from one row with another. This also applies to the two
+testnets even though both use L2 signing chain ID 300.
+
+1. Open the account page for the target deployment, sign in with the account used there, and create
+   or select the trading account. Select the intended sub-account before generating its API key.
+1. Follow Lighter's
+   [account-index lookup](https://apidocs.lighter.xyz/docs/get-started#find-your-account-index)
+   against the target deployment's REST URL. This example selects Robinhood Mainnet; replace the
+   URL with the exact value from the [deployment table](#deployments-and-environments) for another
+   row:
 
    ```bash
+   LIGHTER_SETUP_API_URL="https://api.rh.lighter.xyz"
+   LIGHTER_SETUP_L1_ADDRESS="0xYOUR_ETHEREUM_ADDRESS"
+
    curl -sS --get \
-     "https://testnet.zklighter.elliot.ai/api/v1/accountsByL1Address" \
-     --data-urlencode "l1_address=0xYOUR_ETHEREUM_ADDRESS"
+     "${LIGHTER_SETUP_API_URL}/api/v1/accountsByL1Address" \
+     --data-urlencode "l1_address=${LIGHTER_SETUP_L1_ADDRESS}"
    ```
 
    Read the `index` from the required entry in `sub_accounts`. A wallet can own a main account and
-   several sub-accounts, each with a separate account index and API keys. Select the account in the
-   testnet app before generating its key, and use that same account index in NautilusTrader.
-1. Open the testnet app's [API Keys](https://testnet.app.lighter.xyz/apikeys) page and select
-   **Generate API Key**. Choose an unused index from `4` through `254`; Lighter's
-   [API key documentation](https://apidocs.lighter.xyz/docs/api-keys) reserves indexes `0-3` for
-   its desktop and mobile interfaces, while `255` is an API query sentinel.
+   several sub-accounts, each with a separate account index and API keys.
+1. On the selected account's API key page, choose **Generate API Key**. Use an unused index from `4`
+   through `254`; Lighter's [API key documentation](https://apidocs.lighter.xyz/docs/api-keys)
+   reserves indexes `0-3` for its interfaces, while `255` is an API query sentinel.
 1. Save the generated private key before closing the dialog. Lighter does not display it again.
-1. Export the account index, key index, and private key under the testnet-specific names:
+1. Configure `account_index`, `api_key_index`, and `private_key` directly, or use the environment
+   variables listed in [API credentials](#api-credentials). The Nautilus `account_id` is separate
+   from the venue account index: use an issuer from the table above, such as `LIGHTER-001` or
+   `LIGHTER_ROBINHOOD-001`.
+1. Confirm that the target deployment recognizes the selected account and key indexes:
 
    ```bash
-   export LIGHTER_TESTNET_ACCOUNT_INDEX="123456"
-   export LIGHTER_TESTNET_API_KEY_INDEX="4"
-   export LIGHTER_TESTNET_API_SECRET="your-lighter-api-private-key"
-   ```
+   LIGHTER_SETUP_ACCOUNT_INDEX="123456"
+   LIGHTER_SETUP_API_KEY_INDEX="4"
 
-1. Confirm that Lighter recognizes the selected account and key indexes:
-
-   ```bash
    curl -sS --get \
-     "https://testnet.zklighter.elliot.ai/api/v1/apikeys" \
-     --data-urlencode "account_index=${LIGHTER_TESTNET_ACCOUNT_INDEX}" \
-     --data-urlencode "api_key_index=${LIGHTER_TESTNET_API_KEY_INDEX}"
+     "${LIGHTER_SETUP_API_URL}/api/v1/apikeys" \
+     --data-urlencode "account_index=${LIGHTER_SETUP_ACCOUNT_INDEX}" \
+     --data-urlencode "api_key_index=${LIGHTER_SETUP_API_KEY_INDEX}"
    ```
 
    A successful response has `"code": 200` and lists the selected key. This public lookup confirms
@@ -166,29 +211,39 @@ repository or share it in logs.
 
 ## Integrator attribution
 
-On mainnet, create and modify transactions carry the NautilusTrader integrator account index in
-`L2TxAttributes` to measure adapter usage. Maker and taker integrator fees are zero. The mainnet
-execution client submits the required **zero-fee** `ApproveIntegrator` approval during startup when
-the API key is not maker-only.
+On Lighter Mainnet, create and modify transactions carry the NautilusTrader
+integrator account index in `L2TxAttributes` to measure adapter usage. Maker and taker integrator
+fees are zero. The execution client submits the required **zero-fee** `ApproveIntegrator` approval
+during startup when the API key is not maker-only.
 
-Testnet create and modify transactions leave `L2TxAttributes` empty. The testnet execution client
-also omits `ApproveIntegrator` during startup.
+Lighter Testnet and both Robinhood environments leave `L2TxAttributes` empty and omit
+`ApproveIntegrator` during startup.
 
-On mainnet, maker-only API keys cannot submit `ApproveIntegrator`. The execution client detects
-these keys and skips automatic approval. Approval is account-scoped, so a non-maker-only key on the
-same account must approve the integrator before a maker-only key can trade through the adapter.
+Robinhood Mainnet uses the account-level `NAUTILUS` referral code instead. During startup,
+the execution client authenticates with the configured L2 API key and applies `NAUTILUS` to the
+account's public L1 address. Selecting Robinhood Mainnet opts the account into this
+attribution. Application failures log a warning and do not block trading. Robinhood Testnet
+performs no referral attribution.
+
+Custom venue names do not change either policy: attribution is evaluated from the typed deployment
+and environment.
+
+On Lighter Mainnet, maker-only API keys cannot submit `ApproveIntegrator`. The execution client
+detects these keys and skips automatic approval. Approval is account-scoped, so a non-maker-only
+key on the same account must approve the integrator before a maker-only key can trade through the
+adapter.
 
 ### Revoking the approval
 
-Use revocation as cleanup when leaving the adapter on mainnet. It sends `ApproveIntegrator` with
-`approval_expiry = 0` and zero max fees. The next mainnet execution-client startup with a
-non-maker-only key records a new zero-fee approval.
+Use revocation as cleanup when leaving the adapter on Lighter Mainnet. It sends `ApproveIntegrator`
+with `approval_expiry = 0` and zero max fees. The next Lighter Mainnet execution-client startup with
+a non-maker-only key records a new zero-fee approval.
 
 ```bash
 export LIGHTER_API_KEY_INDEX=5
 export LIGHTER_API_SECRET=REPLACE_ME
 export LIGHTER_ACCOUNT_INDEX=123456
-cargo run -p nautilus-lighter --bin lighter-integrator-revoke           # mainnet
+cargo run -p nautilus-lighter --bin lighter-integrator-revoke           # Lighter Mainnet
 ```
 
 Script source:
@@ -198,7 +253,7 @@ Script source:
 # Python (PyO3 binding) - reads the same env vars as the Rust bin
 from nautilus_trader.adapters.lighter import revoke_lighter_integrator
 
-await revoke_lighter_integrator()  # mainnet (default)
+await revoke_lighter_integrator()  # Lighter Mainnet (default)
 ```
 
 The Rust script prints a summary of the action and pauses for an Enter keypress before signing or
@@ -372,7 +427,7 @@ denied locally before signing; tester configurations expressed in whole minutes 
 | `reduce_only` | ✓          | -    | Position-reducing flag for existing derivative positions. |
 
 Use `post_only` on limit-style orders. The adapter does not synthesize maker-only market orders.
-Live mainnet testing confirms `reduce_only=true` for closing perpetual positions. Invalid
+Live Lighter Mainnet testing confirms `reduce_only=true` for closing perpetual positions. Invalid
 reduce-only opens can be dropped by Lighter without a venue order report; the adapter reconciles
 them as `INFLIGHT_TIMEOUT` rather than a venue-supplied rejection reason.
 
@@ -563,7 +618,7 @@ higher local quota does not make those requests eligible for an account-level ve
 ### L1-address transaction limit
 
 The venue also enforces a 40 req/min limit per L1 address on transaction traffic, below the
-default `sendtx_quota_per_min` of 60. A mainnet quoting session amending on every quote drift hit
+default `sendtx_quota_per_min` of 60. A Lighter Mainnet quoting session amending on every quote drift hit
 `code=23000` (`Too Many Requests`) after roughly 40 modify transactions in a minute; see
 [Volume quota and no-fill quoting](#volume-quota-and-no-fill-quoting) for the related quota that
 modify transactions also spend. Set `sendtx_quota_per_min` to 40 or lower for transaction-heavy
@@ -686,13 +741,18 @@ Lighter signing requires all three credential values:
 - API private key: 40-byte hex private key, with or without a `0x` prefix.
 
 Config values take precedence. A missing config field, or a blank API private key (empty or
-whitespace only), falls back to the corresponding environment variable for the selected
-environment.
+whitespace only), falls back to the corresponding environment variable selected by `deployment`
+and `environment`.
 
-| Environment | API key index                   | API private key              | Account index                   |
-| ----------- | ------------------------------- | ---------------------------- | ------------------------------- |
-| Mainnet     | `LIGHTER_API_KEY_INDEX`         | `LIGHTER_API_SECRET`         | `LIGHTER_ACCOUNT_INDEX`         |
-| Testnet     | `LIGHTER_TESTNET_API_KEY_INDEX` | `LIGHTER_TESTNET_API_SECRET` | `LIGHTER_TESTNET_ACCOUNT_INDEX` |
+| Deployment | Environment | API key index                             | API private key                        | Account index                             |
+| ---------- | ----------- | ----------------------------------------- | -------------------------------------- | ----------------------------------------- |
+| Lighter    | Mainnet     | `LIGHTER_API_KEY_INDEX`                   | `LIGHTER_API_SECRET`                   | `LIGHTER_ACCOUNT_INDEX`                   |
+| Lighter    | Testnet     | `LIGHTER_TESTNET_API_KEY_INDEX`           | `LIGHTER_TESTNET_API_SECRET`           | `LIGHTER_TESTNET_ACCOUNT_INDEX`           |
+| Robinhood  | Mainnet     | `LIGHTER_ROBINHOOD_API_KEY_INDEX`         | `LIGHTER_ROBINHOOD_API_SECRET`         | `LIGHTER_ROBINHOOD_ACCOUNT_INDEX`         |
+| Robinhood  | Testnet     | `LIGHTER_ROBINHOOD_TESTNET_API_KEY_INDEX` | `LIGHTER_ROBINHOOD_TESTNET_API_SECRET` | `LIGHTER_ROBINHOOD_TESTNET_ACCOUNT_INDEX` |
+
+The four namespaces let one process run clients for multiple deployment targets without sharing
+credentials.
 
 Execution rejects incomplete credentials. The data client runs without credentials: its
 subscriptions and REST requests (instruments, book, trades, bars, funding) all use public
@@ -702,61 +762,78 @@ endpoints.
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                              |
-| ---------------------------------- | --------- | -------------------------------------------------------- |
-| `base_url_http`                    | `None`    | Optional REST URL override.                              |
-| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                         |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.               |
-| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.              |
-| `account_index`                    | `None`    | Optional factory field; public data calls do not use it. |
-| `api_key_index`                    | `None`    | Optional factory field; public data calls do not use it. |
-| `private_key`                      | `None`    | Optional factory field; public data calls do not use it. |
-| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                         |
-| `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.           |
-| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.         |
-| `rest_quota_per_min`               | `None`    | REST quota override; unset keeps 60 req/min.             |
-| `transport_backend`                | Default   | WebSocket transport backend.                             |
+| Option                             | Default   | Description                                                   |
+| ---------------------------------- | --------- | ------------------------------------------------------------- |
+| `environment`                      | `Mainnet` | `LighterEnvironment::Mainnet` or `Testnet`.                   |
+| `deployment`                       | `Lighter` | `LighterDeployment::Lighter` or `Robinhood`.                  |
+| `venue`                            | `None`    | Optional Nautilus venue override; defaults from `deployment`. |
+| `account_index`                    | `None`    | Optional factory field; public data calls do not use it.      |
+| `api_key_index`                    | `None`    | Optional factory field; public data calls do not use it.      |
+| `private_key`                      | `None`    | Optional factory field; public data calls do not use it.      |
+| `base_url_http`                    | `None`    | Optional REST URL override.                                   |
+| `base_url_ws`                      | `None`    | Optional WebSocket URL override.                              |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket.                    |
+| `http_timeout_secs`                | `60`      | HTTP request timeout in seconds.                              |
+| `ws_timeout_secs`                  | `30`      | WebSocket connection and reconnection timeout.                |
+| `update_instruments_interval_mins` | `60`      | Instrument metadata refresh interval in minutes.              |
+| `rest_quota_per_min`               | `None`    | REST quota override; unset keeps 60 req/min.                  |
+| `transport_backend`                | Default   | WebSocket transport backend.                                  |
 
 ### Execution client configuration options
 
-| Option                      | Default       | Description                                              |
-| --------------------------- | ------------- | -------------------------------------------------------- |
-| `account_id`                | `LIGHTER-001` | Nautilus account identifier for the venue.               |
-| `account_index`             | `None`        | Lighter account index.                                   |
-| `api_key_index`             | `None`        | Lighter API key slot.                                    |
-| `private_key`               | `None`        | Hex private key for auth and L2 transaction signing.     |
-| `base_url_http`             | `None`        | Optional REST URL override.                              |
-| `base_url_ws`               | `None`        | Optional WebSocket URL override.                         |
-| `proxy_url`                 | `None`        | Optional proxy URL for HTTP and WebSocket.               |
-| `environment`               | `Mainnet`     | `LighterEnvironment::Mainnet` or `Testnet`.              |
-| `http_timeout_secs`         | `60`          | HTTP request timeout in seconds.                         |
-| `ws_timeout_secs`           | `30`          | WebSocket connection and reconnection timeout.           |
-| `market_order_slippage_bps` | `50`          | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`. |
-| `rest_quota_per_min`        | `None`        | REST quota override; unset keeps 60 req/min.             |
-| `sendtx_quota_per_min`      | `None`        | Transaction quota override; unset keeps 60 req/min.      |
-| `transport_backend`         | Default       | WebSocket transport backend.                             |
+| Option                      | Default       | Description                                                   |
+| --------------------------- | ------------- | ------------------------------------------------------------- |
+| `environment`               | `Mainnet`     | `LighterEnvironment::Mainnet` or `Testnet`.                   |
+| `deployment`                | `Lighter`     | `LighterDeployment::Lighter` or `Robinhood`.                  |
+| `venue`                     | `None`        | Optional Nautilus venue override; defaults from `deployment`. |
+| `account_id`                | `LIGHTER-001` | Nautilus account ID; issuer must match the resolved venue.    |
+| `account_index`             | `None`        | Lighter account index.                                        |
+| `api_key_index`             | `None`        | Lighter API key slot.                                         |
+| `private_key`               | `None`        | Hex private key for auth and L2 transaction signing.          |
+| `base_url_http`             | `None`        | Optional REST URL override.                                   |
+| `base_url_ws`               | `None`        | Optional WebSocket URL override.                              |
+| `proxy_url`                 | `None`        | Optional proxy URL for HTTP and WebSocket.                    |
+| `http_timeout_secs`         | `60`          | HTTP request timeout in seconds.                              |
+| `ws_timeout_secs`           | `30`          | WebSocket connection and reconnection timeout.                |
+| `market_order_slippage_bps` | `50`          | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`.      |
+| `rest_quota_per_min`        | `None`        | REST quota override; unset keeps 60 req/min.                  |
+| `sendtx_quota_per_min`      | `None`        | Transaction quota override; unset keeps 60 req/min.           |
+| `transport_backend`         | Default       | WebSocket transport backend.                                  |
 
 ### Configuration example
 
 ```rust
 use nautilus_lighter::{
-    common::enums::LighterEnvironment,
+    common::enums::{LighterDeployment, LighterEnvironment},
     config::{LighterDataClientConfig, LighterExecutionClientConfig},
 };
 use nautilus_model::identifiers::AccountId;
 
 let data_config = LighterDataClientConfig::builder()
     .environment(LighterEnvironment::Testnet)
+    .deployment(LighterDeployment::Lighter)
     .build();
 
 let exec_config = LighterExecutionClientConfig::builder()
-    .account_id(AccountId::from("LIGHTER-001"))
     .environment(LighterEnvironment::Testnet)
+    .deployment(LighterDeployment::Lighter)
+    .account_id(AccountId::from("LIGHTER-001"))
+    .build();
+
+let robinhood_data_config = LighterDataClientConfig::builder()
+    .environment(LighterEnvironment::Mainnet)
+    .deployment(LighterDeployment::Robinhood)
+    .build();
+
+let robinhood_exec_config = LighterExecutionClientConfig::builder()
+    .environment(LighterEnvironment::Mainnet)
+    .deployment(LighterDeployment::Robinhood)
+    .account_id(AccountId::from("LIGHTER_ROBINHOOD-001"))
     .build();
 ```
 
-The execution config resolves credentials from the matching testnet environment variables; set its
-credential fields directly to override them. Use
+Each execution config resolves credentials from the environment-variable set selected by its
+`deployment` and `environment`; set the credential fields directly to override them. Use
 `LiveExecutionEngineConfig.reconciliation_instrument_ids` to scope reconciliation and
 `reconciliation_lookback_mins` to bound inactive order and fill replay.
 

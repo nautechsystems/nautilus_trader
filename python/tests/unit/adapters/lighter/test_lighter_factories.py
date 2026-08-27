@@ -19,9 +19,14 @@ Test lighter factories behavior.
 import pytest
 from unit.adapters.example_modules import load_example_module
 
+from nautilus_trader.adapters import lighter
 from nautilus_trader.adapters.lighter import LIGHTER
+from nautilus_trader.adapters.lighter import LIGHTER_CLIENT_ID
+from nautilus_trader.adapters.lighter import LIGHTER_ROBINHOOD
+from nautilus_trader.adapters.lighter import LIGHTER_ROBINHOOD_CLIENT_ID
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
 from nautilus_trader.adapters.lighter import LighterDataClientFactory
+from nautilus_trader.adapters.lighter import LighterDeployment
 from nautilus_trader.adapters.lighter import LighterEnvironment
 from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
 from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
@@ -29,10 +34,20 @@ from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.model import AccountId
+from nautilus_trader.model import ClientId
 from nautilus_trader.model import TraderId
+from nautilus_trader.model import Venue
 
 
 lighter_exec_tester = load_example_module("lighter", "exec_tester")
+
+
+def test_lighter_facade_exports_integrator_revocation() -> None:
+    """
+    Test lighter facade exports integrator revocation.
+    """
+    assert "revoke_lighter_integrator" in lighter.__all__
+    assert callable(lighter.revoke_lighter_integrator)
 
 
 def test_lighter_factories_expose_python_names() -> None:
@@ -44,6 +59,32 @@ def test_lighter_factories_expose_python_names() -> None:
 
     assert data_factory.name() == LIGHTER
     assert exec_factory.name() == LIGHTER
+
+
+def test_lighter_configs_expose_deployment_and_custom_venue() -> None:
+    """
+    Test Lighter configs expose deployment and custom venue.
+    """
+    venue = Venue.from_str("LIGHTER_CUSTOM")
+    account_id = AccountId.from_str("LIGHTER_CUSTOM-001")
+
+    data_config = LighterDataClientConfig(
+        deployment=LighterDeployment.ROBINHOOD,
+        venue=venue,
+    )
+    exec_config = LighterExecutionClientConfig(
+        account_id=account_id,
+        deployment=LighterDeployment.ROBINHOOD,
+        venue=venue,
+    )
+
+    assert LIGHTER_ROBINHOOD == "LIGHTER_ROBINHOOD"
+    assert ClientId.from_str(LIGHTER) == LIGHTER_CLIENT_ID
+    assert ClientId.from_str(LIGHTER_ROBINHOOD) == LIGHTER_ROBINHOOD_CLIENT_ID
+    assert data_config.deployment == LighterDeployment.ROBINHOOD
+    assert data_config.venue == venue
+    assert exec_config.deployment == LighterDeployment.ROBINHOOD
+    assert exec_config.venue == venue
 
 
 def test_live_node_builder_accepts_lighter_data_factory() -> None:
@@ -87,6 +128,53 @@ def test_live_node_builder_accepts_lighter_exec_factory() -> None:
             LighterExecutionClientConfig(
                 account_id=account_id,
                 environment=LighterEnvironment.TESTNET,
+            ),
+        )
+        .build()
+    )
+
+    assert node.trader_id == trader_id
+    assert node.environment == Environment.LIVE
+
+
+def test_live_node_accepts_lighter_and_robinhood_clients() -> None:
+    """
+    Test live node accepts Lighter and Robinhood data and execution clients together.
+    """
+    trader_id = TraderId.from_str("TESTER-001")
+
+    node = (
+        LiveNode.builder("LIGHTER-DUAL-EXEC-PYTEST-001", trader_id, Environment.LIVE)
+        .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
+        .with_reconciliation(False)
+        .add_data_client(
+            LIGHTER,
+            LighterDataClientFactory(),
+            LighterDataClientConfig(environment=LighterEnvironment.TESTNET),
+        )
+        .add_data_client(
+            LIGHTER_ROBINHOOD,
+            LighterDataClientFactory(),
+            LighterDataClientConfig(
+                environment=LighterEnvironment.TESTNET,
+                deployment=LighterDeployment.ROBINHOOD,
+            ),
+        )
+        .add_exec_client(
+            LIGHTER,
+            LighterExecutionClientFactory(),
+            LighterExecutionClientConfig(
+                account_id=AccountId.from_str("LIGHTER-001"),
+                environment=LighterEnvironment.TESTNET,
+            ),
+        )
+        .add_exec_client(
+            LIGHTER_ROBINHOOD,
+            LighterExecutionClientFactory(),
+            LighterExecutionClientConfig(
+                account_id=AccountId.from_str("LIGHTER_ROBINHOOD-001"),
+                environment=LighterEnvironment.TESTNET,
+                deployment=LighterDeployment.ROBINHOOD,
             ),
         )
         .build()
@@ -200,6 +288,12 @@ def test_lighter_exec_tester_runs_live_orders_by_default(  # noqa: C901
     assert captured["strategy_type_name"] == "ExecTester"
     assert captured["reconciliation"] is True
     assert captured["node_ran"] is True
+    data_client_args = captured["data_client_args"]
+    exec_client_args = captured["exec_client_args"]
+    assert isinstance(data_client_args, tuple)
+    assert isinstance(exec_client_args, tuple)
+    assert data_client_args[0] == lighter_exec_tester.VENUE
+    assert exec_client_args[0] == lighter_exec_tester.VENUE
     kwargs = captured["exec_tester_kwargs"]
     assert isinstance(kwargs, dict)
     assert kwargs["enable_limit_buys"] is True

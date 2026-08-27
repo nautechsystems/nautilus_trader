@@ -27,7 +27,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use nautilus_common::live::get_runtime;
 use nautilus_core::{AtomicTime, nanos::UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_model::{identifiers::AccountId, instruments::InstrumentAny};
+use nautilus_model::{identifiers::AccountId, instruments::InstrumentAny, types::Currency};
 use nautilus_network::{
     RECONNECTED,
     error::SendError,
@@ -286,12 +286,31 @@ enum CompletionKind {
 }
 
 impl FeedHandler {
+    #[cfg(test)]
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
         out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
         subscriptions: SubscriptionState,
+    ) -> Self {
+        Self::new_with_settlement_currency(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            subscriptions,
+            Currency::get_or_create_crypto("USDC"),
+        )
+    }
+
+    pub(super) fn new_with_settlement_currency(
+        signal: Arc<AtomicBool>,
+        cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
+        out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
+        subscriptions: SubscriptionState,
+        settlement_currency: Currency,
     ) -> Self {
         Self {
             clock: get_atomic_clock_realtime(),
@@ -316,7 +335,9 @@ impl FeedHandler {
             book_states: AHashMap::new(),
             last_candles: AHashMap::new(),
             exec_account: None,
-            account_state_reconciler: LighterAccountStateReconciler::new(),
+            account_state_reconciler: LighterAccountStateReconciler::new_with_settlement_currency(
+                settlement_currency,
+            ),
         }
     }
 

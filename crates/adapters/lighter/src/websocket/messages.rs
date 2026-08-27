@@ -743,7 +743,7 @@ pub struct LighterPoolShares {
 
 /// Inner shape of the `user_stats.stats.cross_stats` and `.total_stats`
 /// substructs. Every field is a stringified decimal on the wire and
-/// denominated in USDC.
+/// denominated in the deployment settlement currency.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LighterUserStatsScoped {
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
@@ -786,15 +786,14 @@ pub struct LighterUserStats {
 pub struct LighterAsset {
     pub symbol: Ustr,
     pub asset_id: i16,
-    /// Spot-side balance for this asset (USDC sitting in the wallet bucket,
-    /// non-USDC spot holdings, etc).
+    /// Spot-side balance for this asset.
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub balance: Decimal,
     /// Spot-side amount reserved by resting spot orders.
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub locked_balance: Decimal,
-    /// Perp-side collateral for this asset. USDC on Lighter today; defaults
-    /// to zero when the wire omits the field (spot-only frames).
+    /// Perp-side collateral for this asset. Defaults to zero when the wire
+    /// omits the field (spot-only frames).
     #[serde(default, deserialize_with = "deserialize_decimal_from_str")]
     pub margin_balance: Decimal,
     /// Per-asset margin treatment. Observed values: "disabled" (asset not

@@ -19,14 +19,14 @@ Test Lighter execution with the built-in ExecTester strategy.
 WARNING: Running this script connects to the configured Lighter environment and
 places REAL orders immediately. On start it opens a position with an IOC market
 order, then maintains post-only limit quotes on both sides of the book. On stop it
-cancels all orders and closes all positions. With the default testnet environment no
-real funds are at risk; with `LighterEnvironment.MAINNET` the orders use real funds.
+cancels all orders and closes all positions. The default target is Lighter Testnet, where no real
+funds are at risk; any mainnet deployment uses real funds.
 Run only against an account you intend to test. The strategy has no alpha advantage
 whatsoever and is not intended for production trading.
 
-Settings are the module-level constants below. Credentials resolve from the
-`LIGHTER_TESTNET_*` or `LIGHTER_*` environment variables matching the configured
-environment.
+Settings are the module-level constants below. Credentials resolve from the namespace selected by
+the deployment and environment: `LIGHTER_*`, `LIGHTER_TESTNET_*`, `LIGHTER_ROBINHOOD_*`, or
+`LIGHTER_ROBINHOOD_TESTNET_*`.
 
 """
 
@@ -35,8 +35,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from nautilus_trader.adapters.lighter import LIGHTER
+from nautilus_trader.adapters.lighter import LIGHTER_ROBINHOOD
 from nautilus_trader.adapters.lighter import LighterDataClientConfig
 from nautilus_trader.adapters.lighter import LighterDataClientFactory
+from nautilus_trader.adapters.lighter import LighterDeployment
 from nautilus_trader.adapters.lighter import LighterEnvironment
 from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
 from nautilus_trader.adapters.lighter import LighterExecutionClientFactory
@@ -59,10 +61,12 @@ from nautilus_trader.testkit import ExecTesterConfig
 # submitting orders or sending shutdown cancel/close commands.
 DRY_RUN = False
 LIGHTER_ENVIRONMENT = LighterEnvironment.TESTNET
+LIGHTER_DEPLOYMENT = LighterDeployment.LIGHTER
+VENUE = LIGHTER if LIGHTER_DEPLOYMENT == LighterDeployment.LIGHTER else LIGHTER_ROBINHOOD
 TRADER_ID = TraderId.from_str("TESTER-001")
-ACCOUNT_ID = AccountId.from_str("LIGHTER-001")
+ACCOUNT_ID = AccountId.from_str(f"{VENUE}-001")
 STRATEGY_ID = StrategyId.from_str("EXEC_TESTER-001")
-INSTRUMENT_ID = InstrumentId.from_str(f"DOGE-PERP.{LIGHTER}")
+INSTRUMENT_ID = InstrumentId.from_str(f"DOGE-PERP.{VENUE}")
 
 ORDER_QTY = "200"  # DOGE contracts, above the 100 contract minimum
 OPEN_POSITION_ON_START_QTY = Decimal(ORDER_QTY)
@@ -84,16 +88,20 @@ def main() -> None:
         )
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .add_data_client(
-            None,
+            VENUE,
             LighterDataClientFactory(),
-            LighterDataClientConfig(environment=LIGHTER_ENVIRONMENT),
+            LighterDataClientConfig(
+                environment=LIGHTER_ENVIRONMENT,
+                deployment=LIGHTER_DEPLOYMENT,
+            ),
         )
         .add_exec_client(
-            None,
+            VENUE,
             LighterExecutionClientFactory(),
             LighterExecutionClientConfig(
                 account_id=ACCOUNT_ID,
                 environment=LIGHTER_ENVIRONMENT,
+                deployment=LIGHTER_DEPLOYMENT,
             ),
         )
         .build()
@@ -103,7 +111,7 @@ def main() -> None:
         ExecTesterConfig(
             strategy_id=STRATEGY_ID,
             instrument_id=INSTRUMENT_ID,
-            client_id=ClientId.from_str(LIGHTER),
+            client_id=ClientId.from_str(VENUE),
             external_order_claims=[INSTRUMENT_ID],
             order_qty=Quantity.from_str(ORDER_QTY),
             subscribe_quotes=True,

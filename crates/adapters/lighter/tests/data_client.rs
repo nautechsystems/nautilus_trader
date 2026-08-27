@@ -78,7 +78,7 @@ use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarSpecification, BarType, Data, OrderBookDeltas},
     enums::{AggregationSource, BarAggregation, BookAction, BookType, PriceType, RecordFlag},
-    identifiers::{ClientId, InstrumentId},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::Instrument,
     orderbook::{OrderBook, analysis::book_check_integrity},
     types::Price,
@@ -2070,6 +2070,32 @@ async fn test_unsubscribe_bars_is_noop_for_unsupported_resolution() {
             None,
         ))
         .expect("unsubscribe_bars must not error on unsupported resolution");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_socket_state_events_use_configured_venue() {
+    let (addr, state) = start_server().await;
+    let venue = Venue::new("LIGHTER_CUSTOM");
+    let mut config = build_config(addr);
+    config.venue = Some(venue);
+    let (mut client, _rx, mut system_rx) = build_client_with_system_events(config);
+
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    let change = next_socket_state(&mut system_rx).await;
+    let endpoint = Ustr::from("lighter-data-streams");
+
+    assert_eq!(DataClient::client_id(&client), client_id());
+    assert_eq!(DataClient::venue(&client), Some(venue));
+    assert_eq!(change.client_id, client_id());
+    assert_eq!(change.venue, Some(venue));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
 }
 
 #[rstest]

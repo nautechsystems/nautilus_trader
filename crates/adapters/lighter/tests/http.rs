@@ -373,6 +373,25 @@ async fn raw_client_get_maker_only_api_keys_maps_auth_query_field_to_authorizati
 }
 
 #[tokio::test]
+async fn raw_client_use_referral_posts_urlencoded_form_with_authorization_header() {
+    let base_url =
+        spawn_server(Router::new().route("/api/v1/referral/use", post(handle_referral_use))).await;
+    let client = raw_client(base_url);
+
+    let response = client
+        .use_referral(
+            "0x0000000000000000000000000000000000000000",
+            "NAUTILUS",
+            "auth-token",
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.code, 200);
+    assert_eq!(response.message, None);
+}
+
+#[tokio::test]
 async fn raw_client_send_tx_posts_form_and_parses_response() {
     let base_url = spawn_server(Router::new().route("/api/v1/sendTx", post(handle_send_tx))).await;
     let client = raw_client(base_url);
@@ -1380,6 +1399,10 @@ async fn domain_client_get_account_detail_queries_by_index_and_parses_first_acco
     assert_eq!(detail.account_index, 123_456);
     assert_eq!(detail.account_type, 0);
     assert_eq!(detail.status, 1);
+    assert_eq!(
+        detail.l1_address,
+        "0x0000000000000000000000000000000000000000"
+    );
 }
 
 #[tokio::test]
@@ -1514,6 +1537,34 @@ async fn handle_maker_only_api_keys(
     }
 
     (StatusCode::OK, r#"{"code":200,"api_key_indexes":[5]}"#).into_response()
+}
+
+async fn handle_referral_use(headers: HeaderMap, body: Bytes) -> Response {
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+    let content_type = headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok());
+    let fields = url::form_urlencoded::parse(&body)
+        .into_owned()
+        .collect::<HashMap<String, String>>();
+
+    if authorization != Some("auth-token")
+        || content_type != Some("application/x-www-form-urlencoded")
+        || fields.len() != 2
+        || fields.get("l1_address").map(String::as_str)
+            != Some("0x0000000000000000000000000000000000000000")
+        || fields.get("referral_code").map(String::as_str) != Some("NAUTILUS")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            r#"{"code":400,"message":"unexpected referral use request"}"#,
+        )
+            .into_response();
+    }
+
+    (StatusCode::OK, r#"{"code":200,"message":null}"#).into_response()
 }
 
 async fn handle_send_tx(headers: HeaderMap, body: Bytes) -> Response {

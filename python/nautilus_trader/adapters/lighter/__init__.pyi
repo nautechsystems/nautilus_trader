@@ -10,30 +10,42 @@ from nautilus_trader import network
 __all__ = [
     "LIGHTER",
     "LIGHTER_CLIENT_ID",
+    "LIGHTER_ROBINHOOD",
+    "LIGHTER_ROBINHOOD_CLIENT_ID",
+    "LIGHTER_ROBINHOOD_VENUE",
     "LIGHTER_VENUE",
     "LighterDataClientConfig",
     "LighterDataClientFactory",
+    "LighterDeployment",
     "LighterEnvironment",
     "LighterExecutionClientConfig",
     "LighterExecutionClientFactory",
+    "revoke_lighter_integrator",
 ]
 
 LIGHTER: str
 LIGHTER_CLIENT_ID: model.ClientId
 LIGHTER_VENUE: model.Venue
+LIGHTER_ROBINHOOD: str
+LIGHTER_ROBINHOOD_CLIENT_ID: model.ClientId
+LIGHTER_ROBINHOOD_VENUE: model.Venue
 
 @typing.final
 class LighterDataClientConfig:
     @property
-    def base_url_http(self) -> str | None: ...
-    @property
-    def base_url_ws(self) -> str | None: ...
-    @property
     def environment(self) -> LighterEnvironment: ...
+    @property
+    def deployment(self) -> LighterDeployment: ...
+    @property
+    def venue(self) -> model.Venue | None: ...
     @property
     def account_index(self) -> int | None: ...
     @property
     def api_key_index(self) -> int | None: ...
+    @property
+    def base_url_http(self) -> str | None: ...
+    @property
+    def base_url_ws(self) -> str | None: ...
     @property
     def http_timeout_secs(self) -> int: ...
     @property
@@ -58,6 +70,8 @@ class LighterDataClientConfig:
         update_instruments_interval_mins: int | None = None,
         rest_quota_per_min: int | None = None,
         transport_backend: network.TransportBackend | None = None,
+        deployment: LighterDeployment | None = None,
+        venue: model.Venue | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -70,6 +84,12 @@ class LighterDataClientFactory:
 @typing.final
 class LighterExecutionClientConfig:
     @property
+    def environment(self) -> LighterEnvironment: ...
+    @property
+    def deployment(self) -> LighterDeployment: ...
+    @property
+    def venue(self) -> model.Venue | None: ...
+    @property
     def account_id(self) -> model.AccountId: ...
     @property
     def account_index(self) -> int | None: ...
@@ -79,8 +99,6 @@ class LighterExecutionClientConfig:
     def base_url_http(self) -> str | None: ...
     @property
     def base_url_ws(self) -> str | None: ...
-    @property
-    def environment(self) -> LighterEnvironment: ...
     @property
     def http_timeout_secs(self) -> int: ...
     @property
@@ -109,6 +127,8 @@ class LighterExecutionClientConfig:
         rest_quota_per_min: int | None = None,
         sendtx_quota_per_min: int | None = None,
         transport_backend: network.TransportBackend | None = None,
+        deployment: LighterDeployment | None = None,
+        venue: model.Venue | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...
@@ -117,6 +137,11 @@ class LighterExecutionClientConfig:
 class LighterExecutionClientFactory:
     def __init__(self) -> None: ...
     def name(self) -> str: ...
+
+@typing.final
+class LighterDeployment(enum.Enum):
+    LIGHTER = ...
+    ROBINHOOD = ...
 
 @typing.final
 class LighterEnvironment(enum.Enum):

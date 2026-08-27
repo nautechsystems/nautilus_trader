@@ -78,7 +78,7 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_lighter::{
     common::{
         consts::{LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE},
-        enums::LighterEnvironment,
+        enums::{LighterDeployment, LighterEnvironment},
     },
     config::LighterExecutionClientConfig,
     execution::LighterExecutionClient,
@@ -93,7 +93,7 @@ use nautilus_model::{
     events::{AccountState, OrderAccepted, OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId,
-        TraderId, VenueOrderId,
+        TraderId, Venue, VenueOrderId,
     },
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
     orders::{Order, OrderAny, OrderList, OrderTestBuilder},
@@ -179,6 +179,10 @@ struct TestServerState {
     maker_only_calls: Arc<AtomicUsize>,
     maker_only_api_key_indexes: Arc<tokio::sync::Mutex<Vec<i64>>>,
     maker_only_authorizations: Arc<tokio::sync::Mutex<Vec<String>>>,
+    referral_use_calls: Arc<AtomicUsize>,
+    referral_use_authorizations: Arc<tokio::sync::Mutex<Vec<String>>>,
+    referral_use_requests: Arc<tokio::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
+    next_referral_use_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     active_orders_calls: Arc<AtomicUsize>,
     tx_calls: Arc<AtomicUsize>,
     inactive_orders_calls: Arc<AtomicUsize>,
@@ -218,6 +222,10 @@ impl Default for TestServerState {
             maker_only_calls: Arc::new(AtomicUsize::new(0)),
             maker_only_api_key_indexes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             maker_only_authorizations: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            referral_use_calls: Arc::new(AtomicUsize::new(0)),
+            referral_use_authorizations: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            referral_use_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            next_referral_use_response: Arc::new(tokio::sync::Mutex::new(None)),
             active_orders_calls: Arc::new(AtomicUsize::new(0)),
             tx_calls: Arc::new(AtomicUsize::new(0)),
             inactive_orders_calls: Arc::new(AtomicUsize::new(0)),
@@ -258,6 +266,10 @@ impl TestServerState {
 
     async fn maker_only_authorizations(&self) -> Vec<String> {
         self.maker_only_authorizations.lock().await.clone()
+    }
+
+    async fn referral_use_requests(&self) -> Vec<std::collections::HashMap<String, String>> {
+        self.referral_use_requests.lock().await.clone()
     }
 
     fn push_frame(&self, frame: &Value) {
@@ -322,6 +334,54 @@ async fn maker_only_api_keys(
     (
         StatusCode::OK,
         json!({"code":200,"api_key_indexes":api_key_indexes}).to_string(),
+    )
+        .into_response()
+}
+
+async fn referral_use(
+    State(state): State<Arc<TestServerState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    state.referral_use_calls.fetch_add(1, Ordering::Relaxed);
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let content_type = headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok());
+    let fields = url::form_urlencoded::parse(&body)
+        .into_owned()
+        .collect::<std::collections::HashMap<String, String>>();
+
+    if authorization.is_empty()
+        || content_type != Some("application/x-www-form-urlencoded")
+        || fields.get("l1_address").map(String::as_str)
+            != Some("0x0000000000000000000000000000000000000000")
+        || fields.get("referral_code").map(String::as_str) != Some("NAUTILUS")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            json!({"code":400,"message":"unexpected referral use request"}).to_string(),
+        )
+            .into_response();
+    }
+
+    state
+        .referral_use_authorizations
+        .lock()
+        .await
+        .push(authorization);
+    state.referral_use_requests.lock().await.push(fields);
+
+    if let Some(response) = state.next_referral_use_response.lock().await.take() {
+        return (StatusCode::OK, response.to_string()).into_response();
+    }
+    (
+        StatusCode::OK,
+        json!({"code":200,"message":null}).to_string(),
     )
         .into_response()
 }
@@ -636,6 +696,7 @@ fn build_router(state: Arc<TestServerState>) -> Router {
         .route("/api/v1/account", get(account))
         .route("/api/v1/nextNonce", get(next_nonce))
         .route("/api/v1/getMakerOnlyApiKeys", get(maker_only_api_keys))
+        .route("/api/v1/referral/use", post(referral_use))
         .route("/api/v1/accountActiveOrders", get(account_active_orders))
         .route(
             "/api/v1/accountInactiveOrders",
@@ -765,6 +826,8 @@ fn build_config(addr: SocketAddr) -> LighterExecutionClientConfig {
         base_url_ws: Some(format!("ws://{addr}/stream")),
         proxy_url: None,
         environment: LighterEnvironment::Testnet,
+        deployment: Default::default(),
+        venue: None,
         http_timeout_secs: 5,
         ws_timeout_secs: 5,
         market_order_slippage_bps: 50,
@@ -880,6 +943,20 @@ fn build_client_mainnet(
     build_client_with(config)
 }
 
+fn build_client_robinhood_mainnet(
+    addr: SocketAddr,
+) -> (
+    LighterExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let mut config = build_config(addr);
+    config.environment = LighterEnvironment::Mainnet;
+    config.deployment = LighterDeployment::Robinhood;
+    config.venue = Some(*LIGHTER_VENUE);
+    build_client_with(config)
+}
+
 fn build_client_with(
     config: LighterExecutionClientConfig,
 ) -> (
@@ -904,12 +981,13 @@ fn build_client_with_cache(
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     replace_exec_event_sender(sender);
 
+    let venue = config.resolved_venue();
     let core = ExecutionClientCore::new(
         trader_id(),
         client_id(),
-        *LIGHTER_VENUE,
+        venue,
         OmsType::Netting,
-        account_id(),
+        config.account_id,
         AccountType::Margin,
         None,
         cache.clone(),
@@ -1395,6 +1473,72 @@ async fn test_connect_disconnect_lifecycle() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn connect_reports_configured_venue_on_socket_state() {
+    let (addr, state) = start_server().await;
+    let venue = Venue::new("LIGHTER_CUSTOM");
+    let account_id = AccountId::new("LIGHTER_CUSTOM-001");
+    let mut config = build_config(addr);
+    config.venue = Some(venue);
+    config.account_id = account_id;
+    let (system_sender, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_sender);
+    let (mut client, _rx, _cache) = build_client_with(config);
+
+    client.connect().await.expect("connect");
+
+    let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+        .await
+        .expect("timed out waiting for a socket state change")
+        .expect("system event channel closed");
+    let SystemEvent::SocketState(change) = event;
+    let endpoint = Ustr::from("lighter-user-streams");
+
+    assert_eq!(client.client_id(), client_id());
+    assert_eq!(client.account_id(), account_id);
+    assert_eq!(client.venue(), venue);
+    assert_eq!(change.client_id, client_id());
+    assert_eq!(change.venue, Some(venue));
+    assert_eq!(change.endpoint, endpoint);
+    assert_eq!(change.state, SocketState::Connected);
+
+    client.disconnect().await.expect("disconnect");
+    wait_until_async(
+        || {
+            let state = Arc::clone(&state);
+            async move { *state.connection_count.lock().await == 0 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn generate_mass_status_uses_configured_venue() {
+    let (addr, _state) = start_server().await;
+    let venue = Venue::new("LIGHTER_CUSTOM");
+    let account_id = AccountId::new("LIGHTER_CUSTOM-001");
+    let mut config = build_config(addr);
+    config.venue = Some(venue);
+    config.account_id = account_id;
+    let (mut client, _rx, _cache) = build_client_with(config);
+
+    client.connect().await.expect("connect");
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .expect("mass status")
+        .expect("mass status should be available");
+
+    assert_eq!(mass_status.client_id, client_id());
+    assert_eq!(mass_status.account_id, account_id);
+    assert_eq!(mass_status.venue, venue);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
     let (addr, _state) = start_server().await;
     let (system_sender, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1473,15 +1617,82 @@ async fn connect_submits_l2_only_integrator_auto_approval() {
             .contains(&approval_expiry),
         "ApprovalExpiry must use the maximum five-year TTL",
     );
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 0);
 
     client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_omits_integrator_approval_on_testnet() {
+async fn connect_applies_robinhood_referral_on_each_process_start() {
     let (addr, state) = start_server().await;
-    let (mut client, _rx, _cache) = build_client(addr);
+    let (mut first_client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    let expected_request = std::collections::HashMap::from([
+        (
+            "l1_address".to_string(),
+            "0x0000000000000000000000000000000000000000".to_string(),
+        ),
+        ("referral_code".to_string(), "NAUTILUS".to_string()),
+    ]);
+
+    first_client.connect().await.expect("first connect");
+
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.referral_use_authorizations.lock().await.len(), 1);
+    assert_eq!(
+        state.referral_use_requests().await,
+        vec![expected_request.clone()],
+    );
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
+    assert!(state.rest_send_txs().await.is_empty());
+
+    first_client.disconnect().await.expect("first disconnect");
+    drop(first_client);
+
+    let (mut second_client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    second_client.connect().await.expect("second connect");
+
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(state.referral_use_authorizations.lock().await.len(), 2);
+    assert_eq!(
+        state.referral_use_requests().await,
+        vec![expected_request.clone(), expected_request],
+    );
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
+    assert!(state.rest_send_txs().await.is_empty());
+
+    second_client.disconnect().await.expect("second disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_continues_when_robinhood_referral_fails() {
+    let (addr, state) = start_server().await;
+    *state.next_referral_use_response.lock().await = Some(json!({
+        "code": 20001,
+        "message": "referral unavailable",
+    }));
+
+    let (mut client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+
+    client.connect().await.expect("connect");
+
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 1);
+    assert!(client.is_connected());
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[case::lighter(LighterDeployment::Lighter)]
+#[case::robinhood(LighterDeployment::Robinhood)]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_omits_attribution_on_testnet(#[case] deployment: LighterDeployment) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
+    let (mut client, _rx, _cache) = build_client_with(config);
 
     client.connect().await.expect("connect");
 
@@ -1491,6 +1702,7 @@ async fn connect_omits_integrator_approval_on_testnet() {
         Vec::<String>::new()
     );
     assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 0);
 
     client.disconnect().await.expect("disconnect");
 }

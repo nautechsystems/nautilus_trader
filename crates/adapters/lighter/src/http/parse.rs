@@ -35,7 +35,7 @@ use crate::{
         parse::{
             parse_millis_to_nanos, parse_secs_to_nanos, price_from_decimal, quantity_from_decimal,
         },
-        symbol::{MarketRegistry, format_instrument_id},
+        symbol::{MarketRegistry, format_instrument_id_with_venue},
     },
     http::models::{
         LighterCandle, LighterFunding, LighterFundingDirection, LighterOrderBook,
@@ -447,10 +447,21 @@ fn parse_perp_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let order_book = &detail.order_book;
-    let instrument_id = format_instrument_id(order_book.symbol.as_str(), order_book.market_type);
+
+    let instrument_id = format_instrument_id_with_venue(
+        order_book.symbol.as_str(),
+        order_book.market_type,
+        registry.venue(),
+    );
+
     let raw_symbol = Symbol::from_ustr_unchecked(order_book.symbol);
-    let (base_currency, quote_currency) = symbol_currencies(order_book.symbol.as_str(), "USDC");
-    let settlement_currency = quote_currency;
+    let settlement_currency = registry.settlement_currency();
+
+    let (base_currency, quote_currency) = symbol_currencies(
+        order_book.symbol.as_str(),
+        settlement_currency.code.as_str(),
+    );
+
     let price_increment = price_increment(detail.price_decimals)?;
     let size_increment = quantity_increment(detail.size_decimals)?;
 
@@ -492,7 +503,13 @@ fn parse_spot_instrument(
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
     let order_book = &detail.order_book;
-    let instrument_id = format_instrument_id(order_book.symbol.as_str(), order_book.market_type);
+
+    let instrument_id = format_instrument_id_with_venue(
+        order_book.symbol.as_str(),
+        order_book.market_type,
+        registry.venue(),
+    );
+
     let raw_symbol = Symbol::from_ustr_unchecked(order_book.symbol);
     let (base_currency, quote_currency) = spot_symbol_currencies(order_book.symbol.as_str())?;
     let price_increment = price_increment(detail.price_decimals)?;
@@ -1467,6 +1484,31 @@ mod tests {
                 assert_eq!(pair.min_notional, Some(Money::from("10.000000 USDC")));
             }
             other => panic!("expected currency pair, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_perp_uses_registry_venue_and_settlement_currency() {
+        let venue = Venue::new("LIGHTER_ROBINHOOD");
+        let settlement_currency = Currency::USDG();
+        let registry =
+            MarketRegistry::new_with_venue_and_settlement_currency(venue, settlement_currency);
+
+        let details = vec![stub_perp_detail("ETH", 0)];
+
+        let instruments =
+            parse_order_book_details_instruments(&registry, &details, &[], UnixNanos::from(1))
+                .unwrap();
+
+        assert_eq!(instruments.len(), 1);
+        match &instruments[0] {
+            InstrumentAny::CryptoPerpetual(perp) => {
+                assert_eq!(perp.id.venue, venue);
+                assert_eq!(perp.base_currency, Currency::from("ETH"));
+                assert_eq!(perp.quote_currency, settlement_currency);
+                assert_eq!(perp.settlement_currency, settlement_currency);
+            }
+            other => panic!("expected crypto perpetual, was {other:?}"),
         }
     }
 

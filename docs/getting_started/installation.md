@@ -312,7 +312,7 @@ Run a Python example with the project environment:
 .venv/bin/python examples/live/lighter/data_tester.py
 ```
 
-The script connects to the Lighter testnet and starts streaming market data; stop it with Ctrl+C.
+The script connects to Lighter Testnet and starts streaming market data; stop it with Ctrl+C.
 
 For direct commands and test targets, see the [Python package README][python-readme].
 

@@ -24,6 +24,7 @@ use nautilus_core::serialization::{
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de};
 use ustr::Ustr;
+use zeroize::ZeroizeOnDrop;
 
 use crate::common::enums::{
     LighterCandleResolution, LighterFundingResolution, LighterMarketStatus, LighterOrderKind,
@@ -70,11 +71,12 @@ pub struct LighterTx {
 ///
 /// Models only the fields the adapter consumes; the venue response carries
 /// many more, which are ignored on deserialization.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct LighterAccountDetail {
     pub account_index: u64,
     pub account_type: u8,
     pub status: i32,
+    pub l1_address: String,
 }
 
 /// Response payload of `GET /api/v1/account`.
@@ -594,6 +596,10 @@ mod tests {
         assert_eq!(account.account_index, 123_456);
         assert_eq!(account.account_type, 0);
         assert_eq!(account.status, 1);
+        assert_eq!(
+            account.l1_address,
+            "0x0000000000000000000000000000000000000000"
+        );
     }
 
     #[rstest]

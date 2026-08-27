@@ -23,24 +23,38 @@ use ustr::Ustr;
 /// Venue name string for Lighter.
 pub const LIGHTER: &str = "LIGHTER";
 
+/// Venue name string for Robinhood Chain.
+pub const LIGHTER_ROBINHOOD: &str = "LIGHTER_ROBINHOOD";
+
 /// Lighter venue identifier.
 pub static LIGHTER_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(LIGHTER)));
+
+/// Robinhood Chain venue identifier.
+pub static LIGHTER_ROBINHOOD_VENUE: LazyLock<Venue> =
+    LazyLock::new(|| Venue::new(Ustr::from(LIGHTER_ROBINHOOD)));
 
 /// Static client ID instance.
 pub static LIGHTER_CLIENT_ID: LazyLock<ClientId> =
     LazyLock::new(|| ClientId::new(Ustr::from(LIGHTER)));
 
-/// L2 chain id for Lighter mainnet.
+/// Robinhood Chain client ID instance.
+pub static LIGHTER_ROBINHOOD_CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::new(Ustr::from(LIGHTER_ROBINHOOD)));
+
+/// L2 chain id for Lighter Mainnet.
 ///
 /// Mirrors the upstream `lighter-go` constant. Used as the first element of
 /// the L2 transaction hash preimage.
 pub const LIGHTER_MAINNET_CHAIN_ID: u32 = 304;
 
-/// L2 chain id for Lighter testnet.
+/// L2 chain id for Lighter Testnet.
 ///
 /// Mirrors `lighter-go`'s testnet chain id and matches the value the oracle
 /// generator emits.
 pub const LIGHTER_TESTNET_CHAIN_ID: u32 = 300;
+
+/// L2 chain id for Robinhood Mainnet.
+pub const LIGHTER_ROBINHOOD_CHAIN_ID: u32 = 466_324;
 
 /// Nautilus integrator account index on Lighter.
 pub const LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX: u64 = 723_813;

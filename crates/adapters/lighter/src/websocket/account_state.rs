@@ -35,8 +35,8 @@
 //!   `account_all_assets`, with `total = balance + margin_balance` and
 //!   `locked = locked_balance` (spot-order reservations only; perp margin
 //!   in use is reported via `margins`, not `locked`).
-//! - `margins`: one cross-margin `MarginBalance(currency=USDC, instrument_id=None)`
-//!   with `initial = max(collateral - available_balance, 0)`.
+//! - `margins`: one cross-margin balance in the deployment settlement currency, with
+//!   `instrument_id=None` and `initial = max(collateral - available_balance, 0)`.
 //!
 //! Emission gate: the reconciler refuses to emit until BOTH streams have
 //! delivered at least one frame. This prevents emitting half-formed state
@@ -47,14 +47,14 @@ use std::sync::Mutex;
 
 use ahash::AHashMap;
 use nautilus_core::UnixNanos;
-use nautilus_model::{events::AccountState, identifiers::AccountId};
+use nautilus_model::{events::AccountState, identifiers::AccountId, types::Currency};
 use ustr::Ustr;
 
 use super::{
     messages::{LighterAsset, LighterUserStats},
     parse::{
         account_balance_from_lighter_asset, build_unified_account_state,
-        margin_balance_from_user_stats,
+        margin_balance_from_user_stats_with_currency,
     },
 };
 
@@ -62,12 +62,19 @@ use super::{
 ///
 /// `assets` is keyed by the venue's asset-id string (matches the wire's
 /// outer map key in `account_all_assets`). Updates upsert per-key so a
-/// delta-style frame that touches only USDC doesn't wipe out a previously
-/// known ETH entry. Lighter sends full snapshots in practice today, but
+/// delta-style frame that touches only the settlement asset doesn't wipe out a previously
+/// known asset entry. Lighter sends full snapshots in practice today, but
 /// the upsert semantics keep us correct if that ever changes.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct LighterAccountStateReconciler {
     inner: Mutex<ReconcilerInner>,
+    settlement_currency: Currency,
+}
+
+impl Default for LighterAccountStateReconciler {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -80,7 +87,14 @@ struct ReconcilerInner {
 
 impl LighterAccountStateReconciler {
     pub(crate) fn new() -> Self {
-        Self::default()
+        Self::new_with_settlement_currency(Currency::get_or_create_crypto("USDC"))
+    }
+
+    pub(crate) fn new_with_settlement_currency(settlement_currency: Currency) -> Self {
+        Self {
+            inner: Mutex::new(ReconcilerInner::default()),
+            settlement_currency,
+        }
     }
 
     /// Clear all cached state. Use before re-subscribing on a new WS
@@ -136,11 +150,9 @@ impl LighterAccountStateReconciler {
             }
         }
 
-        let margin = match inner
-            .user_stats
-            .as_ref()
-            .map(margin_balance_from_user_stats)
-        {
+        let margin = match inner.user_stats.as_ref().map(|stats| {
+            margin_balance_from_user_stats_with_currency(stats, self.settlement_currency)
+        }) {
             Some(Ok(m)) => Some(m),
             Some(Err(e)) => return Some(Err(e)),
             None => None,
@@ -313,6 +325,22 @@ mod tests {
         let margin = &state.margins[0];
         assert_eq!(margin.initial, Money::from("5.000000 USDC"));
         assert_eq!(margin.maintenance, Money::from("0 USDC"));
+    }
+
+    #[rstest]
+    fn reconciler_uses_configured_settlement_currency_for_margin() {
+        let r = LighterAccountStateReconciler::new_with_settlement_currency(Currency::USDG());
+        r.update_assets(&AHashMap::new());
+        r.update_user_stats(&user_stats("40.0", "35.0", "12.50"));
+
+        let state = r
+            .build_state(account_id(), UnixNanos::default(), UnixNanos::default())
+            .expect("ready")
+            .expect("ok");
+
+        assert_eq!(state.margins.len(), 1);
+        assert_eq!(state.margins[0].currency, Currency::from("USDG"));
+        assert_eq!(state.margins[0].initial, Money::from("5.000000 USDG"));
     }
 
     #[rstest]

@@ -63,7 +63,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
-        consts::{DISCONNECT_TIMEOUT, LIGHTER_VENUE},
+        consts::DISCONNECT_TIMEOUT,
         credential::Credential,
         enums::{LighterCandleResolution, LighterMarketStatus},
         rate_limit::resolve_quota,
@@ -125,7 +125,9 @@ impl LighterDataClient {
     pub fn new(client_id: ClientId, config: LighterDataClientConfig) -> anyhow::Result<Self> {
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
-        let socket_factory = SocketControlFactory::new(client_id, Some(*LIGHTER_VENUE));
+        let venue = config.resolved_venue();
+        let settlement_currency = config.settlement_currency();
+        let socket_factory = SocketControlFactory::new(client_id, Some(venue));
 
         let credential = if config.has_credentials() {
             // Mirror `has_credentials()`: a blank or whitespace-only `private_key`
@@ -135,10 +137,11 @@ impl LighterDataClient {
                 .as_deref()
                 .filter(|s| !s.trim().is_empty())
                 .map(str::to_string);
-            Credential::resolve(
+            Credential::resolve_for_deployment(
                 private_key,
                 config.account_index,
                 config.api_key_index,
+                config.deployment,
                 config.environment,
             )
             .context("failed to resolve Lighter data credentials")?
@@ -146,17 +149,21 @@ impl LighterDataClient {
             None
         };
 
-        let registry = Arc::new(MarketRegistry::new());
+        let registry = Arc::new(MarketRegistry::new_with_venue_and_settlement_currency(
+            venue,
+            settlement_currency,
+        ));
 
         let raw_http = LighterRawHttpClient::new_with_quotas(
             config.environment,
-            config.base_url_http.clone(),
+            Some(config.http_url()),
             config.http_timeout_secs,
             config.proxy_url.clone(),
             resolve_quota(config.rest_quota_per_min),
             None,
         )
         .context("failed to construct Lighter raw HTTP client")?;
+
         let http_client =
             LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
 
@@ -185,7 +192,7 @@ impl LighterDataClient {
     }
 
     fn venue(&self) -> Venue {
-        *LIGHTER_VENUE
+        self.config.resolved_venue()
     }
 
     /// Returns `true` when the data client holds resolved Lighter credentials.
@@ -1734,7 +1741,10 @@ mod tests {
         *,
     };
     use crate::{
-        common::enums::{LighterFundingResolution, LighterProductType},
+        common::{
+            consts::LIGHTER_VENUE,
+            enums::{LighterFundingResolution, LighterProductType},
+        },
         http::query::{LighterFundingsQuery, LighterRecentTradesQuery},
     };
 
