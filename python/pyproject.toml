@@ -177,6 +177,7 @@ exclude = [
 select = ["ALL"]
 
 ignore = [
+  "COM812", # Ruff formatter controls trailing commas
   "D200", # One-line docstrings use the multi-line form by convention (docformatter --make-summary-multi-line)
   "D203", # Conflicts with D211; ruff ignores D203 automatically, listed here to silence the warning
   "D212", # Multi-line docstring summaries start on the second line by convention (docformatter --pre-summary-newline); D213 applies instead
@@ -201,7 +202,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "nautilus_trader/**/*.pyi" = [
   "A002",
   "ANN401",
-  "COM812",
   "CPY001",
   "D",
   "E501",
@@ -217,7 +217,6 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 "python/nautilus_trader/**/*.pyi" = [
   "A002",
   "ANN401",
-  "COM812",
   "CPY001",
   "D",
   "E501",
