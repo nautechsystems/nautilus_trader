@@ -396,25 +396,49 @@ pub enum BybitOptionType {
 
 /// Symbol type values for spot/linear/inverse instrument info responses.
 ///
-/// Effective 2026-03-09 / 03-26 / 04-21 / 04-23. New values may be added by the venue;
-/// unknown strings fall back to `Other` so deserialization remains forward-compatible.
+/// New values may be added by the venue; unknown strings fall back to `Other` so deserialization
+/// remains forward-compatible.
 ///
 /// # References
-/// - <https://bybit-exchange.github.io/docs/v5/market/instrument>
+/// - <https://bybit-exchange.github.io/docs/v5/enum#symboltype>
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BybitSymbolType {
+    /// Innovation-zone derivatives.
+    Innovation,
+    /// Adventure-zone spot pairs.
+    Adventure,
     /// Tokenized equities (spot xstocks).
     Xstocks,
+    /// Commodity instruments.
+    Commodity,
     /// Tokenized stock derivatives.
     Stock,
     /// Foreign exchange instruments.
     Forex,
-    /// Commodity instruments.
-    Commodity,
+    /// Exchange-traded fund derivatives.
+    #[serde(rename = "ETF")]
+    Etf,
     /// Forward-compatible fallback for any value the venue adds later.
     #[serde(other)]
     Other,
+}
+
+impl BybitSymbolType {
+    /// Returns the exact recognized value used by Bybit, or `None` for an unknown value.
+    #[must_use]
+    pub(crate) const fn as_str(self) -> Option<&'static str> {
+        match self {
+            Self::Innovation => Some("innovation"),
+            Self::Adventure => Some("adventure"),
+            Self::Xstocks => Some("xstocks"),
+            Self::Commodity => Some("commodity"),
+            Self::Stock => Some("stock"),
+            Self::Forex => Some("forex"),
+            Self::Etf => Some("ETF"),
+            Self::Other => None,
+        }
+    }
 }
 
 /// Position side as represented in REST/WebSocket payloads.
@@ -1120,6 +1144,30 @@ mod tests {
     ) {
         let interval = BybitKlineInterval::Month1;
         assert_eq!(interval.bar_end_time_ms(start_ms), expected_end_ms);
+    }
+
+    #[rstest]
+    #[case(BybitSymbolType::Innovation, "innovation")]
+    #[case(BybitSymbolType::Adventure, "adventure")]
+    #[case(BybitSymbolType::Xstocks, "xstocks")]
+    #[case(BybitSymbolType::Commodity, "commodity")]
+    #[case(BybitSymbolType::Stock, "stock")]
+    #[case(BybitSymbolType::Forex, "forex")]
+    #[case(BybitSymbolType::Etf, "ETF")]
+    fn test_symbol_type_round_trip(#[case] symbol_type: BybitSymbolType, #[case] wire_value: &str) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitSymbolType>(value.clone()).unwrap(),
+            symbol_type
+        );
+        assert_eq!(serde_json::to_value(symbol_type).unwrap(), value);
+        assert_eq!(symbol_type.as_str(), Some(wire_value));
+    }
+
+    #[rstest]
+    fn test_unknown_symbol_type_has_no_wire_value() {
+        assert_eq!(BybitSymbolType::Other.as_str(), None);
     }
 
     #[rstest]

@@ -201,8 +201,8 @@ use crate::{
             BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginTrading,
             BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
             BybitPositionIdx, BybitPositionMode, BybitPositionSide, BybitProductType,
-            BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
-            BybitTriggerType,
+            BybitStopOrderType, BybitSymbolType, BybitTimeInForce, BybitTpSlMode,
+            BybitTriggerDirection, BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -382,7 +382,11 @@ pub fn parse_spot_instrument(
         BybitMarginTrading::Both | BybitMarginTrading::UtaOnly
     );
 
-    let mut info = Params::new();
+    let mut info = build_instrument_info(
+        definition.symbol_type,
+        definition.xstock_multiplier.as_deref(),
+    )
+    .unwrap_or_default();
     info.insert(
         "margin_trading".to_string(),
         serde_json::Value::Bool(margin_trading_supported),
@@ -479,6 +483,7 @@ pub fn parse_linear_instrument(
 
     let maker_fee = parse_decimal(&fee_rate.maker_fee_rate, "makerFeeRate")?;
     let taker_fee = parse_decimal(&fee_rate.taker_fee_rate, "takerFeeRate")?;
+    let info = build_instrument_info(definition.symbol_type, None);
 
     match definition.contract_type {
         BybitContractType::LinearPerpetual => {
@@ -503,6 +508,7 @@ pub fn parse_linear_instrument(
                 .margin_maint(default_margin())
                 .maker_fee(maker_fee)
                 .taker_fee(taker_fee)
+                .maybe_info(info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -535,6 +541,7 @@ pub fn parse_linear_instrument(
                 .margin_maint(default_margin())
                 .maker_fee(maker_fee)
                 .taker_fee(taker_fee)
+                .maybe_info(info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -633,6 +640,7 @@ pub fn parse_inverse_instrument(
 
     let maker_fee = parse_decimal(&fee_rate.maker_fee_rate, "makerFeeRate")?;
     let taker_fee = parse_decimal(&fee_rate.taker_fee_rate, "takerFeeRate")?;
+    let info = build_instrument_info(definition.symbol_type, None);
 
     match definition.contract_type {
         BybitContractType::InversePerpetual => {
@@ -657,6 +665,7 @@ pub fn parse_inverse_instrument(
                 .margin_maint(default_margin())
                 .maker_fee(maker_fee)
                 .taker_fee(taker_fee)
+                .maybe_info(info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -689,6 +698,7 @@ pub fn parse_inverse_instrument(
                 .margin_maint(default_margin())
                 .maker_fee(maker_fee)
                 .taker_fee(taker_fee)
+                .maybe_info(info)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -699,6 +709,30 @@ pub fn parse_inverse_instrument(
             "unsupported inverse contract variant: {other:?}"
         )),
     }
+}
+
+fn build_instrument_info(
+    symbol_type: Option<BybitSymbolType>,
+    xstock_multiplier: Option<&str>,
+) -> Option<Params> {
+    let symbol_type = symbol_type?;
+    let value = symbol_type.as_str()?;
+    let mut info = Params::new();
+    info.insert(
+        "symbol_type".to_string(),
+        serde_json::Value::String(value.to_string()),
+    );
+
+    if symbol_type == BybitSymbolType::Xstocks
+        && let Some(multiplier) = xstock_multiplier.filter(|value| !value.is_empty())
+    {
+        info.insert(
+            "xstock_multiplier".to_string(),
+            serde_json::Value::String(multiplier.to_string()),
+        );
+    }
+
+    Some(info)
 }
 
 /// Parses a Bybit option contract definition into a Nautilus [`CryptoOption`].
@@ -2002,6 +2036,56 @@ mod tests {
     }
 
     #[rstest]
+    fn parse_spot_instrument_forwards_symbol_info() {
+        let json = load_test_json("http_get_instruments_spot_xstocks.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let fee_rate = sample_fee_rate("AAPLUSDT", "0.0006", "0.0001", Some("AAPL"));
+
+        let parsed = parse_spot_instrument(instrument, &fee_rate, TS, TS).unwrap();
+        match parsed {
+            InstrumentAny::CurrencyPair(pair) => {
+                let info = pair.info.as_ref().unwrap();
+                assert_eq!(info.get_bool("margin_trading"), Some(false));
+                assert_eq!(info.get_str("symbol_type"), Some("xstocks"));
+                assert_eq!(info.get_str("xstock_multiplier"), Some("0.1"));
+                assert_eq!(info.len(), 3);
+            }
+            other => panic!("unexpected instrument variant: {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case::unknown(BybitSymbolType::Other, "1", None, 1)]
+    #[case::non_xstock(BybitSymbolType::Adventure, "1", Some("adventure"), 2)]
+    #[case::empty_xstock_multiplier(BybitSymbolType::Xstocks, "", Some("xstocks"), 2)]
+    fn parse_spot_instrument_omits_inapplicable_symbol_info(
+        #[case] symbol_type: BybitSymbolType,
+        #[case] xstock_multiplier: &str,
+        #[case] expected_symbol_type: Option<&str>,
+        #[case] expected_len: usize,
+    ) {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.symbol_type = Some(symbol_type);
+        instrument.xstock_multiplier = Some(xstock_multiplier.to_string());
+        let fee_rate = sample_fee_rate("BTCUSDT", "0.0006", "0.0001", Some("BTC"));
+
+        let parsed = parse_spot_instrument(&instrument, &fee_rate, TS, TS).unwrap();
+        match parsed {
+            InstrumentAny::CurrencyPair(pair) => {
+                let info = pair.info.as_ref().unwrap();
+                assert_eq!(info.get_bool("margin_trading"), Some(true));
+                assert_eq!(info.get_str("symbol_type"), expected_symbol_type);
+                assert_eq!(info.get("xstock_multiplier"), None);
+                assert_eq!(info.len(), expected_len);
+            }
+            other => panic!("unexpected instrument variant: {other:?}"),
+        }
+    }
+
+    #[rstest]
     #[case(BybitMarginTrading::Both, true)]
     #[case(BybitMarginTrading::UtaOnly, true)]
     #[case(BybitMarginTrading::None, false)]
@@ -2043,9 +2127,35 @@ mod tests {
                 assert_eq!(perp.price_increment, Price::from_str("0.5").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("0.001").unwrap());
                 assert_eq!(perp.min_notional, Some(Money::new(5.0, Currency::USDT())),);
+                assert!(perp.info.is_none());
             }
             other => panic!("unexpected instrument variant: {other:?}"),
         }
+    }
+
+    #[rstest]
+    #[case::perpetual(BybitContractType::LinearPerpetual)]
+    #[case::future(BybitContractType::LinearFutures)]
+    fn parse_linear_instrument_forwards_symbol_info(#[case] contract_type: BybitContractType) {
+        let json = load_test_json("http_get_instruments_linear_symbol_type.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.contract_type = contract_type;
+        let fee_rate = sample_fee_rate("TSLAUSDT", "0.00055", "0.0001", Some("TSLA"));
+
+        let parsed = parse_linear_instrument(&instrument, &fee_rate, TS, TS).unwrap();
+        let info = match (contract_type, parsed) {
+            (BybitContractType::LinearPerpetual, InstrumentAny::CryptoPerpetual(perp)) => {
+                perp.info.unwrap()
+            }
+            (BybitContractType::LinearFutures, InstrumentAny::CryptoFuture(future)) => {
+                future.info.unwrap()
+            }
+            (_, other) => panic!("unexpected instrument variant: {other:?}"),
+        };
+
+        assert_eq!(info.get_str("symbol_type"), Some("stock"));
+        assert_eq!(info.len(), 1);
     }
 
     #[rstest]
@@ -2063,9 +2173,35 @@ mod tests {
                 assert_eq!(perp.price_increment, Price::from_str("0.5").unwrap());
                 assert_eq!(perp.size_increment, Quantity::from_str("1").unwrap());
                 assert!(perp.min_notional.is_none());
+                assert!(perp.info.is_none());
             }
             other => panic!("unexpected instrument variant: {other:?}"),
         }
+    }
+
+    #[rstest]
+    #[case::perpetual(BybitContractType::InversePerpetual)]
+    #[case::future(BybitContractType::InverseFutures)]
+    fn parse_inverse_instrument_forwards_symbol_info(#[case] contract_type: BybitContractType) {
+        let json = load_test_json("http_get_instruments_inverse_symbol_type.json");
+        let response: BybitInstrumentInverseResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.contract_type = contract_type;
+        let fee_rate = sample_fee_rate("BRENTUSD", "0.00075", "0.00025", Some("BRENT"));
+
+        let parsed = parse_inverse_instrument(&instrument, &fee_rate, TS, TS).unwrap();
+        let info = match (contract_type, parsed) {
+            (BybitContractType::InversePerpetual, InstrumentAny::CryptoPerpetual(perp)) => {
+                perp.info.unwrap()
+            }
+            (BybitContractType::InverseFutures, InstrumentAny::CryptoFuture(future)) => {
+                future.info.unwrap()
+            }
+            (_, other) => panic!("unexpected instrument variant: {other:?}"),
+        };
+
+        assert_eq!(info.get_str("symbol_type"), Some("commodity"));
+        assert_eq!(info.len(), 1);
     }
 
     #[rstest]
