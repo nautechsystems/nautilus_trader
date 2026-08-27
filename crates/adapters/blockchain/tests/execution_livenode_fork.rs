@@ -506,10 +506,9 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
     // SAFETY: this opt-in test runs in its own process; the reconnect thread only reads this
     // variable after this spawn point and joins before the removal below, so accesses are
     // ordered by thread lifecycle.
-    unsafe {
-        std::env::set_var(SIGNER_ENV, signer_private_key);
-        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
-    }
+    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    // SAFETY: the same process isolation and access ordering apply to this variable
+    unsafe { std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX) };
 
     // Operator setup: explicit wrap and router approval before any node runs
     let operator_cache = Rc::new(RefCell::new(Cache::default()));
@@ -900,7 +899,11 @@ async fn anvil_fork_livenode_routed_swap_and_reconnect() {
 
     rpc_topology.assert_broadcast_isolation();
     unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(SIGNER_ENV);
+    }
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(PAYLOAD_KEY_ENV);
     }
 }
@@ -939,10 +942,9 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
     let venue_string = pool.instrument_id.venue.to_string();
 
     // SAFETY: this opt-in test runs in its own process.
-    unsafe {
-        std::env::set_var(SIGNER_ENV, signer_private_key);
-        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
-    }
+    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    // SAFETY: this opt-in test runs in its own process
+    unsafe { std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX) };
 
     let operator_cache = Rc::new(RefCell::new(Cache::default()));
     operator_cache.borrow_mut().add_pool(pool.clone()).unwrap();
@@ -1194,7 +1196,11 @@ async fn anvil_fork_livenode_routed_buy_and_reconnect() {
 
     rpc_topology.assert_broadcast_isolation();
     unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(SIGNER_ENV);
+    }
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(PAYLOAD_KEY_ENV);
     }
 }

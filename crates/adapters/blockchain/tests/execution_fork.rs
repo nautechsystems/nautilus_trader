@@ -171,10 +171,9 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
         .build();
 
     // SAFETY: this opt-in test runs in its own process and no other thread reads this variable.
-    unsafe {
-        std::env::set_var(SIGNER_ENV, signer_private_key);
-        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
-    }
+    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    // SAFETY: the same process isolation applies to this variable
+    unsafe { std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX) };
 
     let mut client = BlockchainExecutionClient::new(core, config).unwrap();
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -612,7 +611,11 @@ async fn anvil_fork_wrap_approve_preflight_and_swap() {
 
     rpc_topology.assert_broadcast_isolation();
     unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(SIGNER_ENV);
+    }
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(PAYLOAD_KEY_ENV);
     }
 }
@@ -704,10 +707,9 @@ async fn anvil_fork_usdc_to_weth_market_buy() {
         .build();
 
     // SAFETY: this opt-in test runs in its own process and no other thread reads this variable.
-    unsafe {
-        std::env::set_var(SIGNER_ENV, signer_private_key);
-        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
-    }
+    unsafe { std::env::set_var(SIGNER_ENV, signer_private_key) };
+    // SAFETY: the same process isolation applies to this variable
+    unsafe { std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX) };
 
     let mut client = BlockchainExecutionClient::new(core, config).unwrap();
     let (event_sender, mut event_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -871,7 +873,11 @@ async fn anvil_fork_usdc_to_weth_market_buy() {
     );
     rpc_topology.assert_broadcast_isolation();
     unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(SIGNER_ENV);
+    }
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(PAYLOAD_KEY_ENV);
     }
 }
@@ -1017,10 +1023,9 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
     ensure_execution_schema(&admin_pool).await;
 
     // SAFETY: this opt-in test uses a distinct env var from the sibling fork test.
-    unsafe {
-        std::env::set_var(RECOVERY_SIGNER_ENV, &signer_private_key);
-        std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX);
-    }
+    unsafe { std::env::set_var(RECOVERY_SIGNER_ENV, &signer_private_key) };
+    // SAFETY: this opt-in test runs in its own process
+    unsafe { std::env::set_var(PAYLOAD_KEY_ENV, PAYLOAD_KEY_HEX) };
 
     let rpc_client = Arc::new(BlockchainHttpRpcClient::new(anvil_url.clone(), None, None));
     let erc20 = Erc20Contract::new(rpc_client.clone(), true);
@@ -1207,7 +1212,11 @@ async fn anvil_fork_restart_recovers_operator_transactions() {
 
     rpc_topology.assert_broadcast_isolation();
     unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(RECOVERY_SIGNER_ENV);
+    }
+    unsafe {
+        // SAFETY: this opt-in test owns this variable for the process
         std::env::remove_var(PAYLOAD_KEY_ENV);
     }
 }
