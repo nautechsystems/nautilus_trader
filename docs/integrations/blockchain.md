@@ -5,13 +5,79 @@
 The blockchain adapter ingests DeFi data from EVM chains and exposes it through the
 NautilusTrader data model. It also includes an execution client for locally signed Uniswap V3
 market swaps. Fork tests exercise the supported path end to end on Arbitrum, but the execution
-client is not production-ready. See [Execution](#execution). The adapter uses three backends:
+client is not production-ready. The adapter uses three backends:
 
 - HyperSync: high-throughput historical blocks and contract logs. See the
   [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for query shape,
   pagination, and tuning.
 - HTTP RPC: contract calls, Multicall reads, and final on-chain state hydration.
 - Postgres: optional durable cache state, pool metadata, decoded events, and snapshots.
+
+## Capability status
+
+| Capability                | Scope                                                                      | Readiness                                                     |
+| ------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Historical blocks         | Any configured `Chain` with a reachable HyperSync endpoint.                | Available through the Rust service and `sync-blocks`.         |
+| Live blocks               | HyperSync, or WSS RPC for chains with an RPC client.                       | Available through the Rust and Python data-client surfaces.   |
+| DEX pool discovery        | Chain and DEX combinations with a registered pool-creation parser.         | Available through the data client and `sync-dex`.             |
+| Pool snapshots and replay | Concentrated-liquidity integrations with the complete snapshot parser set. | Available with Postgres and the provider constraints below.   |
+| Live pool events          | Registered swap, liquidity, collect, flash, and fee-protocol parsers.      | Available through the Rust and Python data-client surfaces.   |
+| Transaction execution     | Locally signed Uniswap V3 BUY and SELL market swaps.                       | Experimental; not production-ready or exposed for Python use. |
+
+Direct WSS RPC clients exist for Ethereum, Polygon, Base, Arbitrum, and BSC. Other configured chain
+values can use HyperSync block history when their endpoint is reachable, but they do not support
+WSS live mode.
+
+### Chain and DEX command support
+
+Command support is derived from the parsers registered for each chain and DEX. The CLI help for
+`sync-dex` and `analyze-pool(s)` prints the same capability boundaries.
+
+| Tier            | Meaning                                                      | DEXes                                               | Chains                                      |
+| --------------- | ------------------------------------------------------------ | --------------------------------------------------- | ------------------------------------------- |
+| Replay-ready    | Discovery, snapshot, and fee-protocol replay parsers.        | Uniswap V3 and PancakeSwap V3.                      | Ethereum, Base, Arbitrum, and BSC.          |
+| Analysis only   | Snapshot parsers without CLI pool discovery.                 | Aerodrome Slipstream.                               | Base.                                       |
+| Discovery only  | Pool discovery without the complete snapshot parser set.     | Uniswap V2 and Uniswap V4.                          | Ethereum, Base, and Arbitrum.               |
+| Discovery only  | Pool discovery without the complete snapshot parser set.     | Camelot V3 and Fluid DEX.                           | Arbitrum.                                   |
+| Registered only | Metadata registration without command-capable event parsers. | Curve Finance and Fluid DEX.                        | Ethereum.                                   |
+| Registered only | Metadata registration without command-capable event parsers. | Aerodrome V1, BaseSwap V2, BaseX, and SushiSwap V3. | Base.                                       |
+| Registered only | Metadata registration without command-capable event parsers. | Curve Finance, SushiSwap V2, and SushiSwap V3.      | Arbitrum.                                   |
+| Blocks only     | No DEX registration; `sync-blocks` remains available.        | -                                                   | Other configured chains, including Polygon. |
+
+`sync-dex` requires a pool-creation parser. `analyze-pool(s)` requires Initialize, Swap, Mint,
+Burn, and Collect parsers. Replay-ready integrations also parse `SetFeeProtocol`; integrations
+with a `CollectProtocol` parser can replay protocol-fee withdrawals.
+
+Aerodrome Slipstream has no pool-creation parser, and the CLI has no separate pool-registration
+command. Analysis works only when its pool and token metadata already exist in the cache through
+another integration path. Its replay-derived snapshots cannot be validated against on-chain state.
+Registered-only DEXes are omitted from command help and fail the relevant capability check.
+
+### Interface availability
+
+| Surface                               | Rust                                      | Python                     | CLI                                      |
+| ------------------------------------- | ----------------------------------------- | -------------------------- | ---------------------------------------- |
+| Data configuration and factory        | Public config and factory.                | Public config and factory. | -                                        |
+| Live data subscriptions               | Data-client subscription API.             | LiveNode data-client API.  | -                                        |
+| Block sync, discovery, and analysis   | Adapter services.                         | -                          | `sync-blocks`, `sync-dex`, and analysis. |
+| Stored snapshot loading               | Cache API.                                | `load_pool_snapshot`.      | -                                        |
+| Execution configuration               | Public config.                            | Configuration types only.  | -                                        |
+| Execution factory and order routing   | Public factory and client.                | -                          | -                                        |
+| Preflight, wrap, approve, and storage | Direct `BlockchainExecutionClient` calls. | -                          | -                                        |
+
+The Python module does not register or export `BlockchainExecutionClientFactory`, so Python
+LiveNode configuration cannot instantiate the execution client.
+
+### Examples
+
+Runnable data-client examples are available for both public language surfaces:
+
+- [Rust LiveNode data tester](../../crates/adapters/blockchain/examples/node_data_tester.rs).
+- [Python data tester](../../examples/live/blockchain/data_tester.py).
+- [Python LiveNode example](../../examples/live/blockchain/node_test.py).
+
+The repository does not provide a maintained runnable execution setup example. Build execution
+integrations in Rust and apply the constraints in [Execution](#execution).
 
 ## Core primitives
 
@@ -64,7 +130,7 @@ Uniswap V3 and compatible concentrated-liquidity pools also use:
 - `Swap` events for live pool price movement.
 - HTTP RPC final-state reads for `slot0`, liquidity, active ticks, and position data.
 
-## Configuration
+## Data client configuration
 
 | Option                            | Default                       | Description                                            |
 | --------------------------------- | ----------------------------- | ------------------------------------------------------ |
@@ -118,31 +184,22 @@ Execution adds further variables (see [Execution](#execution)):
 - Signed-payload protection reads the active and retired 32-byte keys from the variables named by
   `payload_key_env` and `payload_key_retired_env`. These configuration fields contain variable names,
   never key values.
-- `BLOCKCHAIN_FORK_TESTS=1` enables the pinned-block Anvil integration suite.
-  `BLOCKCHAIN_FORK_RPC_URL` is then required as Anvil's read-only Arbitrum fork source; signed
-  transactions go to localhost only.
 
 For token setup and quota details, see Envio's
 [HyperSync API token docs](https://docs.envio.dev/docs/HyperSync/api-tokens).
 
-### RPC endpoints
+### RPC provider requirements
 
 `RPC_HTTP_URL` or `--rpc-url` must point at an EVM JSON-RPC endpoint for the target chain.
 The data client uses it for contract reads, and first-time pool syncs read on-chain state through it.
 The client reads the HyperSync endpoint from `Chain::hypersync_url`; built-in chains default to
 `https://{chain_id}.hypersync.xyz`.
 
-Checked public HTTP endpoints (August 2026, no API key):
-
-| Chain        | HTTP endpoint                          | Archive |
-| ------------ | -------------------------------------- | ------- |
-| Arbitrum One | `https://arb1.arbitrum.io/rpc`         | No      |
-| Arbitrum One | `https://arbitrum.gateway.tenderly.co` | Yes     |
-| Ethereum     | `https://ethereum-rpc.publicnode.com`  | No      |
-
-Archive endpoint availability and limits change. Snapshot validation usually needs only a small
-number of `eth_call`s per pool, so an endpoint with historical state access can be enough to get
-`validation_state = on_chain`.
+Choose an RPC provider that supports the intended target blocks and Multicall workload. Provider
+labels are not sufficient evidence of archive access: verify an `eth_getCode` or `eth_call` against
+the historical block the workflow will use. Returning the block header alone does not prove that
+historical contract state is available. Large pools may also require higher payload, gas, timeout,
+and request-rate limits.
 
 Archive support affects validation, not whether event sync runs:
 
@@ -150,27 +207,29 @@ Archive support affects validation, not whether event sync runs:
   `validation_state = on_chain`.
 - On a non-archive node, the historical read fails and the snapshot stays `validation_state = replay`,
   which is still usable as a replay start point.
-- A first-time sync on a non-archive node must run to a recent `--to-block`, because non-archive
-  nodes only serve recent state and bootstrap reads on-chain state at the target block.
-
-For other chains or archive access, use a directory such as [chainlist.org](https://chainlist.org) or
-[comparenodes.com](https://www.comparenodes.com), or a keyed provider (Infura, Alchemy, dRPC).
+- A first-time sync on a non-archive node must use a recent `--to-block`, because bootstrap reads
+  on-chain state at the target block and non-archive nodes serve only recent state.
 
 ## Local services
 
-The development compose file starts Postgres, Redis, and pgAdmin.
+The development Docker Compose file starts Postgres, Redis, and pgAdmin. To create the containers,
+wait for Postgres, and initialize the database schema, run:
 
 ```bash
-make start-services
-make init-db
+make init-services
 ```
 
-Default Postgres connection:
+Use `make start-services` to start an initialized stack. Run `make init-db` to initialize or reapply
+the Postgres schema.
 
-- Host: `127.0.0.1:5432`
-- Database: `nautilus`
-- User: `nautilus`
-- Password: `pass`
+The local Postgres defaults are:
+
+| Field    | Value            |
+| -------- | ---------------- |
+| Host     | `127.0.0.1:5432` |
+| Database | `nautilus`       |
+| User     | `nautilus`       |
+| Password | `pass`           |
 
 Check that the schema exists:
 
@@ -179,9 +238,10 @@ docker exec nautilus-database psql -U nautilus -d nautilus -Atc \
     "select count(*) from information_schema.tables where table_schema='public'"
 ```
 
-For destructive DeFi tests, use a separate database or resettable Docker volume. Pool discovery and
-snapshot tests can write many rows to `token`, `pool`, `pool_*_event`, `pool_snapshot`,
-`pool_position`, and `pool_tick`.
+Pool snapshot generation and snapshot requests require a schema-initialized Postgres cache. Pool
+discovery and snapshot generation write `token`, `pool`, `pool_*_event`, `pool_snapshot`,
+`pool_position`, and `pool_tick` rows. Use a dedicated database or resettable Docker volume for
+repeatable or destructive data workloads.
 
 ## Data flow
 
@@ -240,6 +300,30 @@ flowchart TD
 
 `analyze-pools` runs one task per pool, bounded by `--concurrency`. Each task owns its data client.
 A snapshot is usable as a replay start point unless its `validation_state` is `invalid`.
+
+### Data-client surface
+
+The public data client supports these DeFi subscriptions and requests:
+
+| Surface           | Commands                                                           | Behavior                                                                                           |
+| ----------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| Blocks            | `SubscribeBlocks`, `UnsubscribeBlocks`                             | Starts or stops the shared HyperSync or WSS RPC block feed.                                        |
+| Complete pool     | `SubscribePool`, `UnsubscribePool`                                 | Selects swaps, mints, burns, collects, flashes, and both fee-protocol event types.                 |
+| Pool swaps        | `SubscribePoolSwaps`, `UnsubscribePoolSwaps`                       | Selects swap events for one pool instrument.                                                       |
+| Liquidity updates | `SubscribePoolLiquidityUpdates`, `UnsubscribePoolLiquidityUpdates` | Selects mint and burn events for one pool instrument.                                              |
+| Fee collections   | `SubscribePoolFeeCollects`, `UnsubscribePoolFeeCollects`           | Selects collect events for one pool instrument.                                                    |
+| Flash events      | `SubscribePoolFlashEvents`, `UnsubscribePoolFlashEvents`           | Selects flash events for one pool instrument.                                                      |
+| Pool snapshot     | `RequestPoolSnapshot`                                              | Publishes the pool definition, then a usable snapshot when cache bootstrap and validation succeed. |
+
+Subscriptions share the underlying block and DEX event feeds. Removing one subscription does not
+stop a feed that another subscription still owns. Pool snapshot requests require Postgres because
+bootstrap reads stored pool and event state through the cache database.
+
+:::warning
+DeFi pool definitions and account-state updates publish on typed message-bus routers. A
+`subscribe_any` handler never receives them. Use `subscribe_defi_pools` and
+`subscribe_account_state`, or the matching actor subscription APIs.
+:::
 
 ### Pool discovery
 
@@ -300,16 +384,6 @@ Use `--require-existing-snapshot` when analysis should run only from the local s
 - Returns `needs_bootstrap` if no usable snapshot exists.
 - Treats an empty creation-block snapshot with no positions or ticks as unusable.
 - Skips the creation-to-target bootstrap for that pool.
-
-```bash
-nautilus blockchain analyze-pools \
-    --chain ethereum \
-    --dex UniswapV3 \
-    --addresses-file pools.txt \
-    --to-block 25218797 \
-    --require-existing-snapshot \
-    --rpc-url "$RPC_HTTP_URL"
-```
 
 #### Analysis output
 
@@ -400,6 +474,157 @@ Cached block timestamps load into Nautilus data objects as UNIX nanoseconds. Cac
 second-resolution block timestamps are normalized to nanoseconds when snapshots and pool events are
 loaded, while nanosecond rows preserve their stored precision.
 
+### Pool analysis constraints
+
+`analyze-pool(s)` validates its prerequisites and reports each pool independently. These boundaries
+also apply when the underlying analysis services are called from Rust.
+
+| Condition                  | Behavior                                                                                 | Constraint                                                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Missing pool metadata      | Fails with `Pool <address> is not registered`.                                           | Discover the pool first; analysis cannot infer or register metadata.                                             |
+| Missing parser capability  | Fails before sync.                                                                       | Use a snapshot-capable combination from [Chain and DEX command support](#chain-and-dex-command-support).         |
+| Non-checksummed address    | Fails with `Blockchain address '<address>' has incorrect checksum`.                      | Supply an EIP-55 address; factory `getPool` results may need checksum conversion.                                |
+| Provider Multicall cap     | An `out of gas`, payload, or timeout error aborts final-state hydration.                 | Lower `multicall_calls_per_rpc_request` or use a provider with higher limits.                                    |
+| Missing historical state   | A first bootstrap cannot read final state at an old `--to-block`.                        | Use a recent target or an archive-capable provider; see [RPC provider requirements](#rpc-provider-requirements). |
+| Restricted HyperSync quota | High-activity pools back off, and a full first sync can require thousands of requests.   | Lower `--concurrency`, or use `--snapshot-from-rpc` when stored swap history is unnecessary.                     |
+| Mid-life `--from-block`    | Omitting `Initialize` can leave the profiler without an initial price.                   | Sync from pool creation when generating a first snapshot.                                                        |
+| No liquidity events        | `analyze-pool` errors; `analyze-pools` emits a failure result and continues other pools. | Select a pool with a Mint or Burn at or before the target block.                                                 |
+| Any per-pool failure       | Emits `"status": "failure"` and makes `analyze-pool(s)` exit non-zero.                   | Use the exit code for the overall result and each JSON status for the per-pool result.                           |
+
+Final RPC hydration in `--snapshot-from-rpc` mode is authoritative for checkpoint state. A failed
+hydration aborts analysis rather than storing a snapshot with stale price state.
+
+## Pool analysis operations
+
+### Discover pools before analysis
+
+`analyze-pool(s)` reads pool metadata from the Postgres cache and fails with
+`Pool <address> is not registered` when the pool has not been discovered. Run `sync-dex` for the
+chain and DEX before analysis to populate the `pool` and `token` tables.
+
+### Check command support
+
+Use [Chain and DEX command support](#chain-and-dex-command-support) or the command help before
+starting a sync. `sync-dex` and `analyze-pool(s)` reject unsupported chain and DEX combinations
+before querying events, rather than returning an empty result.
+
+```bash
+./target/debug/nautilus blockchain sync-dex --help
+./target/debug/nautilus blockchain analyze-pools --help
+```
+
+### Use checksummed pool addresses
+
+Pool addresses must use the EIP-55 checksum. A lowercase address fails with
+`Blockchain address '<address>' has incorrect checksum`. Convert discovered addresses to checksum
+form before passing `--address` or adding them to an addresses file.
+
+### Reduce the Multicall request size
+
+An RPC provider can reject a large final-state Multicall with an out-of-gas, payload, or timeout
+error. Lower `--multicall-calls-per-rpc-request` from its default of `200` to keep each request
+within the provider's limits.
+
+### Choose a target block the RPC provider can serve
+
+A first-time sync reads on-chain state at `--to-block`. Use a recent target with a non-archive RPC
+provider, or use a provider that serves contract state at the requested historical block. See
+[RPC provider requirements](#rpc-provider-requirements).
+
+### Control HyperSync request volume
+
+A full first-time sync of a large or old pool can require thousands of requests. Lower
+`--concurrency` when the configured token has a restrictive quota. Use `--snapshot-from-rpc` when
+an exact checkpoint snapshot is sufficient and stored swap history is not required.
+
+### Start an initial replay at pool creation
+
+Starting `--from-block` in the middle of a pool's history can omit its `Initialize` event. Without
+an initial price, snapshot bootstrap fails with
+`Pool is not initialized and it doesn't contain initial price, cannot bootstrap profiler`. Sync
+from pool creation when generating the first snapshot.
+
+### Interpret pool failures
+
+A pool without processed Mint or Burn events at or before the target block can lack the state needed
+for a snapshot. `analyze-pool` returns the error. `analyze-pools` emits a JSON line with
+`"status": "failure"`, continues with the other pools, and exits non-zero after any per-pool
+failure. Use the process exit code for the overall result and each JSON status for individual
+results.
+
+## Runbook: validate a live pool sync
+
+Use this procedure to check pool discovery, event parsing, and snapshot generation for one DEX on
+one chain. The example uses PancakeSwap V3 on Arbitrum. It performs read-only chain queries and
+writes only to the configured Postgres cache.
+
+### Prerequisites
+
+- Docker is available for the local Postgres service.
+- `ENVIO_API_TOKEN` contains a valid HyperSync token.
+- `RPC_HTTP_URL` points to an Arbitrum RPC provider that can serve the target block.
+- `POOL_ADDRESS` contains an EIP-55 checksummed PancakeSwap V3 pool address.
+
+### Start the local services and build the CLI
+
+```bash
+make init-services
+cargo build -p nautilus-cli --features defi --bin nautilus
+```
+
+### Discover pools
+
+Run discovery immediately before analysis when the local database has been reset:
+
+```bash
+./target/debug/nautilus blockchain sync-dex \
+    --chain arbitrum \
+    --dex PancakeSwapV3 \
+    --rpc-url "$RPC_HTTP_URL" \
+    --host 127.0.0.1 \
+    --port 5432 \
+    --username nautilus \
+    --password pass \
+    --database nautilus
+```
+
+### Analyze the pool
+
+Keep concurrency at one for this validation run:
+
+```bash
+./target/debug/nautilus blockchain analyze-pools \
+    --chain arbitrum \
+    --dex PancakeSwapV3 \
+    --address "$POOL_ADDRESS" \
+    --rpc-url "$RPC_HTTP_URL" \
+    --host 127.0.0.1 \
+    --port 5432 \
+    --username nautilus \
+    --password pass \
+    --database nautilus \
+    --concurrency 1
+```
+
+### Check the stored data
+
+Count the rows written for the pool in:
+
+- `pool_swap_event`
+- `pool_liquidity_event`
+- `pool_collect_event`
+- `pool_flash_event`
+- `pool_fee_protocol_update_event`
+- `pool_fee_protocol_collect_event`
+- `pool_snapshot`
+- `pool_position`
+- `pool_tick`
+
+Fee-protocol tables remain empty when the synced range contains no `SetFeeProtocol` or
+`CollectProtocol` events. After a local database reset, rerun discovery before analysis so the pool
+row exists. See [Pool analysis operations](#pool-analysis-operations) for address, provider,
+replay-range, and request-volume failures.
+
 ## Contracts
 
 ### Base contract and Multicall3
@@ -443,6 +668,17 @@ Uniswap V3 swap flow. Arbitrum Uniswap V3 is the only chain and DEX combination 
 end-to-end fork tests. Other order operations fail closed with no on-chain or durable side effects.
 :::
 
+Execution uses these terms throughout this section:
+
+| Term                | Meaning                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Decision height     | The minimum fresh head accepted across all three RPC sources for one authorizing read set.                    |
+| Verification source | One authoritative endpoint or one of exactly two read-only verifiers in a distinct configured failure domain. |
+| Deployment manifest | Reviewed contracts, code hashes, proxy bindings, identities, pools, tokens, and permitted call edges.         |
+| Intent              | One durable logical wrap, approve, or swap operation, independent of its transaction-hash history.            |
+| Signer ownership    | Exclusive control of the wallet signer and, after assignment, its active nonce.                               |
+| Finalized boundary  | The point where all sources agree on finalized ancestry through the transaction's inclusion block.            |
+
 ### Connection and account state
 
 Client construction requires one authoritative RPC endpoint and exactly two read-only verification
@@ -472,8 +708,14 @@ set of failure-domain IDs.
 A failure domain represents any shared upstream, reseller, gateway, proxy, account, network path,
 or hosting control plane. Distinct URLs and distinct configured identities do not prove operational
 independence. The operator must verify that the three providers do not share a control or failure
-domain. The operator must also keep the signing key exclusive to one live client and control access
-to the host environment, database, replicas, backups, and exports.
+domain. The operator must also identify and monitor every party or governance mechanism that can
+change a manifest-pinned deployment's code or a manifest-pinned proxy's implementation. If such a
+deployment change or proxy upgrade is announced or suspected, stop execution and revoke every
+outstanding allowance whose spender is a router address in the affected deployment. Complete the
+revocations before the changed code or implementation is present at the decision block used for
+signing. Once it is, the pre-sign deployment check fails closed for every client transaction,
+including revocation. The operator must keep the signing key exclusive to one live client and
+control access to the host environment, database, replicas, backups, and exports.
 
 Connect completes these checks before it loads the signer:
 
@@ -647,7 +889,9 @@ Preflight, WETH wrapping, and router approval are explicit operations on the cli
 | Approve   | Calls `approve(router, amount)`.   | Wrap checks plus router policy, factory and WETH identity, input-token membership, zero allowance, and approval simulation. | Allowance at the inclusion block equals the target. |
 
 Preflight resolves the pool from `Cache::pool`. Its report contains no RPC URL, private key, or raw
-signed transaction.
+signed transaction. It reports the expected and observed chain IDs, pool, router and token code
+checks, token balances and allowances, native balance, base and priority fees, the derived maximum
+fee, whether the fee stays within its ceiling, overall readiness, and every failed check.
 
 Approve rejects a standard `false` return and accepts tokens that return no data. A nonzero
 approval is limited to configured input tokens and requires the existing allowance to be zero.
@@ -911,6 +1155,11 @@ count. The client:
 1. Rechecks the deployment manifest at inclusion, then commits finality evidence, receipt state,
    header ancestry, and canonical nonce advancement in one database transaction.
 
+After on-chain execution, deployment or call-trace drift detected by the final-inclusion checks
+leaves signer ownership quarantined. Those checks cannot reverse on-chain effects from a contract
+upgrade after the decision block used by the final pre-sign check, including an upgrade after that
+check completes and before transaction execution.
+
 All three RPC sources must support the `finalized` tag. An unsupported tag fails reconciliation
 closed.
 
@@ -950,23 +1199,22 @@ idempotently; this adapter does not provide an atomic exactly-once delivery guar
 
 ### Signed transaction storage
 
-Postgres-backed execution requires protected signed-transaction storage. Configure
-`payload_key_env` and `payload_deployment_id`, stop every client that points to the database, then
-run `protect_payload_storage()` on a disconnected Rust client. Protection seals every signed
-EIP-2718 transaction with AES-256-GCM and clears its live plaintext column. The authenticated
+Postgres-backed execution requires protected signed-transaction storage. Protection seals every
+signed EIP-2718 transaction with AES-256-GCM and clears its live plaintext column. The authenticated
 context binds the exact signed bytes to the deployment, chain, signer, intent, signer nonce, and
 transaction hash.
 
-Protection records its durable marker before migrating existing rows in bounded batches. A restart
-can resume an interrupted protection operation by running `protect_payload_storage()` again. Run
-`check_payload_storage(batch_size)` after protection. Every later Postgres-backed execution connect
-also requires ready protected state and repeats the full authenticated check before it loads the
-signer. Connect never activates, resumes, or repairs protection implicitly.
+Storage maintenance uses direct Rust methods on a disconnected `BlockchainExecutionClient`; Python
+and the CLI do not expose them. Connect never activates, resumes, or repairs protection implicitly.
+Every Postgres-backed connect requires ready protected state and authenticates every retained
+payload before loading the signer.
 
-Configure and operate protected storage as follows:
+Protected storage has these key and deployment constraints:
 
-- Set the active key variable to exactly 32 bytes encoded as hexadecimal, with an optional `0x`
-  prefix. Keep key values out of configuration, logs, shell history, and process arguments.
+- Supply every payload sealing key as the hexadecimal encoding of exactly 32 raw bytes, with an
+  optional `0x` prefix. The operator must generate those bytes with a cryptographically secure
+  pseudorandom number generator (CSPRNG) and use a unique raw key for each independently sealing
+  database. Keep key values out of configuration, logs, shell history, and process arguments.
 - Keep `payload_deployment_id` stable for the life of the protected database. A changed deployment
   ID makes existing envelopes unreadable by design.
 - List every old key variable in `payload_key_retired_env` until no stored envelope references it.
@@ -974,31 +1222,29 @@ Configure and operate protected storage as follows:
 - Keep the complete key set available on every connect. A missing active or retired key, malformed
   envelope, failed authentication tag, durable-context mismatch, or unexpected plaintext row fails
   closed. Protected storage never falls back to `raw_transaction`.
-- Rotate the active key before it reaches `2^32` seals. With the client disconnected, configure the
-  replacement as active, retain the old key as retired, and run the Rust rewrap method before the
-  next connect. The database reserves and counts each seal, including migration and rewrap work,
-  and rejects further use at the limit.
+- Treat `2^32` seals as one lifetime budget for a raw key, not a limit that resets per database.
+  Rotate the active key before aggregate use reaches that ceiling. With the client disconnected,
+  configure the replacement as active, retain the old key as retired, and run the Rust rewrap
+  method before the next connect. A restored copy that becomes write-active with the original raw
+  key shares the same budget. Each database reserves and counts its own seals, including migration
+  and rewrap work, and rejects further local use when its counter exhausts the numeric ceiling, but
+  database-local counters cannot enforce the aggregate after copies diverge. The operator must
+  count shared pre-restore history once and every later seal from each copy once.
 
-The maintenance operations are Rust methods on `BlockchainExecutionClient`; the Python bindings and
-`node_wallet` example do not expose them. Run `check_payload_storage(batch_size)` with the Rust
-client disconnected after protection, restore, or maintenance. It takes a stable database snapshot,
-opens and authenticates every original signed transaction in bounded batches, and reports row
-counts including the plaintext count, referenced key IDs, and database roles with direct table
-ownership or `SELECT` grants without returning payload bytes. Review that role list as part of the
-database access audit. Superuser and inherited privileges still require a server-level role review.
+| Method                                 | Requirement                                                   | Result                                                                                                    |
+| -------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `protect_payload_storage()`            | Active key, stable deployment ID, and disconnected clients.   | Records the marker first, then seals plaintext rows in bounded, resumable batches.                        |
+| `check_payload_storage(batch_size)`    | Disconnected client and every referenced key.                 | Authenticates a stable snapshot without returning payload bytes and reports row, key-ID, and role counts. |
+| `rewrap_payload_storage(batch_size)`   | Protected storage, new active key, and all old keys retained. | Rewraps in bounded, resumable batches; a full check must pass before an old key is removed.               |
+| `rollback_payload_storage(batch_size)` | Incident recovery, disconnected clients, and every key.       | Restores and verifies exact plaintext, clears envelopes, and removes the protection marker last.          |
 
-To rewrap one database, stop its clients, configure the new active key, retain every required old
-key under `payload_key_retired_env`, and run `rewrap_payload_storage(batch_size)`. The operation is
-bounded and resumable. Run the full check before removing an old key. Rewrap changes the protected
-database copy; it cannot revoke a signed transaction or an envelope copied before the operation.
-
-Use `rollback_payload_storage(batch_size)` only for incident recovery. Keep every required key
-available until it finishes. Rollback authenticates each envelope, recreates and verifies the exact
-plaintext bytes, clears the envelopes, and removes the protection marker last. The disconnected
-client can then run a full unprotected check, but it cannot connect for execution. To restore
-execution capability, configure the complete key set, rerun `protect_payload_storage()`, complete a
-full protected check, and connect. Rollback does not remove signed bytes from WAL, replicas,
-backups, snapshots, or earlier exports.
+Run the full check after protection, restore, rewrap, or rollback. Its role report includes direct
+table owners and roles with `SELECT` grants. The full report also contains protected status,
+deployment ID, plaintext, original, replacement, and authenticated row counts, and referenced key
+IDs. Superuser and inherited privileges still require a server-level review. Rewrap changes one
+database copy but cannot revoke a transaction or envelope copied before rewrap. Rollback leaves
+execution unavailable until storage is protected and passes a full protected check again, and it
+does not remove signed bytes from WAL, replicas, backups, snapshots, or earlier exports.
 
 :::warning
 Signed transaction bytes remain bearer capabilities until their signer nonce is consumed. Protected
@@ -1050,6 +1296,19 @@ these fields to Python:
 | `postgres_cache_database_config` | `None`    | Durable execution store; transaction submission requires it.             |
 | `transport_backend`              | `Sockudo` | Compatibility field; unused by the execution client.                     |
 
+The adapter enforces these constraints during configuration validation, client setup, connection,
+or transaction authorization:
+
+| Constraint            | Rule                                                                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Transaction limits    | `allowed_token_pairs`, both slippage fields, `max_order_amount`, `deadline_seconds`, `max_quote_age_blocks`, and `receipt_timeout_secs` must all be set.  |
+| Slippage              | `slippage_bps` must not exceed `max_slippage_bps`, and `max_slippage_bps` must be below 10,000.                                                           |
+| Quote age             | `max_quote_age_blocks` must be in `1..=4095`.                                                                                                             |
+| Routers               | `router_addresses` must contain at least one valid address.                                                                                               |
+| Verification topology | The configuration must contain exactly two verifiers, with distinct provider, operator, endpoint, and failure-domain identities across all three sources. |
+| Remote transport      | Remote execution, verifier, and HyperSync endpoints must use HTTPS; only canonical loopback literals may use HTTP.                                        |
+| Durable execution     | Transaction operations require Postgres, an active payload key, a stable deployment ID, and ready protected storage.                                      |
+
 The first allowlisted router executes swaps, so preflight readiness requires allowance on that
 router. `receipt_timeout_secs` controls the polling deadline for swaps, wraps, and approvals. It is
 not a strict upper bound on the full call because final RPC and persistence operations can add time.
@@ -1095,7 +1354,7 @@ quote_spend_limits = [
 ]
 ```
 
-### Execution testing
+### Validation coverage
 
 The execution tests have three layers:
 
@@ -1104,8 +1363,6 @@ The execution tests have three layers:
 | Unit/mocked RPC | Scripted three-source JSON-RPC responses. | Typed outcomes, hostile disagreement, signing, and reconciliation. |
 | Postgres        | Temporary schema when Postgres is active. | Evidence ordering, migration, nonce ownership, and crash recovery. |
 | Anvil fork      | Local chain plus read-only archive RPC.   | Three-origin transport, contract calls, swaps, and restart paths.  |
-
-#### Default test coverage
 
 Default tests do not connect to a live chain. They cover:
 
@@ -1126,29 +1383,19 @@ Default tests do not connect to a live chain. They cover:
   retained-history migration, event retry identity, wallet refresh ownership, and atomic evidence
   with authorizing transitions. Database tests skip when Postgres is unavailable.
 
-JSON-RPC fixtures live under `crates/adapters/blockchain/test_data/execution/`.
-The shared network HTTP unit suite covers redirect rejection.
+JSON-RPC fixtures live under `crates/adapters/blockchain/test_data/execution/`. The shared network
+HTTP unit suite covers redirect rejection.
 
 #### Anvil fork coverage
 
-The opt-in integration suites share this environment:
+The opt-in fork suites use a pinned Arbitrum One state and one deterministic Anvil process behind
+three localhost proxy origins. A fresh funded key sends transactions only to the authoritative
+proxy, while both verifier proxies reject `eth_sendRawTransaction`. This topology proves transport
+separation and read-only verifier enforcement; one shared Anvil process does not model operational
+provider independence or Arbitrum ArbOS gas pricing.
 
-| Property     | Value                                                                       |
-| ------------ | --------------------------------------------------------------------------- |
-| Fork chain   | Arbitrum One, chain ID `42161`.                                             |
-| Fork block   | `489000000`.                                                                |
-| Local mining | One-second blocks, mixed mining, and one slot per epoch for finality.       |
-| Fork source  | Archive-capable `BLOCKCHAIN_FORK_RPC_URL`; read-only access.                |
-| RPC topology | Three distinct localhost proxy origins backed by the deterministic Anvil.   |
-| Transactions | Signed by a fresh funded key and sent only through the authoritative proxy. |
-| Persistence  | A reachable Postgres instance.                                              |
-
-The two verifier proxies reject `eth_sendRawTransaction`. Request counters assert that every proxy
-served reads, only the authoritative proxy received broadcasts, and neither verifier received a
-broadcast attempt. The three local origins test transport separation and read-only enforcement;
-one shared Anvil process does not model operational provider independence.
-
-The direct-client suite (`execution_fork`) runs these scenarios:
+Request counters require reads from every proxy, broadcasts only through the authoritative proxy,
+and no broadcast attempt through either verifier. The direct-client suite covers these scenarios:
 
 | Scenario                                             | Expected result                                                        |
 | ---------------------------------------------------- | ---------------------------------------------------------------------- |
@@ -1163,297 +1410,24 @@ The direct-client suite (`execution_fork`) runs these scenarios:
 | Restart a dropped wrap or approve.                   | Call identity and postcondition pass; the intent becomes inactive.     |
 | Restart after a multi-window mismatched replacement. | The first scan persists its bounded cursor; the next fails closed.     |
 
-Anvil does not reproduce Arbitrum ArbOS gas pricing. Mocked RPC tests cover gas estimation and fee
-policy.
-
-A second suite, `execution_livenode_fork`, exercises the supported swap slice through the full node
-path: `BlockchainExecutionClientFactory` registration, venue routing, and a strategy submitting a
-SELL or BUY market order through the risk and execution engines to a finalized fill with refreshed
-wallet account state. A second node then reconnects after finality with no nonce use, no new intent or
-transaction hash, and its terminal emission markers still in place, so restart reconciliation
-cannot re-emit order events; the direct-client suite's channel-level check covers duplicate event
-emission. Operator wrap and router approval run first through direct client construction because
-those operations precede node routing. Its data client stub stands in for the HyperSync-backed
-adapter at the venue boundary only because HyperSync serves the live chain rather than the fork's
-pinned state; the stub also derives a synthetic quote from the pool's on-chain price for market-order
-risk pricing. The engine-side pool, instrument, and profiler restoration it feeds is production code.
-The suite sets `inflight_check_interval_ms = 0` because venue probes cannot resolve a `Submitted`
-swap.
-
-:::warning
-DeFi pool definitions and account-state updates publish on typed message-bus routers.
-A `subscribe_any` handler never receives them. Use `subscribe_defi_pools` and
-`subscribe_account_state` (or the matching actor subscription APIs) when observing those
-events from a test or an external handler.
-:::
-
-To run the fork suites with Foundry's Anvil installed:
-
-```bash
-BLOCKCHAIN_FORK_TESTS=1 BLOCKCHAIN_FORK_RPC_URL="https://your-archive-capable-arbitrum-rpc.example.com" \
-cargo nextest run -p nautilus-blockchain --features hypersync --test execution_fork --test execution_livenode_fork
-```
-
-Use a stable Anvil release. Anvil `1.5.1-stable` completes these fork suites; Anvil `1.8.0-nightly`
-rejects contract calls at the pinned Arbitrum block with
-`Excess blob gas not set`. Confirm archive support with a historical state read such as
-`eth_getCode` at block `0x1d258c40`: a provider may return that block's header while its historical
-contract state is unavailable.
-
-:::warning
-Without `BLOCKCHAIN_FORK_TESTS=1`, nextest reports each test's early return as a pass. No fork or
-transaction ran.
-:::
-
-Once enabled, a missing RPC URL, unreachable Postgres, absent Anvil, or incompatible Anvil fails
-the tests. Nextest serializes the two suites so they can share one invocation and one Postgres
-instance.
-
-## Build and live validation
-
-### HyperSync authentication
-
-```bash
-curl -fsS --max-time 15 \
-    -H "Authorization: Bearer $ENVIO_API_TOKEN" \
-    https://1.hypersync.xyz/height
-```
-
-Expected result: JSON with a numeric `height`.
-
-### Small HyperSync query
-
-```bash
-query='{"from_block":25170900,"to_block":25170901,"include_all_blocks":true,"field_selection":{"block":["number","timestamp","hash"]}}'
-
-curl -sS --max-time 30 \
-    -H "Authorization: Bearer $ENVIO_API_TOKEN" \
-    -H "Content-Type: application/json" \
-    --data "$query" \
-    https://1.hypersync.xyz/query/arrow-ipc \
-    -o /dev/null \
-    -w "http_code=%{http_code} size_download=%{size_download}\n"
-```
-
-Expected result: HTTP `200` with a non-zero response size.
-
-### Adapter compile check
-
-```bash
-cargo check -p nautilus-blockchain --features hypersync
-```
-
-### Read-only numbered swap reads
-
-This check uses Arbitrum One without signing or broadcasting. Set `ARBITRUM_RPC_HTTP_URL` to
-override the public default endpoint.
-
-```bash
-BLOCKCHAIN_LIVE_READ_SMOKE=1 cargo nextest run -p nautilus-blockchain --features hypersync \
-    -E 'test(live_arbitrum_numbered_swap_reads_are_available)'
-```
-
-Expected result: the test reads one anchor and completes numbered code, contract, gas-estimate,
-balance, and exact-hash checks against that block.
-
-Do not use a funded public-network smoke test for execution validation. State-changing validation
-belongs in the three-origin Anvil fork suites above. Public-network checks must remain read-only and
-must not load a signer key or call `eth_sendRawTransaction`.
-
-### Live fail-closed regression
-
-This ignored test uses real HyperSync replay plus an invalid local HTTP RPC URL. It verifies that
-final RPC hydration fails closed instead of emitting a stale snapshot.
-
-```bash
-cargo test -p nautilus-blockchain --features hypersync \
-    live_hypersync_bootstrap_fails_closed_when_rpc_hydration_fails \
-    -- --ignored --nocapture
-```
-
-Expected result: one ignored test passes. This can take several minutes.
-
-## Operational notes
-
-- Use HyperSync for high-volume historical log scans. See
-  [Envio HyperSync docs](https://docs.envio.dev/docs/HyperSync/hypersync-usage) for request shape and
-  tuning details.
-- Use HTTP RPC for final contract state and validation.
-- Use an RPC provider with sufficient archive access, payload, and request limits for large Uniswap
-  V3 pools.
-- Keep `ENVIO_API_TOKEN`, RPC keys, and Postgres credentials outside version control.
-- Use a separate Postgres database for repeatable DeFi test runs that write pool snapshots.
-- Treat failed `--snapshot-from-rpc` hydration as a hard failure.
-
-### Pool analysis prerequisites and gotchas
-
-These surface as `analyze-pool(s)` failures with a clear cause and fix.
-
-#### Discover pools before analysis
-
-`analyze-pool(s)` reads pool metadata from the cache and fails with `Pool <address> is not registered`
-if the pool was never discovered. Run `sync-dex` for the chain/DEX once to populate the `pool` table
-first.
-
-#### Unsupported DEX combinations fail before sync
-
-A DEX can be registered for a chain yet lack the parsers a command needs. The CLI fails fast:
-
-- `sync-dex` (discovery) needs a `PoolCreated` parser.
-- `analyze-pool(s)` (snapshots) need Initialize, Swap, Mint, Burn, and Collect parsers.
-- Replay-ready DEXes additionally parse `SetFeeProtocol`, so replay keeps fee-protocol settings
-  correct.
-- DEXes that also parse `CollectProtocol` can replay protocol-fee balance withdrawals.
-
-Command support:
-
-| Capability     | DEX                       | Chains                                      |
-| -------------- | ------------------------- | ------------------------------------------- |
-| Replay-ready   | Uniswap V3                | Ethereum, Base, Arbitrum, and BSC.          |
-| Replay-ready   | PancakeSwap V3            | Ethereum, Base, Arbitrum, and BSC.          |
-| Analysis only  | Aerodrome Slipstream      | Base.                                       |
-| Discovery only | Uniswap V2 and Uniswap V4 | Ethereum, Base, and Arbitrum.               |
-| Discovery only | Camelot V3 and Fluid DEX  | Arbitrum.                                   |
-| Blocks only    | No DEX registrations      | Other configured chains, including Polygon. |
-
-Aerodrome Slipstream has no `PoolCreated` parser. Register its pools another way before running
-`analyze-pool(s)`. Its replay-derived snapshots cannot be validated against on-chain state. Other
-registered DEXes that lack the required parsers are omitted from command help and fail the
-capability check.
-
-Chains without DEX registrations can still use `sync-blocks`; Polygon is one example.
-
-`blockchain analyze-pool --help` and `blockchain sync-dex --help` print the supported chain and DEX
-combinations derived from the registered parsers.
-
-#### Use checksummed pool addresses
-
-Addresses must be EIP-55 checksummed; a lowercase address fails with
-`Blockchain address '<address>' has incorrect checksum`. Resolving a pool from
-`UniswapV3Factory.getPool` returns lowercase, so checksum it before passing `--address`.
-
-#### Lower the multicall batch on capped RPCs
-
-Public nodes enforce a per-call gas limit, so a large multicall returns `out of gas` and the adapter
-cannot hydrate the snapshot. Pass a smaller `--multicall-calls-per-rpc-request` (for example `50` on
-`https://arb1.arbitrum.io/rpc`) to keep batches under the cap.
-
-#### Use a recent target block on non-archive RPCs
-
-A first-time sync reads on-chain state at `--to-block`, and a non-archive node only serves recent
-state, so historical targets fail the on-chain read. See [RPC endpoints](#rpc-endpoints).
-
-#### HyperSync rate limits are shared per token
-
-HyperSync rate limits apply per token. See Envio's
-[HyperSync API token docs](https://docs.envio.dev/docs/HyperSync/api-tokens) for token and usage
-details.
-
-- Keep `--concurrency` low when token quotas are restrictive.
-- A full first-time sync of a large old pool can need thousands of requests.
-- Use `--snapshot-from-rpc` when an exact checkpoint snapshot is enough and full swap storage is not
-  needed.
-
-#### Pools with no liquidity events fail cleanly
-
-A pool with no processed Mint/Burn events up to the target block has no state to snapshot:
-
-- `analyze-pools` emits a per-pool `"status": "failure"` JSON line and keeps other pools running.
-- `analyze-pool` returns the error.
-- Choose pools with liquidity activity to avoid this failure.
-
-#### Exit code reflects per-pool failures
-
-`analyze-pool(s)` exits non-zero when any pool fails, and each failed pool is also reported as a JSON
-line with `"status": "failure"`. Rely on the exit code for an overall pass/fail signal, and parse
-each result line's `status` for per-pool detail.
-
-## Runbook: live pool-sync validation
-
-Use this to check pool discovery, event parsing, and snapshot generation for one DEX on one chain.
-The example uses PancakeSwap V3 on Arbitrum.
-
-### Prerequisites
-
-- `ENVIO_API_TOKEN` exported.
-- RPC HTTP URL for the chain (`--rpc-url` or `RPC_HTTP_URL`).
-- Postgres up with schema (`make start-services && make init-db`).
-- Built CLI: `cargo build -p nautilus-cli --features defi --bin nautilus`.
-
-### Steps
-
-Discover pools first, then analyze specific pools:
-
-```bash
-./target/debug/nautilus blockchain sync-dex --chain arbitrum --dex PancakeSwapV3 \
-    --rpc-url https://arb1.arbitrum.io/rpc \
-    --host 127.0.0.1 --port 5432 --username nautilus --password pass --database nautilus
-
-./target/debug/nautilus blockchain analyze-pools --chain arbitrum --dex PancakeSwapV3 \
-    --address <pool-address> --address <pool-address> \
-    --rpc-url https://arb1.arbitrum.io/rpc \
-    --host 127.0.0.1 --port 5432 --username nautilus --password pass --database nautilus \
-    --concurrency 1
-```
-
-Verify by counting rows in:
-
-- `pool_swap_event`
-- `pool_liquidity_event`
-- `pool_collect_event`
-- `pool_flash_event`
-- `pool_fee_protocol_update_event`
-- `pool_fee_protocol_collect_event`
-- `pool_snapshot`
-- `pool_position`
-- `pool_tick`
-
-Fee-protocol tables are often empty or small because `SetFeeProtocol` and `CollectProtocol` rarely
-fire.
-
-### Gotchas
-
-- Restrictive Envio token quotas can cause repeated backoff on high-activity pools. Pick
-  short-history pools, lower `--concurrency`, or use `--snapshot-from-rpc`.
-- Development Postgres data can disappear mid-session while the schema remains. Run `sync-dex`
-  immediately before `analyze-pool(s)` when in doubt.
-- `--from-block` at a mid-life block skips `Initialize`, so snapshot bootstrap can fail with
-  `Pool is not initialized and it doesn't contain initial price, cannot bootstrap profiler`. Sync
-  from creation when a snapshot is required.
-- Addresses must be EIP-55 checksummed. Use the CLI or `count(*)` to inspect pool rows.
-- Capability guards fail unsupported DEX/parser combinations before sync. See
-  [Unsupported DEX combinations fail before sync](#unsupported-dex-combinations-fail-before-sync).
-
-## Extending the adapter
-
-The event model exposes the Uniswap V3 concentrated-liquidity shape:
-
-- `PoolSwap` carries `sqrt_price_x96` and `tick`.
-- `PoolLiquidityUpdate` carries `tick_lower` and `tick_upper`.
-- DEX registration separates pool-discovery parsers from event-replay parsers and records the pool's
-  `AmmType`.
-
-### Event integration points
-
-Pool events pass through these integration points:
-
-- Event struct.
-- HyperSync and RPC parsers.
-- `DexExtended` parser slot.
-- `DexPoolData` and `DefiData` variants.
-- Profiler apply method.
-- Event table and insert path.
-- `stream_pool_events` UNION arm and row mapper.
-- PyO3 binding.
-
-Parser round-trip, profiler apply, and parser-parity tests cover this path. Incremental sync resumes
-from each pool's last-synced block. Changing the modeled event set does not backfill stored history;
-run a reset sync from pool creation to populate the corresponding event table.
-
-### Chain registration boundary
-
-A chain integration consists of its `Chain` definition, RPC client, and per-DEX registrations.
-DEXes that reuse modeled events share the existing event path.
+The LiveNode suite covers factory registration, venue routing, and a strategy submitting BUY and
+SELL market orders through the risk and execution engines to finalized fills with refreshed wallet
+state. A second node reconnects without new nonce use, intent, transaction hash, or repeated terminal
+event. Operator wrap and router approval use direct client construction because they precede node
+routing.
+
+Its data-client stub replaces only the HyperSync-backed venue boundary because HyperSync serves the
+live chain instead of the fork's pinned state. The stub derives a synthetic risk price from the
+pool's on-chain price; the pool, instrument, profiler, risk, execution, and persistence paths remain
+production code.
+
+The fork suites run only when `BLOCKCHAIN_FORK_TESTS=1`; otherwise their early returns appear as
+passes even though no fork or transaction ran. An enabled run requires an archive-capable fork
+source, Postgres, and a compatible Anvil installation. The two suites serialize their shared
+database and fork environment.
+
+Execution validation on public networks must remain read-only and must not load a signer or call
+`eth_sendRawTransaction`. State-changing validation belongs on the three-origin localhost fork.
 
 ## Limitations
 
