@@ -1169,6 +1169,7 @@ pub(crate) mod tests {
             contract_call_responses: HashMap<(String, String), String>,
             call_response_sequences: ResponseSequences<String>,
             sleep_methods: HashMap<String, Duration>,
+            response_releases: HashMap<String, Arc<tokio::sync::Semaphore>>,
             requests: Arc<Mutex<Vec<Value>>>,
             sent_raw_transaction: Arc<Mutex<Option<String>>>,
             receipt_hash_from_request: bool,
@@ -1296,6 +1297,18 @@ pub(crate) mod tests {
                 self
             }
 
+            /// Blocks each response until it consumes one semaphore permit
+            #[cfg(feature = "hypersync")]
+            #[must_use]
+            pub(crate) fn with_response_release(
+                mut self,
+                method: &str,
+                release: Arc<tokio::sync::Semaphore>,
+            ) -> Self {
+                self.response_releases.insert(method.to_string(), release);
+                self
+            }
+
             /// Returns every JSON-RPC request body the server received, in order.
             #[must_use]
             pub(crate) fn recorded_requests(&self) -> Vec<Value> {
@@ -1317,6 +1330,10 @@ pub(crate) mod tests {
 
             if let Some(duration) = state.sleep_methods.get(method) {
                 tokio::time::sleep(*duration).await;
+            }
+
+            if let Some(release) = state.response_releases.get(method) {
+                release.acquire().await.unwrap().forget();
             }
 
             if method == "eth_call" {

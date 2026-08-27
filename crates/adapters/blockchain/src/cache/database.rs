@@ -123,13 +123,6 @@ pub(crate) struct ExecutionVerifiedHeader {
     pub base_fee_per_gas: Option<u128>,
 }
 
-#[cfg(test)]
-pub(crate) struct ExecutionVerificationResume {
-    pub next_canonical_nonce: u64,
-    pub revision: u64,
-    pub finalized_headers: Vec<ExecutionVerifiedHeader>,
-}
-
 pub(crate) struct ExecutionVerificationPosition {
     pub next_canonical_nonce: u64,
     pub revision: u64,
@@ -260,19 +253,6 @@ pub(crate) struct ExecutionPayloadCheck {
 pub struct BlockchainCacheDatabase {
     /// PostgreSQL connection pool used for database operations.
     pool: PgPool,
-}
-
-#[cfg(test)]
-pub(crate) async fn connect_test_database(
-    pg_options: PgConnectOptions,
-) -> anyhow::Result<BlockchainCacheDatabase> {
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(32)
-        .min_connections(1)
-        .acquire_timeout(std::time::Duration::from_secs(3))
-        .connect_with(pg_options)
-        .await?;
-    Ok(BlockchainCacheDatabase { pool })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3817,101 +3797,6 @@ impl BlockchainCacheDatabase {
                         .map_err(|_| anyhow::anyhow!("Finalized header base fee is invalid"))
                 })
                 .transpose()?,
-        }))
-    }
-
-    /// Loads the complete durable finalized-header ledger for tests.
-    #[cfg(test)]
-    pub(crate) async fn load_execution_verification_resume(
-        &self,
-        chain_id: u32,
-        wallet_address: &str,
-        manifest_version: &str,
-        manifest_digest: &str,
-    ) -> anyhow::Result<Option<ExecutionVerificationResume>> {
-        let installed = sqlx::query_scalar::<_, i16>(
-            "SELECT version FROM execution_schema_version \
-             WHERE component = 'evm_execution_verification'",
-        )
-        .fetch_optional(&self.pool)
-        .await
-        .context("failed to inspect execution verification schema")?;
-        let Some(installed) = installed else {
-            return Ok(None);
-        };
-        anyhow::ensure!(
-            installed <= VERIFICATION_SCHEMA_VERSION,
-            "Unsupported execution verification schema version {installed}"
-        );
-        let chain_id =
-            i32::try_from(chain_id).context("Verification chain ID exceeds PostgreSQL INTEGER")?;
-        let current = sqlx::query_as::<_, (String, String, i64, i64)>(
-            "
-                SELECT manifest_version, manifest_digest, next_canonical_nonce, revision
-                FROM execution_verification_nonce
-                WHERE chain_id = $1 AND wallet_address = $2
-                ",
-        )
-        .bind(chain_id)
-        .bind(wallet_address)
-        .fetch_optional(&self.pool)
-        .await
-        .context("failed to load execution verification nonce position")?;
-        let Some((stored_version, stored_digest, nonce, revision)) = current else {
-            return Ok(None);
-        };
-        anyhow::ensure!(
-            stored_version == manifest_version && stored_digest == manifest_digest,
-            "Execution verification manifest identity changed"
-        );
-        let rows = sqlx::query_as::<_, (i64, String, String, i64, Option<String>, String)>(
-            "
-            SELECT number, hash, parent_hash, timestamp, base_fee_per_gas, manifest_digest
-            FROM execution_verified_finalized_header
-            WHERE chain_id = $1 AND wallet_address = $2
-            ORDER BY number
-            ",
-        )
-        .bind(chain_id)
-        .bind(wallet_address)
-        .fetch_all(&self.pool)
-        .await
-        .context("failed to load verified finalized header ledger")?;
-        let finalized_headers = rows
-            .into_iter()
-            .map(|(number, hash, parent_hash, timestamp, base_fee, digest)| {
-                anyhow::ensure!(
-                    digest == manifest_digest,
-                    "Finalized header manifest identity changed"
-                );
-                Ok(ExecutionVerifiedHeader {
-                    number: u64::try_from(number).context("Finalized header number is negative")?,
-                    hash,
-                    parent_hash,
-                    timestamp: u64::try_from(timestamp)
-                        .context("Finalized header timestamp is negative")?,
-                    base_fee_per_gas: base_fee
-                        .map(|value| {
-                            value.parse::<u128>().map_err(|_| {
-                                anyhow::anyhow!("Finalized header base fee is invalid")
-                            })
-                        })
-                        .transpose()?,
-                })
-            })
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        anyhow::ensure!(
-            !finalized_headers.is_empty()
-                && finalized_headers.windows(2).all(|headers| {
-                    headers[1].number == headers[0].number.saturating_add(1)
-                        && headers[1].parent_hash == headers[0].hash
-                }),
-            "Verified finalized header ledger is not continuous"
-        );
-        Ok(Some(ExecutionVerificationResume {
-            next_canonical_nonce: u64::try_from(nonce).context("Canonical nonce is negative")?,
-            revision: u64::try_from(revision).context("Canonical nonce revision is negative")?,
-            finalized_headers,
         }))
     }
 
@@ -7746,10 +7631,131 @@ fn execution_transition_allowed(current: &str, next: TransactionStatus) -> bool 
 }
 
 #[cfg(test)]
-mod tests {
-    use sqlx::postgres::PgConnectOptions;
+pub(crate) mod tests {
+    use std::time::Duration;
 
-    use super::BlockchainCacheDatabase;
+    use anyhow::Context;
+    use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+
+    use super::{BlockchainCacheDatabase, ExecutionVerifiedHeader};
+    use crate::rpc::verification::VERIFICATION_SCHEMA_VERSION;
+
+    pub(crate) struct ExecutionVerificationResume {
+        pub next_canonical_nonce: u64,
+        pub revision: u64,
+        pub finalized_headers: Vec<ExecutionVerifiedHeader>,
+    }
+
+    pub(crate) async fn connect_test_database(
+        pg_options: PgConnectOptions,
+    ) -> anyhow::Result<BlockchainCacheDatabase> {
+        let pool = PgPoolOptions::new()
+            .max_connections(32)
+            .min_connections(1)
+            .acquire_timeout(Duration::from_secs(3))
+            .connect_with(pg_options)
+            .await?;
+        Ok(BlockchainCacheDatabase { pool })
+    }
+
+    impl BlockchainCacheDatabase {
+        /// Loads the complete durable finalized-header ledger for tests
+        pub(crate) async fn load_execution_verification_resume(
+            &self,
+            chain_id: u32,
+            wallet_address: &str,
+            manifest_version: &str,
+            manifest_digest: &str,
+        ) -> anyhow::Result<Option<ExecutionVerificationResume>> {
+            let installed = sqlx::query_scalar::<_, i16>(
+                "SELECT version FROM execution_schema_version \
+                 WHERE component = 'evm_execution_verification'",
+            )
+            .fetch_optional(&self.pool)
+            .await
+            .context("failed to inspect execution verification schema")?;
+            let Some(installed) = installed else {
+                return Ok(None);
+            };
+            anyhow::ensure!(
+                installed <= VERIFICATION_SCHEMA_VERSION,
+                "Unsupported execution verification schema version {installed}"
+            );
+            let chain_id = i32::try_from(chain_id)
+                .context("Verification chain ID exceeds PostgreSQL INTEGER")?;
+            let current = sqlx::query_as::<_, (String, String, i64, i64)>(
+                "
+                SELECT manifest_version, manifest_digest, next_canonical_nonce, revision
+                FROM execution_verification_nonce
+                WHERE chain_id = $1 AND wallet_address = $2
+                ",
+            )
+            .bind(chain_id)
+            .bind(wallet_address)
+            .fetch_optional(&self.pool)
+            .await
+            .context("failed to load execution verification nonce position")?;
+            let Some((stored_version, stored_digest, nonce, revision)) = current else {
+                return Ok(None);
+            };
+            anyhow::ensure!(
+                stored_version == manifest_version && stored_digest == manifest_digest,
+                "Execution verification manifest identity changed"
+            );
+            let rows = sqlx::query_as::<_, (i64, String, String, i64, Option<String>, String)>(
+                "
+                SELECT number, hash, parent_hash, timestamp, base_fee_per_gas, manifest_digest
+                FROM execution_verified_finalized_header
+                WHERE chain_id = $1 AND wallet_address = $2
+                ORDER BY number
+                ",
+            )
+            .bind(chain_id)
+            .bind(wallet_address)
+            .fetch_all(&self.pool)
+            .await
+            .context("failed to load verified finalized header ledger")?;
+            let finalized_headers = rows
+                .into_iter()
+                .map(|(number, hash, parent_hash, timestamp, base_fee, digest)| {
+                    anyhow::ensure!(
+                        digest == manifest_digest,
+                        "Finalized header manifest identity changed"
+                    );
+                    Ok(ExecutionVerifiedHeader {
+                        number: u64::try_from(number)
+                            .context("Finalized header number is negative")?,
+                        hash,
+                        parent_hash,
+                        timestamp: u64::try_from(timestamp)
+                            .context("Finalized header timestamp is negative")?,
+                        base_fee_per_gas: base_fee
+                            .map(|value| {
+                                value.parse::<u128>().map_err(|_| {
+                                    anyhow::anyhow!("Finalized header base fee is invalid")
+                                })
+                            })
+                            .transpose()?,
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            anyhow::ensure!(
+                !finalized_headers.is_empty()
+                    && finalized_headers.windows(2).all(|headers| {
+                        headers[1].number == headers[0].number.saturating_add(1)
+                            && headers[1].parent_hash == headers[0].hash
+                    }),
+                "Verified finalized header ledger is not continuous"
+            );
+            Ok(Some(ExecutionVerificationResume {
+                next_canonical_nonce: u64::try_from(nonce)
+                    .context("Canonical nonce is negative")?,
+                revision: u64::try_from(revision)
+                    .context("Canonical nonce revision is negative")?,
+                finalized_headers,
+            }))
+        }
+    }
 
     #[tokio::test]
     async fn connect_returns_err_for_unreachable_database() {

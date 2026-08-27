@@ -66,8 +66,6 @@ use nautilus_model::{
 };
 use zeroize::Zeroizing;
 
-#[cfg(test)]
-use crate::config::{BlockchainCallEdgeManifest, BlockchainContractProbe};
 use crate::{
     cache::{
         BlockchainCache,
@@ -3691,44 +3689,6 @@ fn open_execution_payload(
     Ok(raw_transaction)
 }
 
-/// Polls for the receipt of a broadcast transaction until it exists or the poll bound
-/// is exhausted. A `null` receipt result is a legitimate pending response.
-#[cfg(test)]
-async fn poll_for_receipt(
-    http_rpc_client: &BlockchainHttpRpcClient,
-    tx_hash: &B256,
-    max_polls: u32,
-    interval: Duration,
-) -> anyhow::Result<Option<RpcTransactionReceipt>> {
-    let mut last_error = None;
-    let mut observed_pending = false;
-
-    for attempt in 0..max_polls {
-        if attempt > 0 {
-            tokio::time::sleep(interval).await;
-        }
-
-        match http_rpc_client.get_transaction_receipt(tx_hash).await {
-            Ok(Some(receipt)) => return Ok(Some(receipt)),
-            Ok(None) => observed_pending = true,
-            Err(e) => {
-                log::warn!(
-                    "Receipt poll {}/{} for transaction {tx_hash} failed: {e}",
-                    attempt + 1,
-                    max_polls
-                );
-                last_error = Some(e);
-            }
-        }
-    }
-
-    if !observed_pending && let Some(e) = last_error {
-        return Err(e);
-    }
-
-    Ok(None)
-}
-
 /// Derives the receipt poll budget from the configured inclusion timeout in seconds.
 fn receipt_max_polls(receipt_timeout_secs: u64) -> u32 {
     u32::try_from(receipt_timeout_secs.max(1)).unwrap_or(u32::MAX)
@@ -6368,6 +6328,7 @@ mod tests {
     };
     use nautilus_common::{
         cache::Cache, live::runner::replace_exec_event_sender, messages::ExecutionEvent,
+        testing::wait_until_async,
     };
     use nautilus_core::UUID4;
     use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
@@ -6393,12 +6354,12 @@ mod tests {
 
     use super::*;
     use crate::{
-        cache::database::connect_test_database,
+        cache::database::tests::connect_test_database,
         config::{
-            BlockchainChainAnchorConfig, BlockchainContractManifest, BlockchainContractRole,
-            BlockchainDeploymentManifest, BlockchainPoolManifest, BlockchainProviderIdentity,
-            BlockchainTokenManifest, BlockchainVerificationConfig,
-            BlockchainVerificationProviderConfig, QuoteSpendLimit,
+            BlockchainCallEdgeManifest, BlockchainChainAnchorConfig, BlockchainContractManifest,
+            BlockchainContractProbe, BlockchainContractRole, BlockchainDeploymentManifest,
+            BlockchainPoolManifest, BlockchainProviderIdentity, BlockchainTokenManifest,
+            BlockchainVerificationConfig, BlockchainVerificationProviderConfig, QuoteSpendLimit,
         },
         constants::BLOCKCHAIN_VENUE,
         exchanges::arbitrum::UNISWAP_V3,
@@ -6407,6 +6368,43 @@ mod tests {
             tests::mock::{MockRpcState, start_mock_rpc_server},
         },
     };
+
+    /// Polls for the receipt of a broadcast transaction until it exists or the poll bound
+    /// is exhausted. A `null` receipt result is a legitimate pending response.
+    async fn poll_for_receipt(
+        http_rpc_client: &BlockchainHttpRpcClient,
+        tx_hash: &B256,
+        max_polls: u32,
+        interval: Duration,
+    ) -> anyhow::Result<Option<RpcTransactionReceipt>> {
+        let mut last_error = None;
+        let mut observed_pending = false;
+
+        for attempt in 0..max_polls {
+            if attempt > 0 {
+                tokio::time::sleep(interval).await;
+            }
+
+            match http_rpc_client.get_transaction_receipt(tx_hash).await {
+                Ok(Some(receipt)) => return Ok(Some(receipt)),
+                Ok(None) => observed_pending = true,
+                Err(e) => {
+                    log::warn!(
+                        "Receipt poll {}/{} for transaction {tx_hash} failed: {e}",
+                        attempt + 1,
+                        max_polls
+                    );
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        if !observed_pending && let Some(e) = last_error {
+            return Err(e);
+        }
+
+        Ok(None)
+    }
 
     const CHAIN_ID_ARBITRUM: &str =
         include_str!("../../test_data/execution/rpc_eth_chain_id_arbitrum.json");
@@ -6486,6 +6484,7 @@ mod tests {
     const USDC: &str = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
     const LIVE_READ_SMOKE_ENV: &str = "BLOCKCHAIN_LIVE_READ_SMOKE";
     const LIVE_READ_SMOKE_RPC: &str = "https://arb1.arbitrum.io/rpc";
+    const TEST_TIMEOUT: Duration = Duration::from_secs(10);
 
     const WETH_ADDRESS: Address = address!("82aF49447D8a07e3bd95BD0d56f35241523fBab1");
     const USDC_ADDRESS: Address = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
@@ -6911,21 +6910,19 @@ mod tests {
         expected_hash
     }
 
-    async fn await_recorded_request(state: &MockRpcState, method: &str) {
-        tokio::time::timeout(Duration::from_secs(2), async {
-            loop {
-                if state
+    async fn await_recorded_requests(state: &MockRpcState, method: &str, expected: usize) {
+        wait_until_async(
+            || async {
+                state
                     .recorded_requests()
                     .iter()
-                    .any(|request| request["method"] == method)
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(1)).await;
-            }
-        })
-        .await
-        .unwrap();
+                    .filter(|request| request["method"] == method)
+                    .count()
+                    >= expected
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
     }
 
     /// The block number served by the `eth_getBlockByNumber` fixture; swap quotes pin their
@@ -7631,7 +7628,7 @@ mod tests {
     }
 
     async fn await_pending_tasks(client: &BlockchainExecutionClient) {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(TEST_TIMEOUT, async {
             while !client.pending_tasks.all_finished() {
                 tokio::time::sleep(Duration::from_millis(1)).await;
             }
@@ -12323,13 +12320,7 @@ mod tests {
             .await
             .unwrap();
         let rotated = payload_test_keys([0x72; 32], vec![[0x71; 32]], "action-lease");
-        let operation_database = database.clone();
-
-        let mut operation = tokio::spawn(async move {
-            operation_database
-                .rewrap_execution_payload_storage(&rotated, 1)
-                .await
-        });
+        let mut operation = Box::pin(database.rewrap_execution_payload_storage(&rotated, 1));
 
         assert!(
             tokio::time::timeout(Duration::from_millis(50), &mut operation)
@@ -12347,7 +12338,6 @@ mod tests {
         drop(lease);
         tokio::time::timeout(Duration::from_secs(2), operation)
             .await
-            .unwrap()
             .unwrap()
             .unwrap();
         let state: String = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
@@ -13121,24 +13111,26 @@ mod tests {
 
     #[tokio::test]
     async fn submit_order_finality_timeout_marks_dropped_and_keeps_ownership() {
+        let receipt_release = Arc::new(tokio::sync::Semaphore::new(0));
         let state = swap_rpc_state()
             .await
             .with_response("eth_getTransactionReceipt", RECEIPT_NULL)
-            .with_sleep("eth_getTransactionReceipt", Duration::from_secs(30));
-        let Some((admin_pool, schema, mut client, _state, _)) =
+            .with_response_release("eth_getTransactionReceipt", Arc::clone(&receipt_release));
+        let Some((admin_pool, schema, mut client, state, _)) =
             swap_client_with_database("execution_submit_inclusion_timeout_test", state).await
         else {
             return;
         };
-        // The wall-clock timeout must cap a stalled receipt RPC.
         client.transaction_limits.receipt_timeout_secs = 1;
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
-        let started = tokio::time::Instant::now();
 
         client.submit_order(submit_order_cmd(&order)).unwrap();
-        await_pending_tasks(&client).await;
-        assert!(started.elapsed() < Duration::from_secs(3));
+        await_recorded_requests(&state, "eth_getTransactionReceipt", 3).await;
+        tokio::time::timeout(Duration::from_secs(3), await_pending_tasks(&client))
+            .await
+            .unwrap();
+        receipt_release.add_permits(3);
 
         // Broadcast acceptance was observed, so the order is submitted; the unobserved
         // inclusion justifies no further event
@@ -13207,9 +13199,10 @@ mod tests {
 
     #[tokio::test]
     async fn submit_order_single_in_flight_rejects_concurrent_swap() {
+        let broadcast_release = Arc::new(tokio::sync::Semaphore::new(0));
         let state = swap_rpc_state()
             .await
-            .with_sleep("eth_sendRawTransaction", Duration::from_millis(500));
+            .with_response_release("eth_sendRawTransaction", Arc::clone(&broadcast_release));
         let Some((admin_pool, schema, mut client, state, cache)) =
             swap_client_with_database("execution_submit_concurrent_test", state).await
         else {
@@ -13232,22 +13225,29 @@ mod tests {
         let mut receiver = start_with_events(&mut client);
 
         client.submit_order(submit_order_cmd(&first)).unwrap();
+        await_recorded_requests(&state, "eth_sendRawTransaction", 1).await;
         client.submit_order(submit_order_cmd(&second)).unwrap();
+        let event = tokio::time::timeout(TEST_TIMEOUT, receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+            panic!("expected OrderDenied, was {event:?}");
+        };
+        assert_eq!(denied.client_order_id, second.client_order_id());
+        assert!(
+            denied
+                .reason
+                .as_str()
+                .contains("at most one transaction can be in flight"),
+            "was: {}",
+            denied.reason
+        );
+        broadcast_release.add_permits(1);
         await_pending_tasks(&client).await;
 
         let events = collect_order_events(&mut receiver);
-        let submitted = events
-            .iter()
-            .filter(|event| matches!(event, OrderEventAny::Submitted(_)))
-            .count();
-        let denied_in_flight = events
-            .iter()
-            .filter(|event| {
-                matches!(event, OrderEventAny::Denied(denied) if denied.reason.as_str().contains("at most one transaction can be in flight"))
-            })
-            .count();
-        assert_eq!(submitted, 1, "was: {events:?}");
-        assert_eq!(denied_in_flight, 1, "was: {events:?}");
+        assert_swap_submitted_and_filled(&events);
 
         let broadcasts = state
             .recorded_requests()
@@ -14831,7 +14831,7 @@ mod tests {
 
         let order = test_market_sell_order(test_pool().instrument_id);
         client.submit_order(submit_order_cmd(&order)).unwrap();
-        await_recorded_request(&state, "eth_getBlockByNumber").await;
+        await_recorded_requests(&state, "eth_getBlockByNumber", 1).await;
         assert!(client.in_flight.lock().unwrap().is_some());
 
         client.disconnect().await.unwrap();
@@ -15177,7 +15177,7 @@ mod tests {
         let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
         tokio::select! {
             result = &mut wrap => panic!("broadcast completed before cancellation: {result:?}"),
-            () = await_recorded_request(&state, "eth_sendRawTransaction") => {}
+            () = await_recorded_requests(&state, "eth_sendRawTransaction", 1) => {}
         }
         drop(wrap);
 
@@ -15228,7 +15228,7 @@ mod tests {
         let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
         tokio::select! {
             result = &mut wrap => panic!("receipt polling completed before cancellation: {result:?}"),
-            () = await_recorded_request(&state, "eth_getTransactionReceipt") => {}
+            () = await_recorded_requests(&state, "eth_getTransactionReceipt", 3) => {}
         }
         drop(wrap);
 
@@ -15327,7 +15327,7 @@ mod tests {
         let mut wrap = Box::pin(client.wrap(U256::from(1_000_000_000_000_000u64)));
         tokio::select! {
             result = &mut wrap => panic!("broadcast completed before database failure: {result:?}"),
-            () = await_recorded_request(&state, "eth_sendRawTransaction") => {}
+            () = await_recorded_requests(&state, "eth_sendRawTransaction", 1) => {}
         }
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "DROP TABLE {schema}.execution_transaction"
