@@ -17,14 +17,17 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet},
+    fmt::Display,
     rc::Rc,
     sync::Arc,
 };
 
 use ahash::AHashMap;
+use anyhow::Context;
 use datafusion::arrow::{
     datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
 };
+use futures::StreamExt;
 use jiff::{
     SignedDuration,
     civil::Time,
@@ -33,7 +36,11 @@ use jiff::{
 use nautilus_common::{
     cache::fifo::FifoCache,
     clock::Clock,
-    msgbus::{mstr::MStr, subscribe_any, typed_handler::ShareableMessageHandler, unsubscribe_any},
+    msgbus::{
+        self,
+        mstr::MStr,
+        typed_handler::{ShareableMessageHandler, TypedHandler},
+    },
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
@@ -45,10 +52,10 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
         OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
         OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
-        PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
+        PositionChanged, PositionClosed, PositionEvent, PositionOpened, PositionSnapshot,
     },
     instruments::InstrumentAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -57,9 +64,12 @@ use nautilus_serialization::arrow::{EncodeToRecordBatch, KEY_INSTRUMENT_ID};
 use object_store::{ObjectStore, ObjectStoreExt, path::Path};
 
 use super::catalog::urisafe_instrument_id;
-use crate::backend::{
-    catalog::safe_directory_identifier,
-    custom::{augment_batch_with_data_type_column, schema_with_data_type_column},
+use crate::{
+    backend::{
+        catalog::safe_directory_identifier,
+        custom::{augment_batch_with_data_type_column, schema_with_data_type_column},
+    },
+    parquet::{ObjectStoreLocationKind, create_object_store_location_from_path},
 };
 
 #[derive(Debug, Default, PartialEq, PartialOrd, Hash, Eq, Clone)]
@@ -204,8 +214,28 @@ pub struct FeatherWriter {
     flush_interval_ms: u64,
     /// Last flush timestamp in nanoseconds.
     last_flush_ns: UnixNanos,
+    /// First write error observed by a message bus handler or flush.
+    pending_write_error: Option<String>,
     /// Bounded cache of recently seen event IDs for deduplication.
     seen_event_ids: Box<FifoCache<UUID4, 10_000>>,
+}
+
+/// Message bus subscriptions owned by a [`FeatherWriter`].
+pub struct FeatherWriterSubscriptions {
+    any: ShareableMessageHandler,
+    instruments: TypedHandler<InstrumentAny>,
+    deltas: TypedHandler<OrderBookDeltas>,
+    depths: TypedHandler<OrderBookDepth10>,
+    quotes: TypedHandler<QuoteTick>,
+    trades: TypedHandler<TradeTick>,
+    bars: TypedHandler<Bar>,
+    mark_prices: TypedHandler<MarkPriceUpdate>,
+    index_prices: TypedHandler<IndexPriceUpdate>,
+    funding_rates: TypedHandler<FundingRateUpdate>,
+    option_greeks: TypedHandler<OptionGreeks>,
+    account_states: TypedHandler<AccountState>,
+    order_events: TypedHandler<OrderEventAny>,
+    position_events: TypedHandler<PositionEvent>,
 }
 
 impl FeatherWriter {
@@ -236,8 +266,71 @@ impl FeatherWriter {
             runtime,
             flush_interval_ms,
             last_flush_ns,
+            pending_write_error: None,
             seen_event_ids: Box::new(FifoCache::new()),
         }
+    }
+
+    /// Creates a [`FeatherWriter`] for an object-store URI.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the object store cannot be created or existing objects cannot be
+    /// removed when `replace_existing` is enabled.
+    pub fn from_uri(
+        uri: &str,
+        storage_options: Option<AHashMap<String, String>>,
+        clock: Rc<RefCell<dyn Clock>>,
+        rotation_config: RotationConfig,
+        included_types: Option<HashSet<String>>,
+        flush_interval_ms: Option<u64>,
+        replace_existing: bool,
+    ) -> anyhow::Result<Self> {
+        let normalized_uri = crate::parquet::normalize_path_to_uri(uri);
+        if normalized_uri.starts_with("file://") {
+            let path = crate::parquet::file_uri_to_native_path(&normalized_uri);
+            std::fs::create_dir_all(&path)
+                .with_context(|| format!("Failed to create streaming directory '{path}'"))?;
+        }
+        let location = create_object_store_location_from_path(&normalized_uri, storage_options)?;
+        let is_local = matches!(location.kind, ObjectStoreLocationKind::Local);
+        let store = location.object_store;
+        let base_path = location.base_path;
+
+        if replace_existing {
+            let prefix = if base_path.is_empty() {
+                anyhow::ensure!(
+                    is_local,
+                    "replace_existing for remote streaming paths requires a non-empty prefix",
+                );
+                None
+            } else {
+                Some(Path::from(base_path.clone()))
+            };
+            let runtime = nautilus_common::live::get_runtime();
+            runtime.block_on(async {
+                let mut objects = store.list(prefix.as_ref());
+                let mut paths = Vec::new();
+                while let Some(result) = objects.next().await {
+                    paths.push(result?.location);
+                }
+
+                for path in paths {
+                    store.delete(&path).await?;
+                }
+                anyhow::Ok(())
+            })?;
+        }
+
+        Ok(Self::new(
+            base_path,
+            store,
+            clock,
+            rotation_config,
+            included_types,
+            Some(default_per_instrument_types()),
+            flush_interval_ms,
+        ))
     }
 
     /// Writes a single data value.
@@ -556,6 +649,20 @@ impl FeatherWriter {
     ///
     /// Returns an error if buffer finalization or object store writes fail.
     pub async fn flush(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Err(e) = self.flush_active_writers().await {
+            self.record_write_error("streaming output", &e);
+            return Err(e);
+        }
+
+        self.last_flush_ns = self.clock.borrow().timestamp_ns();
+
+        if let Some(error) = &self.pending_write_error {
+            return Err(error.clone().into());
+        }
+        Ok(())
+    }
+
+    async fn flush_active_writers(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Collect paths and their current buffers before flushing
         let paths_to_flush: Vec<FileWriterPath> = self.writers.keys().cloned().collect();
 
@@ -573,9 +680,15 @@ impl FeatherWriter {
                 // The writer will be recreated automatically when write() is called again
             }
         }
-
-        self.last_flush_ns = self.clock.borrow().timestamp_ns();
         Ok(())
+    }
+
+    fn record_write_error(&mut self, type_name: &str, error: impl Display) {
+        let message = format!("Failed to write {type_name}: {error}");
+        log::warn!("{message}");
+        if self.pending_write_error.is_none() {
+            self.pending_write_error = Some(message);
+        }
     }
 
     /// Closes all writers by flushing and removing them.
@@ -866,103 +979,289 @@ impl FeatherWriter {
     /// Returns an error if subscription setup fails.
     pub fn subscribe_to_message_bus(
         writer: Rc<RefCell<Self>>,
-    ) -> Result<ShareableMessageHandler, Box<dyn std::error::Error>> {
+    ) -> Result<FeatherWriterSubscriptions, Box<dyn std::error::Error>> {
+        Ok(Self::subscribe_to_message_bus_inner(writer, true))
+    }
+
+    /// Subscribes to built-in messages on the message bus (pattern `"*"`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription setup fails.
+    pub fn subscribe_builtin_to_message_bus(
+        writer: Rc<RefCell<Self>>,
+    ) -> Result<FeatherWriterSubscriptions, Box<dyn std::error::Error>> {
+        Ok(Self::subscribe_to_message_bus_inner(writer, false))
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "subscription assembly keeps the symmetric handler set and ownership in one place"
+    )]
+    fn subscribe_to_message_bus_inner(
+        writer: Rc<RefCell<Self>>,
+        include_custom_data: bool,
+    ) -> FeatherWriterSubscriptions {
         let runtime = writer.borrow().runtime.clone();
 
-        // Create handler that downcasts messages and writes them
-        // Note: We use Handle::enter() to allow blocking in the handler context
-        // This works when the handler is called from outside an async runtime
-        let handler = ShareableMessageHandler::from_any(move |message: &dyn Any| {
-            // Enter the runtime context to allow blocking
-            let _guard = runtime.enter();
-
-            // Try to downcast to various data types and write them
-            macro_rules! try_write {
-                ($message:expr, $type:ty, $name:literal) => {
-                    if let Some(value) = $message.downcast_ref::<$type>() {
-                        let mut writer = writer.borrow_mut();
-                        if let Err(e) = runtime.block_on(writer.write(value.clone())) {
-                            log::warn!("Failed to write {}: {e}", $name);
-                        }
-                        return;
+        macro_rules! typed_writer_handler {
+            ($type:ty, $name:literal) => {{
+                let writer = Rc::clone(&writer);
+                let runtime = runtime.clone();
+                TypedHandler::from(move |value: &$type| {
+                    let mut writer = writer.borrow_mut();
+                    if let Err(e) = runtime.block_on(writer.write(value.clone())) {
+                        writer.record_write_error($name, e);
                     }
-                };
-            }
+                })
+            }};
+        }
 
-            try_write!(message, QuoteTick, "QuoteTick");
-            try_write!(message, TradeTick, "TradeTick");
-            try_write!(message, Bar, "Bar");
-            try_write!(message, OrderBookDelta, "OrderBookDelta");
-            try_write!(message, OrderBookDepth10, "OrderBookDepth10");
-            try_write!(message, IndexPriceUpdate, "IndexPriceUpdate");
-            try_write!(message, MarkPriceUpdate, "MarkPriceUpdate");
-            try_write!(message, FundingRateUpdate, "FundingRateUpdate");
-            try_write!(message, OptionGreeks, "OptionGreeks");
-            try_write!(message, InstrumentStatus, "InstrumentStatus");
-            try_write!(message, InstrumentClose, "InstrumentClose");
-            try_write!(message, AccountState, "AccountState");
-            try_write!(message, OrderInitialized, "OrderInitialized");
-            try_write!(message, OrderDenied, "OrderDenied");
-            try_write!(message, OrderEmulated, "OrderEmulated");
-            try_write!(message, OrderSubmitted, "OrderSubmitted");
-            try_write!(message, OrderAccepted, "OrderAccepted");
-            try_write!(message, OrderRejected, "OrderRejected");
-            try_write!(message, OrderPendingCancel, "OrderPendingCancel");
-            try_write!(message, OrderCanceled, "OrderCanceled");
-            try_write!(message, OrderCancelRejected, "OrderCancelRejected");
-            try_write!(message, OrderExpired, "OrderExpired");
-            try_write!(message, OrderTriggered, "OrderTriggered");
-            try_write!(message, OrderPendingUpdate, "OrderPendingUpdate");
-            try_write!(message, OrderReleased, "OrderReleased");
-            try_write!(message, OrderModifyRejected, "OrderModifyRejected");
-            try_write!(message, OrderUpdated, "OrderUpdated");
-            try_write!(message, OrderFilled, "OrderFilled");
-            try_write!(message, OrderFillVoided, "OrderFillVoided");
-            try_write!(message, PositionOpened, "PositionOpened");
-            try_write!(message, PositionChanged, "PositionChanged");
-            try_write!(message, PositionClosed, "PositionClosed");
-            try_write!(message, PositionAdjusted, "PositionAdjusted");
-            try_write!(message, OrderSnapshot, "OrderSnapshot");
-            try_write!(message, PositionSnapshot, "PositionSnapshot");
-            try_write!(message, OrderStatusReport, "OrderStatusReport");
-            try_write!(message, FillReport, "FillReport");
-            try_write!(message, PositionStatusReport, "PositionStatusReport");
-            try_write!(message, ExecutionMassStatus, "ExecutionMassStatus");
-
-            if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
-                // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write_batch(deltas.deltas.clone())) {
-                    log::warn!("Failed to write OrderBookDeltas: {e}");
-                }
-            } else if let Some(custom) = message.downcast_ref::<CustomData>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write_data(Data::Custom(custom.clone()))) {
-                    log::warn!("Failed to write CustomData: {e}");
-                }
-            } else if let Some(instrument) = message.downcast_ref::<InstrumentAny>() {
+        let instruments = {
+            let writer = Rc::clone(&writer);
+            let runtime = runtime.clone();
+            TypedHandler::from(move |instrument: &InstrumentAny| {
                 let mut writer = writer.borrow_mut();
                 if let Err(e) = runtime.block_on(writer.write_instrument(instrument.clone())) {
-                    log::warn!("Failed to write InstrumentAny: {e}");
+                    writer.record_write_error("InstrumentAny", e);
                 }
-            }
-            // Silently ignore unsupported message types.
-        });
+            })
+        };
+        let deltas = {
+            let writer = Rc::clone(&writer);
+            let runtime = runtime.clone();
+            TypedHandler::from(move |deltas: &OrderBookDeltas| {
+                let mut writer = writer.borrow_mut();
+                if let Err(e) = runtime.block_on(writer.write_batch(deltas.deltas.clone())) {
+                    writer.record_write_error("OrderBookDeltas", e);
+                }
+            })
+        };
+        let depths = typed_writer_handler!(OrderBookDepth10, "OrderBookDepth10");
+        let quotes = typed_writer_handler!(QuoteTick, "QuoteTick");
+        let trades = typed_writer_handler!(TradeTick, "TradeTick");
+        let bars = typed_writer_handler!(Bar, "Bar");
+        let mark_prices = typed_writer_handler!(MarkPriceUpdate, "MarkPriceUpdate");
+        let index_prices = typed_writer_handler!(IndexPriceUpdate, "IndexPriceUpdate");
+        let funding_rates = typed_writer_handler!(FundingRateUpdate, "FundingRateUpdate");
+        let option_greeks = typed_writer_handler!(OptionGreeks, "OptionGreeks");
+        let account_states = typed_writer_handler!(AccountState, "AccountState");
+        let order_events = {
+            let writer = Rc::clone(&writer);
+            let runtime = runtime.clone();
+            TypedHandler::from(move |event: &OrderEventAny| {
+                macro_rules! write_event {
+                    ($value:expr, $name:literal) => {{
+                        let mut writer = writer.borrow_mut();
+                        if let Err(e) = runtime.block_on(writer.write($value.clone())) {
+                            writer.record_write_error($name, e);
+                        }
+                    }};
+                }
 
-        // Subscribe to all messages using wildcard pattern
-        subscribe_any(
-            MStr::pattern("*"),
-            handler.clone(),
-            None, // No priority
-        );
+                match event {
+                    OrderEventAny::Initialized(value) => write_event!(value, "OrderInitialized"),
+                    OrderEventAny::Denied(value) => write_event!(value, "OrderDenied"),
+                    OrderEventAny::Emulated(value) => write_event!(value, "OrderEmulated"),
+                    OrderEventAny::Released(value) => write_event!(value, "OrderReleased"),
+                    OrderEventAny::Submitted(value) => write_event!(value, "OrderSubmitted"),
+                    OrderEventAny::Accepted(value) => write_event!(value, "OrderAccepted"),
+                    OrderEventAny::Rejected(value) => write_event!(value, "OrderRejected"),
+                    OrderEventAny::Canceled(value) => write_event!(value, "OrderCanceled"),
+                    OrderEventAny::Expired(value) => write_event!(value, "OrderExpired"),
+                    OrderEventAny::Triggered(value) => write_event!(value, "OrderTriggered"),
+                    OrderEventAny::PendingUpdate(value) => {
+                        write_event!(value, "OrderPendingUpdate");
+                    }
+                    OrderEventAny::PendingCancel(value) => {
+                        write_event!(value, "OrderPendingCancel");
+                    }
+                    OrderEventAny::ModifyRejected(value) => {
+                        write_event!(value, "OrderModifyRejected");
+                    }
+                    OrderEventAny::CancelRejected(value) => {
+                        write_event!(value, "OrderCancelRejected");
+                    }
+                    OrderEventAny::Updated(value) => write_event!(value, "OrderUpdated"),
+                    OrderEventAny::Filled(value) => write_event!(value, "OrderFilled"),
+                    OrderEventAny::FillVoided(value) => write_event!(value, "OrderFillVoided"),
+                }
+            })
+        };
+        let position_events = {
+            let writer = Rc::clone(&writer);
+            let runtime = runtime.clone();
+            TypedHandler::from(move |event: &PositionEvent| {
+                macro_rules! write_event {
+                    ($value:expr, $name:literal) => {{
+                        let mut writer = writer.borrow_mut();
+                        if let Err(e) = runtime.block_on(writer.write($value.clone())) {
+                            writer.record_write_error($name, e);
+                        }
+                    }};
+                }
 
-        Ok(handler)
+                match event {
+                    PositionEvent::PositionOpened(value) => write_event!(value, "PositionOpened"),
+                    PositionEvent::PositionChanged(value) => {
+                        write_event!(value, "PositionChanged");
+                    }
+                    PositionEvent::PositionClosed(value) => write_event!(value, "PositionClosed"),
+                    PositionEvent::PositionAdjusted(value) => {
+                        write_event!(value, "PositionAdjusted");
+                    }
+                }
+            })
+        };
+
+        let any = {
+            ShareableMessageHandler::from_any(move |message: &dyn Any| {
+                let _guard = runtime.enter();
+
+                macro_rules! try_write {
+                    ($message:expr, $type:ty, $name:literal) => {
+                        if let Some(value) = $message.downcast_ref::<$type>() {
+                            let mut writer = writer.borrow_mut();
+                            if let Err(e) = runtime.block_on(writer.write(value.clone())) {
+                                writer.record_write_error($name, e);
+                            }
+                            return;
+                        }
+                    };
+                }
+
+                try_write!(message, QuoteTick, "QuoteTick");
+                try_write!(message, TradeTick, "TradeTick");
+                try_write!(message, Bar, "Bar");
+                try_write!(message, OrderBookDelta, "OrderBookDelta");
+                try_write!(message, OrderBookDepth10, "OrderBookDepth10");
+                try_write!(message, IndexPriceUpdate, "IndexPriceUpdate");
+                try_write!(message, MarkPriceUpdate, "MarkPriceUpdate");
+                try_write!(message, FundingRateUpdate, "FundingRateUpdate");
+                try_write!(message, OptionGreeks, "OptionGreeks");
+                try_write!(message, InstrumentStatus, "InstrumentStatus");
+                try_write!(message, InstrumentClose, "InstrumentClose");
+                try_write!(message, AccountState, "AccountState");
+                try_write!(message, OrderInitialized, "OrderInitialized");
+                try_write!(message, OrderDenied, "OrderDenied");
+                try_write!(message, OrderEmulated, "OrderEmulated");
+                try_write!(message, OrderSubmitted, "OrderSubmitted");
+                try_write!(message, OrderAccepted, "OrderAccepted");
+                try_write!(message, OrderRejected, "OrderRejected");
+                try_write!(message, OrderPendingCancel, "OrderPendingCancel");
+                try_write!(message, OrderCanceled, "OrderCanceled");
+                try_write!(message, OrderCancelRejected, "OrderCancelRejected");
+                try_write!(message, OrderExpired, "OrderExpired");
+                try_write!(message, OrderTriggered, "OrderTriggered");
+                try_write!(message, OrderPendingUpdate, "OrderPendingUpdate");
+                try_write!(message, OrderReleased, "OrderReleased");
+                try_write!(message, OrderModifyRejected, "OrderModifyRejected");
+                try_write!(message, OrderUpdated, "OrderUpdated");
+                try_write!(message, OrderFilled, "OrderFilled");
+                try_write!(message, OrderFillVoided, "OrderFillVoided");
+                try_write!(message, PositionOpened, "PositionOpened");
+                try_write!(message, PositionChanged, "PositionChanged");
+                try_write!(message, PositionClosed, "PositionClosed");
+                try_write!(message, PositionAdjusted, "PositionAdjusted");
+                try_write!(message, OrderSnapshot, "OrderSnapshot");
+                try_write!(message, PositionSnapshot, "PositionSnapshot");
+                try_write!(message, OrderStatusReport, "OrderStatusReport");
+                try_write!(message, FillReport, "FillReport");
+                try_write!(message, PositionStatusReport, "PositionStatusReport");
+                try_write!(message, ExecutionMassStatus, "ExecutionMassStatus");
+
+                if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
+                    let mut writer = writer.borrow_mut();
+                    if let Err(e) = runtime.block_on(writer.write_batch(deltas.deltas.clone())) {
+                        writer.record_write_error("OrderBookDeltas", e);
+                    }
+                } else if include_custom_data
+                    && let Some(custom) = message.downcast_ref::<CustomData>()
+                {
+                    let mut writer = writer.borrow_mut();
+                    if let Err(e) =
+                        runtime.block_on(writer.write_data(Data::Custom(custom.clone())))
+                    {
+                        writer.record_write_error("CustomData", e);
+                    }
+                } else if let Some(instrument) = message.downcast_ref::<InstrumentAny>() {
+                    let mut writer = writer.borrow_mut();
+                    if let Err(e) = runtime.block_on(writer.write_instrument(instrument.clone())) {
+                        writer.record_write_error("InstrumentAny", e);
+                    }
+                }
+            })
+        };
+
+        let pattern = MStr::pattern("*");
+        msgbus::subscribe_any(pattern, any.clone(), None);
+        msgbus::subscribe_instruments(pattern, instruments.clone(), None);
+        msgbus::subscribe_book_deltas(pattern, deltas.clone(), None);
+        msgbus::subscribe_book_depth10(pattern, depths.clone(), None);
+        msgbus::subscribe_quotes(pattern, quotes.clone(), None);
+        msgbus::subscribe_trades(pattern, trades.clone(), None);
+        msgbus::subscribe_bars(pattern, bars.clone(), None);
+        msgbus::subscribe_mark_prices(pattern, mark_prices.clone(), None);
+        msgbus::subscribe_index_prices(pattern, index_prices.clone(), None);
+        msgbus::subscribe_funding_rates(pattern, funding_rates.clone(), None);
+        msgbus::subscribe_option_greeks(pattern, option_greeks.clone(), None);
+        msgbus::subscribe_account_state(pattern, account_states.clone(), None);
+        msgbus::subscribe_order_events(pattern, order_events.clone(), None);
+        msgbus::subscribe_position_events(pattern, position_events.clone(), None);
+
+        FeatherWriterSubscriptions {
+            any,
+            instruments,
+            deltas,
+            depths,
+            quotes,
+            trades,
+            bars,
+            mark_prices,
+            index_prices,
+            funding_rates,
+            option_greeks,
+            account_states,
+            order_events,
+            position_events,
+        }
     }
 
     /// Unsubscribes from the message bus.
-    pub fn unsubscribe_from_message_bus(handler: &ShareableMessageHandler) {
-        unsubscribe_any(MStr::pattern("*"), handler);
+    pub fn unsubscribe_from_message_bus(subscriptions: &FeatherWriterSubscriptions) {
+        let pattern = MStr::pattern("*");
+        msgbus::unsubscribe_any(pattern, &subscriptions.any);
+        msgbus::unsubscribe_instruments(pattern, &subscriptions.instruments);
+        msgbus::unsubscribe_book_deltas(pattern, &subscriptions.deltas);
+        msgbus::unsubscribe_book_depth10(pattern, &subscriptions.depths);
+        msgbus::unsubscribe_quotes(pattern, &subscriptions.quotes);
+        msgbus::unsubscribe_trades(pattern, &subscriptions.trades);
+        msgbus::unsubscribe_bars(pattern, &subscriptions.bars);
+        msgbus::unsubscribe_mark_prices(pattern, &subscriptions.mark_prices);
+        msgbus::unsubscribe_index_prices(pattern, &subscriptions.index_prices);
+        msgbus::unsubscribe_funding_rates(pattern, &subscriptions.funding_rates);
+        msgbus::unsubscribe_option_greeks(pattern, &subscriptions.option_greeks);
+        msgbus::unsubscribe_account_state(pattern, &subscriptions.account_states);
+        msgbus::unsubscribe_order_events(pattern, &subscriptions.order_events);
+        msgbus::unsubscribe_position_events(pattern, &subscriptions.position_events);
     }
+}
+
+pub(crate) fn default_per_instrument_types() -> HashSet<String> {
+    [
+        "bars",
+        "funding_rate_update",
+        "index_prices",
+        "mark_prices",
+        "order_book_deltas",
+        "order_book_depths",
+        "option_greeks",
+        "quotes",
+        "trades",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
 }
 
 #[cfg(test)]
@@ -1322,6 +1621,45 @@ mod tests {
 
         // Verify that writes succeeded (check_flush was called, even if it didn't flush)
         // The flush_interval_ms is set, so check_flush runs but won't flush without time advancement
+    }
+
+    #[tokio::test]
+    async fn test_flush_reports_previous_write_failure() {
+        let temp_dir = TempDir::new().unwrap();
+        let base_path = temp_dir.path().to_str().unwrap().to_string();
+        let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+        let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let mut writer = FeatherWriter::new(
+            base_path.clone(),
+            store,
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            None,
+            None,
+        );
+        let quote = QuoteTick::new(
+            InstrumentId::from("AUD/USD.SIM"),
+            Price::from("1.0"),
+            Price::from("1.0"),
+            Quantity::from("1000"),
+            Quantity::from("1000"),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+        );
+        writer.write(quote).await.unwrap();
+        std::fs::remove_dir_all(&base_path).unwrap();
+        std::fs::write(&base_path, b"not a directory").unwrap();
+
+        let first_error = writer.flush().await.unwrap_err().to_string();
+        let second_error = writer.flush().await.unwrap_err().to_string();
+        std::fs::remove_file(&base_path).unwrap();
+
+        assert_eq!(
+            second_error,
+            format!("Failed to write streaming output: {first_error}"),
+        );
     }
 
     #[tokio::test]

@@ -371,6 +371,8 @@ impl NautilusKernelBuilder {
             exec_engine: self.exec_engine,
             portfolio: self.portfolio,
             streaming: None,
+            #[cfg(feature = "streaming")]
+            catalogs: Vec::new(),
         };
 
         let kernel = NautilusKernel::new_with_dependencies(

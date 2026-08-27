@@ -18,8 +18,10 @@ Test backtest configs behavior.
 
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.backtest import BacktestDataConfig
@@ -53,6 +55,8 @@ from nautilus_trader.model import OmsType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PriceType
 from nautilus_trader.model import StandardMarginModel
+from nautilus_trader.persistence import DataCatalogConfig
+from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.risk import RiskEngineConfig
 from nautilus_trader.trading import ImportableControllerConfig
 
@@ -163,6 +167,45 @@ def test_engine_config_accepts_controller_config() -> None:
     assert config.controller.controller_path == "tests.unit.common.actor:StrategyCreatingController"
 
 
+def test_engine_config_accepts_streaming_and_catalog_configs() -> None:
+    """
+    Test engine config retains streaming and catalog configs.
+    """
+    streaming = StreamingConfig(catalog_path="/data/output")
+    catalog = DataCatalogConfig(path="/data/input", name="history")
+
+    config = BacktestEngineConfig(streaming=streaming, catalogs=[catalog])
+
+    assert config.streaming.catalog_path == "/data/output"
+    assert config.streaming.fs_protocol == "file"
+    assert config.streaming.flush_interval_ms == 1_000
+    assert config.streaming.replace_existing is False
+    assert config.catalogs == [catalog]
+
+
+def test_streaming_config_consumes_rotation_inputs() -> None:
+    """
+    Test streaming config converts public rotation inputs to typed values.
+    """
+    config = StreamingConfig(
+        catalog_path="bucket/output",
+        fs_protocol="s3",
+        flush_interval_ms=250,
+        replace_existing=True,
+        rotation_mode="SCHEDULED_DATES",
+        rotation_interval_ns=5_000,
+        schedule_ns=750,
+    )
+
+    assert config.catalog_path == "bucket/output"
+    assert config.fs_protocol == "s3"
+    assert config.flush_interval_ms == 250
+    assert config.replace_existing is True
+    assert config.rotation_mode == "SCHEDULED_DATES"
+    assert config.rotation_interval_ns == 5_000
+    assert config.schedule_ns == 750
+
+
 def test_venue_config_required_params() -> None:
     """
     Test venue config required params.
@@ -180,6 +223,24 @@ def test_venue_config_required_params() -> None:
     assert config.book_type == BookType.L1_MBP
     assert config.starting_balances == ["1_000_000 USD"]
     assert config.default_leverage is None
+
+
+def test_venue_config_accepts_enum_strings_and_defaults_book_type() -> None:
+    """
+    Test venue config accepts compatible enum strings and defaults the book type.
+    """
+    config = BacktestVenueConfig(
+        name="SIM",
+        oms_type="HEDGING",
+        account_type="MARGIN",
+        starting_balances=["1_000_000 USD"],
+        oto_trigger_mode="FULL",
+    )
+
+    assert config.oms_type == OmsType.HEDGING
+    assert config.account_type == AccountType.MARGIN
+    assert config.book_type == BookType.L1_MBP
+    assert config.oto_trigger_mode == OtoTriggerMode.FULL
 
 
 def test_venue_config_optional_params() -> None:
@@ -476,6 +537,31 @@ def test_data_config_readback_redacts_storage_option_values() -> None:
     assert config.optimize_file_loading is True
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        1_700_000_000_000_000_000,
+        "2023-11-14T22:13:20+00:00",
+        dt.datetime(2023, 11, 14, 22, 13, 20, tzinfo=dt.UTC),
+        pd.Timestamp("2023-11-14T22:13:20Z"),
+    ],
+)
+def test_data_config_accepts_compatible_timestamp_inputs(value: object) -> None:
+    """
+    Test data config normalizes compatible timestamp inputs to nanoseconds.
+    """
+    config = BacktestDataConfig(
+        data_type="QuoteTick",
+        catalog_path="/data/catalog",
+        instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+        start_time=value,
+        end_time=value,
+    )
+
+    assert config.start_time == 1_700_000_000_000_000_000
+    assert config.end_time == 1_700_000_000_000_000_000
+
+
 def test_data_config_invalid_data_type() -> None:
     """
     Test data config invalid data type.
@@ -594,6 +680,27 @@ def test_run_config_options_are_readable() -> None:
     assert config.dispose_on_completion is False
     assert config.start == 1
     assert config.end == 2
+
+
+def test_run_config_accepts_compatible_timestamp_inputs() -> None:
+    """
+    Test run config normalizes compatible timestamp inputs to nanoseconds.
+    """
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type="HEDGING",
+        account_type="MARGIN",
+        starting_balances=["1_000_000 USD"],
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[],
+        start="2023-11-14T22:13:20+00:00",
+        end=dt.datetime(2023, 11, 14, 22, 13, 20, tzinfo=dt.UTC),
+    )
+
+    assert config.start == 1_700_000_000_000_000_000
+    assert config.end == 1_700_000_000_000_000_000
 
 
 def test_run_config_repr() -> None:

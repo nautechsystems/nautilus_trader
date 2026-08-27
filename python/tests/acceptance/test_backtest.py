@@ -1718,7 +1718,7 @@ class TestBacktestCommandSettling:
 
 
 @pytest.mark.skip(
-    reason="post-cutover: databento data_utils/options/spreads + StreamingConfig/DataCatalogConfig wiring",
+    reason="post-cutover: databento data_utils/options/spreads",
 )
 class TestBacktestNodeWithBacktestDataIterator:
     """

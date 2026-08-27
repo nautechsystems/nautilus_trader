@@ -972,6 +972,8 @@ impl BacktestEngine {
         self.kernel.risk_engine.borrow_mut().stop();
         self.kernel.exec_engine.borrow_mut().stop();
 
+        let streaming_result = self.kernel.flush_streaming();
+
         self.run_finished = Some(UnixNanos::from(nanos_since_unix_epoch()));
         self.backtest_end = Some(self.kernel.clock.borrow().timestamp_ns());
 
@@ -980,7 +982,8 @@ impl BacktestEngine {
 
         self.log_post_run();
         save_result?;
-        diagnostics_result
+        diagnostics_result?;
+        streaming_result
     }
 
     /// Returns registered strategies whose state resolves to `Running` after the end sequence.

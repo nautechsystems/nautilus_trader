@@ -1782,6 +1782,11 @@ CONFIG_READBACK_REPLACEMENTS = {
         "BacktestDataConfig",
         "catalog_fs_rust_storage_options",
     ): "catalog_fs_rust_storage_option_keys",
+    (
+        "nautilus_trader.persistence",
+        "DataCatalogConfig",
+        "fs_rust_storage_options",
+    ): "fs_rust_storage_option_keys",
 }
 
 WRITABLE_CONFIG_PROPERTIES = {

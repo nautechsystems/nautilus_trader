@@ -6838,6 +6838,7 @@ dependencies = [
  "bytes",
  "futures",
  "indexmap 2.14.0",
+ "jiff",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -6847,6 +6848,7 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-portfolio",
  "nautilus-risk",
+ "nautilus-serialization",
  "nautilus-testkit",
  "nautilus-trading",
  "proptest",
@@ -6856,6 +6858,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+ "tempfile",
  "toml 1.1.4+spec-1.1.0",
  "ustr",
 ]

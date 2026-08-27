@@ -356,11 +356,12 @@ Construct the current model or module directly, such as `ProbabilisticFillModel`
 `FixedFeeModel`, `StaticLatencyModel`, or `FXRolloverInterestModule`, and pass it to the backtest
 venue. `SimulationModuleConfig` is therefore no longer a separate Python type.
 
-Three v1 application config exports represent workflows with no current public Python equivalent:
-`DataCatalogConfig`, `DatabaseConfig`, and `StreamingConfig`. Do not substitute a same-named Rust
-config. `BacktestNode` does not yet expose the v1 catalog streaming workflow. For live trading,
-configure Redis or Postgres cache backing through `LiveNodeBuilder`; this does not restore the
-generic v1 `DatabaseConfig` workflow. See
+`DataCatalogConfig` and `StreamingConfig` have v2-native Python equivalents for `BacktestNode`.
+Configure existing built-in-data catalog queries and Feather output through `BacktestEngineConfig`.
+These configs do not restore the v1 factory, download, custom-data, or generic serialization
+workflows. `DatabaseConfig` has no public v2 Python equivalent. For live trading, configure Redis or
+Postgres cache backing through `LiveNodeBuilder`; this does not restore the generic v1
+`DatabaseConfig` workflow. See
 [cache database configuration](docs/how_to/configure_live_trading.md#cache-database-configuration).
 
 The generic Python APIs under `nautilus_trader.network` have no v2 public Python equivalent:
@@ -636,8 +637,8 @@ These gaps can affect migration but do not block supported cutover workflows:
 - PostgreSQL cache position and synthetic loads, actor and strategy state persistence, and cache
   heartbeat remain incomplete.
 - External message-bus publishing of serialized order and position snapshots remains deferred.
-- V2 `BacktestNode` does not yet support the v1 `StreamingConfig` and `DataCatalogConfig` iterator
-  workflow.
+- V2 `BacktestNode` catalog configuration does not support v1 data-client factories, a download
+  engine, on-the-fly downloads, custom data, or data frames.
 - Instrument-provider filter dictionaries are not a common v2 adapter contract. Hyperliquid v2
   loads its configured instrument universe and does not accept the v1 `instrument_provider` field.
   Check each adapter's Rust/PyO3 config rather than copying v1 provider examples.

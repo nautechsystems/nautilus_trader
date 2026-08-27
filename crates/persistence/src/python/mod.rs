@@ -54,6 +54,7 @@ pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::backend::session::DataBackendSession>()?;
     m.add_class::<crate::backend::session::DataQueryResult>()?;
     m.add_class::<backend::session::NautilusDataType>()?;
+    m.add_class::<crate::config::DataCatalogConfig>()?;
     m.add_class::<catalog::PyParquetDataCatalog>()?;
     m.add_class::<feather::PyStreamingFeatherWriter>()?;
     m.add_class::<wranglers::bar::BarDataWrangler>()?;

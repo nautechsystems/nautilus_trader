@@ -22,6 +22,13 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from strategies import backtest_surface
+from strategies.backtest_surface import QuoteCountActor
+from strategies.backtest_surface import QuoteCountActorConfig
+from strategies.backtest_surface import RoutedOrderExecutionAlgorithm
+from strategies.backtest_surface import RoutedOrderExecutionAlgorithmConfig
+from strategies.backtest_surface import StreamingWhipsaw
+from strategies.backtest_surface import StreamingWhipsawConfig
 
 from nautilus_trader.analysis import TearsheetConfig
 from nautilus_trader.analysis import TearsheetStatsTableChart
@@ -33,10 +40,13 @@ from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.backtest import BacktestRunConfig
 from nautilus_trader.backtest import BacktestVenueConfig
+from nautilus_trader.common import ImportableActorConfig
+from nautilus_trader.core import UUID4
 from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import Currency
+from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
@@ -44,8 +54,11 @@ from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import StandardMarginModel
 from nautilus_trader.model import Venue
+from nautilus_trader.persistence import DataCatalogConfig
 from nautilus_trader.persistence import ParquetDataCatalog
+from nautilus_trader.persistence import StreamingConfig
 from nautilus_trader.trading import EmaCrossConfig
+from nautilus_trader.trading import ImportableExecutionAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
 from tests.providers import TestInstrumentProvider
 from tests.stubs import TestDataProviderPyo3
@@ -187,6 +200,286 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
         assert result.backtest_end == quotes[-1].ts_event + 1_000_000_000
     finally:
         node.dispose()
+
+
+@pytest.mark.parametrize("from_config", [False, True])
+def test_node_registers_actor_forms(tmp_path: Path, from_config: bool) -> None:
+    """
+    Test node actor registration forms receive runtime market data.
+    """
+    QuoteCountActor.reset_observations()
+    node, config, instrument, quotes = _build_component_node(tmp_path, quote_count=4)
+
+    try:
+        if from_config:
+            node.add_actor_from_config(
+                config.id,
+                ImportableActorConfig(
+                    actor_path="strategies.backtest_surface:QuoteCountActor",
+                    config_path="strategies.backtest_surface:QuoteCountActorConfig",
+                    config={"instrument_id": str(instrument.id)},
+                ),
+            )
+        else:
+            node.add_actor(
+                config.id,
+                QuoteCountActor(QuoteCountActorConfig(instrument_id=str(instrument.id))),
+            )
+
+        node.run()
+
+        assert QuoteCountActor.quote_count == len(quotes)
+        assert QuoteCountActor.last_bid == quotes[-1].bid_price
+    finally:
+        node.dispose()
+
+
+@pytest.mark.parametrize("from_config", [False, True])
+def test_node_registers_strategy_forms(tmp_path: Path, from_config: bool) -> None:
+    """
+    Test node strategy registration forms submit orders at runtime.
+    """
+    node, config, instrument, _ = _build_component_node(tmp_path, quote_count=10)
+
+    try:
+        if from_config:
+            node.add_strategy_from_config(
+                config.id,
+                ImportableStrategyConfig(
+                    strategy_path="strategies.backtest_surface:StreamingWhipsaw",
+                    config_path="strategies.backtest_surface:StreamingWhipsawConfig",
+                    config={
+                        "instrument_id": str(instrument.id),
+                        "trade_size": "1.00000",
+                    },
+                ),
+            )
+        else:
+            node.add_strategy(
+                config.id,
+                StreamingWhipsaw(
+                    StreamingWhipsawConfig(
+                        instrument_id=str(instrument.id),
+                        trade_size="1.00000",
+                    ),
+                ),
+            )
+
+        result = node.run()[0]
+
+        assert result.total_orders == 4
+        assert result.total_positions == 2
+    finally:
+        node.dispose()
+
+
+@pytest.mark.parametrize("from_config", [False, True])
+def test_node_registers_execution_algorithm_forms(tmp_path: Path, from_config: bool) -> None:
+    """
+    Test node execution-algorithm registration forms receive routed orders.
+    """
+    RoutedOrderExecutionAlgorithm.reset_observations()
+    node, config, instrument, _ = _build_component_node(tmp_path, quote_count=3)
+    algorithm_id = ExecAlgorithmId("NODE-EXEC")
+
+    try:
+        if from_config:
+            node.add_exec_algorithm_from_config(
+                config.id,
+                ImportableExecutionAlgorithmConfig(
+                    exec_algorithm_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithm",
+                    config_path="strategies.backtest_surface:RoutedOrderExecutionAlgorithmConfig",
+                    config={
+                        "exec_algorithm_id": str(algorithm_id),
+                        "log_events": False,
+                        "log_commands": False,
+                    },
+                ),
+            )
+        else:
+            node.add_exec_algorithm(
+                config.id,
+                RoutedOrderExecutionAlgorithm(
+                    RoutedOrderExecutionAlgorithmConfig(
+                        exec_algorithm_id=str(algorithm_id),
+                        log_events=False,
+                        log_commands=False,
+                    ),
+                ),
+            )
+        node.add_strategy_from_config(
+            config.id,
+            ImportableStrategyConfig(
+                strategy_path="strategies.backtest_surface:RoutedOrderProbe",
+                config_path="strategies.backtest_surface:RoutedOrderProbeConfig",
+                config={
+                    "instrument_id": str(instrument.id),
+                    "trade_size": "0.10000",
+                    "exec_algorithm_id": str(algorithm_id),
+                },
+            ),
+        )
+
+        result = node.run()[0]
+
+        assert result.total_orders == 1
+        assert RoutedOrderExecutionAlgorithm.received_exec_algorithm_ids == [algorithm_id]
+        assert RoutedOrderExecutionAlgorithm.cache_instrument_ids == [str(instrument.id)]
+    finally:
+        node.dispose()
+
+
+def test_node_rejects_disposed_execution_algorithm_before_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Test node rejects a disposed execution algorithm before construction.
+    """
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[],
+        engine=BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+    )
+    node = BacktestNode([config])
+    constructor_calls: list[bool] = []
+
+    class ConstructorProbe:
+        def __init__(self) -> None:
+            constructor_calls.append(True)
+
+    monkeypatch.setattr(backtest_surface, "ConstructorProbe", ConstructorProbe, raising=False)
+
+    try:
+        assert len(node.run()) == 1
+
+        with pytest.raises(RuntimeError, match="Cannot add components to disposed trader"):
+            node.add_exec_algorithm_from_config(
+                config.id,
+                ImportableExecutionAlgorithmConfig(
+                    exec_algorithm_path="strategies.backtest_surface:ConstructorProbe",
+                    config_path="",
+                    config={},
+                ),
+            )
+
+        assert constructor_calls == []
+    finally:
+        node.dispose()
+
+
+@pytest.mark.parametrize("replace_existing", [False, True])
+def test_node_streams_output_to_new_or_replaced_directory(
+    tmp_path: Path,
+    replace_existing: bool,
+) -> None:
+    """
+    Test configured streaming creates its run directory and replaces existing output.
+    """
+    instance_id = UUID4()
+    output_path = tmp_path / "output"
+    run_path = output_path / "backtest" / str(instance_id)
+    sentinel = run_path / "stale.feather"
+    if replace_existing:
+        run_path.mkdir(parents=True)
+        sentinel.write_bytes(b"stale")
+    node, _config, _, _ = _build_component_node(
+        tmp_path,
+        quote_count=3,
+        engine=BacktestEngineConfig(
+            bypass_logging=True,
+            run_analysis=False,
+            instance_id=instance_id,
+            streaming=StreamingConfig(
+                catalog_path=str(output_path),
+                fs_protocol="file",
+                flush_interval_ms=1,
+                replace_existing=replace_existing,
+                rotation_mode="SIZE",
+                max_file_size=1,
+            ),
+        ),
+    )
+
+    try:
+        assert run_path.is_dir()
+        assert sentinel.exists() is False
+
+        result = node.run()[0]
+        files = list((output_path / "backtest" / str(result.instance_id)).rglob("*.feather"))
+        quote_files = [path for path in files if "quotes" in str(path)]
+
+        assert files
+        assert len(quote_files) == 3
+    finally:
+        node.dispose()
+
+
+def test_node_builds_with_configured_catalog(tmp_path: Path) -> None:
+    """
+    Test node construction registers an existing built-in catalog.
+    """
+    input_path = tmp_path / "input"
+    engine = BacktestEngineConfig(
+        bypass_logging=True,
+        run_analysis=False,
+        catalogs=[DataCatalogConfig(path=str(input_path), name="history")],
+    )
+    node, _, _, quotes = _build_component_node(
+        tmp_path,
+        quote_count=4,
+        engine=engine,
+    )
+
+    try:
+        assert node.run()[0].iterations == len(quotes)
+    finally:
+        node.dispose()
+
+
+def test_node_rejects_invalid_configured_catalog_path(tmp_path: Path) -> None:
+    """
+    Test node construction consumes and validates configured catalogs.
+    """
+    engine = BacktestEngineConfig(
+        bypass_logging=True,
+        run_analysis=False,
+        catalogs=[DataCatalogConfig(path="\0")],
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to create data catalog"):
+        _build_component_node(
+            tmp_path,
+            quote_count=1,
+            engine=engine,
+            raise_exception=True,
+        )
+
+
+def test_node_rejects_duplicate_configured_catalog_names(tmp_path: Path) -> None:
+    """
+    Test node construction rejects duplicate catalog names without panicking.
+    """
+    catalog = DataCatalogConfig(path=str(tmp_path), name="history")
+    engine = BacktestEngineConfig(
+        bypass_logging=True,
+        run_analysis=False,
+        catalogs=[catalog, catalog],
+    )
+
+    with pytest.raises(RuntimeError, match="Duplicate data catalog name 'history'"):
+        _build_component_node(
+            tmp_path,
+            quote_count=1,
+            engine=engine,
+            raise_exception=True,
+        )
 
 
 def test_node_exposes_builtin_strategy_registration() -> None:
@@ -427,6 +720,43 @@ def _run_ema_cross_node(catalog_path: object, instrument: object, chunk_size: ob
     result = node.run()[0]
     node.dispose()
     return result
+
+
+def _build_component_node(
+    tmp_path: Path,
+    quote_count: int,
+    engine: BacktestEngineConfig | None = None,
+    raise_exception: bool = False,
+) -> tuple[BacktestNode, BacktestRunConfig, object, list[object]]:
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    catalog_path = tmp_path / "input"
+    catalog_path.mkdir()
+    catalog = ParquetDataCatalog(str(catalog_path))
+    quotes = _whipsaw_quotes(instrument, count=quote_count)
+    catalog.write_instruments([instrument])
+    catalog.write_quote_ticks(quotes)
+    venue = BacktestVenueConfig(
+        name="BINANCE",
+        oms_type="NETTING",
+        account_type="MARGIN",
+        starting_balances=["1_000_000 USDT"],
+        book_type="L1_MBP",
+    )
+    data = BacktestDataConfig(
+        data_type="QuoteTick",
+        catalog_path=str(catalog_path),
+        instrument_id=instrument.id,
+    )
+    config = BacktestRunConfig(
+        venues=[venue],
+        data=[data],
+        engine=engine or BacktestEngineConfig(bypass_logging=True, run_analysis=False),
+        dispose_on_completion=False,
+        raise_exception=raise_exception,
+    )
+    node = BacktestNode([config])
+    node.build()
+    return node, config, instrument, quotes
 
 
 def _build_ema_cross_node(

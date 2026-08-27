@@ -985,9 +985,10 @@ outside the range.
 
 ### Feather streaming and conversion
 
-The Python API exposes `StreamingFeatherWriter` for direct streaming. It does not expose a
-`StreamingConfig` for `BacktestNode`. `ParquetDataCatalog.convert_stream_to_data()` converts a
-completed Feather stream to Parquet when the application manages the writer lifecycle.
+The Python API exposes `StreamingFeatherWriter` for direct streaming and accepts `StreamingConfig`
+through `BacktestEngineConfig` when running a `BacktestNode`. The node owns the writer lifecycle and
+writes each run below `<catalog_path>/backtest/<instance_id>`. Use
+`ParquetDataCatalog.convert_stream_to_data()` to convert a completed Feather stream to Parquet.
 
 ## Data migrations
 

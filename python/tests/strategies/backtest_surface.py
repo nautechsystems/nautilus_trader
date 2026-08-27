@@ -841,6 +841,73 @@ class MarketDataAuditActor(DataActor):
         type(self).reset_observations()
 
 
+class QuoteCountActorConfig(DataActorConfig):
+    """
+    Configure quote count actor tests.
+    """
+
+    _CUSTOM_FIELDS = ("instrument_id",)
+
+    def __new__(cls, *args: object, **kwargs: object) -> object:
+        """
+        Create a new instance.
+        """
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(self, instrument_id: str, **_kwargs: object) -> None:
+        """
+        Initialize the config.
+        """
+        super().__init__()
+        self.instrument_id = instrument_id
+
+
+class QuoteCountActor(DataActor):
+    """
+    Count quotes received through actor registration tests.
+    """
+
+    quote_count: ClassVar[int] = 0
+    last_bid: ClassVar[object] = None
+
+    def __init__(self, config: QuoteCountActorConfig) -> None:
+        """
+        Initialize the actor.
+        """
+        super().__init__(config)
+        self._instrument_id = InstrumentId.from_str(config.instrument_id)
+
+    @classmethod
+    def reset_observations(cls) -> None:
+        """
+        Reset observations.
+        """
+        cls.quote_count = 0
+        cls.last_bid = None
+
+    def on_start(self) -> None:
+        """
+        Subscribe to quotes.
+        """
+        type(self).reset_observations()
+        self.subscribe_quotes(self._instrument_id)
+
+    def on_quote(self, quote: QuoteTick) -> None:
+        """
+        Record a quote.
+        """
+        type(self).quote_count += 1
+        type(self).last_bid = quote.bid_price
+
+    def on_reset(self) -> None:
+        """
+        Reset observations.
+        """
+        type(self).reset_observations()
+
+
 class StreamingWhipsawConfig(StrategyConfig):
     """
     Collect streaming whipsaw config tests.
