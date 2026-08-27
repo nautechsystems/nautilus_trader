@@ -234,6 +234,9 @@ impl InteractiveBrokersExecutionClient {
         trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
         strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
     ) -> anyhow::Result<()> {
+        // Order-status callbacks first map the IB order ID to a client order ID, then read
+        // its instrument, trader, and strategy IDs. Hold this lock while updating all maps
+        // so a callback sees either the complete identity or no route at all.
         let mut venue_map = venue_order_id_map
             .lock()
             .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
