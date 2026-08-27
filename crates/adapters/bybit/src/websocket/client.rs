@@ -2322,6 +2322,211 @@ mod tests {
         assert!(cmd_rx.try_recv().is_err());
     }
 
+    #[tokio::test]
+    async fn option_batch_chunks_preserve_request_correlation() {
+        let client = BybitWebSocketClient::new_trade(
+            BybitEnvironment::Testnet,
+            Some("test-key".to_string()),
+            Some("test-secret".to_string()),
+            None,
+            20,
+            TransportBackend::default(),
+            None,
+        );
+        client
+            .connection_mode
+            .load()
+            .store(ConnectionMode::Active.as_u8(), Ordering::Release);
+        client.auth_tracker.succeed();
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write().await = cmd_tx;
+
+        let place_template = BybitWsPlaceOrderParams {
+            category: BybitProductType::Option,
+            symbol: Ustr::from("BTC-30JUN25-100000-C"),
+            side: BybitOrderSide::Buy,
+            order_type: BybitOrderType::Limit,
+            qty: "0.1".to_string(),
+            is_leverage: None,
+            market_unit: None,
+            price: Some("500".to_string()),
+            time_in_force: Some(BybitTimeInForce::Gtc),
+            order_link_id: None,
+            reduce_only: None,
+            close_on_trigger: None,
+            trigger_price: None,
+            trigger_by: None,
+            trigger_direction: None,
+            tpsl_mode: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            sl_trigger_price: None,
+            tp_trigger_price: None,
+            sl_order_type: None,
+            tp_order_type: None,
+            sl_limit_price: None,
+            tp_limit_price: None,
+            order_iv: Some("0.80".to_string()),
+            mmp: Some(true),
+            position_idx: None,
+            bbo_side_type: None,
+            bbo_level: None,
+        };
+        let place_order_link_ids = (0..6)
+            .map(|index| format!("option-place-{index}"))
+            .collect::<Vec<_>>();
+        let place_orders = place_order_link_ids
+            .iter()
+            .map(|order_link_id| BybitWsPlaceOrderParams {
+                order_link_id: Some(order_link_id.clone()),
+                ..place_template.clone()
+            })
+            .collect::<Vec<_>>();
+        let place_req_ids =
+            BybitWebSocketClient::batch_request_ids(BybitProductType::Option, place_orders.len());
+
+        client
+            .batch_place_orders_with_ids(place_orders, place_req_ids.clone())
+            .await
+            .unwrap();
+
+        let command = cmd_rx.recv().await.expect("expected place batch command");
+        let HandlerCommand::SendOrders { commands } = command else {
+            panic!("expected atomic place batch command, was {command:?}");
+        };
+        assert_option_batch_commands(
+            &commands,
+            &place_req_ids,
+            BybitWsOrderRequestOp::CreateBatch,
+            &place_order_link_ids,
+            batch_nested_items,
+        );
+
+        let amend_template = BybitWsAmendOrderParams {
+            category: BybitProductType::Option,
+            symbol: Ustr::from("BTC-30JUN25-100000-C"),
+            order_id: None,
+            order_link_id: None,
+            qty: Some("0.2".to_string()),
+            price: Some("510".to_string()),
+            trigger_price: None,
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            order_iv: Some("0.90".to_string()),
+        };
+        let amend_order_link_ids = (0..6)
+            .map(|index| format!("option-amend-{index}"))
+            .collect::<Vec<_>>();
+        let amend_orders = amend_order_link_ids
+            .iter()
+            .map(|order_link_id| BybitWsAmendOrderParams {
+                order_link_id: Some(order_link_id.clone()),
+                ..amend_template.clone()
+            })
+            .collect::<Vec<_>>();
+        let amend_req_ids =
+            BybitWebSocketClient::batch_request_ids(BybitProductType::Option, amend_orders.len());
+
+        client
+            .batch_amend_orders_with_ids(amend_orders, amend_req_ids.clone())
+            .await
+            .unwrap();
+
+        let command = cmd_rx.recv().await.expect("expected amend batch command");
+        let HandlerCommand::SendOrders { commands } = command else {
+            panic!("expected atomic amend batch command, was {command:?}");
+        };
+        assert_option_batch_commands(
+            &commands,
+            &amend_req_ids,
+            BybitWsOrderRequestOp::AmendBatch,
+            &amend_order_link_ids,
+            batch_direct_items,
+        );
+
+        let cancel_order_link_ids = (0..6)
+            .map(|index| format!("option-cancel-{index}"))
+            .collect::<Vec<_>>();
+        let cancel_orders = cancel_order_link_ids
+            .iter()
+            .enumerate()
+            .map(|(index, order_link_id)| BybitWsCancelOrderParams {
+                category: BybitProductType::Option,
+                symbol: Ustr::from("BTC-30JUN25-100000-C"),
+                order_id: Some(format!("venue-option-{index}")),
+                order_link_id: Some(order_link_id.clone()),
+            })
+            .collect::<Vec<_>>();
+        let cancel_req_ids =
+            BybitWebSocketClient::batch_request_ids(BybitProductType::Option, cancel_orders.len());
+
+        client
+            .batch_cancel_orders_with_ids(cancel_orders, cancel_req_ids.clone())
+            .await
+            .unwrap();
+
+        let command = cmd_rx.recv().await.expect("expected cancel batch command");
+        let HandlerCommand::SendOrders { commands } = command else {
+            panic!("expected atomic cancel batch command, was {command:?}");
+        };
+        assert_option_batch_commands(
+            &commands,
+            &cancel_req_ids,
+            BybitWsOrderRequestOp::CancelBatch,
+            &cancel_order_link_ids,
+            batch_nested_items,
+        );
+        assert!(cmd_rx.try_recv().is_err());
+    }
+
+    fn assert_option_batch_commands(
+        commands: &[BybitWsOrderCommand],
+        req_ids: &[String],
+        op: BybitWsOrderRequestOp,
+        order_link_ids: &[String],
+        items: for<'a> fn(&'a BybitWsOrderCommand) -> &'a [Value],
+    ) {
+        assert_eq!(req_ids.len(), 2);
+        assert_ne!(req_ids[0], req_ids[1]);
+        assert_eq!(commands.len(), 2);
+        assert_eq!(
+            commands
+                .iter()
+                .map(|command| command.req_id.as_str())
+                .collect::<Vec<_>>(),
+            req_ids.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        assert!(commands.iter().all(|command| command.op == op));
+        assert_eq!(
+            commands
+                .iter()
+                .map(|command| items(command).len())
+                .collect::<Vec<_>>(),
+            vec![5, 1]
+        );
+        assert_eq!(
+            commands
+                .iter()
+                .flat_map(items)
+                .map(|order| order["orderLinkId"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>(),
+            order_link_ids
+        );
+        assert!(commands.iter().all(|command| command.weight == 1));
+    }
+
+    fn batch_nested_items(command: &BybitWsOrderCommand) -> &[Value] {
+        command.args[0]["request"].as_array().unwrap()
+    }
+
+    fn batch_direct_items(command: &BybitWsOrderCommand) -> &[Value] {
+        &command.args
+    }
+
     #[rstest]
     fn test_race_duplicate_subscribe_messages_idempotent() {
         let subscriptions = SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER);

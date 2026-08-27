@@ -465,10 +465,19 @@ pub(crate) fn websocket_connection_key() -> Ustr {
 }
 
 #[must_use]
+pub(crate) const fn batch_call_limit(category: BybitProductType) -> usize {
+    match category {
+        BybitProductType::Option => 20,
+        _ => batch_endpoint_limit(category),
+    }
+}
+
+#[must_use]
 pub(crate) const fn batch_endpoint_limit(category: BybitProductType) -> usize {
     match category {
         BybitProductType::Spot => 10,
-        BybitProductType::Linear | BybitProductType::Inverse | BybitProductType::Option => 20,
+        BybitProductType::Linear | BybitProductType::Inverse => 20,
+        BybitProductType::Option => 5,
     }
 }
 
@@ -477,7 +486,7 @@ pub(crate) const fn batch_send_limit(category: BybitProductType) -> usize {
     match category {
         BybitProductType::Spot => 10,
         BybitProductType::Linear | BybitProductType::Inverse => 10,
-        BybitProductType::Option => 20,
+        BybitProductType::Option => 5,
     }
 }
 
@@ -789,16 +798,18 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case(BybitProductType::Spot, 10, 10, 10)]
-    #[case(BybitProductType::Linear, 20, 10, 10)]
-    #[case(BybitProductType::Inverse, 20, 10, 10)]
-    #[case(BybitProductType::Option, 20, 20, 1)]
+    #[case(BybitProductType::Spot, 10, 10, 10, 10)]
+    #[case(BybitProductType::Linear, 20, 20, 10, 10)]
+    #[case(BybitProductType::Inverse, 20, 20, 10, 10)]
+    #[case(BybitProductType::Option, 20, 5, 5, 1)]
     fn batch_limits_match_product_rules(
         #[case] category: BybitProductType,
+        #[case] call_limit: usize,
         #[case] endpoint_limit: usize,
         #[case] send_limit: usize,
         #[case] weight: u32,
     ) {
+        assert_eq!(batch_call_limit(category), call_limit);
         assert_eq!(batch_endpoint_limit(category), endpoint_limit);
         assert_eq!(batch_send_limit(category), send_limit);
         assert_eq!(batch_weight(category, 10), weight);

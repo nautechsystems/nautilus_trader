@@ -107,7 +107,7 @@ use crate::common::{
     },
     rate_limit::{
         BYBIT_RATE_LIMIT_HEADER, BYBIT_RATE_LIMIT_RESET_HEADER, BYBIT_RATE_LIMIT_STATUS_HEADER,
-        BybitRateLimiter, batch_endpoint_limit, batch_send_limit, batch_weight,
+        BybitRateLimiter, batch_call_limit, batch_endpoint_limit, batch_send_limit, batch_weight,
         category_from_payload,
     },
     symbol::BybitSymbol,
@@ -2836,10 +2836,10 @@ impl BybitHttpClient {
             return Ok(Vec::new());
         }
 
-        let endpoint_limit = batch_endpoint_limit(product_type);
-        if instrument_ids.len() > endpoint_limit {
+        let call_limit = batch_call_limit(product_type);
+        if instrument_ids.len() > call_limit {
             anyhow::bail!(
-                "Batch cancel limit is {endpoint_limit} orders for {}",
+                "Batch cancel limit is {call_limit} orders for {}",
                 product_type.as_str()
             );
         }
@@ -2868,7 +2868,8 @@ impl BybitHttpClient {
             cancel_entries.push(cancel_entry.build().build_anyhow()?);
         }
 
-        for chunk in cancel_entries.chunks(batch_send_limit(product_type)) {
+        let chunk_limit = batch_endpoint_limit(product_type).min(batch_send_limit(product_type));
+        for chunk in cancel_entries.chunks(chunk_limit) {
             let mut params = BybitBatchCancelOrderParamsBuilder::default();
             params.category(product_type);
             params.request(chunk.to_vec());

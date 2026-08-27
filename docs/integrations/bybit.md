@@ -261,11 +261,11 @@ Batch submit and batch cancel use the trade WebSocket on mainnet and testnet. In
 adapter falls back to individual HTTP requests, because the demo environment has no trade
 WebSocket.
 
-Bybit accepts at most 10 Spot orders or 20 Linear, Inverse, or Option orders in one batch
+Bybit accepts at most 10 Spot orders, 20 Linear or Inverse orders, or 5 Option orders in one batch
 request. Linear, Inverse, and Spot batches consume UID quota per order, while an Option batch
 consumes one request. The adapter splits Spot, Linear, and Inverse batches into groups of 10 by
-default so one request cannot exceed the standard rolling UID allowance. Option batches use the
-20-order endpoint maximum.
+default so one request cannot exceed the standard rolling UID allowance. It splits Option batches
+into groups of five. The HTTP batch-cancel method accepts up to 20 Option operations in one call.
 
 ### Position management
 

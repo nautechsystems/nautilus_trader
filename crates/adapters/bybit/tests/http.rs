@@ -97,6 +97,7 @@ struct TestServerState {
     realtime_requests: Arc<tokio::sync::Mutex<usize>>,
     history_requests: Arc<tokio::sync::Mutex<usize>>,
     order_submissions: Arc<tokio::sync::Mutex<Vec<CapturedOrder>>>,
+    batch_cancel_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
 
 impl Default for TestServerState {
@@ -107,6 +108,7 @@ impl Default for TestServerState {
             realtime_requests: Arc::new(tokio::sync::Mutex::new(0)),
             history_requests: Arc::new(tokio::sync::Mutex::new(0)),
             order_submissions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            batch_cancel_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
         }
     }
 }
@@ -610,6 +612,26 @@ async fn handle_cancel_order(headers: axum::http::HeaderMap, body: axum::body::B
 }
 
 #[allow(dead_code)]
+async fn handle_batch_cancel_orders(
+    State(state): State<TestServerState>,
+    Json(request): Json<Value>,
+) -> impl IntoResponse {
+    state.batch_cancel_requests.lock().await.push(request);
+
+    Json(json!({
+        "retCode": 0,
+        "retMsg": "OK",
+        "result": {
+            "orderId": null,
+            "orderLinkId": null
+        },
+        "retExtInfo": {},
+        "time": 1704470400123i64
+    }))
+    .into_response()
+}
+
+#[allow(dead_code)]
 async fn handle_get_positions(headers: axum::http::HeaderMap) -> Response {
     // Check for authentication headers
     if !headers.contains_key("X-BAPI-API-KEY")
@@ -998,6 +1020,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/order/realtime", get(handle_get_orders))
         .route("/v5/order/create", post(handle_post_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
+        .route("/v5/order/cancel-batch", post(handle_batch_cancel_orders))
         .route("/v5/account/wallet-balance", get(handle_get_wallet_balance))
         .route("/v5/account/info", get(handle_get_account_info))
         .route("/v5/position/list", get(handle_get_positions))
@@ -1771,6 +1794,91 @@ async fn test_get_account_info_with_credentials() {
     );
     assert!(!response.result.is_master_trader);
     assert!(!response.result.spot_hedging_status);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_options_chunks_by_venue_limit() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let instrument_ids = (0..6)
+        .map(|index| {
+            InstrumentId::new(
+                Symbol::from(format!("BTC-30JUN25-10000{index}-C-OPTION")),
+                *BYBIT_VENUE,
+            )
+        })
+        .collect::<Vec<_>>();
+    let client_order_ids = (0..6)
+        .map(|index| Some(ClientOrderId::from(format!("option-cancel-{index}"))))
+        .collect::<Vec<_>>();
+
+    let reports = client
+        .batch_cancel_orders(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Option,
+            instrument_ids,
+            client_order_ids,
+            vec![None; 6],
+        )
+        .await
+        .unwrap();
+
+    let requests = state.batch_cancel_requests.lock().await;
+    assert!(reports.is_empty());
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0]["category"], "option");
+    assert_eq!(requests[1]["category"], "option");
+    assert_eq!(requests[0]["request"].as_array().unwrap().len(), 5);
+    assert_eq!(requests[1]["request"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        requests
+            .iter()
+            .flat_map(|request| request["request"].as_array().unwrap())
+            .map(|order| order["orderLinkId"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>(),
+        (0..6)
+            .map(|index| format!("option-cancel-{index}"))
+            .collect::<Vec<_>>()
+    );
+    drop(requests);
+
+    let error = client
+        .batch_cancel_orders(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Option,
+            (0..21)
+                .map(|index| {
+                    InstrumentId::new(
+                        Symbol::from(format!("BTC-30JUN25-20000{index}-C-OPTION")),
+                        *BYBIT_VENUE,
+                    )
+                })
+                .collect(),
+            (0..21)
+                .map(|index| Some(ClientOrderId::from(format!("option-overflow-{index}"))))
+                .collect(),
+            vec![None; 21],
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Batch cancel limit is 20 orders for option"
+    );
+    assert_eq!(state.batch_cancel_requests.lock().await.len(), 2);
 }
 // Create router with separate handlers for reconciliation testing
 #[allow(dead_code)]
