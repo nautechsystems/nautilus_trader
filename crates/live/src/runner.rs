@@ -293,6 +293,13 @@ impl AsyncRunner {
         }
     }
 
+    #[must_use]
+    pub(crate) fn system_command_sender(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedSender<SystemCommand> {
+        self.system_cmd_tx.clone()
+    }
+
     /// Consumes the runner and returns the channel receivers for direct event loop driving.
     ///
     /// This is used when the event loop needs to run on the same thread as the msgbus
@@ -1925,10 +1932,15 @@ mod tests {
             get_system_command_sender()
                 .send(test_system_command())
                 .unwrap();
-            assert_eq!(
-                runner.channels.system_cmd_rx.try_recv().unwrap(),
-                test_system_command()
-            );
+            let SystemCommand::ReconnectSocket(actual) =
+                runner.channels.system_cmd_rx.try_recv().unwrap()
+            else {
+                panic!("expected reconnect command");
+            };
+            let SystemCommand::ReconnectSocket(expected) = test_system_command() else {
+                panic!("expected reconnect command");
+            };
+            assert_eq!(actual, expected);
 
             get_data_event_sender()
                 .send(DataEvent::Data(Data::Quote(test_quote())))
@@ -1991,7 +2003,14 @@ mod tests {
 
             let system_commands = runner.drain_pending_system_commands();
 
-            assert_eq!(system_commands, vec![system_command]);
+            assert_eq!(system_commands.len(), 1);
+            let SystemCommand::ReconnectSocket(actual) = &system_commands[0] else {
+                panic!("expected reconnect command");
+            };
+            let SystemCommand::ReconnectSocket(expected) = test_system_command() else {
+                panic!("expected reconnect command");
+            };
+            assert_eq!(actual, &expected);
             assert!(runner.channels.system_cmd_rx.try_recv().is_err());
             assert!(runner.channels.system_evt_rx.try_recv().is_ok());
         })

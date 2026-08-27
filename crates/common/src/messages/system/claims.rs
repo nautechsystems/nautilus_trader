@@ -13,19 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod claims;
-pub mod component;
-pub mod queue;
-pub mod shutdown;
-pub mod socket;
-pub mod trading;
+use nautilus_model::identifiers::{InstrumentId, StrategyId};
 
-// Re-exports
-pub use claims::{DeregisterExternalOrderClaims, RegisterExternalOrderClaims};
-pub use component::ComponentStateChanged;
-pub use queue::{QueueCondition, QueueState, QueueStateChanged};
-pub use shutdown::ShutdownSystem;
-#[cfg(feature = "live")]
-pub(crate) use socket::socket_endpoint;
-pub use socket::{ReconnectSocket, SocketState, SocketStateChange, SocketStateChanged};
-pub use trading::TradingStateChanged;
+/// Command requesting registration of external order claims on a running live node.
+#[derive(Debug)]
+pub struct RegisterExternalOrderClaims {
+    pub strategy_id: StrategyId,
+    pub claims: Vec<InstrumentId>,
+    pub response: tokio::sync::oneshot::Sender<anyhow::Result<()>>,
+}
+
+/// Command requesting deregistration of external order claims on a running live node.
+#[derive(Debug)]
+pub struct DeregisterExternalOrderClaims {
+    pub strategy_id: StrategyId,
+    pub response: tokio::sync::oneshot::Sender<anyhow::Result<()>>,
+}

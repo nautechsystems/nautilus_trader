@@ -18,6 +18,12 @@ use std::sync::{
     atomic::{AtomicU8, Ordering},
 };
 
+use nautilus_common::messages::{
+    SystemCommand,
+    system::{DeregisterExternalOrderClaims, RegisterExternalOrderClaims},
+};
+use nautilus_model::identifiers::{InstrumentId, StrategyId};
+
 use super::metrics::{RunnerMetrics, RunnerMetricsSnapshot};
 
 const STOP_REQUESTED: u8 = 1 << 7;
@@ -117,6 +123,7 @@ pub(super) enum RunningTransition {
 pub struct LiveNodeHandle {
     control: Arc<AtomicU8>,
     pub(crate) metrics: Arc<RunnerMetrics>,
+    system_cmd_tx: Option<tokio::sync::mpsc::UnboundedSender<SystemCommand>>,
 }
 
 impl Default for LiveNodeHandle {
@@ -132,6 +139,16 @@ impl LiveNodeHandle {
         Self {
             control: Arc::new(AtomicU8::new(NodeState::Idle.as_u8())),
             metrics: Arc::new(RunnerMetrics::default()),
+            system_cmd_tx: None,
+        }
+    }
+
+    pub(crate) fn with_system_command_sender(
+        system_cmd_tx: tokio::sync::mpsc::UnboundedSender<SystemCommand>,
+    ) -> Self {
+        Self {
+            system_cmd_tx: Some(system_cmd_tx),
+            ..Self::new()
         }
     }
 
@@ -192,6 +209,82 @@ impl LiveNodeHandle {
     #[must_use]
     pub fn metrics_snapshot(&self) -> RunnerMetricsSnapshot {
         self.metrics.snapshot()
+    }
+
+    /// Registers external order claims on both execution tiers of a running node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handle is unattached, the node is not running, the command channel
+    /// is closed before enqueue, the event loop exits before responding, or claim preflight fails.
+    pub async fn register_external_order_claims(
+        &self,
+        strategy_id: StrategyId,
+        claims: &[InstrumentId],
+    ) -> anyhow::Result<()> {
+        let Some(system_cmd_tx) = &self.system_cmd_tx else {
+            anyhow::bail!("Cannot register external order claims with an unattached node handle");
+        };
+
+        if !self.is_running() {
+            anyhow::bail!("Cannot register external order claims while node is not running");
+        }
+
+        let (response, receiver) = tokio::sync::oneshot::channel();
+        system_cmd_tx
+            .send(SystemCommand::RegisterExternalOrderClaims(
+                RegisterExternalOrderClaims {
+                    strategy_id,
+                    claims: claims.to_vec(),
+                    response,
+                },
+            ))
+            .map_err(|_| {
+                anyhow::anyhow!("Cannot register external order claims: command channel closed")
+            })?;
+
+        receiver.await.map_err(|_| {
+            anyhow::anyhow!(
+                "Cannot register external order claims: event loop exited before dispatch"
+            )
+        })?
+    }
+
+    /// Deregisters external order claims from both execution tiers of a running node.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handle is unattached, the node is not running, the command channel
+    /// is closed before enqueue, the event loop exits before responding, or claim preflight fails.
+    pub async fn deregister_external_order_claims(
+        &self,
+        strategy_id: StrategyId,
+    ) -> anyhow::Result<()> {
+        let Some(system_cmd_tx) = &self.system_cmd_tx else {
+            anyhow::bail!("Cannot deregister external order claims with an unattached node handle");
+        };
+
+        if !self.is_running() {
+            anyhow::bail!("Cannot deregister external order claims while node is not running");
+        }
+
+        let (response, receiver) = tokio::sync::oneshot::channel();
+        system_cmd_tx
+            .send(SystemCommand::DeregisterExternalOrderClaims(
+                DeregisterExternalOrderClaims {
+                    strategy_id,
+                    response,
+                },
+            ))
+            .map_err(|_| {
+                anyhow::anyhow!("Cannot deregister external order claims: command channel closed")
+            })?;
+
+        receiver.await.map_err(|_| {
+            anyhow::anyhow!(
+                "Cannot deregister external order claims: event loop exited before dispatch"
+            )
+        })?
     }
 
     /// Signals the node to stop.

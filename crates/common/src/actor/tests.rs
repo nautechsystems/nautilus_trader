@@ -5485,7 +5485,10 @@ fn test_reconnect_socket_enqueues_typed_command(
     drop(actor);
 
     let SystemCommand::ReconnectSocket(command) =
-        system_rx.try_recv().expect("reconnect command queued");
+        system_rx.try_recv().expect("reconnect command queued")
+    else {
+        panic!("expected reconnect command");
+    };
 
     assert_eq!(command.trader_id, trader_id);
     assert_eq!(command.client_id, ClientId::from("POLYMARKET"));

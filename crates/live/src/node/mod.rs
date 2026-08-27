@@ -96,7 +96,10 @@ use nautilus_common::{
             GenerateFillReports, GenerateOrderStatusReports, GeneratePositionStatusReports,
             TradingCommand,
         },
-        system::{QueueStateChanged, ReconnectSocket, SocketStateChange, SocketStateChanged},
+        system::{
+            DeregisterExternalOrderClaims, QueueStateChanged, ReconnectSocket,
+            RegisterExternalOrderClaims, SocketStateChange, SocketStateChanged,
+        },
     },
     msgbus::{self, BusMessage, MessagingSwitchboard},
     runner::{SystemChannel, TimeEventMessage, TradingCommandMessage},
@@ -203,11 +206,12 @@ impl LiveNode {
         cache_database_factory: Option<Box<dyn CacheDatabaseFactory>>,
         external_msgbus: Option<ExternalMessageBusIngress>,
     ) -> Self {
+        let handle = LiveNodeHandle::with_system_command_sender(runner.system_command_sender());
         Self {
             kernel,
             runner: Some(runner),
             config,
-            handle: LiveNodeHandle::new(),
+            handle,
             exec_manager,
             exec_clients,
             socket_registry,
@@ -277,11 +281,12 @@ impl LiveNode {
             exec_manager_config,
         )?;
 
+        let handle = LiveNodeHandle::with_system_command_sender(runner.system_command_sender());
         let node = Self {
             kernel,
             runner: Some(runner),
             config,
-            handle: LiveNodeHandle::new(),
+            handle,
             exec_manager,
             exec_clients: Vec::new(),
             socket_registry: SocketReconnectRegistry::default(),
@@ -588,16 +593,33 @@ impl LiveNode {
         }
     }
 
-    fn process_system_commands(&self, commands: Vec<SystemCommand>) {
+    fn process_system_commands(&mut self, commands: Vec<SystemCommand>) {
         for command in commands {
             self.process_system_command(command);
         }
     }
 
-    fn process_system_command(&self, command: SystemCommand) {
+    fn process_system_command(&mut self, command: SystemCommand) {
         match command {
             SystemCommand::ReconnectSocket(command) => {
                 self.process_socket_reconnect(command);
+            }
+            SystemCommand::RegisterExternalOrderClaims(command) => {
+                let RegisterExternalOrderClaims {
+                    strategy_id,
+                    claims,
+                    response,
+                } = command;
+                let result = self.register_external_order_claims_inner(strategy_id, &claims);
+                let _ = response.send(result);
+            }
+            SystemCommand::DeregisterExternalOrderClaims(command) => {
+                let DeregisterExternalOrderClaims {
+                    strategy_id,
+                    response,
+                } = command;
+                let result = self.deregister_external_order_claims_inner(strategy_id);
+                let _ = response.send(result);
             }
         }
     }
@@ -2690,7 +2712,8 @@ impl LiveNode {
     ///
     /// The operation is synchronous and atomic across the reconciliation manager and execution
     /// engine. It can be called while the node is idle, after manual [`start`](Self::start)
-    /// returns, or after the node stops. It cannot be called while [`run`](Self::run) or
+    /// returns, or after the node stops. Use
+    /// [`LiveNodeHandle::register_external_order_claims`] while [`run`](Self::run) or
     /// [`run_with_mode`](Self::run_with_mode) owns the node.
     ///
     /// # Errors
@@ -2698,6 +2721,14 @@ impl LiveNode {
     /// Returns an error without changing either tier if the execution engine is already borrowed,
     /// the request repeats an instrument, or either tier already contains any requested claim.
     pub fn register_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+        claims: &[InstrumentId],
+    ) -> anyhow::Result<()> {
+        self.register_external_order_claims_inner(strategy_id, claims)
+    }
+
+    fn register_external_order_claims_inner(
         &mut self,
         strategy_id: StrategyId,
         claims: &[InstrumentId],
@@ -2758,14 +2789,22 @@ impl LiveNode {
     ///
     /// Remove the strategy through the trader or controller first, then call this method before
     /// registering a successor. The operation is synchronous and can be called while the node is
-    /// idle, after manual [`start`](Self::start) returns, or after the node stops. It cannot be
-    /// called while [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) owns the node.
+    /// idle, after manual [`start`](Self::start) returns, or after the node stops. Use
+    /// [`LiveNodeHandle::deregister_external_order_claims`] while [`run`](Self::run) or
+    /// [`run_with_mode`](Self::run_with_mode) owns the node.
     ///
     /// # Errors
     ///
     /// Returns an error without changing either tier if the execution engine is already borrowed
     /// or the two tiers do not contain identical claim sets for the strategy.
     pub fn deregister_external_order_claims(
+        &mut self,
+        strategy_id: StrategyId,
+    ) -> anyhow::Result<()> {
+        self.deregister_external_order_claims_inner(strategy_id)
+    }
+
+    fn deregister_external_order_claims_inner(
         &mut self,
         strategy_id: StrategyId,
     ) -> anyhow::Result<()> {
@@ -4368,7 +4407,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let node = LiveNode::build("SocketReconnectNode".to_string(), Some(config)).unwrap();
+        let mut node = LiveNode::build("SocketReconnectNode".to_string(), Some(config)).unwrap();
         let client_id = ClientId::from("TEST");
         let endpoint = Ustr::from("test-streams");
         let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -5823,6 +5862,21 @@ mod tests {
         builder.build().unwrap()
     }
 
+    // Reaches the main select loop under `run()`; the replay-store fixture above
+    // returns from `run_with_mode` before the loop starts.
+    fn live_node_for_run_loop() -> LiveNode {
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("CLAIMS-RUN-001"),
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        LiveNode::build("ClaimsRunNode".to_string(), Some(config)).unwrap()
+    }
+
     #[rstest]
     fn test_add_strategy_registers_external_order_claims_with_manager_and_engine() {
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
@@ -5906,6 +5960,127 @@ mod tests {
                 .get_external_order_claim(&instrument_id),
             Some(strategy_id)
         );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_handle_register_external_order_claims_while_event_loop_runs() {
+        let mut node = live_node_for_run_loop();
+        let handle = node.handle();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+                handle
+                    .register_external_order_claims(strategy_id, &[instrument_id])
+                    .await
+                    .unwrap();
+                handle.stop();
+            };
+
+            let (run_result, ()) = tokio::join!(run, drive);
+            run_result.unwrap();
+        })
+        .await
+        .expect("node should register claims and stop before timeout");
+
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_handle_deregister_external_order_claims_while_event_loop_runs() {
+        let mut node = live_node_for_run_loop();
+        let handle = node.handle();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+        node.register_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+                handle
+                    .deregister_external_order_claims(strategy_id)
+                    .await
+                    .unwrap();
+                handle.stop();
+            };
+
+            let (run_result, ()) = tokio::join!(run, drive);
+            run_result.unwrap();
+        })
+        .await
+        .expect("node should deregister claims and stop before timeout");
+
+        assert_eq!(
+            node.exec_manager.get_external_order_claim(&instrument_id),
+            None
+        );
+        assert_eq!(
+            node.kernel
+                .exec_engine
+                .borrow()
+                .get_external_order_claim(&instrument_id),
+            None
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_handle_registration_returns_synchronous_preflight_error() {
+        let mut node = live_node_for_run_loop();
+        let handle = node.handle();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+        node.register_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap();
+        let expected = node
+            .register_external_order_claims(strategy_id, &[instrument_id])
+            .unwrap_err()
+            .to_string();
+
+        let actual = tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+                let result = handle
+                    .register_external_order_claims(strategy_id, &[instrument_id])
+                    .await;
+                handle.stop();
+                result
+            };
+
+            let (run_result, result) = tokio::join!(run, drive);
+            run_result.unwrap();
+            result
+        })
+        .await
+        .expect("node should return registration error and stop before timeout")
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest]
@@ -6121,6 +6296,50 @@ mod tests {
                 .get_external_order_claim(&engine_instrument),
             Some(strategy_id)
         );
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_handle_deregistration_returns_synchronous_preflight_error() {
+        let mut node = live_node_for_run_loop();
+        let handle = node.handle();
+        let manager_instrument = InstrumentId::from("AUDUSD.SIM");
+        let engine_instrument = InstrumentId::from("EURUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+        node.exec_manager
+            .claim_external_orders(manager_instrument, strategy_id)
+            .unwrap();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_external_order_claims(strategy_id, &HashSet::from([engine_instrument]))
+            .unwrap();
+        let expected = node
+            .deregister_external_order_claims(strategy_id)
+            .unwrap_err()
+            .to_string();
+
+        let actual = tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async {
+                wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+                let result = handle.deregister_external_order_claims(strategy_id).await;
+                handle.stop();
+                result
+            };
+
+            let (run_result, result) = tokio::join!(run, drive);
+            run_result.unwrap();
+            result
+        })
+        .await
+        .expect("node should return deregistration error and stop before timeout")
+        .unwrap_err()
+        .to_string();
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest]
@@ -7892,6 +8111,45 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn test_shutdown_drain_drops_external_claim_response() {
+        let runner = AsyncRunner::new();
+        let system_cmd_tx = runner.system_command_sender();
+        let AsyncRunnerChannels {
+            mut time_evt_rx,
+            mut system_evt_rx,
+            mut system_cmd_rx,
+            mut exec_evt_rx,
+            mut exec_cmd_rx,
+            mut data_evt_rx,
+            mut data_cmd_rx,
+        } = runner.take_channels();
+        let (response, receiver) = tokio::sync::oneshot::channel();
+
+        system_cmd_tx
+            .send(SystemCommand::RegisterExternalOrderClaims(
+                RegisterExternalOrderClaims {
+                    strategy_id: StrategyId::from("CLAIMS-001"),
+                    claims: vec![InstrumentId::from("AUDUSD.SIM")],
+                    response,
+                },
+            ))
+            .unwrap();
+
+        LiveNode::drain_channels(
+            &mut time_evt_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
+            &mut exec_evt_rx,
+            &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+        );
+
+        assert!(receiver.await.is_err());
+    }
+
+    #[rstest]
     fn test_pending_drain_data_returns_false_when_empty() {
         let mut pending = PendingEvents::default();
 
@@ -8015,7 +8273,14 @@ mod tests {
         pending.system_commands.push(command);
         let system_commands = pending.take_system_commands();
 
-        assert_eq!(system_commands, vec![command]);
+        assert_eq!(system_commands.len(), 1);
+        let SystemCommand::ReconnectSocket(actual) = &system_commands[0] else {
+            panic!("expected reconnect command");
+        };
+        let SystemCommand::ReconnectSocket(expected) = stub_system_command() else {
+            panic!("expected reconnect command");
+        };
+        assert_eq!(actual, &expected);
         assert!(pending.is_empty());
     }
 
@@ -8136,7 +8401,14 @@ mod tests {
         let system_events = pending.take_system_events();
         let system_commands = pending.take_system_commands();
         assert_eq!(system_events, vec![SystemEvent::SocketState(change)]);
-        assert_eq!(system_commands, vec![stub_system_command()]);
+        assert_eq!(system_commands.len(), 1);
+        let SystemCommand::ReconnectSocket(actual) = &system_commands[0] else {
+            panic!("expected reconnect command");
+        };
+        let SystemCommand::ReconnectSocket(expected) = stub_system_command() else {
+            panic!("expected reconnect command");
+        };
+        assert_eq!(actual, &expected);
         assert!(pending.data_evts.is_empty());
         assert!(pending.data_cmds.is_empty());
         assert!(pending.exec_reports.is_empty());
