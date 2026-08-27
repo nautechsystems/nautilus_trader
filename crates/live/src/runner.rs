@@ -90,7 +90,10 @@ use nautilus_common::{
         replace_time_event_sender,
     },
 };
-use nautilus_model::{events::OrderEventAny, identifiers::ClientId};
+use nautilus_model::{
+    events::{AccountState, OrderEventAny},
+    identifiers::ClientId,
+};
 
 thread_local! {
     static SOURCED_EXEC_EVENT_SENDER: RefCell<Option<tokio::sync::mpsc::UnboundedSender<SourcedExecutionEvent>>> = const { RefCell::new(None) };
@@ -132,12 +135,37 @@ impl SourcedExecutionEventSink {
         &self,
         event: ExecutionEvent,
     ) -> Result<(), Box<tokio::sync::mpsc::error::SendError<ExecutionEvent>>> {
+        self.send_with_purpose(SourcedExecutionEvent::runtime(self.client_id, event))
+    }
+
+    fn send_with_purpose(
+        &self,
+        event: SourcedExecutionEvent,
+    ) -> Result<(), Box<tokio::sync::mpsc::error::SendError<ExecutionEvent>>> {
         if self.public_exec_sender.is_closed() {
+            let (_, event) = event.into_parts();
             return Err(Box::new(tokio::sync::mpsc::error::SendError(event)));
         }
-        self.sender
-            .send(SourcedExecutionEvent::new(self.client_id, event))
-            .map_err(|e| Box::new(tokio::sync::mpsc::error::SendError(e.0.event)))
+        self.sender.send(event).map_err(|e| {
+            let (_, event) = e.0.into_parts();
+            Box::new(tokio::sync::mpsc::error::SendError(event))
+        })
+    }
+
+    /// Sends a source-bound startup account barrier through the sourced ingress lane.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original account event when the sourced ingress or paired public execution
+    /// receiver is closed.
+    pub(crate) fn send_bootstrap_account(
+        &self,
+        state: AccountState,
+    ) -> Result<(), Box<tokio::sync::mpsc::error::SendError<ExecutionEvent>>> {
+        self.send_with_purpose(SourcedExecutionEvent::bootstrap_account(
+            self.client_id,
+            state,
+        ))
     }
 }
 
@@ -170,15 +198,38 @@ fn replace_sourced_exec_event_sender(
     });
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "sourced runtime events are consumed immediately; boxing would add routing allocations"
+)]
 #[derive(Debug)]
-pub(crate) struct SourcedExecutionEvent {
-    pub(crate) client_id: ClientId,
-    pub(crate) event: ExecutionEvent,
+pub(crate) enum SourcedExecutionEvent {
+    Runtime {
+        client_id: ClientId,
+        event: ExecutionEvent,
+    },
+    BootstrapAccount {
+        client_id: ClientId,
+        state: AccountState,
+    },
 }
 
 impl SourcedExecutionEvent {
-    const fn new(client_id: ClientId, event: ExecutionEvent) -> Self {
-        Self { client_id, event }
+    pub(crate) const fn runtime(client_id: ClientId, event: ExecutionEvent) -> Self {
+        Self::Runtime { client_id, event }
+    }
+
+    pub(crate) const fn bootstrap_account(client_id: ClientId, state: AccountState) -> Self {
+        Self::BootstrapAccount { client_id, state }
+    }
+
+    pub(crate) fn into_parts(self) -> (ClientId, ExecutionEvent) {
+        match self {
+            Self::Runtime { client_id, event } => (client_id, event),
+            Self::BootstrapAccount { client_id, state } => {
+                (client_id, ExecutionEvent::Account(state))
+            }
+        }
     }
 }
 
@@ -816,7 +867,7 @@ impl AsyncRunner {
     /// retains its existing legacy dispatch semantics without being requeued.
     #[inline]
     pub(crate) fn handle_sourced_exec_event(event: SourcedExecutionEvent) {
-        let SourcedExecutionEvent { client_id, event } = event;
+        let (client_id, event) = event.into_parts();
         match event {
             ExecutionEvent::Report(
                 report @ (ExecutionReport::Order(_) | ExecutionReport::Fill(_)),
@@ -1224,7 +1275,7 @@ mod tests {
         runner.bind_senders();
         runner
             .sourced_exec_evt_tx
-            .send(SourcedExecutionEvent::new(
+            .send(SourcedExecutionEvent::runtime(
                 ClientId::from("SOURCE-POLL"),
                 ExecutionEvent::Order(OrderEventAny::Submitted(
                     OrderSubmittedSpec::builder()
@@ -1324,7 +1375,7 @@ mod tests {
                 legacy_seen += 1;
                 if legacy_seen == 1 {
                     sourced_tx
-                        .send(SourcedExecutionEvent::new(
+                        .send(SourcedExecutionEvent::runtime(
                             ClientId::from("SOURCE-REENTRANT"),
                             ExecutionEvent::Order(OrderEventAny::Submitted(
                                 OrderSubmittedSpec::builder()
@@ -1357,7 +1408,7 @@ mod tests {
         for client_order_id in ["O-SOURCED-SNAPSHOT-001", "O-SOURCED-SNAPSHOT-002"] {
             runner
                 .sourced_exec_evt_tx
-                .send(SourcedExecutionEvent::new(
+                .send(SourcedExecutionEvent::runtime(
                     ClientId::from("SOURCE-SNAPSHOT"),
                     ExecutionEvent::Order(OrderEventAny::Submitted(
                         OrderSubmittedSpec::builder()
@@ -1457,7 +1508,7 @@ mod tests {
                 .unwrap();
             runner
                 .sourced_exec_evt_tx
-                .send(SourcedExecutionEvent::new(
+                .send(SourcedExecutionEvent::runtime(
                     ClientId::from("SOURCE-RECV"),
                     ExecutionEvent::Order(OrderEventAny::Submitted(
                         OrderSubmittedSpec::builder()
@@ -1478,7 +1529,7 @@ mod tests {
                     ingress_order.push("legacy");
                     legacy_ids.push(event.client_order_id());
                 }
-                PendingRunnerEvent::SourcedExecEvent(SourcedExecutionEvent {
+                PendingRunnerEvent::SourcedExecEvent(SourcedExecutionEvent::Runtime {
                     event: ExecutionEvent::Order(event),
                     ..
                 }) => {
@@ -1544,29 +1595,33 @@ mod tests {
         let (mut channels, mut sourced) = runner.take_channels_with_sourced();
         let first = sourced.receiver.try_recv().unwrap();
         let second = sourced.receiver.try_recv().unwrap();
+        let (first_client_id, first_event) = first.into_parts();
+        let (second_client_id, second_event) = second.into_parts();
         assert_eq!(sink.client_id, source_id);
-        assert_eq!(first.client_id, source_id);
-        assert!(matches!(first.event, ExecutionEvent::Account(_)));
-        assert_eq!(second.client_id, source_id);
+        assert_eq!(first_client_id, source_id);
+        assert!(matches!(first_event, ExecutionEvent::Account(_)));
+        assert_eq!(second_client_id, source_id);
         assert!(matches!(
-            second.event,
+            second_event,
             ExecutionEvent::Report(ExecutionReport::Position(_))
         ));
         assert!(channels.exec_evt_rx.try_recv().is_err());
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn test_take_channels_services_prebound_sourced_account_event() {
+    async fn test_take_channels_services_prebound_sourced_account_events() {
         msgbus::get_message_bus().borrow_mut().dispose();
         let runner = AsyncRunner::new();
         runner.bind_senders();
         let sink = get_sourced_exec_event_sink(ClientId::from("SOURCE-INTEGRATED"));
+        let runtime_event_id = UUID4::new();
+        let bootstrap_event_id = UUID4::new();
         let received = Rc::new(RefCell::new(Vec::new()));
         let received_handler = received.clone();
         msgbus::register_account_state_endpoint(
             MessagingSwitchboard::portfolio_update_account(),
             TypedHandler::from(move |account: &AccountState| {
-                received_handler.borrow_mut().push(account.account_id);
+                received_handler.borrow_mut().push(account.event_id);
             }),
         );
         let AsyncRunnerChannels {
@@ -1585,18 +1640,55 @@ mod tests {
             vec![],
             vec![],
             true,
-            UUID4::new(),
+            runtime_event_id,
             UnixNanos::from(1),
             UnixNanos::from(2),
             None,
         )))
         .unwrap();
+        sink.send_bootstrap_account(AccountState::new(
+            AccountId::from("SOURCE-INTEGRATED-001"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            bootstrap_event_id,
+            UnixNanos::from(3),
+            UnixNanos::from(4),
+            None,
+        ))
+        .unwrap();
 
+        assert!(AsyncRunner::handle_next_exec_event(&mut exec_evt_rx).await);
         assert!(AsyncRunner::handle_next_exec_event(&mut exec_evt_rx).await);
         assert_eq!(
             received.borrow().as_slice(),
-            &[AccountId::from("SOURCE-INTEGRATED-001")]
+            &[runtime_event_id, bootstrap_event_id]
         );
+    }
+
+    #[rstest]
+    fn test_bootstrap_send_rejects_closed_public_receiver_before_sourced_enqueue() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let sink = get_sourced_exec_event_sink(ClientId::from("SOURCE-CLOSED-PUBLIC"));
+        let (mut channels, mut sourced) = runner.take_channels_with_sourced();
+        channels.exec_evt_rx.close();
+
+        let result = sink.send_bootstrap_account(AccountState::new(
+            AccountId::from("SOURCE-CLOSED-PUBLIC-001"),
+            AccountType::Cash,
+            vec![],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        ));
+
+        assert!(result.is_err());
+        assert!(sourced.receiver.try_recv().is_err());
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -1772,7 +1864,7 @@ mod tests {
             }),
         );
         source_tx
-            .send(SourcedExecutionEvent::new(
+            .send(SourcedExecutionEvent::runtime(
                 ClientId::from("SOURCE-STANDALONE"),
                 ExecutionEvent::Account(AccountState::new(
                     AccountId::from("SOURCE-STANDALONE-001"),
@@ -1858,7 +1950,7 @@ mod tests {
             ExecutionReport::Position(Box::new(position_report)),
             ExecutionReport::MassStatus(Box::new(mass_status)),
         ] {
-            AsyncRunner::handle_sourced_exec_event(SourcedExecutionEvent::new(
+            AsyncRunner::handle_sourced_exec_event(SourcedExecutionEvent::runtime(
                 source_client_id,
                 ExecutionEvent::Report(report),
             ));

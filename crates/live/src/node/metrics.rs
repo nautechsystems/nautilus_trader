@@ -857,10 +857,10 @@ mod tests {
             exec_evt_tx.send(stub_exec_event()).unwrap();
         }
         sourced_exec_evt_tx
-            .send(SourcedExecutionEvent {
-                client_id: ClientId::from("SIM"),
-                event: stub_exec_event(),
-            })
+            .send(SourcedExecutionEvent::runtime(
+                ClientId::from("SIM"),
+                stub_exec_event(),
+            ))
             .unwrap();
 
         for _ in 0..3 {

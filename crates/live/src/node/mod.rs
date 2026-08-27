@@ -1036,7 +1036,7 @@ impl LiveNode {
                 let result = self
                     .abort_startup("External message bus ingress failed to start")
                     .await;
-                Self::drain_channels(
+                self.drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
@@ -1068,7 +1068,7 @@ impl LiveNode {
         // This ensures the cache is populated before execution clients connect.
         let data_connect_result = drive_with_event_buffering(
             self.connect_data_phase(connection_deadline),
-            SourcedAccountHandling::Buffer,
+            SourcedBootstrapHandling::Buffer,
             &mut pending,
             &mut time_evt_rx,
             &mut system_evt_rx,
@@ -1092,11 +1092,12 @@ impl LiveNode {
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
+                |event| self.process_sourced_exec_event(event),
             );
             let result = self
                 .abort_startup_with_error("Data client connection timed out", e)
                 .await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1124,7 +1125,7 @@ impl LiveNode {
         // Startup phase 2: Connect execution clients (instruments now in cache)
         let engine_connection_result = drive_with_event_buffering(
             self.connect_exec_phase(connection_deadline),
-            SourcedAccountHandling::Dispatch,
+            SourcedBootstrapHandling::Dispatch,
             &mut pending,
             &mut time_evt_rx,
             &mut system_evt_rx,
@@ -1148,6 +1149,7 @@ impl LiveNode {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            |event| self.process_sourced_exec_event(event),
         );
         startup_system_events.extend(pending.take_system_events());
         startup_system_commands.extend(pending.take_system_commands());
@@ -1162,7 +1164,7 @@ impl LiveNode {
                 let result = self
                     .abort_startup_with_error("Execution client connection timed out", e)
                     .await;
-                Self::drain_channels(
+                self.drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
@@ -1184,7 +1186,7 @@ impl LiveNode {
                     anyhow::anyhow!("readiness timeout while waiting for engine connections"),
                 )
                 .await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1203,7 +1205,7 @@ impl LiveNode {
             .or_else(|| self.startup_abort_reason())
         {
             self.abort_startup(reason).await?;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1222,7 +1224,7 @@ impl LiveNode {
         // Run reconciliation now that instruments are in cache and start trader
         if let Err(e) = self.perform_startup_reconciliation().await {
             let result = self.abort_startup("Startup reconciliation failed").await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1245,7 +1247,7 @@ impl LiveNode {
 
         if let Some(reason) = self.startup_abort_reason() {
             let result = self.abort_startup(reason).await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1261,7 +1263,7 @@ impl LiveNode {
 
         if let Err(e) = self.kernel.start_trader() {
             let result = self.abort_after_trader_start_failure(e).await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1277,7 +1279,7 @@ impl LiveNode {
         #[cfg(feature = "plugin")]
         if let Err(e) = self.plugins.start_controllers() {
             let result = self.abort_after_trader_start_failure(e).await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1852,7 +1854,7 @@ impl LiveNode {
         let stop_result = self.finalize_stop().await;
 
         // Handle events that arrived during finalize_stop
-        Self::drain_channels(
+        self.drain_channels(
             &mut time_evt_rx,
             &mut system_evt_rx,
             &mut system_cmd_rx,
@@ -2016,7 +2018,7 @@ impl LiveNode {
     }
 
     fn process_sourced_exec_event(&mut self, event: SourcedExecutionEvent) {
-        let SourcedExecutionEvent { client_id, event } = event;
+        let (client_id, event) = event.into_parts();
         let event = match event {
             ExecutionEvent::Report(
                 report @ (ExecutionReport::Order(_) | ExecutionReport::Fill(_)),
@@ -2035,7 +2037,7 @@ impl LiveNode {
             ExecutionEvent::Order(OrderEventAny::Filled(fill)) => Some(fill.clone()),
             _ => None,
         };
-        AsyncRunner::handle_sourced_exec_event(SourcedExecutionEvent { client_id, event });
+        AsyncRunner::handle_sourced_exec_event(SourcedExecutionEvent::runtime(client_id, event));
 
         if let Some(fill) = &recent_fill_candidate {
             self.exec_manager.commit_recent_fill_if_applied(fill);
@@ -2276,7 +2278,7 @@ impl LiveNode {
         let finalize_result = self.finalize_stop().await;
 
         if let Some(receivers) = receivers {
-            Self::drain_channels(
+            self.drain_channels(
                 receivers.time_evt,
                 receivers.system_evt,
                 receivers.system_cmd,
@@ -2452,6 +2454,7 @@ impl LiveNode {
         reason = "all runner receivers are drained together"
     )]
     fn drain_channels(
+        &mut self,
         time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
         system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
@@ -2490,7 +2493,7 @@ impl LiveNode {
             match ingress {
                 ExecutionEventIngress::Legacy(event) => AsyncRunner::handle_exec_event(event),
                 ExecutionEventIngress::Sourced(event) => {
-                    AsyncRunner::handle_sourced_exec_event(event);
+                    self.process_sourced_exec_event(event);
                 }
             }
             drained += 1;
@@ -3789,6 +3792,7 @@ fn flush_all_pending(
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    process_sourced_exec_event: impl FnMut(SourcedExecutionEvent),
 ) {
     // Flush channel receivers into pending
     while let Ok(handler) = time_evt_rx.try_recv() {
@@ -3819,28 +3823,28 @@ fn flush_all_pending(
         pending.exec_cmds.push(cmd);
     }
 
-    pending.drain();
+    pending.drain(process_sourced_exec_event);
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum SourcedAccountHandling {
+enum SourcedBootstrapHandling {
     Buffer,
     Dispatch,
 }
 
 /// Drives a future to completion while buffering channel events.
 ///
-/// Time events are handled immediately. Legacy account events are forwarded directly. Sourced
-/// account events can also be forwarded while execution clients connect; all other sourced events
-/// are buffered FIFO within their lane. Every other execution event is buffered in its existing
-/// legacy pending category.
+/// Time events are handled immediately. Legacy account events retain their existing direct path.
+/// Only an explicit sourced bootstrap account can be applied while execution clients connect;
+/// every runtime sourced event, including later account updates, is buffered FIFO within its lane.
+/// Every other execution event is buffered in its existing legacy pending category.
 #[expect(
     clippy::too_many_arguments,
     reason = "startup buffering owns one future plus the pending state and all runner receivers"
 )]
 async fn drive_with_event_buffering<F: std::future::Future>(
     future: F,
-    sourced_account_handling: SourcedAccountHandling,
+    sourced_bootstrap_handling: SourcedBootstrapHandling,
     pending: &mut PendingEvents,
     time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
@@ -3871,12 +3875,11 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             }
             Some(ingress) = sourced_exec.recv(exec_evt_rx) => {
                 match ingress {
-                    ExecutionEventIngress::Sourced(event)
-                        if sourced_account_handling == SourcedAccountHandling::Dispatch
-                            && matches!(&event.event, ExecutionEvent::Account(_)) =>
+                    ExecutionEventIngress::Sourced(
+                        SourcedExecutionEvent::BootstrapAccount { state, .. },
+                    ) if sourced_bootstrap_handling == SourcedBootstrapHandling::Dispatch =>
                     {
-                        pending.drain_sourced_exec_events();
-                        AsyncRunner::handle_sourced_exec_event(event);
+                        AsyncRunner::handle_exec_event(ExecutionEvent::Account(state));
                     }
                     ingress => pending.buffer_execution_ingress(ingress),
                 }
@@ -3945,7 +3948,7 @@ impl PendingEvents {
     }
 
     /// Drains all remaining pending events.
-    fn drain(&mut self) {
+    fn drain(&mut self, mut process_sourced_exec_event: impl FnMut(SourcedExecutionEvent)) {
         let total = self.data_evts.len()
             + self.data_cmds.len()
             + self.exec_reports.len()
@@ -3983,16 +3986,12 @@ impl PendingEvents {
             AsyncRunner::handle_exec_event(ExecutionEvent::Order(evt));
         }
 
-        self.drain_sourced_exec_events();
+        for event in self.sourced_exec_evts.drain(..) {
+            process_sourced_exec_event(event);
+        }
 
         for cmd in self.exec_cmds.drain(..) {
             AsyncRunner::handle_trading_command(cmd);
-        }
-    }
-
-    fn drain_sourced_exec_events(&mut self) {
-        for evt in self.sourced_exec_evts.drain(..) {
-            AsyncRunner::handle_sourced_exec_event(evt);
         }
     }
 
@@ -4061,6 +4060,7 @@ mod tests {
         },
     };
 
+    use async_trait::async_trait;
     use bytes::Bytes;
     use indexmap::IndexMap;
     use log::{Level, LevelFilter, Log, Metadata, Record};
@@ -4071,9 +4071,11 @@ mod tests {
     };
     use nautilus_common::{
         actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
-        cache::Cache,
+        cache::{Cache, CacheView},
+        clients::ExecutionClient,
         clock::{Clock, TestClock},
         enums::SerializationEncoding,
+        factories::{ClientConfig, ExecutionClientFactory},
         live::runner::{get_data_event_sender, get_exec_event_sender, get_system_event_sender},
         messages::{
             execution::{QueryAccount, SubmitOrder, TradingCommand},
@@ -4128,7 +4130,11 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::{execution::manager::ReportClientCoverage, socket::SocketControl};
+    use crate::{
+        execution::manager::ReportClientCoverage,
+        runner::{SourcedExecutionEventSink, get_sourced_exec_event_sink},
+        socket::SocketControl,
+    };
 
     struct ExternalIngressLogCapture {
         messages: Mutex<Vec<String>>,
@@ -4748,13 +4754,13 @@ mod tests {
             )))
         };
 
-        node.process_sourced_exec_event(SourcedExecutionEvent {
-            client_id: ClientId::from("UNREGISTERED-SOURCE"),
-            event: ExecutionEvent::Report(report(
+        node.process_sourced_exec_event(SourcedExecutionEvent::runtime(
+            ClientId::from("UNREGISTERED-SOURCE"),
+            ExecutionEvent::Report(report(
                 invalid_order_id,
                 VenueOrderId::from("V-SOURCED-INVALID"),
             )),
-        });
+        ));
         assert!(
             node.kernel
                 .cache
@@ -4765,13 +4771,13 @@ mod tests {
         assert!(venue_registrations.borrow().is_empty());
         assert!(source_registrations.borrow().is_empty());
 
-        node.process_sourced_exec_event(SourcedExecutionEvent {
-            client_id: source_client_id,
-            event: ExecutionEvent::Report(report(
+        node.process_sourced_exec_event(SourcedExecutionEvent::runtime(
+            source_client_id,
+            ExecutionEvent::Report(report(
                 valid_order_id,
                 VenueOrderId::from("V-SOURCED-VALID"),
             )),
-        });
+        ));
 
         assert_eq!(
             node.kernel.cache.borrow().client_id(&valid_order_id),
@@ -4807,10 +4813,10 @@ mod tests {
             .unwrap()
             .event_count();
 
-        node.process_sourced_exec_event(SourcedExecutionEvent {
-            client_id: ClientId::from("UNREGISTERED-SOURCE"),
-            event: ExecutionEvent::Report(ExecutionReport::Fill(Box::new((*report).clone()))),
-        });
+        node.process_sourced_exec_event(SourcedExecutionEvent::runtime(
+            ClientId::from("UNREGISTERED-SOURCE"),
+            ExecutionEvent::Report(ExecutionReport::Fill(Box::new((*report).clone()))),
+        ));
 
         {
             let engine = node.kernel.exec_engine.borrow();
@@ -4837,10 +4843,10 @@ mod tests {
             .register_client(Box::new(source_client))
             .unwrap();
 
-        node.process_sourced_exec_event(SourcedExecutionEvent {
-            client_id: source_client_id,
-            event: ExecutionEvent::Report(ExecutionReport::Fill(report)),
-        });
+        node.process_sourced_exec_event(SourcedExecutionEvent::runtime(
+            source_client_id,
+            ExecutionEvent::Report(ExecutionReport::Fill(report)),
+        ));
 
         assert!(source_registrations.borrow().is_empty());
         let engine = node.kernel.exec_engine.borrow();
@@ -8381,27 +8387,6 @@ mod tests {
         ))))
     }
 
-    fn stub_order_report_event() -> ExecutionEvent {
-        use nautilus_model::identifiers::ClientOrderId;
-
-        ExecutionEvent::Report(ExecutionReport::Order(Box::new(OrderStatusReport::new(
-            AccountId::from("TEST-001"),
-            InstrumentId::from("TEST.VENUE"),
-            Some(ClientOrderId::from("O-001")),
-            VenueOrderId::from("V-001"),
-            OrderSide::Buy,
-            OrderType::Limit,
-            TimeInForce::Gtc,
-            OrderStatus::Accepted,
-            Quantity::from("1.0"),
-            Quantity::from("0.0"),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-            UnixNanos::from(3),
-            None,
-        ))))
-    }
-
     #[rstest]
     fn test_flush_all_pending_drains_buffered_channels() {
         let (time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
@@ -8452,6 +8437,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            drop,
         );
 
         let system_events = pending.take_system_events();
@@ -8499,51 +8485,422 @@ mod tests {
         ))
     }
 
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum BootstrapReportKind {
+        Order,
+        Position,
+        Fill,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct BootstrapReportObservation {
+        kind: BootstrapReportKind,
+        account_event_id: UUID4,
+        order_status: OrderStatus,
+    }
+
+    fn bootstrap_report_observation(
+        cache: &Rc<RefCell<Cache>>,
+        kind: BootstrapReportKind,
+        account_id: AccountId,
+        client_order_id: ClientOrderId,
+    ) -> BootstrapReportObservation {
+        let cache = cache.borrow();
+        let account_event_id = cache
+            .account(&account_id)
+            .and_then(|account| account.last_event())
+            .expect("bootstrap account should be registered before reports are flushed")
+            .event_id;
+        let order_status = cache
+            .order(&client_order_id)
+            .expect("submitted order should remain cached while reports are flushed")
+            .status();
+        BootstrapReportObservation {
+            kind,
+            account_event_id,
+            order_status,
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct BootstrapConnectState {
+        connected: Rc<Cell<bool>>,
+        client_id: ClientId,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        bootstrap_account: AccountState,
+        runtime_account: AccountState,
+        order_report: OrderStatusReport,
+        position_report: PositionStatusReport,
+        fill_report: FillReport,
+        observations: Rc<RefCell<Vec<BootstrapReportObservation>>>,
+    }
+
+    #[derive(Debug)]
+    struct BootstrapConnectClientConfig;
+
+    impl ClientConfig for BootstrapConnectClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[derive(Debug)]
+    struct BootstrapConnectClientFactory {
+        state: BootstrapConnectState,
+    }
+
+    impl ExecutionClientFactory for BootstrapConnectClientFactory {
+        fn create(
+            &self,
+            _trader_id: TraderId,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            cache: CacheView,
+        ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+            Ok(Box::new(BootstrapConnectExecutionClient {
+                state: self.state.clone(),
+                cache,
+                sink: get_sourced_exec_event_sink(self.state.client_id),
+            }))
+        }
+
+        fn name(&self) -> &'static str {
+            "bootstrap-connect"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(BootstrapConnectClientConfig)
+        }
+    }
+
+    struct BootstrapConnectExecutionClient {
+        state: BootstrapConnectState,
+        cache: CacheView,
+        sink: SourcedExecutionEventSink,
+    }
+
+    #[async_trait(?Send)]
+    impl ExecutionClient for BootstrapConnectExecutionClient {
+        fn is_connected(&self) -> bool {
+            self.state.connected.get()
+        }
+
+        fn client_id(&self) -> ClientId {
+            self.state.client_id
+        }
+
+        fn account_id(&self) -> AccountId {
+            self.state.account_id
+        }
+
+        fn venue(&self) -> Venue {
+            self.state.instrument_id.venue
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Netting
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+            _info: Option<Params>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            self.sink
+                .send(ExecutionEvent::Report(ExecutionReport::Order(Box::new(
+                    self.state.order_report.clone(),
+                ))))?;
+            self.sink
+                .send_bootstrap_account(self.state.bootstrap_account.clone())?;
+            self.sink
+                .send(ExecutionEvent::Account(self.state.runtime_account.clone()))?;
+            self.sink
+                .send(ExecutionEvent::Report(ExecutionReport::Position(Box::new(
+                    self.state.position_report.clone(),
+                ))))?;
+            self.sink
+                .send(ExecutionEvent::Report(ExecutionReport::Fill(Box::new(
+                    self.state.fill_report.clone(),
+                ))))?;
+
+            while self.cache.borrow().account(&self.account_id()).is_none() {
+                dst::time::sleep(Duration::from_millis(1)).await;
+            }
+
+            let cache = self.cache.borrow();
+            let account_event_ids = cache
+                .account(&self.account_id())
+                .expect("bootstrap account should be registered during connect")
+                .events()
+                .into_iter()
+                .map(|event| event.event_id)
+                .collect::<Vec<_>>();
+            anyhow::ensure!(
+                account_event_ids == [self.state.bootstrap_account.event_id],
+                "only the explicit bootstrap account may be applied during connect"
+            );
+            anyhow::ensure!(
+                cache
+                    .order(&self.state.client_order_id)
+                    .is_some_and(|order| order.status() == OrderStatus::Submitted),
+                "runtime reports must remain buffered while the execution engine is borrowed"
+            );
+            drop(cache);
+            anyhow::ensure!(
+                self.state.observations.borrow().is_empty(),
+                "raw runtime reports must not publish during execution-client connect"
+            );
+
+            self.state.connected.set(true);
+            Ok(())
+        }
+    }
+
     #[rstest]
-    #[tokio::test(start_paused = true)]
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_sourced_bootstrap_account_preserves_lane_fifo_while_execution_client_connects() {
         msgbus::get_message_bus().borrow_mut().dispose();
-        let account_id = AccountId::from("SOURCE-CONNECT-001");
-        let cache = Rc::new(RefCell::new(Cache::default()));
-        let dispatch_order = Rc::new(RefCell::new(Vec::new()));
-        let (account_registered_tx, account_registered_rx) = tokio::sync::oneshot::channel();
-        let account_registered_tx = Rc::new(RefCell::new(Some(account_registered_tx)));
-        let handler_cache = cache.clone();
-        let account_dispatch_order = dispatch_order.clone();
-        let handler_account_registered_tx = account_registered_tx.clone();
-        msgbus::register_account_state_endpoint(
-            MessagingSwitchboard::portfolio_update_account(),
-            TypedHandler::from(move |state: &AccountState| {
-                handler_cache
-                    .borrow_mut()
-                    .add_account(AccountAny::Margin(MarginAccount::new(state.clone(), true)))
-                    .unwrap();
-                account_dispatch_order.borrow_mut().push("account");
+        let client_id = ClientId::from("SOURCE-CONNECT");
+        let account_id = AccountId::from("TEST-001");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let client_order_id = ClientOrderId::from("O-BOOTSTRAP-CONNECT");
+        let venue_order_id = VenueOrderId::from("V-BOOTSTRAP-CONNECT");
+        let bootstrap_event_id = UUID4::new();
+        let runtime_event_id = UUID4::new();
+        let steady_event_id = UUID4::new();
+        let quantity = Quantity::from("10.0");
+        let steady_account = AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![],
+            vec![],
+            true,
+            steady_event_id,
+            UnixNanos::from(12),
+            UnixNanos::from(13),
+            None,
+        );
+        let state = BootstrapConnectState {
+            connected: Rc::new(Cell::new(false)),
+            client_id,
+            account_id,
+            instrument_id,
+            client_order_id,
+            bootstrap_account: AccountState::new(
+                account_id,
+                AccountType::Margin,
+                vec![],
+                vec![],
+                true,
+                bootstrap_event_id,
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+                None,
+            ),
+            runtime_account: AccountState::new(
+                account_id,
+                AccountType::Margin,
+                vec![],
+                vec![],
+                true,
+                runtime_event_id,
+                UnixNanos::from(3),
+                UnixNanos::from(4),
+                None,
+            ),
+            order_report: OrderStatusReport::new(
+                account_id,
+                instrument_id,
+                Some(client_order_id),
+                venue_order_id,
+                OrderSide::Buy.into(),
+                OrderType::Limit,
+                TimeInForce::Gtc,
+                OrderStatus::Accepted,
+                quantity,
+                Quantity::from("0.0"),
+                UnixNanos::from(5),
+                UnixNanos::from(6),
+                UnixNanos::from(7),
+                None,
+            ),
+            position_report: PositionStatusReport::new(
+                account_id,
+                instrument_id,
+                PositionSide::Long,
+                quantity,
+                UnixNanos::from(8),
+                UnixNanos::from(9),
+                None,
+                None,
+                None,
+            ),
+            fill_report: FillReport::new(
+                account_id,
+                instrument_id,
+                venue_order_id,
+                TradeId::from("T-BOOTSTRAP-CONNECT"),
+                OrderSide::Buy,
+                quantity,
+                Price::from("100.0"),
+                Money::from("0.01 USDT"),
+                LiquiditySide::Taker,
+                Some(client_order_id),
+                None,
+                UnixNanos::from(10),
+                UnixNanos::from(11),
+                None,
+            ),
+            observations: Rc::new(RefCell::new(Vec::new())),
+        };
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("TESTER-001"),
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: true,
+                inflight_check_threshold_ms: 100,
+                inflight_check_retries: 2,
+                ..Default::default()
+            },
+            timeout_connection: Duration::from_secs(1),
+            ..Default::default()
+        };
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("BootstrapConnectNode")
+            .add_exec_client(
+                Some("bootstrap-connect".to_string()),
+                Box::new(BootstrapConnectClientFactory {
+                    state: state.clone(),
+                }),
+                Box::new(BootstrapConnectClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
 
-                if let Some(tx) = handler_account_registered_tx.borrow_mut().take() {
-                    tx.send(())
-                        .expect("execution client connect should await account registration");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(node.trader_id())
+            .strategy_id(StrategyId::from("S-BOOTSTRAP-CONNECT"))
+            .client_order_id(client_order_id)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(quantity)
+            .price(Price::from("100.0"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        {
+            let mut cache = node.kernel.cache.borrow_mut();
+            cache.add_instrument(instrument).unwrap();
+            cache
+                .add_order(order, None, Some(client_id), false)
+                .unwrap();
+            cache.update_order(&submitted).unwrap();
+            assert!(cache.account(&account_id).is_none());
+        }
+
+        node.exec_manager.register_inflight(client_order_id);
+        advance_clock(Duration::from_millis(101)).await;
+        let inflight = node.exec_manager.check_inflight_orders();
+        assert_eq!(inflight.queries.len(), 1);
+        assert_eq!(
+            node.exec_manager.recon_check_retry_count(&client_order_id),
+            1
+        );
+
+        let runner = node.runner.take().expect("runner should be available");
+        runner.bind_senders();
+        let steady_sink = get_sourced_exec_event_sink(client_id);
+        let (channels, mut sourced_exec) = runner.take_channels_with_sourced();
+        let cache = node.kernel.cache.clone();
+        let observations = state.observations.clone();
+        let e3_enqueued = Rc::new(Cell::new(false));
+        msgbus::subscribe_any(
+            MessagingSwitchboard::reconciliation_raw_order_status_report_topic().into(),
+            ShareableMessageHandler::from_typed({
+                let cache = cache.clone();
+                let observations = observations.clone();
+                let e3_enqueued = e3_enqueued.clone();
+                move |_: &OrderStatusReport| {
+                    if !e3_enqueued.replace(true) {
+                        steady_sink
+                            .send(ExecutionEvent::Account(steady_account.clone()))
+                            .expect("steady-state account should enter the sourced lane");
+                    }
+                    observations.borrow_mut().push(bootstrap_report_observation(
+                        &cache,
+                        BootstrapReportKind::Order,
+                        account_id,
+                        client_order_id,
+                    ));
                 }
             }),
+            None,
         );
-        let report_dispatch_order = dispatch_order.clone();
-        msgbus::register_sourced_execution_report_endpoint(
-            MessagingSwitchboard::exec_engine_reconcile_sourced_execution_report(),
-            TypedIntoHandler::from(move |report: SourcedExecutionReport| {
-                let kind = match report.report {
-                    ExecutionReport::Order(_) => "order",
-                    ExecutionReport::Fill(_) => "fill",
-                    _ => panic!("unexpected non-strict sourced execution report"),
-                };
-                report_dispatch_order.borrow_mut().push(kind);
+        msgbus::subscribe_any(
+            MessagingSwitchboard::reconciliation_raw_position_status_report_topic().into(),
+            ShareableMessageHandler::from_typed({
+                let cache = cache.clone();
+                let observations = observations.clone();
+                move |_: &PositionStatusReport| {
+                    observations.borrow_mut().push(bootstrap_report_observation(
+                        &cache,
+                        BootstrapReportKind::Position,
+                        account_id,
+                        client_order_id,
+                    ));
+                }
             }),
+            None,
+        );
+        msgbus::subscribe_any(
+            MessagingSwitchboard::reconciliation_raw_fill_report_topic().into(),
+            ShareableMessageHandler::from_typed({
+                let cache = cache.clone();
+                let observations = observations.clone();
+                move |_: &FillReport| {
+                    observations.borrow_mut().push(bootstrap_report_observation(
+                        &cache,
+                        BootstrapReportKind::Fill,
+                        account_id,
+                        client_order_id,
+                    ));
+                }
+            }),
+            None,
         );
 
-        assert!(cache.borrow().account(&account_id).is_none());
+        let report_count = node.kernel.exec_engine.borrow().report_count();
+        let engine_event_count = node.kernel.exec_engine.borrow().event_count();
+        let order_event_count = node
+            .kernel
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .event_count();
 
-        let runner = AsyncRunner::new();
-        runner.bind_senders();
-        let (channels, mut sourced_exec) = runner.take_channels_with_sourced();
         let AsyncRunnerChannels {
             mut time_evt_rx,
             mut system_evt_rx,
@@ -8553,35 +8910,14 @@ mod tests {
             mut data_evt_rx,
             mut data_cmd_rx,
         } = channels;
-        let sink = crate::runner::get_sourced_exec_event_sink(ClientId::from("SOURCE-CONNECT"));
-        let connect_account_id = account_id;
-        let connect = async move {
-            sink.send(stub_order_report_event()).unwrap();
-            sink.send(ExecutionEvent::Account(AccountState::new(
-                connect_account_id,
-                AccountType::Margin,
-                vec![],
-                vec![],
-                true,
-                UUID4::new(),
-                UnixNanos::from(1),
-                UnixNanos::from(2),
-                None,
-            )))
-            .unwrap();
-
-            account_registered_rx
-                .await
-                .expect("account registration handler should remain available");
-            sink.send(stub_exec_event()).unwrap();
-        };
         let mut pending = PendingEvents::default();
+        let deadline = dst::time::Instant::now() + Duration::from_secs(1);
 
-        tokio::time::timeout(
-            Duration::from_secs(1),
+        let status = tokio::time::timeout(
+            Duration::from_secs(2),
             drive_with_event_buffering(
-                connect,
-                SourcedAccountHandling::Dispatch,
+                node.connect_exec_phase(deadline),
+                SourcedBootstrapHandling::Dispatch,
                 &mut pending,
                 &mut time_evt_rx,
                 &mut system_evt_rx,
@@ -8594,7 +8930,12 @@ mod tests {
             ),
         )
         .await
-        .expect("sourced account should be registered during execution client connect");
+        .expect("execution client connect should finish before the outer guard")
+        .expect("execution client connect should succeed");
+
+        assert_eq!(status, EngineConnectionStatus::Connected);
+        assert!(state.connected.get());
+        assert!(!e3_enqueued.get());
 
         flush_all_pending(
             &mut pending,
@@ -8606,14 +8947,88 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            |event| node.process_sourced_exec_event(event),
         );
 
-        assert!(cache.borrow().account(&account_id).is_some());
+        let account_event_ids = node
+            .kernel
+            .cache
+            .borrow()
+            .account(&account_id)
+            .unwrap()
+            .events()
+            .into_iter()
+            .map(|event| event.event_id)
+            .collect::<Vec<_>>();
+        assert_eq!(account_event_ids, [bootstrap_event_id, runtime_event_id]);
+        assert!(e3_enqueued.get());
         assert_eq!(
-            dispatch_order.borrow().as_slice(),
-            &["order", "account", "fill"]
+            state.observations.borrow().as_slice(),
+            &[
+                BootstrapReportObservation {
+                    kind: BootstrapReportKind::Order,
+                    account_event_id: bootstrap_event_id,
+                    order_status: OrderStatus::Submitted,
+                },
+                BootstrapReportObservation {
+                    kind: BootstrapReportKind::Position,
+                    account_event_id: runtime_event_id,
+                    order_status: OrderStatus::Accepted,
+                },
+                BootstrapReportObservation {
+                    kind: BootstrapReportKind::Fill,
+                    account_event_id: runtime_event_id,
+                    order_status: OrderStatus::Accepted,
+                },
+            ]
+        );
+        assert_eq!(sourced_exec.len(), 1);
+        {
+            let engine = node.kernel.exec_engine.borrow();
+            assert_eq!(engine.report_count(), report_count + 3);
+            assert_eq!(engine.event_count(), engine_event_count + 2);
+            let cache = engine.cache().borrow();
+            let order = cache.order(&client_order_id).unwrap();
+            assert_eq!(order.status(), OrderStatus::Filled);
+            assert_eq!(order.event_count(), order_event_count + 2);
+            let order_events = order.events();
+            assert!(matches!(
+                order_events[order_events.len() - 2],
+                OrderEventAny::Accepted(_)
+            ));
+            assert!(matches!(
+                order_events[order_events.len() - 1],
+                OrderEventAny::Filled(_)
+            ));
+        }
+        assert_eq!(
+            node.exec_manager.recon_check_retry_count(&client_order_id),
+            0
         );
         assert!(pending.is_empty());
+
+        let Some(ExecutionEventIngress::Sourced(steady_event)) =
+            sourced_exec.try_recv(&mut exec_evt_rx)
+        else {
+            panic!("steady-state sourced event should remain behind the startup prefix");
+        };
+        node.process_sourced_exec_event(steady_event);
+        let account_event_ids = node
+            .kernel
+            .cache
+            .borrow()
+            .account(&account_id)
+            .unwrap()
+            .events()
+            .into_iter()
+            .map(|event| event.event_id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            account_event_ids,
+            [bootstrap_event_id, runtime_event_id, steady_event_id]
+        );
+        assert_eq!(sourced_exec.len(), 0);
+        assert!(exec_evt_rx.try_recv().is_err());
         msgbus::get_message_bus().borrow_mut().dispose();
     }
 
@@ -8649,6 +9064,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            drop,
         );
 
         // Both order and report events are drained by pending.drain()
@@ -8688,6 +9104,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            drop,
         );
 
         // Account events are forwarded immediately, never buffered in pending
@@ -8698,53 +9115,61 @@ mod tests {
     }
 
     #[rstest]
-    fn test_shutdown_drain_processes_sourced_lane_fifo() {
+    fn test_shutdown_drain_processes_sourced_events_through_live_node() {
         msgbus::get_message_bus().borrow_mut().dispose();
-        let received = Rc::new(RefCell::new(Vec::new()));
-        let received_handler = received.clone();
-        msgbus::register_account_state_endpoint(
-            MessagingSwitchboard::portfolio_update_account(),
-            TypedHandler::from(move |account: &AccountState| {
-                received_handler.borrow_mut().push(account.account_id);
-            }),
-        );
+        let (mut node, mut fill_event, _) = recent_fill_test_fixture("ShutdownSourcedDrainNode");
+        let OrderEventAny::Filled(fill) = &mut fill_event else {
+            unreachable!();
+        };
+        fill.last_qty = Quantity::from("10.0");
+        fill.commission = Some(Money::from("2.00 USDT"));
+        let fill = fill.clone();
+        let account = AccountAny::Margin(MarginAccount::new(
+            AccountState::new(
+                fill.account_id,
+                AccountType::Margin,
+                vec![AccountBalance::new(
+                    Money::from("1000000 USDT"),
+                    Money::from("0 USDT"),
+                    Money::from("1000000 USDT"),
+                )],
+                Vec::new(),
+                true,
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                Some(Currency::USDT()),
+            ),
+            true,
+        ));
+        node.kernel.cache.borrow_mut().add_account(account).unwrap();
+        let engine_event_count = node.kernel.exec_engine.borrow().event_count();
+        let order_event_count = node
+            .kernel
+            .cache
+            .borrow()
+            .order(&fill.client_order_id)
+            .unwrap()
+            .event_count();
+        assert!(!is_recent_fill(&node, &fill));
 
-        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
-        let (_system_evt_tx, mut system_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemEvent>();
-        let (_system_cmd_tx, mut system_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SystemCommand>();
-        let (_exec_evt_tx, mut exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
-        let (sourced_exec_evt_tx, sourced_exec_evt_rx) =
-            tokio::sync::mpsc::unbounded_channel::<SourcedExecutionEvent>();
-        let mut sourced_exec = SourcedExecutionIngress::new(sourced_exec_evt_rx);
-        let (_exec_cmd_tx, mut exec_cmd_rx) =
-            tokio::sync::mpsc::unbounded_channel::<TradingCommandMessage>();
-        let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
+        let runner = node.runner.take().expect("runner should be available");
+        runner.bind_senders();
+        let sink = get_sourced_exec_event_sink(ClientId::from("SOURCE-DRAIN"));
+        sink.send(ExecutionEvent::Order(fill_event)).unwrap();
+        let (channels, mut sourced_exec) = runner.take_channels_with_sourced();
+        let AsyncRunnerChannels {
+            mut time_evt_rx,
+            mut system_evt_rx,
+            mut system_cmd_rx,
+            mut exec_evt_rx,
+            mut exec_cmd_rx,
+            mut data_evt_rx,
+            mut data_cmd_rx,
+        } = channels;
 
-        for account_id in ["SOURCE-DRAIN-001", "SOURCE-DRAIN-002"] {
-            sourced_exec_evt_tx
-                .send(SourcedExecutionEvent {
-                    client_id: ClientId::from("SOURCE-DRAIN"),
-                    event: ExecutionEvent::Account(AccountState::new(
-                        AccountId::from(account_id),
-                        AccountType::Cash,
-                        vec![],
-                        vec![],
-                        true,
-                        UUID4::new(),
-                        UnixNanos::from(1),
-                        UnixNanos::from(2),
-                        None,
-                    )),
-                })
-                .unwrap();
-        }
-
-        LiveNode::drain_channels(
-            &mut time_rx,
+        node.drain_channels(
+            &mut time_evt_rx,
             &mut system_evt_rx,
             &mut system_cmd_rx,
             &mut exec_evt_rx,
@@ -8755,12 +9180,19 @@ mod tests {
         );
 
         assert_eq!(
-            received.borrow().as_slice(),
-            &[
-                AccountId::from("SOURCE-DRAIN-001"),
-                AccountId::from("SOURCE-DRAIN-002")
-            ]
+            node.kernel.exec_engine.borrow().event_count(),
+            engine_event_count + 1
         );
+        {
+            let cache = node.kernel.cache.borrow();
+            let order = cache.order(&fill.client_order_id).unwrap();
+            assert_eq!(order.status(), OrderStatus::Filled);
+            assert_eq!(order.event_count(), order_event_count + 1);
+        }
+        assert!(is_recent_fill(&node, &fill));
+        assert_eq!(sourced_exec.len(), 0);
+        assert!(exec_evt_rx.try_recv().is_err());
+        msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]
@@ -8794,22 +9226,25 @@ mod tests {
         let mut pending = PendingEvents::default();
         for client_order_id in ["O-SOURCED-001", "O-SOURCED-002"] {
             pending.buffer_execution_ingress(ExecutionEventIngress::Sourced(
-                SourcedExecutionEvent {
-                    client_id: source_id,
-                    event: ExecutionEvent::Order(OrderEventAny::Submitted(
+                SourcedExecutionEvent::runtime(
+                    source_id,
+                    ExecutionEvent::Order(OrderEventAny::Submitted(
                         OrderSubmittedSpec::builder()
                             .client_order_id(ClientOrderId::from(client_order_id))
                             .build(),
                     )),
-                },
+                ),
             ));
         }
 
         let buffered_ids = pending
             .sourced_exec_evts
             .iter()
-            .map(|sourced| match &sourced.event {
-                ExecutionEvent::Order(event) => event.client_order_id(),
+            .map(|sourced| match sourced {
+                SourcedExecutionEvent::Runtime {
+                    event: ExecutionEvent::Order(event),
+                    ..
+                } => event.client_order_id(),
                 _ => panic!("Expected sourced order event"),
             })
             .collect::<Vec<_>>();
@@ -8868,7 +9303,7 @@ mod tests {
                 )),
             ));
 
-            pending.drain();
+            pending.drain(drop);
 
             assert!(pending.is_empty());
             assert_eq!(risk_commands.borrow().len(), 1);
@@ -8971,6 +9406,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            drop,
         );
 
         // Batch should be unpacked into individual Submitted events then drained
@@ -9009,6 +9445,7 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            drop,
         );
 
         // Batch should be unpacked into individual Canceled events then drained

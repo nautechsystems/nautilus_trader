@@ -70,6 +70,18 @@ impl ExecutionEventTarget {
             Self::Sourced(sink) => sink.send(event),
         }
     }
+
+    fn send_bootstrap_account(
+        &self,
+        state: AccountState,
+    ) -> Result<(), Box<tokio::sync::mpsc::error::SendError<ExecutionEvent>>> {
+        match self {
+            Self::Legacy(sender) => sender
+                .send(ExecutionEvent::Account(state))
+                .map_err(Box::new),
+            Self::Sourced(sink) => sink.send_bootstrap_account(state),
+        }
+    }
 }
 
 /// Event emitter for live trading - combines event generation with async dispatch.
@@ -516,6 +528,25 @@ impl ExecutionEventEmitter {
             .map_err(|e| anyhow::anyhow!("Failed to send account state: {e}"))
     }
 
+    /// Emits the source-bound account barrier required while an execution client connects.
+    ///
+    /// Legacy targets receive an ordinary account event. Sourced targets retain the account's
+    /// bootstrap purpose until the live node applies the barrier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the sender is uninitialized or its receiver is closed.
+    #[doc(hidden)]
+    pub fn try_send_bootstrap_account_state(&self, state: AccountState) -> anyhow::Result<()> {
+        let target = self.target.load();
+        let target = target.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Cannot send bootstrap account state: sender not initialized")
+        })?;
+        target
+            .send_bootstrap_account(state)
+            .map_err(|e| anyhow::anyhow!("Failed to send bootstrap account state: {e}"))
+    }
+
     /// Emits an execution report.
     pub fn send_execution_report(&self, report: ExecutionReport) {
         if let Err(e) = self.try_send_execution_report(report) {
@@ -561,8 +592,8 @@ impl ExecutionEventEmitter {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::time::get_atomic_clock_static;
     use nautilus_common::live::runner::get_exec_event_sender;
+    use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::{
         enums::PositionSide, events::order::spec::OrderSubmittedSpec, identifiers::ClientId,
     };
@@ -603,6 +634,20 @@ mod tests {
         )
     }
 
+    fn test_account_state(event_id: UUID4) -> AccountState {
+        AccountState::new(
+            AccountId::from("BYBIT-001"),
+            AccountType::Margin,
+            vec![],
+            vec![],
+            true,
+            event_id,
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        )
+    }
+
     #[rstest]
     fn test_clone_before_set_sender_observes_sender() {
         let mut emitter = test_emitter();
@@ -638,9 +683,10 @@ mod tests {
         else {
             panic!("expected sourced execution event");
         };
-        assert_eq!(sourced.client_id, source_client_id);
+        let (client_id, event) = sourced.into_parts();
+        assert_eq!(client_id, source_client_id);
         assert!(matches!(
-            sourced.event,
+            event,
             ExecutionEvent::Report(ExecutionReport::Position(_))
         ));
     }
@@ -663,9 +709,10 @@ mod tests {
         else {
             panic!("expected sourced execution event");
         };
-        assert_eq!(sourced.client_id, source_client_id);
+        let (client_id, event) = sourced.into_parts();
+        assert_eq!(client_id, source_client_id);
         assert!(matches!(
-            sourced.event,
+            event,
             ExecutionEvent::Report(ExecutionReport::Position(_))
         ));
     }
@@ -735,6 +782,68 @@ mod tests {
         let result = emitter.try_send_order_event(OrderEventAny::Submitted(
             OrderSubmittedSpec::builder().build(),
         ));
+
+        assert!(result.is_err());
+        assert!(channels.exec_evt_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn test_sourced_bootstrap_account_retains_its_purpose() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let source_client_id = ClientId::from("BYBIT");
+        let event_id = UUID4::new();
+        let mut emitter = test_emitter();
+        emitter.set_sender(get_exec_event_sender());
+        emitter.set_sourced_sink(get_sourced_exec_event_sink(source_client_id));
+
+        emitter
+            .try_send_bootstrap_account_state(test_account_state(event_id))
+            .unwrap();
+
+        let (mut channels, mut sourced_rx) = runner.take_channels_with_sourced();
+        assert!(channels.exec_evt_rx.try_recv().is_err());
+        let Some(ExecutionEventIngress::Sourced(
+            crate::runner::SourcedExecutionEvent::BootstrapAccount { client_id, state },
+        )) = sourced_rx.try_recv(&mut channels.exec_evt_rx)
+        else {
+            panic!("expected sourced bootstrap account event");
+        };
+        assert_eq!(client_id, source_client_id);
+        assert_eq!(state.event_id, event_id);
+    }
+
+    #[rstest]
+    fn test_legacy_bootstrap_account_is_an_ordinary_account_event() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let event_id = UUID4::new();
+        let mut emitter = test_emitter();
+        emitter.set_sender(get_exec_event_sender());
+
+        emitter
+            .try_send_bootstrap_account_state(test_account_state(event_id))
+            .unwrap();
+
+        let (mut channels, mut sourced_rx) = runner.take_channels_with_sourced();
+        let ExecutionEvent::Account(state) = channels.exec_evt_rx.try_recv().unwrap() else {
+            panic!("expected ordinary account event");
+        };
+        assert_eq!(state.event_id, event_id);
+        assert!(sourced_rx.try_recv(&mut channels.exec_evt_rx).is_none());
+    }
+
+    #[rstest]
+    fn test_closed_sourced_target_rejects_bootstrap_without_legacy_fallback() {
+        let runner = AsyncRunner::new();
+        runner.bind_senders();
+        let mut emitter = test_emitter();
+        emitter.set_sender(get_exec_event_sender());
+        emitter.set_sourced_sink(get_sourced_exec_event_sink(ClientId::from("BYBIT")));
+        let (mut channels, sourced_rx) = runner.take_channels_with_sourced();
+        drop(sourced_rx);
+
+        let result = emitter.try_send_bootstrap_account_state(test_account_state(UUID4::new()));
 
         assert!(result.is_err());
         assert!(channels.exec_evt_rx.try_recv().is_err());
