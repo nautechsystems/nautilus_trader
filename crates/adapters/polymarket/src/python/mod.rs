@@ -48,7 +48,8 @@ use crate::{
         PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig,
     },
     data_types::{
-        PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice, register_polymarket_custom_data,
+        PolymarketRtdsCryptoPrice, PolymarketRtdsCryptoTwap, PolymarketRtdsEquityPrice,
+        register_polymarket_custom_data,
     },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
     models::PolymarketFeeModel,
@@ -513,6 +514,7 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketFeeModel>()?;
     m.add_class::<loader::PyPolymarketDataLoader>()?;
     m.add_class::<PolymarketRtdsCryptoPrice>()?;
+    m.add_class::<PolymarketRtdsCryptoTwap>()?;
     m.add_class::<PolymarketRtdsEquityPrice>()?;
     m.add_function(pyo3::wrap_pyfunction!(
         sort::py_polymarket_trade_sort_key,
@@ -522,6 +524,7 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     register_polymarket_custom_data();
     let _result = ensure_rust_extractor_registered::<PolymarketRtdsCryptoPrice>();
+    let _result = ensure_rust_extractor_registered::<PolymarketRtdsCryptoTwap>();
     let _result = ensure_rust_extractor_registered::<PolymarketRtdsEquityPrice>();
 
     let registry = get_global_pyo3_registry();

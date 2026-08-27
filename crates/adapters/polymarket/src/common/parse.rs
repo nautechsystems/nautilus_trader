@@ -15,13 +15,18 @@
 
 //! Parsing utilities for the Polymarket adapter.
 
+use std::str::FromStr;
+
 pub use nautilus_core::serialization::{
     deserialize_decimal_from_str, deserialize_optional_decimal_from_str, serialize_decimal_as_str,
     serialize_optional_decimal_as_str,
 };
 use nautilus_model::identifiers::TradeId;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
+use serde::{
+    Deserialize, Deserializer, Serialize, Serializer,
+    de::{self, Error, MapAccess, SeqAccess, Unexpected, Visitor},
+};
 use serde_json::{Number, value::RawValue};
 
 use crate::common::enums::PolymarketOrderSide;
@@ -45,6 +50,96 @@ where
     Option::<Box<RawValue>>::deserialize(deserializer)?
         .map(|raw| Decimal::from_str_exact(raw.get()).map_err(D::Error::custom))
         .transpose()
+}
+
+/// Deserializes the required RTDS crypto TWAP `value` as a finite decimal.
+///
+/// Accepts JSON numbers and numeric strings in plain or scientific notation. Rejects missing,
+/// null, non-finite numbers, and every non-decimal JSON shape.
+pub(crate) fn deserialize_crypto_twap_value<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct DecimalLikeVisitor;
+
+    impl<'de> Visitor<'de> for DecimalLikeVisitor {
+        type Value = Decimal;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("`value` as a finite decimal JSON number or numeric string")
+        }
+
+        fn visit_i64<E: de::Error>(self, value: i64) -> Result<Self::Value, E> {
+            Ok(Decimal::from(value))
+        }
+
+        fn visit_u64<E: de::Error>(self, value: u64) -> Result<Self::Value, E> {
+            Ok(Decimal::from(value))
+        }
+
+        fn visit_i128<E: de::Error>(self, value: i128) -> Result<Self::Value, E> {
+            Decimal::try_from_i128_with_scale(value, 0)
+                .map_err(|e| E::custom(format!("invalid decimal-like `value`: {e}")))
+        }
+
+        fn visit_u128<E: de::Error>(self, value: u128) -> Result<Self::Value, E> {
+            Decimal::from_str(&value.to_string())
+                .map_err(|e| E::custom(format!("invalid decimal-like `value`: {e}")))
+        }
+
+        fn visit_f64<E: de::Error>(self, value: f64) -> Result<Self::Value, E> {
+            if !value.is_finite() {
+                return Err(E::invalid_value(Unexpected::Float(value), &self));
+            }
+
+            Decimal::try_from(value)
+                .map_err(|e| E::custom(format!("invalid decimal-like `value`: {e}")))
+        }
+
+        fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            let result = if value.contains('e') || value.contains('E') {
+                Decimal::from_scientific(value)
+            } else {
+                Decimal::from_str(value)
+            };
+
+            result.map_err(|e| E::custom(format!("invalid decimal-like `value`: {e}")))
+        }
+
+        fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+            self.visit_str(&value)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Err(E::invalid_type(Unexpected::Unit, &self))
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Err(E::invalid_type(Unexpected::Option, &self))
+        }
+
+        fn visit_bool<E: de::Error>(self, value: bool) -> Result<Self::Value, E> {
+            Err(E::invalid_type(Unexpected::Bool(value), &self))
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, _seq: A) -> Result<Self::Value, A::Error> {
+            Err(A::Error::invalid_type(Unexpected::Seq, &self))
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, _map: A) -> Result<Self::Value, A::Error> {
+            Err(A::Error::invalid_type(Unexpected::Map, &self))
+        }
+
+        fn visit_bytes<E: de::Error>(self, value: &[u8]) -> Result<Self::Value, E> {
+            Err(E::invalid_type(Unexpected::Bytes(value), &self))
+        }
+
+        fn visit_byte_buf<E: de::Error>(self, value: Vec<u8>) -> Result<Self::Value, E> {
+            Err(E::invalid_type(Unexpected::Bytes(&value), &self))
+        }
+    }
+
+    deserializer.deserialize_any(DecimalLikeVisitor)
 }
 
 /// Serializes a decimal as an exact JSON number token.

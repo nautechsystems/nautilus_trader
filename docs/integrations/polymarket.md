@@ -937,12 +937,14 @@ snapshot batches (see [Data client options](#data-client-options)):
 
 #### RTDS custom data
 
-The data client also supports Polymarket's real-time data (RTDS) crypto and equity topics.
-Subscribe through generic custom data with a required, non-empty `symbol` metadata value:
+The data client also supports Polymarket's real-time data (RTDS) crypto, crypto TWAP, and equity
+topics. Subscribe through generic custom data with a required, non-empty `symbol` metadata value.
+TWAP subscriptions also require `window_seconds` equal to `30` or `60`:
 
 ```python
 from nautilus_trader.adapters.polymarket import POLYMARKET_CLIENT_ID
 from nautilus_trader.adapters.polymarket import PolymarketRtdsCryptoPrice
+from nautilus_trader.adapters.polymarket import PolymarketRtdsCryptoTwap
 from nautilus_trader.adapters.polymarket import PolymarketRtdsEquityPrice
 from nautilus_trader.model import DataType
 
@@ -954,15 +956,24 @@ equity_type = DataType(
     PolymarketRtdsEquityPrice.__name__,
     metadata={"symbol": "AAPL"},
 )
+twap_type = DataType(
+    PolymarketRtdsCryptoTwap.__name__,
+    metadata={"symbol": "BTC/USD", "window_seconds": 60},
+)
 
 strategy.subscribe_data(crypto_type, client_id=POLYMARKET_CLIENT_ID)
 strategy.subscribe_data(equity_type, client_id=POLYMARKET_CLIENT_ID)
+strategy.subscribe_data(twap_type, client_id=POLYMARKET_CLIENT_ID)
 ```
 
 Symbol matching is case-insensitive, and published symbols are lowercase. Crypto RTDS uses the
 `crypto_prices` topic; equity RTDS uses `equity_prices`. Equity updates prefer
 `full_accuracy_value` when the venue supplies it and fall back to `value` for snapshots or updates
-that omit it.
+that omit it. Crypto TWAP uses `crypto_prices_twap_thirty` or
+`crypto_prices_twap_sixty`, requires the frame's `window_s` to match the subscription, and exposes
+the exact signed-E18 `full_accuracy_value` as a Rust `Decimal`. Python receives the exact decimal
+string, which can be converted with `decimal.Decimal`; the display-only `value` is required and
+decimal-like for wire conformance but is never published.
 
 ### Runtime instrument loading
 
