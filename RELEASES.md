@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added OKX instrument cache reconciliation and WebSocket instrument updates
 - Added Polymarket market descriptions to `instrument.info` (#4840), thanks for reporting @mystic-io
 - Added Polymarket quote ticks from `best_bid_ask` market events
+- Added Polymarket RTDS crypto TWAP custom data (#4843), thanks @seungpyoson
 
 ### Breaking Changes
 
@@ -109,6 +110,7 @@ Released on TBD (UTC).
 - Documented Lighter Testnet account and API key setup
 - Documented OKX instrument cache reconciliation and WebSocket update behavior
 - Documented Polymarket quote sources and order book feed interaction
+- Documented Polymarket RTDS crypto TWAP delivery, reconnect, and conflict handling
 
 ### Deprecations
 

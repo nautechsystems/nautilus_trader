@@ -975,6 +975,15 @@ the exact signed-E18 `full_accuracy_value` as a Rust `Decimal`. Python receives 
 string, which can be converted with `decimal.Decimal`; the display-only `value` is required and
 decimal-like for wire conformance but is never published.
 
+Polymarket [TWAP subscriptions](https://docs.polymarket.com/market-data/chainlink-twap#stream-behavior)
+start with the next update and provide no snapshot, history, or replay after a disconnect. The
+adapter restores subscriptions after reconnect and resumes with the next update, so the disconnect
+interval remains a data gap. The replay guard survives reconnect, so a redelivery of the last
+observation remains suppressed. The adapter also suppresses older observations. A different value
+for the same observation timestamp is not emitted; it is logged at error level with the topic,
+symbol, timestamp, prior value, and received value. The stream continues with the prior observation
+authoritative, and emission resumes at the next newer observation timestamp.
+
 ### Runtime instrument loading
 
 Polymarket lists thousands of active markets and new markets appear throughout the day, so preloading

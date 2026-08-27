@@ -2451,7 +2451,14 @@ mod tests {
         let error = feed
             .handle_text_message(&conflict.to_string())
             .expect_err("equal-timestamp value conflict must be visible");
-        assert!(error.to_string().contains("conflict"));
+        assert_eq!(
+            error.to_string(),
+            concat!(
+                "conflicting RTDS TWAP observation topic=crypto_prices_twap_sixty ",
+                "symbol=btc/usd timestamp_ms=1772752581815 ",
+                "prior=65000.123456789012345678 received=65000.123456789012345679",
+            ),
+        );
         assert!(rx.try_recv().is_err());
 
         feed.handle_text_message(&original.to_string())

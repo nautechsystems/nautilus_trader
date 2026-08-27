@@ -48,6 +48,13 @@ pub struct PolymarketRtdsCryptoPrice {
 ///
 /// The adapter derives `value` only from the exact signed E18 provider field.
 /// The numeric display field in the RTDS payload is never authoritative.
+///
+/// RTDS provides only live `update` frames for this type. Subscriptions begin with the next update
+/// and have no snapshot, history, or replay after reconnect.
+///
+/// The adapter suppresses older observations and exact same-timestamp redeliveries. A changed
+/// value at the same observation timestamp is reported as a protocol error and is not emitted.
+/// The previous observation remains authoritative, so emission resumes only at a newer timestamp.
 #[custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.polymarket")]
 pub struct PolymarketRtdsCryptoTwap {
     /// Lowercase slash-delimited venue symbol, e.g. `btc/usd`.
