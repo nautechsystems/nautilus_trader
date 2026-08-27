@@ -471,6 +471,11 @@ impl OKXWebSocketClient {
             || self.signal.load(Ordering::Acquire)
     }
 
+    /// Returns whether this client retains ownership of a handler task.
+    pub(crate) fn has_task(&self) -> bool {
+        self.task_handle.is_some()
+    }
+
     /// Caches multiple instruments.
     ///
     /// Any existing instruments with the same symbols will be replaced.
@@ -564,6 +569,15 @@ impl OKXWebSocketClient {
     ///
     /// Panics if subscription arguments fail to serialize to JSON.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
+        if self
+            .task_handle
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+        {
+            anyhow::bail!("Cannot connect while previous WebSocket handler task is still running");
+        }
+        self.task_handle = None;
+
         // Reset signal so is_active()/is_closed() work after a previous close()
         self.signal.store(false, Ordering::Release);
 
@@ -965,6 +979,34 @@ impl OKXWebSocketClient {
         Ok(())
     }
 
+    pub(crate) fn abort(&self) {
+        self.signal.store(true, Ordering::Release);
+        self.connection_mode
+            .load()
+            .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
+
+        if let Some(stream_handle) = &self.task_handle {
+            stream_handle.abort();
+        }
+
+        self.index_pair_subscribers.clear();
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
+    }
+
+    /// Signals the handler to close without joining its task.
+    pub(crate) async fn request_close(&self) {
+        self.signal.store(true, Ordering::Release);
+
+        if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
+            log::debug!("Handler channel closed before disconnect command was sent: {e}");
+        } else {
+            log::debug!("Sent disconnect command to handler");
+        }
+    }
+
     /// Closes the client.
     ///
     /// # Errors
@@ -974,38 +1016,9 @@ impl OKXWebSocketClient {
     pub async fn close(&mut self) -> Result<(), Error> {
         log::debug!("Starting close process");
 
-        self.signal.store(true, Ordering::Release);
+        self.request_close().await;
 
-        if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
-            log::debug!("Handler channel closed before disconnect command was sent: {e}");
-        } else {
-            log::debug!("Sent disconnect command to handler");
-        }
-
-        if let Some(stream_handle) = self.task_handle.take() {
-            match Arc::try_unwrap(stream_handle) {
-                Ok(handle) => {
-                    log::debug!("Waiting for stream handle to complete");
-                    let abort_handle = handle.abort_handle();
-                    match tokio::time::timeout(Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => log::debug!("Stream handle completed successfully"),
-                        Ok(Err(e)) => log::error!("Stream handle encountered an error: {e:?}"),
-                        Err(_) => {
-                            log::warn!("Timeout waiting for stream handle, aborting task");
-                            abort_handle.abort();
-                        }
-                    }
-                }
-                Err(arc_handle) => {
-                    log::debug!(
-                        "Cannot take ownership of stream handle - other references exist, aborting task"
-                    );
-                    arc_handle.abort();
-                }
-            }
-        } else {
-            log::debug!("No stream handle to await");
-        }
+        let task_result = self.close_stream_task(Duration::from_secs(2)).await;
 
         // Wipe per-base-pair refcounts so a subsequent reconnect can re-arm
         // the index-tickers channel. Otherwise the stale count short-circuits
@@ -1018,7 +1031,51 @@ impl OKXWebSocketClient {
 
         log::debug!("Close process completed");
 
-        Ok(())
+        task_result
+    }
+
+    async fn close_stream_task(&mut self, timeout: Duration) -> Result<(), Error> {
+        let Some(stream_handle) = self.task_handle.take() else {
+            log::debug!("No stream handle to await");
+            return Ok(());
+        };
+
+        let mut handle = match Arc::try_unwrap(stream_handle) {
+            Ok(handle) => handle,
+            Err(stream_handle) if stream_handle.is_finished() => {
+                log::debug!("Shared stream handle already completed");
+                return Ok(());
+            }
+            Err(stream_handle) => {
+                stream_handle.abort();
+                self.task_handle = Some(stream_handle);
+                return Ok(());
+            }
+        };
+
+        log::debug!("Waiting for stream handle to complete");
+        match tokio::time::timeout(timeout, &mut handle).await {
+            Ok(Ok(())) => {
+                log::debug!("Stream handle completed successfully");
+                Ok(())
+            }
+            Ok(Err(e)) if e.is_cancelled() => {
+                log::debug!("Stream handle stopped after cancellation");
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                log::error!("Stream handle encountered an error: {e:?}");
+                Ok(())
+            }
+            Err(_) => {
+                handle.abort();
+                self.task_handle = Some(Arc::new(handle));
+                Err(Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "Timed out joining WebSocket handler task after abort",
+                )))
+            }
+        }
     }
 
     /// Get active subscriptions for a specific instrument.
@@ -3485,7 +3542,8 @@ fn log_receiver_dropped(signal: &AtomicBool, item: &str) {
 #[cfg(test)]
 mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
-    use nautilus_model::instruments::stubs::crypto_perpetual_ethusdt;
+    use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
+    use nautilus_model::{identifiers::ClientId, instruments::stubs::crypto_perpetual_ethusdt};
     use nautilus_network::RECONNECTED;
     use rstest::rstest;
     use tokio_tungstenite::tungstenite::Message;
@@ -3493,7 +3551,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            consts::OKX_POST_ONLY_CANCEL_SOURCE,
+            consts::{OKX_POST_ONLY_CANCEL_SOURCE, OKX_VENUE},
             enums::{
                 OKXExecType, OKXOrderCategory, OKXOrderStatus, OKXPriceType, OKXQuickMarginType,
                 OKXSelfTradePreventionMode, OKXSide,
@@ -3504,6 +3562,16 @@ mod tests {
             messages::{OKXOrderMsg, OKXWebSocketError, OKXWsFrame},
         },
     };
+
+    struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            if let Some(sender) = self.0.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
 
     #[rstest]
     #[case(OKXBookChannel::Book, OKXWsChannel::Books)]
@@ -3680,6 +3748,126 @@ mod tests {
 
         assert!(client_with_heartbeat.heartbeat.is_some());
         assert_eq!(client_with_heartbeat.heartbeat.unwrap(), 30);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn abort_stops_handler_and_deregisters_socket() {
+        let client_id = ClientId::from("OKX-TEST");
+        let endpoint = Ustr::from("okx-test-stream");
+        let registry = SocketReconnectRegistry::default();
+        let control =
+            SocketControl::with_registry(client_id, Some(*OKX_VENUE), endpoint, &registry);
+        let _sink = control.sink();
+        control.register(|| SocketReconnectRequestOutcome::Accepted);
+        let mut client = OKXWebSocketClient::default().with_socket_control(control);
+        client
+            .connection_mode
+            .load()
+            .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
+        let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
+        let signal = DropSignal(Some(drop_tx));
+        client.task_handle = Some(Arc::new(tokio::spawn(async move {
+            let _signal = signal;
+            std::future::pending::<()>().await;
+        })));
+
+        assert!(registry.handle(client_id, endpoint).is_some());
+        client.abort();
+
+        tokio::time::timeout(Duration::from_secs(1), drop_rx)
+            .await
+            .expect("abort must drop the handler task")
+            .expect("drop signal");
+        assert!(client.is_closed());
+        assert!(client.has_task());
+        assert!(registry.handle(client_id, endpoint).is_none());
+
+        client
+            .close_stream_task(Duration::from_secs(1))
+            .await
+            .expect("aborted handler task joined");
+        assert!(!client.has_task());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn request_close_signals_before_handler_shutdown() {
+        let mut client = OKXWebSocketClient::default();
+        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.cmd_tx = Arc::new(tokio::sync::RwLock::new(cmd_tx));
+        client.signal.store(false, Ordering::Release);
+
+        client.request_close().await;
+
+        assert!(client.signal.load(Ordering::Acquire));
+        assert!(matches!(cmd_rx.try_recv(), Ok(HandlerCommand::Disconnect)));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn close_succeeds_when_clone_retains_handler() {
+        let mut client = OKXWebSocketClient::default();
+        let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
+        let signal = DropSignal(Some(drop_tx));
+        client.task_handle = Some(Arc::new(tokio::spawn(async move {
+            let _signal = signal;
+            std::future::pending::<()>().await;
+        })));
+        let retained = client.clone();
+
+        client.close().await.expect("close with retained clone");
+
+        tokio::time::timeout(Duration::from_secs(1), drop_rx)
+            .await
+            .expect("close must drop the handler task")
+            .expect("drop signal");
+        assert!(client.has_task());
+        assert!(retained.has_task());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn timeout_retains_unfinished_handler_task() {
+        let mut client = OKXWebSocketClient::default();
+        let release = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
+        let task_release = Arc::clone(&release);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        client.task_handle = Some(Arc::new(tokio::task::spawn_blocking(move || {
+            started_tx.send(()).expect("started receiver");
+            let (lock, condvar) = &*task_release;
+            let released = lock.lock().expect("release mutex");
+            drop(
+                condvar
+                    .wait_while(released, |released| !*released)
+                    .expect("release mutex"),
+            );
+        })));
+        started_rx.await.expect("blocking task started");
+        client.abort();
+
+        let result = client.close_stream_task(Duration::from_millis(10)).await;
+        let retained = client.has_task();
+        let reconnect_result = client.connect().await;
+
+        let (lock, condvar) = &*release;
+        *lock.lock().expect("release mutex") = true;
+        condvar.notify_all();
+
+        client
+            .close_stream_task(Duration::from_secs(1))
+            .await
+            .expect("blocking handler task terminated");
+
+        assert!(result.is_err());
+        assert!(retained);
+        assert_eq!(
+            reconnect_result
+                .expect_err("reconnect with unfinished handler")
+                .to_string(),
+            "Cannot connect while previous WebSocket handler task is still running"
+        );
+        assert!(!client.has_task());
     }
 
     #[rstest]

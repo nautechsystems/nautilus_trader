@@ -32,5 +32,7 @@ pub mod models;
 pub mod parse;
 pub mod urls;
 
+pub(crate) mod task;
+
 #[cfg(test)]
 pub(crate) mod testing;

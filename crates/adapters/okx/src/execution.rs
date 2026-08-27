@@ -64,7 +64,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Money, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
@@ -80,6 +80,7 @@ use crate::{
             is_okx_spread_symbol, is_order_status_report_more_advanced, nanos_to_datetime,
             okx_instrument_type_from_symbol,
         },
+        task::{spawn_task, terminate_tasks},
     },
     config::OKXExecutionClientConfig,
     http::{
@@ -106,9 +107,9 @@ pub struct OKXExecutionClient {
     ws_private: OKXWebSocketClient,
     ws_business: OKXWebSocketClient,
     trade_mode: OKXTradeMode,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    ws_business_stream_handle: Option<JoinHandle<()>>,
     ws_dispatch_state: Arc<WsDispatchState>,
+    cancellation_token: CancellationToken,
+    session_tasks: TaskHandles,
     pending_tasks: TaskHandles,
 }
 
@@ -198,9 +199,9 @@ impl OKXExecutionClient {
             ws_private,
             ws_business,
             trade_mode,
-            ws_stream_handle: None,
-            ws_business_stream_handle: None,
             ws_dispatch_state,
+            cancellation_token: CancellationToken::new(),
+            session_tasks: TaskHandles::default(),
             pending_tasks: TaskHandles::default(),
         })
     }
@@ -1154,14 +1155,13 @@ impl OKXExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let fut = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        spawn_task(&self.pending_tasks, &self.cancellation_token, fut);
     }
 
     // Partitions algo cancel orders into regular and advance, then spawns
@@ -1237,8 +1237,13 @@ impl OKXExecutionClient {
         }
     }
 
-    fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+    fn abort_generation(&self) {
+        self.cancellation_token.cancel();
+        self.pending_tasks.abort_all_retained();
+        self.session_tasks.abort_all_retained();
+        self.ws_private.abort();
+        self.ws_business.abort();
+        self.core.set_disconnected();
     }
 
     /// Polls the cache until the account is registered or timeout is reached.
@@ -1276,6 +1281,18 @@ impl OKXExecutionClient {
     /// Any failure leaves partially started transports for
     /// [`Self::teardown_session`].
     async fn establish_session(&mut self) -> anyhow::Result<()> {
+        // Reset leaves the old generation canceled until this async boundary can drain it
+        if !self.pending_tasks.is_empty()
+            || !self.session_tasks.is_empty()
+            || self.ws_private.is_active()
+            || self.ws_business.is_active()
+            || self.ws_private.has_task()
+            || self.ws_business.has_task()
+        {
+            self.teardown_session().await?;
+        }
+
+        self.cancellation_token = CancellationToken::new();
         let instrument_types = self.instrument_types();
 
         if !self.core.instruments_initialized() {
@@ -1361,12 +1378,13 @@ impl OKXExecutionClient {
         self.ws_private.wait_until_active(10.0).await?;
         log::info!("Connected to private WebSocket");
 
-        if self.ws_stream_handle.is_none() {
+        {
             let stream = self.ws_private.stream();
             let emitter = self.emitter.clone();
             let state = Arc::clone(&self.ws_dispatch_state);
             let account_id = self.core.account_id;
             let instruments = self.ws_private.instruments_cache_arc();
+            let cancel = self.cancellation_token.clone();
             let clock = self.clock;
 
             let handle = get_runtime().spawn(async move {
@@ -1379,6 +1397,8 @@ impl OKXExecutionClient {
 
                 loop {
                     tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => break,
                         message = stream.next() => {
                             let Some(message) = message else {
                                 break;
@@ -1411,19 +1431,20 @@ impl OKXExecutionClient {
                     }
                 }
             });
-            self.ws_stream_handle = Some(handle);
+            self.session_tasks.push(handle);
         }
 
         self.ws_business.connect().await?;
         self.ws_business.wait_until_active(10.0).await?;
         log::info!("Connected to business WebSocket");
 
-        if self.ws_business_stream_handle.is_none() {
+        {
             let stream = self.ws_business.stream();
             let emitter = self.emitter.clone();
             let state = Arc::clone(&self.ws_dispatch_state);
             let account_id = self.core.account_id;
             let instruments = self.ws_business.instruments_cache_arc();
+            let cancel = self.cancellation_token.clone();
             let clock = self.clock;
 
             let handle = get_runtime().spawn(async move {
@@ -1434,22 +1455,31 @@ impl OKXExecutionClient {
 
                 pin_mut!(stream);
 
-                while let Some(message) = stream.next().await {
-                    dispatch_ws_message(
-                        message,
-                        &emitter,
-                        &state,
-                        account_id,
-                        &instruments,
-                        &mut fee_cache,
-                        &mut filled_qty_cache,
-                        &mut order_state_cache,
-                        clock,
-                    );
+                loop {
+                    tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => break,
+                        message = stream.next() => {
+                            let Some(message) = message else {
+                                break;
+                            };
+                            dispatch_ws_message(
+                                message,
+                                &emitter,
+                                &state,
+                                account_id,
+                                &instruments,
+                                &mut fee_cache,
+                                &mut filled_qty_cache,
+                                &mut order_state_cache,
+                                clock,
+                            );
+                        }
+                    }
                 }
             });
 
-            self.ws_business_stream_handle = Some(handle);
+            self.session_tasks.push(handle);
         }
 
         let order_routing_types = order_routing_instrument_types(&instrument_types);
@@ -1510,29 +1540,31 @@ impl OKXExecutionClient {
         Ok(())
     }
 
-    /// Closes both WebSocket transports and aborts their stream tasks without
-    /// cancelling HTTP requests, so a retried connect can still use them.
+    /// Drains application tasks before closing transports so task-owned
+    /// WebSocket clones cannot outlive the session.
     async fn teardown_session(&mut self) -> anyhow::Result<()> {
-        self.abort_pending_tasks();
+        self.cancellation_token.cancel();
+        self.ws_private.request_close().await;
+        self.ws_business.request_close().await;
+        let pending_result = terminate_tasks(&self.pending_tasks, "OKX execution request").await;
+        let session_result = terminate_tasks(&self.session_tasks, "OKX execution stream").await;
 
-        if let Err(e) = self.ws_private.close().await {
-            log::warn!("Error closing private websocket: {e:?}");
-        }
-
-        if let Err(e) = self.ws_business.close().await {
-            log::warn!("Error closing business websocket: {e:?}");
-        }
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.ws_business_stream_handle.take() {
-            handle.abort();
-        }
+        let private_result = self
+            .ws_private
+            .close()
+            .await
+            .context("failed to close private websocket");
+        let business_result = self
+            .ws_business
+            .close()
+            .await
+            .context("failed to close business websocket");
 
         self.core.set_disconnected();
-        Ok(())
+        pending_result?;
+        session_result?;
+        private_result?;
+        business_result
     }
 }
 
@@ -1610,11 +1642,13 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
+        if self.core.is_disconnected()
+            && self.pending_tasks.is_empty()
+            && self.session_tasks.is_empty()
+        {
             return Ok(());
         }
 
-        self.http_client.cancel_all_requests();
         self.teardown_session().await?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
@@ -1845,80 +1879,6 @@ impl ExecutionClient for OKXExecutionClient {
         self.emitter.set_sender(sender);
         self.core.set_started();
 
-        let http_client = self.http_client.clone();
-        let ws_private = self.ws_private.clone();
-        let ws_business = self.ws_business.clone();
-        let instrument_types = self.config.instrument_types.clone();
-        let instrument_families = self.config.instrument_families.clone();
-
-        get_runtime().spawn(async move {
-            let mut all_instruments = Vec::new();
-            let mut all_inst_id_codes = Vec::new();
-
-            for instrument_type in instrument_types {
-                let Some(families) =
-                    resolve_instrument_families(&instrument_families, instrument_type)
-                else {
-                    continue;
-                };
-
-                if families.is_empty() {
-                    match http_client.request_instruments(instrument_type, None).await {
-                        Ok((instruments, inst_id_codes)) => {
-                            if instruments.is_empty() {
-                                log::warn!("No instruments returned for {instrument_type:?}");
-                                continue;
-                            }
-                            http_client.cache_instruments(&instruments);
-                            all_instruments.extend(instruments);
-                            all_inst_id_codes.extend(inst_id_codes);
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to request instruments for {instrument_type:?}: {e}"
-                            );
-                        }
-                    }
-                } else {
-                    for family in &families {
-                        match http_client
-                            .request_instruments(instrument_type, Some(family.clone()))
-                            .await
-                        {
-                            Ok((instruments, inst_id_codes)) => {
-                                if instruments.is_empty() {
-                                    log::warn!(
-                                        "No instruments returned for {instrument_type:?} family {family}"
-                                    );
-                                    continue;
-                                }
-                                http_client.cache_instruments(&instruments);
-                                all_instruments.extend(instruments);
-                                all_inst_id_codes.extend(inst_id_codes);
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Failed to request instruments for {instrument_type:?} family {family}: {e}"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            if all_instruments.is_empty() {
-                log::error!(
-                    "Instrument bootstrap yielded no instruments, order submissions will fail"
-                );
-            } else {
-                ws_private.cache_instruments(&all_instruments);
-                ws_private.cache_inst_id_codes(all_inst_id_codes.clone());
-                ws_business.cache_instruments(&all_instruments);
-                ws_business.cache_inst_id_codes(all_inst_id_codes);
-                log::debug!("Instruments initialized");
-            }
-        });
-
         log::info!(
             "Started: client_id={}, account_id={}, account_type={:?}, trade_mode={:?}, instrument_types={:?}, environment={}, proxy_url={:?}",
             self.core.client_id,
@@ -1933,22 +1893,23 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        if self.core.is_stopped() {
-            return Ok(());
-        }
-
+        let was_started = self.core.is_started();
         self.core.set_stopped();
-        self.core.set_disconnected();
+        self.abort_generation();
 
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
+        if was_started {
+            log::info!("Stopped: client_id={}", self.core.client_id);
         }
+        Ok(())
+    }
 
-        if let Some(handle) = self.ws_business_stream_handle.take() {
-            handle.abort();
-        }
-        self.abort_pending_tasks();
-        log::info!("Stopped: client_id={}", self.core.client_id);
+    fn reset(&mut self) -> anyhow::Result<()> {
+        self.abort_generation();
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        self.abort_generation();
         Ok(())
     }
 
@@ -3315,6 +3276,23 @@ mod tests {
     use super::*;
     use crate::common::consts::OKX_CLIENT_ID;
 
+    struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            if let Some(sender) = self.0.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum ExecutionTaskBoundary {
+        Reset,
+        Dispose,
+        RepeatedStop,
+    }
+
     #[rstest]
     #[case(OrderType::Market, QueryOrderRoute::Regular)]
     #[case(OrderType::Limit, QueryOrderRoute::Regular)]
@@ -3828,6 +3806,41 @@ mod tests {
         );
 
         OKXExecutionClient::new(core, config).expect("failed to build test client")
+    }
+
+    #[rstest]
+    #[case::reset(ExecutionTaskBoundary::Reset)]
+    #[case::dispose(ExecutionTaskBoundary::Dispose)]
+    #[case::repeated_stop(ExecutionTaskBoundary::RepeatedStop)]
+    #[tokio::test]
+    async fn lifecycle_boundary_terminates_owned_execution_task(
+        #[case] boundary: ExecutionTaskBoundary,
+    ) {
+        let mut client = build_test_exec_client();
+
+        if matches!(boundary, ExecutionTaskBoundary::RepeatedStop) {
+            client.stop().expect("initial stop");
+        }
+
+        let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
+        let signal = DropSignal(Some(drop_tx));
+        client.spawn_task("pending lifecycle task", async move {
+            let _signal = signal;
+            std::future::pending::<anyhow::Result<()>>().await
+        });
+
+        match boundary {
+            ExecutionTaskBoundary::Reset => client.reset().expect("reset"),
+            ExecutionTaskBoundary::Dispose => client.dispose().expect("dispose"),
+            ExecutionTaskBoundary::RepeatedStop => client.stop().expect("repeated stop"),
+        }
+
+        tokio::time::timeout(Duration::from_secs(1), drop_rx)
+            .await
+            .expect("lifecycle boundary must drop the owned task")
+            .expect("drop signal");
+        assert!(client.pending_tasks.all_finished());
+        client.pending_tasks.abort_all();
     }
 
     #[rstest]
