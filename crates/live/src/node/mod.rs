@@ -77,13 +77,16 @@
 //! maintenance below 100ms (defaults are seconds to minutes). Cadence drifts
 //! by at most one body duration per fire.
 
-use std::{any::Any, fmt::Debug, future::Future, pin::Pin, time::Duration};
+use std::{any::Any, cell::RefCell, fmt::Debug, future::Future, pin::Pin, rc::Rc, time::Duration};
 
 use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorNative},
-    cache::database::{CacheDatabaseAdapter, CacheDatabaseFactory},
+    cache::{
+        Cache,
+        database::{CacheDatabaseAdapter, CacheDatabaseFactory},
+    },
     clients::ExecutionClient,
     component::Component,
     enums::{Environment, LogColor},
@@ -109,7 +112,7 @@ use nautilus_core::{
 use nautilus_model::reports::OrderStatusReport;
 use nautilus_model::{
     events::OrderEventAny,
-    identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::Order,
     reports::{FillReport, PositionStatusReport},
 };
@@ -153,7 +156,7 @@ use config::{LiveNodeConfig, PluginConfig, validate_live_environment};
 pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetricsSnapshot};
 use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
 use queue::{QueueMonitor, QueueStateTransition};
-use state::{EngineConnectionStatus, RunningTransition};
+use state::{EngineConnectionStatus, RegistrationTracker, RunningTransition};
 pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
 
 /// Dispatches the run loop performs before yielding to the executor.
@@ -217,7 +220,7 @@ impl LiveNode {
             kernel,
             runner: Some(runner),
             config,
-            handle: LiveNodeHandle::new(),
+            handle: LiveNodeHandle::attached(),
             exec_manager,
             exec_clients,
             socket_registry,
@@ -292,7 +295,7 @@ impl LiveNode {
             kernel,
             runner: Some(runner),
             config,
-            handle: LiveNodeHandle::new(),
+            handle: LiveNodeHandle::attached(),
             exec_manager,
             exec_clients: Vec::new(),
             socket_registry: SocketReconnectRegistry::default(),
@@ -561,8 +564,11 @@ impl LiveNode {
     /// Disposes the live node kernel and releases resources.
     pub fn dispose(&mut self) {
         self.close_external_ingress();
-        self.kernel.dispose();
+        // The tracker is invalidated before the kernel clears the cache, so a
+        // cross-thread waiter cannot resolve against a row disposal removes.
         self.handle.set_stopped();
+        self.handle.dispose_registration_tracker();
+        self.kernel.dispose();
     }
 
     async fn process_runner_for(&mut self, duration: Duration) -> usize {
@@ -598,11 +604,13 @@ impl LiveNode {
 
     fn drain_runner_pending(&mut self) -> usize {
         let Some(mut runner) = self.runner.take() else {
+            self.handle.close_registration_tracker();
             return 0;
         };
 
         let processed = runner.poll_pending(|event| self.process_runner_event(event));
         self.runner = Some(runner);
+        self.handle.close_registration_tracker();
         processed
     }
 
@@ -1065,9 +1073,9 @@ impl LiveNode {
             Ok(rx) => rx,
             Err(e) => {
                 let result = self
-                    .abort_startup("External message bus ingress failed to start")
+                    .abort_startup_before_drain("External message bus ingress failed to start")
                     .await;
-                Self::drain_channels(
+                self.drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
@@ -1093,6 +1101,8 @@ impl LiveNode {
         let mut startup_system_events = Vec::new();
         let mut startup_system_commands = Vec::new();
         let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
+        let cache = self.kernel.cache();
+        let registration_tracker = self.handle.registration_tracker();
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
         // This ensures the cache is populated before execution clients connect.
@@ -1106,6 +1116,8 @@ impl LiveNode {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            &cache,
+            &registration_tracker,
         )
         .await;
 
@@ -1119,11 +1131,13 @@ impl LiveNode {
                 &mut exec_cmd_rx,
                 &mut data_evt_rx,
                 &mut data_cmd_rx,
+                &cache,
+                &registration_tracker,
             );
             let result = self
-                .abort_startup_with_error("Data client connection timed out", e)
+                .abort_startup_with_error_before_drain("Data client connection timed out", e)
                 .await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1158,6 +1172,8 @@ impl LiveNode {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            &cache,
+            &registration_tracker,
         )
         .await;
 
@@ -1171,6 +1187,8 @@ impl LiveNode {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            &cache,
+            &registration_tracker,
         );
         startup_system_events.extend(pending.take_system_events());
         startup_system_commands.extend(pending.take_system_commands());
@@ -1183,9 +1201,12 @@ impl LiveNode {
             Ok(status) => status,
             Err(e) => {
                 let result = self
-                    .abort_startup_with_error("Execution client connection timed out", e)
+                    .abort_startup_with_error_before_drain(
+                        "Execution client connection timed out",
+                        e,
+                    )
                     .await;
-                Self::drain_channels(
+                self.drain_channels(
                     &mut time_evt_rx,
                     &mut system_evt_rx,
                     &mut system_cmd_rx,
@@ -1201,12 +1222,12 @@ impl LiveNode {
 
         if engine_connection_status == EngineConnectionStatus::TimedOut {
             let result = self
-                .abort_startup_with_error(
+                .abort_startup_with_error_before_drain(
                     "Engine readiness timed out",
                     anyhow::anyhow!("readiness timeout while waiting for engine connections"),
                 )
                 .await;
-            Self::drain_channels(
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1223,8 +1244,8 @@ impl LiveNode {
             .abort_reason()
             .or_else(|| self.startup_abort_reason())
         {
-            self.abort_startup(reason).await?;
-            Self::drain_channels(
+            let result = self.abort_startup_before_drain(reason).await;
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1234,15 +1255,17 @@ impl LiveNode {
                 &mut data_cmd_rx,
             );
             log::info!("Event loop stopped");
-            return Ok(());
+            return result;
         }
 
         debug_assert_eq!(engine_connection_status, EngineConnectionStatus::Connected);
 
         // Run reconciliation now that instruments are in cache and start trader
         if let Err(e) = self.perform_startup_reconciliation().await {
-            let result = self.abort_startup("Startup reconciliation failed").await;
-            Self::drain_channels(
+            let result = self
+                .abort_startup_before_drain("Startup reconciliation failed")
+                .await;
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1263,8 +1286,8 @@ impl LiveNode {
         }
 
         if let Some(reason) = self.startup_abort_reason() {
-            let result = self.abort_startup(reason).await;
-            Self::drain_channels(
+            let result = self.abort_startup_before_drain(reason).await;
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1278,8 +1301,8 @@ impl LiveNode {
         }
 
         if let Err(e) = self.kernel.start_trader() {
-            let result = self.abort_after_trader_start_failure(e).await;
-            Self::drain_channels(
+            let result = self.abort_after_trader_start_failure_before_drain(e).await;
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1293,8 +1316,8 @@ impl LiveNode {
         }
         #[cfg(feature = "plugin")]
         if let Err(e) = self.plugins.start_controllers() {
-            let result = self.abort_after_trader_start_failure(e).await;
-            Self::drain_channels(
+            let result = self.abort_after_trader_start_failure_before_drain(e).await;
+            self.drain_channels(
                 &mut time_evt_rx,
                 &mut system_evt_rx,
                 &mut system_cmd_rx,
@@ -1861,7 +1884,7 @@ impl LiveNode {
         let stop_result = self.finalize_stop().await;
 
         // Handle events that arrived during finalize_stop
-        Self::drain_channels(
+        self.drain_channels(
             &mut time_evt_rx,
             &mut system_evt_rx,
             &mut system_cmd_rx,
@@ -1906,6 +1929,7 @@ impl LiveNode {
 
         let cache = self.kernel.cache();
         if !cache.borrow().has_backing() {
+            self.seed_registered_accounts();
             return Ok(());
         }
 
@@ -1916,6 +1940,7 @@ impl LiveNode {
             .is_some_and(|config| config.flush_on_start)
         {
             cache.borrow_mut().flush_db();
+            self.seed_registered_accounts();
             return Ok(());
         }
 
@@ -1928,7 +1953,19 @@ impl LiveNode {
                 .context("Failed to load persistent cache")?;
         }
 
+        self.seed_registered_accounts();
         Ok(())
+    }
+
+    fn seed_registered_accounts(&self) {
+        let account_ids = self
+            .kernel
+            .cache()
+            .borrow()
+            .accounts_all_owned()
+            .into_iter()
+            .map(|account| account.id());
+        self.handle.registration_tracker().seed(account_ids);
     }
 
     /// Returns whether a cache database backing is configured but not yet installed.
@@ -2079,8 +2116,19 @@ impl LiveNode {
             ExecutionEvent::Order(OrderEventAny::Filled(fill)) => Some(fill.clone()),
             _ => None,
         };
-
+        let account_id = match &evt {
+            ExecutionEvent::Account(account) => Some(account.account_id),
+            _ => None,
+        };
         AsyncRunner::handle_exec_event(evt);
+
+        if let Some(account_id) = account_id {
+            mark_account_registered_if_cached(
+                &self.kernel.cache(),
+                &self.handle.registration_tracker(),
+                account_id,
+            );
+        }
 
         if let Some(fill) = &recent_fill_candidate {
             self.exec_manager.commit_recent_fill_if_applied(fill);
@@ -2183,6 +2231,14 @@ impl LiveNode {
     async fn abort_startup(&mut self, reason: &str) -> anyhow::Result<()> {
         log::info!("{reason}, aborting startup");
         self.handle.set_shutting_down();
+        let result = self.finalize_stop().await;
+        self.handle.close_registration_tracker();
+        result
+    }
+
+    async fn abort_startup_before_drain(&mut self, reason: &str) -> anyhow::Result<()> {
+        log::info!("{reason}, aborting startup");
+        self.handle.set_shutting_down();
         self.finalize_stop().await
     }
 
@@ -2192,6 +2248,19 @@ impl LiveNode {
         startup_err: anyhow::Error,
     ) -> anyhow::Result<()> {
         match self.abort_startup(reason).await {
+            Ok(()) => Err(startup_err),
+            Err(finalize_err) => {
+                anyhow::bail!("{startup_err}; failed to finalize startup abort: {finalize_err}")
+            }
+        }
+    }
+
+    async fn abort_startup_with_error_before_drain(
+        &mut self,
+        reason: &str,
+        startup_err: anyhow::Error,
+    ) -> anyhow::Result<()> {
+        match self.abort_startup_before_drain(reason).await {
             Ok(()) => Err(startup_err),
             Err(finalize_err) => {
                 anyhow::bail!("{startup_err}; failed to finalize startup abort: {finalize_err}")
@@ -2228,7 +2297,7 @@ impl LiveNode {
         let finalize_result = self.finalize_stop().await;
 
         if let Some(receivers) = receivers {
-            Self::drain_channels(
+            self.drain_channels(
                 receivers.time_evt,
                 receivers.system_evt,
                 receivers.system_cmd,
@@ -2316,6 +2385,17 @@ impl LiveNode {
         &mut self,
         start_err: anyhow::Error,
     ) -> anyhow::Result<()> {
+        let result = self
+            .abort_after_trader_start_failure_before_drain(start_err)
+            .await;
+        self.handle.close_registration_tracker();
+        result
+    }
+
+    async fn abort_after_trader_start_failure_before_drain(
+        &mut self,
+        start_err: anyhow::Error,
+    ) -> anyhow::Result<()> {
         log::info!("Trader startup failed, aborting startup");
         self.handle.set_shutting_down();
         let stop_result = self.kernel.stop_trader_after_start_failure();
@@ -2393,7 +2473,12 @@ impl LiveNode {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "all runner receivers are drained together"
+    )]
     fn drain_channels(
+        &self,
         time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         system_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemEvent>,
         system_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<SystemCommand>,
@@ -2428,7 +2513,19 @@ impl LiveNode {
         }
 
         while let Ok(evt) = exec_evt_rx.try_recv() {
+            let account_id = match &evt {
+                ExecutionEvent::Account(account) => Some(account.account_id),
+                _ => None,
+            };
             AsyncRunner::handle_exec_event(evt);
+
+            if let Some(account_id) = account_id {
+                mark_account_registered_if_cached(
+                    &self.kernel.cache(),
+                    &self.handle.registration_tracker(),
+                    account_id,
+                );
+            }
             drained += 1;
         }
 
@@ -2440,6 +2537,8 @@ impl LiveNode {
         if drained > 0 {
             log::info!("Drained {drained} remaining events during shutdown");
         }
+
+        self.handle.close_registration_tracker();
     }
 
     fn observe_exec_event_before_dispatch(
@@ -3678,6 +3777,16 @@ fn flush_pending_data(
     }
 }
 
+fn mark_account_registered_if_cached(
+    cache: &Rc<RefCell<Cache>>,
+    registration_tracker: &RegistrationTracker,
+    account_id: AccountId,
+) {
+    if cache.borrow().account(&account_id).is_some() {
+        registration_tracker.mark_registered(account_id);
+    }
+}
+
 /// Flushes all channel receivers into `pending`, then drains everything.
 ///
 /// Unlike [`flush_pending_data`] this is a single pass, not a drain-until-quiet
@@ -3696,6 +3805,8 @@ fn flush_all_pending(
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    cache: &Rc<RefCell<Cache>>,
+    registration_tracker: &RegistrationTracker,
 ) {
     // Flush channel receivers into pending
     while let Ok(handler) = time_evt_rx.try_recv() {
@@ -3720,8 +3831,10 @@ fn flush_all_pending(
 
     while let Ok(evt) = exec_evt_rx.try_recv() {
         match evt {
-            ExecutionEvent::Account(_) => {
+            ExecutionEvent::Account(ref account) => {
+                let account_id = account.account_id;
                 AsyncRunner::handle_exec_event(evt);
+                mark_account_registered_if_cached(cache, registration_tracker, account_id);
             }
             ExecutionEvent::Report(report) => {
                 pending.exec_reports.push(report);
@@ -3772,6 +3885,8 @@ async fn drive_with_event_buffering<F: std::future::Future>(
     exec_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TradingCommandMessage>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
+    cache: &Rc<RefCell<Cache>>,
+    registration_tracker: &RegistrationTracker,
 ) -> F::Output {
     tokio::pin!(future);
 
@@ -3796,8 +3911,14 @@ async fn drive_with_event_buffering<F: std::future::Future>(
                 // Order events need ExecEngine borrow_mut which may conflict
                 // with the borrow held by the driven future.
                 match evt {
-                    ExecutionEvent::Account(_) => {
+                    ExecutionEvent::Account(ref account) => {
+                        let account_id = account.account_id;
                         AsyncRunner::handle_exec_event(evt);
+                        mark_account_registered_if_cached(
+                            cache,
+                            registration_tracker,
+                            account_id,
+                        );
                     }
                     ExecutionEvent::Report(report) => {
                         pending.exec_reports.push(report);
@@ -7282,6 +7403,216 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_waiter_released_after_running_loop_caches_account() {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("AccountRegistrationNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let drive_handle = handle.clone();
+        let cache = node.kernel.cache();
+        let account_id = AccountId::from("REGISTER-001");
+        let event = registration_account_event(account_id);
+
+        let result = tokio::time::timeout(Duration::from_secs(5), async {
+            let run = node.run();
+            tokio::pin!(run);
+
+            let drive = async move {
+                while !drive_handle.is_running() {
+                    tokio::task::yield_now().await;
+                }
+
+                get_exec_event_sender().send(event).unwrap();
+                tokio::time::timeout(
+                    Duration::from_secs(1),
+                    drive_handle.await_account_registered(account_id),
+                )
+                .await
+                .expect("account registration should arrive before timeout")
+                .unwrap();
+                assert!(cache.borrow().account(&account_id).is_some());
+                drive_handle.stop();
+            };
+
+            let (run_result, ()) = tokio::join!(run, drive);
+            run_result
+        })
+        .await;
+
+        assert!(result.is_ok(), "node should stop before timeout");
+        assert!(result.unwrap().is_ok(), "run() should succeed");
+        node.dispose();
+        msgbus::get_message_bus().borrow_mut().dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_wait_resolves_immediately_when_already_registered() {
+        let handle = LiveNodeHandle::attached();
+        let account_id = AccountId::from("REGISTER-002");
+        handle.registration_tracker().mark_registered(account_id);
+
+        tokio::time::timeout(Duration::ZERO, handle.await_account_registered(account_id))
+            .await
+            .expect("registered account wait should be immediately ready")
+            .unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_wait_returns_error_when_node_stops() {
+        let handle = LiveNodeHandle::attached();
+        handle.set_starting();
+        let stop_handle = handle.clone();
+        let account_id = AccountId::from("REGISTER-003");
+
+        let (result, ()) = tokio::join!(
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                handle.await_account_registered(account_id),
+            ),
+            async move {
+                tokio::task::yield_now().await;
+                stop_handle.set_stopped();
+                stop_handle.close_registration_tracker();
+            },
+        );
+        let error = result
+            .expect("stopped account wait should resolve before timeout")
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Node stopped before account"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_wait_returns_success_when_mark_precedes_tracker_close() {
+        let handle = LiveNodeHandle::attached();
+        handle.set_starting();
+        let tracker = handle.registration_tracker();
+        let account_id = AccountId::from("REGISTER-006");
+
+        let (result, ()) = tokio::join!(handle.await_account_registered(account_id), async move {
+            tokio::task::yield_now().await;
+            tracker.mark_registered(account_id);
+            tracker.set_stopped();
+        },);
+
+        result.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_wait_from_previous_lifecycle_errors_after_restart() {
+        let handle = LiveNodeHandle::attached();
+        handle.set_starting();
+        let tracker = handle.registration_tracker();
+        let account_id = AccountId::from("REGISTER-007");
+
+        let (result, ()) = tokio::join!(handle.await_account_registered(account_id), async move {
+            tokio::task::yield_now().await;
+            tracker.set_stopped();
+            tracker.set_starting();
+        },);
+        let error = result.unwrap_err();
+
+        assert!(error.to_string().contains("Node stopped before account"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_wait_errors_after_dispose_clears_registration() {
+        let handle = LiveNodeHandle::attached();
+        handle.set_starting();
+        let tracker = handle.registration_tracker();
+        let account_id = AccountId::from("REGISTER-009");
+        tracker.mark_registered(account_id);
+        handle.set_stopped();
+        handle.dispose_registration_tracker();
+
+        let error = handle
+            .await_account_registered(account_id)
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("node is not running"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_wait_errors_when_attached_node_is_idle() {
+        let error = LiveNodeHandle::attached()
+            .await_account_registered(AccountId::from("REGISTER-008"))
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("node is not running"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_prepare_cache_seeds_existing_account_registration() {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::ZERO,
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("SeededAccountNode".to_string(), Some(config)).unwrap();
+        let account_id = AccountId::from("REGISTER-004");
+        let account = AccountAny::Margin(MarginAccount::new(
+            registration_account_state(account_id),
+            true,
+        ));
+        node.kernel
+            .cache()
+            .borrow_mut()
+            .add_account(account)
+            .unwrap();
+        let handle = node.handle();
+
+        node.start().await.unwrap();
+
+        tokio::time::timeout(Duration::ZERO, handle.await_account_registered(account_id))
+            .await
+            .expect("seeded account wait should be immediately ready")
+            .unwrap();
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_wait_errors_for_unattached_handle() {
+        let error = LiveNodeHandle::new()
+            .await_account_registered(AccountId::from("REGISTER-005"))
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("unattached node handle"));
+    }
+
+    #[rstest]
     fn test_builder_creation() {
         let result = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Sandbox);
 
@@ -8114,6 +8445,8 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            &Rc::new(RefCell::new(Cache::default())),
+            &LiveNodeHandle::attached().registration_tracker(),
         );
 
         let system_events = pending.take_system_events();
@@ -8140,6 +8473,28 @@ mod tests {
         ExecutionEvent::Order(OrderEventAny::Submitted(
             OrderSubmittedSpec::builder().build(),
         ))
+    }
+
+    fn registration_account_state(account_id: AccountId) -> AccountState {
+        AccountState::new(
+            account_id,
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("1000000 USDT"),
+                Money::from("0 USDT"),
+                Money::from("1000000 USDT"),
+            )],
+            Vec::new(),
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(Currency::USDT()),
+        )
+    }
+
+    fn registration_account_event(account_id: AccountId) -> ExecutionEvent {
+        ExecutionEvent::Account(registration_account_state(account_id))
     }
 
     fn stub_account_event() -> ExecutionEvent {
@@ -8189,6 +8544,8 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            &Rc::new(RefCell::new(Cache::default())),
+            &LiveNodeHandle::attached().registration_tracker(),
         );
 
         // Both order and report events are drained by pending.drain()
@@ -8224,6 +8581,8 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            &Rc::new(RefCell::new(Cache::default())),
+            &LiveNodeHandle::attached().registration_tracker(),
         );
 
         // Account events are forwarded immediately, never buffered in pending
@@ -8399,6 +8758,8 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            &Rc::new(RefCell::new(Cache::default())),
+            &LiveNodeHandle::attached().registration_tracker(),
         );
 
         // Batch should be unpacked into individual Submitted events then drained
@@ -8433,6 +8794,8 @@ mod tests {
             &mut exec_cmd_rx,
             &mut data_evt_rx,
             &mut data_cmd_rx,
+            &Rc::new(RefCell::new(Cache::default())),
+            &LiveNodeHandle::attached().registration_tracker(),
         );
 
         // Batch should be unpacked into individual Canceled events then drained

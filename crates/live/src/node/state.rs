@@ -13,10 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicU8, Ordering},
+use std::{
+    collections::HashSet,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU8, Ordering},
+    },
 };
+
+use nautilus_model::identifiers::AccountId;
 
 use super::metrics::{RunnerMetrics, RunnerMetricsSnapshot};
 
@@ -109,6 +114,82 @@ pub(super) enum RunningTransition {
     Invalid(u8),
 }
 
+#[derive(Debug)]
+struct RegistrationState {
+    registered: HashSet<AccountId>,
+    lifecycle_generation: u64,
+    stopped: bool,
+}
+
+#[derive(Debug)]
+pub(super) struct RegistrationTracker {
+    state: Mutex<RegistrationState>,
+    changed: tokio::sync::watch::Sender<u64>,
+}
+
+impl RegistrationTracker {
+    fn new() -> Self {
+        let (changed, _) = tokio::sync::watch::channel(0);
+        Self {
+            state: Mutex::new(RegistrationState {
+                registered: HashSet::new(),
+                lifecycle_generation: 0,
+                stopped: false,
+            }),
+            changed,
+        }
+    }
+
+    pub(super) fn seed(&self, account_ids: impl IntoIterator<Item = AccountId>) {
+        let mut state = self.state.lock().expect("registration tracker poisoned");
+        let previous_len = state.registered.len();
+        state.registered.extend(account_ids);
+        if state.registered.len() != previous_len {
+            self.notify();
+        }
+    }
+
+    pub(super) fn mark_registered(&self, account_id: AccountId) {
+        let mut state = self.state.lock().expect("registration tracker poisoned");
+        if state.registered.insert(account_id) {
+            self.notify();
+        }
+    }
+
+    pub(super) fn set_starting(&self) {
+        let mut state = self.state.lock().expect("registration tracker poisoned");
+        state.lifecycle_generation = state
+            .lifecycle_generation
+            .checked_add(1)
+            .expect("registration lifecycle generation overflowed");
+        state.stopped = false;
+        self.notify();
+    }
+
+    pub(super) fn set_stopped(&self) {
+        let mut state = self.state.lock().expect("registration tracker poisoned");
+        state.stopped = true;
+        self.notify();
+    }
+
+    // Disposal invalidates the cache's account rows, so the registered
+    // predicate is cleared with the stop rather than retained across it.
+    pub(super) fn set_disposed(&self) {
+        let mut state = self.state.lock().expect("registration tracker poisoned");
+        state.registered.clear();
+        state.stopped = true;
+        self.notify();
+    }
+
+    fn notify(&self) {
+        self.changed.send_modify(|generation| {
+            *generation = generation
+                .checked_add(1)
+                .expect("registration change generation overflowed");
+        });
+    }
+}
+
 /// A thread-safe handle to control a `LiveNode` from other threads.
 ///
 /// This allows stopping and querying the node's state without requiring the
@@ -117,6 +198,7 @@ pub(super) enum RunningTransition {
 pub struct LiveNodeHandle {
     control: Arc<AtomicU8>,
     pub(crate) metrics: Arc<RunnerMetrics>,
+    registration: Option<Arc<RegistrationTracker>>,
 }
 
 impl Default for LiveNodeHandle {
@@ -132,10 +214,29 @@ impl LiveNodeHandle {
         Self {
             control: Arc::new(AtomicU8::new(NodeState::Idle.as_u8())),
             metrics: Arc::new(RunnerMetrics::default()),
+            registration: None,
         }
     }
 
+    pub(crate) fn attached() -> Self {
+        Self {
+            registration: Some(Arc::new(RegistrationTracker::new())),
+            ..Self::new()
+        }
+    }
+
+    pub(super) fn registration_tracker(&self) -> Arc<RegistrationTracker> {
+        Arc::clone(
+            self.registration
+                .as_ref()
+                .expect("live node handle must be attached"),
+        )
+    }
+
     pub(crate) fn set_starting(&self) {
+        if let Some(registration) = &self.registration {
+            registration.set_starting();
+        }
         self.set_state(NodeState::Starting);
     }
 
@@ -145,6 +246,18 @@ impl LiveNodeHandle {
 
     pub(crate) fn set_stopped(&self) {
         self.set_state(NodeState::Stopped);
+    }
+
+    pub(crate) fn close_registration_tracker(&self) {
+        if let Some(registration) = &self.registration {
+            registration.set_stopped();
+        }
+    }
+
+    pub(crate) fn dispose_registration_tracker(&self) {
+        if let Some(registration) = &self.registration {
+            registration.set_disposed();
+        }
     }
 
     pub(super) fn try_set_running(&self) -> RunningTransition {
@@ -192,6 +305,66 @@ impl LiveNodeHandle {
     #[must_use]
     pub fn metrics_snapshot(&self) -> RunnerMetricsSnapshot {
         self.metrics.snapshot()
+    }
+
+    /// Waits until the account is registered in the node cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handle is unattached or the node stops before registration.
+    pub async fn await_account_registered(&self, account_id: AccountId) -> anyhow::Result<()> {
+        let Some(registration) = &self.registration else {
+            anyhow::bail!("Cannot await account registration with an unattached node handle");
+        };
+        let mut changed = registration.changed.subscribe();
+        let lifecycle_generation = {
+            let state = registration
+                .state
+                .lock()
+                .map_err(|_| anyhow::anyhow!("Account registration tracker is unavailable"))?;
+
+            if state.registered.contains(&account_id) {
+                return Ok(());
+            }
+
+            if matches!(self.state(), NodeState::Idle | NodeState::Stopped) {
+                anyhow::bail!("Cannot await account registration while node is not running");
+            }
+
+            if state.stopped {
+                anyhow::bail!(
+                    "Node stopped before account {account_id} was registered in lifecycle {}",
+                    state.lifecycle_generation,
+                );
+            }
+
+            state.lifecycle_generation
+        };
+
+        loop {
+            changed.changed().await.map_err(|_| {
+                anyhow::anyhow!(
+                    "Account registration tracker closed before {account_id} registered"
+                )
+            })?;
+
+            {
+                let state = registration
+                    .state
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("Account registration tracker is unavailable"))?;
+
+                if state.registered.contains(&account_id) {
+                    return Ok(());
+                }
+
+                if state.stopped || state.lifecycle_generation != lifecycle_generation {
+                    anyhow::bail!(
+                        "Node stopped before account {account_id} was registered in lifecycle {lifecycle_generation}",
+                    );
+                }
+            }
+        }
     }
 
     /// Signals the node to stop.
