@@ -256,8 +256,9 @@ pub struct KrakenExecutionClientConfig {
 
     /// Timeout in seconds for WebSocket order responses.
     ///
-    /// Submit, amend, and batch-add timeouts emit rejection events. Cancel
-    /// timeouts log and await reconciliation.
+    /// Timeouts preserve request correlation until a matching response or shutdown,
+    /// without emitting a terminal event. `submit_order` and `submit_order_list`
+    /// also send a best-effort compensating cancel.
     #[builder(default = 5)]
     pub ws_request_timeout_secs: u64,
 }

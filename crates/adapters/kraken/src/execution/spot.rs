@@ -1069,6 +1069,10 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             return Ok(());
         }
 
+        if self.cancellation_token.is_cancelled() {
+            self.reset_cancellation_token();
+        }
+
         self.emitter.set_sender(get_exec_event_sender());
         self.core.set_started();
 
@@ -1088,6 +1092,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
         self.http.cancel_all_requests();
         self.cancellation_token.cancel();
+        self.order_request_state.clear();
         self.core.set_stopped();
         self.core.set_disconnected();
         log::info!("Stopped: client_id={}", self.core.client_id);
@@ -1177,6 +1182,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
         self.http.cancel_all_requests();
         self.cancellation_token.cancel();
+        self.order_request_state.clear();
 
         if let Some(handle) = self.ws_stream_handle.take() {
             handle.abort();
@@ -1184,7 +1190,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
         let _ = self.ws.close().await;
 
-        self.cancellation_token = CancellationToken::new();
+        self.reset_cancellation_token();
         self.core.set_disconnected();
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
@@ -1654,6 +1660,14 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         });
 
         Ok(())
+    }
+}
+
+impl KrakenSpotExecutionClient {
+    fn reset_cancellation_token(&mut self) {
+        self.cancellation_token = CancellationToken::new();
+        self.order_request_state
+            .reset_cancellation_token(self.cancellation_token.clone());
     }
 }
 
