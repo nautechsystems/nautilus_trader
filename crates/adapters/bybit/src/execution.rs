@@ -285,6 +285,27 @@ impl BybitExecutionClient {
         !matches!(product_type, BybitProductType::Spot)
     }
 
+    async fn generate_bulk_position_status_reports(
+        &self,
+        product_types: Vec<BybitProductType>,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let mut reports = Vec::new();
+
+        for product_type in product_types {
+            if !Self::provides_bulk_position_coverage_for_product_type(product_type) {
+                continue;
+            }
+
+            let mut fetched = self
+                .http_client
+                .request_position_status_reports(self.core.account_id, product_type, None)
+                .await?;
+            reports.append(&mut fetched);
+        }
+
+        Ok(reports)
+    }
+
     fn resolve_position_idx(
         &self,
         instrument_id: InstrumentId,
@@ -606,9 +627,16 @@ impl ExecutionClient for BybitExecutionClient {
 
     fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
         // Resolve the suffix directly rather than through `get_product_type_for_instrument`, whose
-        // Linear fallback would claim coverage for an identifier this adapter cannot classify.
-        BybitProductType::from_suffix(instrument_id.symbol.as_str())
-            .is_some_and(Self::provides_bulk_position_coverage_for_product_type)
+        // Linear fallback would claim coverage for an identifier this adapter cannot classify. A
+        // recognized derivative suffix is still uncovered when its product type is unconfigured,
+        // since the bulk loop only queries `product_types()`.
+        let Some(product_type) = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+        else {
+            return false;
+        };
+
+        self.product_types().contains(&product_type)
+            && Self::provides_bulk_position_coverage_for_product_type(product_type)
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -1073,34 +1101,19 @@ impl ExecutionClient for BybitExecutionClient {
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        let mut reports = Vec::new();
-
         if let Some(instrument_id) = cmd.instrument_id {
             let product_type = self.get_product_type_for_instrument(instrument_id);
-            let mut fetched = self
-                .http_client
+            self.http_client
                 .request_position_status_reports(
                     self.core.account_id,
                     product_type,
                     Some(instrument_id),
                 )
-                .await?;
-            reports.append(&mut fetched);
+                .await
         } else {
-            for product_type in self.product_types() {
-                if !Self::provides_bulk_position_coverage_for_product_type(product_type) {
-                    continue;
-                }
-
-                let mut fetched = self
-                    .http_client
-                    .request_position_status_reports(self.core.account_id, product_type, None)
-                    .await?;
-                reports.append(&mut fetched);
-            }
+            self.generate_bulk_position_status_reports(self.product_types())
+                .await
         }
-
-        Ok(reports)
     }
 
     async fn generate_mass_status(
@@ -1130,7 +1143,6 @@ impl ExecutionClient for BybitExecutionClient {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let position_reports_fut = async {
-            let mut reports = Vec::new();
             let product_types = self.product_types();
             let skip_spot = product_types.iter().any(|product_type| {
                 !Self::provides_bulk_position_coverage_for_product_type(*product_type)
@@ -1142,19 +1154,8 @@ impl ExecutionClient for BybitExecutionClient {
                 );
             }
 
-            for product_type in product_types {
-                if !Self::provides_bulk_position_coverage_for_product_type(product_type) {
-                    continue;
-                }
-
-                let mut fetched = self
-                    .http_client
-                    .request_position_status_reports(self.core.account_id, product_type, None)
-                    .await?;
-                reports.append(&mut fetched);
-            }
-
-            anyhow::Ok(reports)
+            self.generate_bulk_position_status_reports(product_types)
+                .await
         };
 
         let (order_reports, fill_reports, position_reports) = tokio::try_join!(

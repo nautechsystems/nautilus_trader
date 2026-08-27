@@ -194,6 +194,12 @@ impl ExecutionClient for LiveExecutionClient {
         self.client.borrow().handles_order_venue(venue)
     }
 
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        self.client
+            .borrow()
+            .provides_bulk_position_coverage(instrument_id)
+    }
+
     fn generate_account_state(
         &self,
         balances: Vec<AccountBalance>,

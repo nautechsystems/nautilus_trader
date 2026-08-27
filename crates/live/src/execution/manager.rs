@@ -4841,6 +4841,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::execution::client::LiveExecutionClient;
 
     #[rstest]
     fn test_new_validates_open_check_lookback_mins_boundaries() {
@@ -6205,7 +6206,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_prepare_position_report_check_resolves_mixed_bulk_coverage() {
+    fn test_prepare_position_report_check_uses_live_client_bulk_coverage() {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let manager =
@@ -6234,9 +6235,10 @@ mod tests {
             "2.0",
             "2000.00",
         );
-        let client = PositionCoverageStubClient;
+        let client = LiveExecutionClient::new(Box::new(PositionCoverageStubClient));
+        let client: &dyn ExecutionClient = &client;
 
-        let check = manager.prepare_position_report_check(UUID4::new(), &[&client]);
+        let check = manager.prepare_position_report_check(UUID4::new(), &[client]);
         let client_id = ClientId::from("BYBIT");
 
         assert_eq!(

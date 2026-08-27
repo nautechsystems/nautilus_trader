@@ -872,17 +872,63 @@ async fn test_exec_client_mixed_unscoped_position_reports_omit_spot() {
 }
 
 #[rstest]
-#[case("BTCUSDT-LINEAR.BYBIT", true)]
-#[case("BTCUSD-INVERSE.BYBIT", true)]
-#[case("ETHUSDT-SPOT.BYBIT", false)]
-#[case("BTCUSDT.BYBIT", false)]
+#[case(vec![], "BTCUSDT-LINEAR.BYBIT", true)]
+#[case(vec![], "BTCUSD-INVERSE.BYBIT", false)]
+#[case(vec![], "ETHUSDT-SPOT.BYBIT", false)]
+#[case(vec![], "BTCUSDT.BYBIT", false)]
+#[case(vec![BybitProductType::Spot], "BTCUSDT-LINEAR.BYBIT", false)]
+#[case(vec![BybitProductType::Spot], "BTCUSD-INVERSE.BYBIT", false)]
+#[case(vec![BybitProductType::Spot], "ETHUSDT-SPOT.BYBIT", false)]
+#[case(vec![BybitProductType::Spot], "BTCUSDT.BYBIT", false)]
+#[case(
+    vec![BybitProductType::Linear, BybitProductType::Spot],
+    "BTCUSDT-LINEAR.BYBIT",
+    true
+)]
+#[case(
+    vec![BybitProductType::Linear, BybitProductType::Spot],
+    "BTCUSD-INVERSE.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Linear, BybitProductType::Spot],
+    "ETHUSDT-SPOT.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Linear, BybitProductType::Spot],
+    "BTCUSDT.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Inverse, BybitProductType::Spot],
+    "BTCUSDT-LINEAR.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Inverse, BybitProductType::Spot],
+    "BTCUSD-INVERSE.BYBIT",
+    true
+)]
+#[case(
+    vec![BybitProductType::Inverse, BybitProductType::Spot],
+    "ETHUSDT-SPOT.BYBIT",
+    false
+)]
+#[case(
+    vec![BybitProductType::Inverse, BybitProductType::Spot],
+    "BTCUSDT.BYBIT",
+    false
+)]
 #[tokio::test]
 async fn test_exec_client_bulk_position_coverage_by_product_type(
+    #[case] product_types: Vec<BybitProductType>,
     #[case] instrument_id: &str,
     #[case] expected: bool,
 ) {
     let (addr, _state) = start_test_server().await.unwrap();
-    let config = create_test_exec_config(addr);
+    let mut config = create_test_exec_config(addr);
+    config.product_types = product_types;
     let (client, _rx, _cache) = create_test_execution_client_with_config(config);
 
     // An identifier carrying no recognized product-type suffix must fail closed: absence of a
