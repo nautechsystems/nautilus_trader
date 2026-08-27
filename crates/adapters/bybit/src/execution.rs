@@ -31,9 +31,8 @@ use nautilus_common::{
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-        SubmitOrderList,
+        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports, ModifyOrder,
+        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -136,6 +135,7 @@ impl BybitExecutionClient {
             config.recv_window_ms,
             config.proxy_url.clone(),
         )?;
+        http_client.set_use_spot_position_reports(config.use_spot_position_reports);
 
         let mut ws_private = BybitWebSocketClient::new_private(
             config.environment,
@@ -277,6 +277,33 @@ impl BybitExecutionClient {
             log::warn!("No product-type suffix on {instrument_id}, defaulting to Linear");
             BybitProductType::Linear
         })
+    }
+
+    const fn provides_bulk_position_coverage_for_product_type(
+        product_type: BybitProductType,
+    ) -> bool {
+        !matches!(product_type, BybitProductType::Spot)
+    }
+
+    async fn generate_bulk_position_status_reports(
+        &self,
+        product_types: Vec<BybitProductType>,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let mut reports = Vec::new();
+
+        for product_type in product_types {
+            if !Self::provides_bulk_position_coverage_for_product_type(product_type) {
+                continue;
+            }
+
+            let mut fetched = self
+                .http_client
+                .request_position_status_reports(self.core.account_id, product_type, None)
+                .await?;
+            reports.append(&mut fetched);
+        }
+
+        Ok(reports)
     }
 
     fn resolve_position_idx(
@@ -596,6 +623,20 @@ impl ExecutionClient for BybitExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        // Resolve the suffix directly rather than through `get_product_type_for_instrument`, whose
+        // Linear fallback would claim coverage for an identifier this adapter cannot classify. A
+        // recognized derivative suffix is still uncovered when its product type is unconfigured,
+        // since the bulk loop only queries `product_types()`.
+        let Some(product_type) = BybitProductType::from_suffix(instrument_id.symbol.as_str())
+        else {
+            return false;
+        };
+
+        self.product_types().contains(&product_type)
+            && Self::provides_bulk_position_coverage_for_product_type(product_type)
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -1060,38 +1101,19 @@ impl ExecutionClient for BybitExecutionClient {
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        let mut reports = Vec::new();
-
         if let Some(instrument_id) = cmd.instrument_id {
             let product_type = self.get_product_type_for_instrument(instrument_id);
-
-            // Skip Spot - positions API only supports derivatives
-            if product_type != BybitProductType::Spot {
-                let mut fetched = self
-                    .http_client
-                    .request_position_status_reports(
-                        self.core.account_id,
-                        product_type,
-                        Some(instrument_id),
-                    )
-                    .await?;
-                reports.append(&mut fetched);
-            }
+            self.http_client
+                .request_position_status_reports(
+                    self.core.account_id,
+                    product_type,
+                    Some(instrument_id),
+                )
+                .await
         } else {
-            for product_type in self.product_types() {
-                // Skip Spot - positions API only supports derivatives
-                if product_type == BybitProductType::Spot {
-                    continue;
-                }
-                let mut fetched = self
-                    .http_client
-                    .request_position_status_reports(self.core.account_id, product_type, None)
-                    .await?;
-                reports.append(&mut fetched);
-            }
+            self.generate_bulk_position_status_reports(self.product_types())
+                .await
         }
-
-        Ok(reports)
     }
 
     async fn generate_mass_status(
@@ -1120,16 +1142,26 @@ impl ExecutionClient for BybitExecutionClient {
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let position_cmd = GeneratePositionStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let position_reports_fut = async {
+            let product_types = self.product_types();
+            let skip_spot = product_types.iter().any(|product_type| {
+                !Self::provides_bulk_position_coverage_for_product_type(*product_type)
+            });
+
+            if skip_spot {
+                log::warn!(
+                    "SPOT mass-status position coverage is unavailable because wallet balances cannot be attributed to pairs"
+                );
+            }
+
+            self.generate_bulk_position_status_reports(product_types)
+                .await
+        };
 
         let (order_reports, fill_reports, position_reports) = tokio::try_join!(
             self.generate_order_status_reports(&order_cmd),
             self.generate_fill_reports(fill_cmd),
-            self.generate_position_status_reports(&position_cmd),
+            position_reports_fut,
         )?;
 
         log::info!("Received {} OrderStatusReports", order_reports.len());

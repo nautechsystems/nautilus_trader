@@ -145,6 +145,7 @@ fn build_cross_zero_leg_report(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReportClientCoverage {
     Resolved(IndexSet<ClientId>),
+    Unavailable(IndexSet<ClientId>),
     Unresolved,
 }
 
@@ -1792,7 +1793,7 @@ impl ExecutionManager {
                             .shift_remove(&client_order_id);
                     }
                 }
-                ReportClientCoverage::Unresolved => {
+                ReportClientCoverage::Unavailable(_) | ReportClientCoverage::Unresolved => {
                     self.unresolved_order_coverage.insert(client_order_id);
                 }
             }
@@ -2382,7 +2383,14 @@ impl ExecutionManager {
             .collect::<IndexSet<_>>();
 
         if !account_clients.is_empty() {
-            return ReportClientCoverage::Resolved(account_clients);
+            return if clients.iter().any(|client| {
+                account_clients.contains(&client.client_id())
+                    && !client.provides_bulk_position_coverage(key.0)
+            }) {
+                ReportClientCoverage::Unavailable(account_clients)
+            } else {
+                ReportClientCoverage::Resolved(account_clients)
+            };
         }
 
         let venue_clients = clients
@@ -2393,6 +2401,11 @@ impl ExecutionManager {
 
         if venue_clients.is_empty() {
             ReportClientCoverage::Unresolved
+        } else if clients.iter().any(|client| {
+            venue_clients.contains(&client.client_id())
+                && !client.provides_bulk_position_coverage(key.0)
+        }) {
+            ReportClientCoverage::Unavailable(venue_clients)
         } else {
             ReportClientCoverage::Resolved(venue_clients)
         }
@@ -2525,6 +2538,14 @@ impl ExecutionManager {
                             .collect::<IndexSet<_>>();
                         log::warn!(
                             "Skipping position reconciliation for {}/{}: failed to query responsible execution clients: {failed_responsible_clients:?}",
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
+                    Some(ReportClientCoverage::Unavailable(responsible_clients)) => {
+                        log::debug!(
+                            "Skipping position reconciliation for {}/{}: complete bulk position coverage is unavailable from responsible execution clients: {responsible_clients:?}",
                             key.0,
                             key.1,
                         );
@@ -4808,9 +4829,9 @@ mod tests {
         accounts::AccountAny,
         enums::{LiquiditySide, OmsType, PositionSideSpecified},
         events::order::spec::{OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderUpdatedSpec},
-        identifiers::Venue,
+        identifiers::{Symbol, Venue},
         instruments::{
-            Instrument,
+            CurrencyPair, Instrument,
             stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -4820,6 +4841,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    use crate::execution::client::LiveExecutionClient;
 
     #[rstest]
     fn test_new_validates_open_check_lookback_mins_boundaries() {
@@ -4979,6 +5001,58 @@ mod tests {
                     anyhow::bail!("commission is not representable as Money")
                 }
             }
+        }
+    }
+
+    struct PositionCoverageStubClient;
+
+    #[async_trait::async_trait(?Send)]
+    impl ExecutionClient for PositionCoverageStubClient {
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        fn client_id(&self) -> ClientId {
+            ClientId::from("BYBIT")
+        }
+
+        fn account_id(&self) -> AccountId {
+            AccountId::from("TEST-001")
+        }
+
+        fn venue(&self) -> Venue {
+            Venue::from("BYBIT")
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Netting
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+            !instrument_id.symbol.as_str().ends_with("-SPOT")
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+            _info: Option<Params>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
         }
     }
 
@@ -6124,8 +6198,161 @@ mod tests {
         assert_eq!(check.command.end, None);
         assert_eq!(check.command.log_receipt_level, LogLevel::Debug);
         assert_eq!(check.client_coverage.len(), 1);
-        assert!(check.client_coverage.contains_key(&key));
+        assert_eq!(
+            check.client_coverage.get(&key),
+            Some(&ReportClientCoverage::Unresolved)
+        );
         assert_eq!(check.activity_revisions.get(&key), Some(&0));
+    }
+
+    #[rstest]
+    fn test_prepare_position_report_check_uses_live_client_bulk_coverage() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let manager =
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
+        let derivative = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let spot = test_bybit_spot_instrument();
+        cache
+            .borrow_mut()
+            .add_instrument(derivative.clone())
+            .unwrap();
+        cache.borrow_mut().add_instrument(spot.clone()).unwrap();
+        let derivative_position = insert_open_position(
+            &cache,
+            &derivative,
+            PositionId::from("P-DERIVATIVE-COVERAGE"),
+            OrderSide::Buy,
+            "5.0",
+            "3000.00",
+        );
+        let spot_position = insert_open_position(
+            &cache,
+            &spot,
+            PositionId::from("P-SPOT-COVERAGE"),
+            OrderSide::Buy,
+            "2.0",
+            "2000.00",
+        );
+        let client = LiveExecutionClient::new(Box::new(PositionCoverageStubClient));
+        let client: &dyn ExecutionClient = &client;
+
+        let check = manager.prepare_position_report_check(UUID4::new(), &[client]);
+        let client_id = ClientId::from("BYBIT");
+
+        assert_eq!(
+            check.client_coverage.get(&(
+                derivative_position.instrument_id,
+                derivative_position.account_id
+            )),
+            Some(&ReportClientCoverage::Resolved(IndexSet::from([client_id])))
+        );
+        assert_eq!(
+            check
+                .client_coverage
+                .get(&(spot_position.instrument_id, spot_position.account_id)),
+            Some(&ReportClientCoverage::Unavailable(IndexSet::from([
+                client_id
+            ])))
+        );
+    }
+
+    #[rstest]
+    fn test_position_reconciliation_preserves_unavailable_spot_coverage() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager =
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
+        let derivative = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let spot = test_bybit_spot_instrument();
+        cache
+            .borrow_mut()
+            .add_instrument(derivative.clone())
+            .unwrap();
+        cache.borrow_mut().add_instrument(spot.clone()).unwrap();
+        let derivative_position = insert_open_position(
+            &cache,
+            &derivative,
+            PositionId::from("P-DERIVATIVE-RECONCILE"),
+            OrderSide::Buy,
+            "5.0",
+            "3000.00",
+        );
+        let spot_position = insert_open_position(
+            &cache,
+            &spot,
+            PositionId::from("P-SPOT-PRESERVED"),
+            OrderSide::Buy,
+            "2.0",
+            "2000.00",
+        );
+        let client = PositionCoverageStubClient;
+        let check = manager.prepare_position_report_check(UUID4::new(), &[&client]);
+        let queried_clients = IndexSet::from([client.client_id()]);
+
+        let events = manager.reconcile_position_reports(
+            &check,
+            Vec::new(),
+            &queried_clients,
+            &IndexSet::new(),
+        );
+
+        assert!(events.iter().any(|event| {
+            matches!(event, OrderEventAny::Filled(fill) if fill.instrument_id == derivative_position.instrument_id)
+        }));
+        assert!(!events.iter().any(|event| {
+            matches!(event, OrderEventAny::Filled(fill) if fill.instrument_id == spot_position.instrument_id)
+        }));
+    }
+
+    #[rstest]
+    fn test_position_reconciliation_preserves_spot_position_when_client_query_fails() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager =
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
+                .expect("valid config");
+        let instrument = test_bybit_spot_instrument();
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let position = insert_open_position(
+            &cache,
+            &instrument,
+            PositionId::from("P-SPOT-QUERY-FAILED"),
+            OrderSide::Buy,
+            "5.0",
+            "3000.00",
+        );
+        let key = (position.instrument_id, position.account_id);
+        let client_id = ClientId::from("BYBIT");
+        let mut check = manager.prepare_position_report_check(UUID4::new(), &[]);
+        check.client_coverage.insert(
+            key,
+            ReportClientCoverage::Resolved(IndexSet::from([client_id])),
+        );
+        let queried_clients = IndexSet::from([client_id]);
+        let failed_clients = IndexSet::from([client_id]);
+
+        let events = manager.reconcile_position_reports(
+            &check,
+            Vec::new(),
+            &queried_clients,
+            &failed_clients,
+        );
+
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Filled(_))),
+            "a failed bulk query must not generate a synthetic closing fill",
+        );
+        let cached_position = cache.borrow().position(&position.id).unwrap().clone();
+        assert!(cached_position.is_open());
+        assert_eq!(cached_position.quantity, Quantity::from("5.0"));
     }
 
     #[rstest]
@@ -6387,6 +6614,24 @@ mod tests {
         let order = cache.borrow_mut().update_order(&submitted).unwrap();
         let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
         cache.borrow_mut().update_order(&accepted).unwrap();
+    }
+
+    fn test_bybit_spot_instrument() -> InstrumentAny {
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::from("ETHUSDT-SPOT.BYBIT"))
+                .raw_symbol(Symbol::from("ETHUSDT"))
+                .base_currency(Currency::from("ETH"))
+                .quote_currency(Currency::from("USDT"))
+                .price_precision(2)
+                .size_precision(5)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn insert_open_position(

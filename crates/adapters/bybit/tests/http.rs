@@ -92,6 +92,7 @@ struct CapturedOrder {
 #[derive(Clone)]
 struct TestServerState {
     request_count: Arc<tokio::sync::Mutex<usize>>,
+    wallet_balance_requests: Arc<tokio::sync::Mutex<usize>>,
     // (endpoint, settle_coin)
     settle_coin_queries: SettleCoinQueries,
     realtime_requests: Arc<tokio::sync::Mutex<usize>>,
@@ -104,6 +105,7 @@ impl Default for TestServerState {
     fn default() -> Self {
         Self {
             request_count: Arc::new(tokio::sync::Mutex::new(0)),
+            wallet_balance_requests: Arc::new(tokio::sync::Mutex::new(0)),
             settle_coin_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             realtime_requests: Arc::new(tokio::sync::Mutex::new(0)),
             history_requests: Arc::new(tokio::sync::Mutex::new(0)),
@@ -476,7 +478,10 @@ async fn handle_post_order_with_capture(
 }
 
 #[allow(dead_code)]
-async fn handle_get_wallet_balance(headers: axum::http::HeaderMap) -> Response {
+async fn handle_get_wallet_balance(
+    State(state): State<TestServerState>,
+    headers: axum::http::HeaderMap,
+) -> Response {
     // Check for authentication headers
     if !headers.contains_key("X-BAPI-API-KEY")
         || !headers.contains_key("X-BAPI-SIGN")
@@ -495,6 +500,7 @@ async fn handle_get_wallet_balance(headers: axum::http::HeaderMap) -> Response {
             .into_response();
     }
 
+    *state.wallet_balance_requests.lock().await += 1;
     let wallet = load_test_data("http_get_wallet_balance.json");
     Json(wallet).into_response()
 }
@@ -2136,7 +2142,7 @@ async fn test_request_order_status_reports_linear_queries_all_settle_coins() {
     assert_eq!(
         realtime_queries.len(),
         8,
-        "Should query realtime endpoint for each settle coin, order filter and openOnly pass"
+        "Should query realtime endpoint for each settle coin, order filter, and openOnly pass"
     );
     assert!(
         realtime_queries.contains(&&Some("USDT".to_string())),
@@ -2814,7 +2820,11 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
 
     let account_id = AccountId::new("BYBIT-UNIFIED");
     let reports = client
-        .request_position_status_reports(account_id, BybitProductType::Spot, None)
+        .request_position_status_reports(
+            account_id,
+            BybitProductType::Spot,
+            Some(InstrumentId::from("ETHUSDT-SPOT.BYBIT")),
+        )
         .await
         .unwrap();
 
@@ -2825,6 +2835,59 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
 
     assert_eq!(eth_report.position_side, PositionSideSpecified::Short);
     assert_eq!(eth_report.quantity, Quantity::new(0.06142, 5));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_unscoped_spot_position_reports_fail_without_wallet_request() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    client.set_use_spot_position_reports(true);
+
+    let eth = Currency::from("ETH");
+
+    for (symbol, quote) in [("ETHUSDT", "USDT"), ("ETHUSDC", "USDC")] {
+        let instrument = CurrencyPair::builder()
+            .instrument_id(format!("{symbol}-SPOT.BYBIT").into())
+            .raw_symbol(symbol.into())
+            .base_currency(eth)
+            .quote_currency(Currency::from(quote))
+            .price_precision(2)
+            .size_precision(5)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
+        client.cache_instrument(InstrumentAny::CurrencyPair(instrument));
+    }
+
+    let error = client
+        .request_position_status_reports(
+            AccountId::new("BYBIT-UNIFIED"),
+            BybitProductType::Spot,
+            None,
+        )
+        .await
+        .expect_err("unscoped SPOT reports cannot be attributed to a pair");
+
+    assert!(error.to_string().contains("pair identity"));
+    assert_eq!(*state.wallet_balance_requests.lock().await, 0);
 }
 
 #[rstest]
@@ -4459,7 +4522,8 @@ async fn test_request_order_status_reports_tp_sl_orders() {
 // These tests verify the client-layer wiring of the user-management endpoints:
 //   - the request hits the expected route,
 //   - authentication headers are attached,
-//   - query strings and request bodies carry the expected fields,
+//   - query strings carry the expected fields,
+//   - request bodies carry the expected fields,
 //   - responses decode into the typed DTOs.
 // Deserialization details are covered by the unit tests in
 // `src/http/models.rs` and are not duplicated here.

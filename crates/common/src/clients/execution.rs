@@ -74,6 +74,12 @@ pub trait ExecutionClient {
         self.venue() == venue
     }
 
+    /// Returns whether a bulk position status report request provides complete coverage for the
+    /// given instrument, so that an absent report is evidence the position is flat.
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        true
+    }
+
     /// Generates and publishes the account state event.
     ///
     /// Implementations may publish synchronously. Callers must release shared state borrows,
