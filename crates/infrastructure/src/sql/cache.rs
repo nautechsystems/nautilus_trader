@@ -434,8 +434,12 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
-        let (currencies, instruments, synthetics, accounts, orders, positions) = try_join!(
-            self.load_currencies(),
+        let currencies = self.load_currencies().await?;
+        for currency in currencies.values() {
+            Currency::register(*currency, false)?;
+        }
+
+        let (instruments, synthetics, accounts, orders, positions) = try_join!(
             self.load_instruments(),
             self.load_synthetics(),
             self.load_accounts(),
