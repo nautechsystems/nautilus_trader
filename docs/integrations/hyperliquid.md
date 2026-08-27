@@ -215,10 +215,23 @@ To subscribe in your strategy:
 InstrumentId.from_str("PURR-USDC-SPOT.HYPERLIQUID")
 ```
 
+Spot instruments loaded from `spotMeta` preserve venue metadata in `CurrencyPair.info`:
+
+| Field         | Value                                           |
+| ------------- | ----------------------------------------------- |
+| `name`        | Raw venue pair label                            |
+| `tokens`      | Base and quote indexes into `spotMeta.tokens`   |
+| `index`       | Pair index before the `10000` spot asset offset |
+| `isCanonical` | Venue canonical classification                  |
+
+Read `info.get("isCanonical")` in Python or `Params.get_bool("isCanonical")` in Rust to inspect
+the venue's canonical classification.
+
 :::note
 Spot instruments may include vault tokens (prefixed with `vntls:`). Hyperliquid does not list
 these in `spotMeta`, so the HTTP client synthesizes a `{coin}-USDC-SPOT` instrument on first
-sight to keep balances and fills resolvable.
+sight to keep balances and fills resolvable. These synthetic instruments carry no venue metadata:
+`info` is `None` in Rust and an empty dict in Python.
 :::
 
 ### Perpetual futures
@@ -401,10 +414,8 @@ use the sanitized form. Symbols without `*` or `?` are passed through
 unchanged.
 
 The substitution is lossy: two distinct venue names such as `dex:FOO*` and
-`dex:FOO?` would normalize onto the same Nautilus symbol. The instrument
-loader detects collisions, keeps the first definition, and logs a warning
-with the dropped venue name; the dropped instrument will not be tradeable
-through Nautilus until the venue rename resolves the collision.
+`dex:FOO?` would normalize onto the same Nautilus symbol. Such collisions use
+the first-write-wins behavior described in [Instrument loading](#instrument-loading).
 
 ## HIP-4 outcome markets
 
@@ -594,6 +605,11 @@ The data client loads the full Hyperliquid universe once at connect. One pass co
 markets, standard perpetuals, every HIP-3 builder-deployed perp dex, and HIP-4 outcome side
 tokens; the client config exposes no per-product or per-symbol filter. Strategies select the
 instruments they trade through their own `instrument_id` configuration.
+
+The loader includes every pair in `spotMeta.universe`, including non-canonical pairs. When several
+pairs share a base token, it caches the canonical pair first so balances and fills that identify the
+asset by its base token resolve to the canonical Nautilus instrument. Any later definition whose
+Nautilus symbol collides with an earlier definition is dropped with a warning and cannot be traded.
 
 To pick up newly listed markets on the data side, issue a `RequestInstruments` or reconnect the
 data client; either refetches and recaches the whole universe. The execution client bootstraps

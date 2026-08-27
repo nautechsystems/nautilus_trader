@@ -269,8 +269,7 @@ pub(crate) fn resolve_perp_settlement_currency(
 /// Hyperliquid spot follows these rules:
 /// - Price decimals = max(0, 8 - base_sz_decimals) per venue docs
 /// - Size decimals from base token
-/// - All pairs are loaded (including non-canonical) to support parsing fills/positions
-///   for instruments that may have been traded
+/// - All pairs in the universe are active, including non-canonical pairs
 pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrumentDef>, String> {
     const SPOT_MAX_DECIMALS: i32 = 8; // Hyperliquid spot price decimal limit
     const SPOT_INDEX_OFFSET: u32 = 10000; // Spot assets use 10000 + index
@@ -283,10 +282,15 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
         tokens_by_index.insert(token.index, token);
     }
 
-    for pair in &meta.universe {
-        // Load all pairs (including non-canonical) to support parsing fills/positions
-        // for instruments that may have been traded but are not currently canonical
+    // Cache canonical pairs first because base-token aliases are first-write-wins
+    let mut pairs = meta.universe.iter().collect::<Vec<_>>();
+    pairs.sort_by(|a, b| {
+        b.is_canonical
+            .cmp(&a.is_canonical)
+            .then(a.index.cmp(&b.index))
+    });
 
+    for pair in pairs {
         let base_token = tokens_by_index
             .get(&pair.tokens[0])
             .ok_or_else(|| format!("Base token index {} not found", pair.tokens[0]))?;
@@ -328,23 +332,13 @@ pub fn parse_spot_instruments(meta: &SpotMeta) -> Result<Vec<HyperliquidInstrume
             max_leverage: None,
             only_isolated: false,
             is_hip3: false,
-            active: pair.is_canonical, // Use canonical status to indicate if pair is actively tradeable
+            active: true,
             outcome: None,
             raw_data: serde_json::to_string(pair).unwrap_or_default(),
         };
 
         defs.push(def);
     }
-
-    // Canonical pairs must be cached first so the base-token alias (e.g.
-    // "PURR" -> PURR-USDC-SPOT) resolves to the canonical instrument when
-    // non-canonical pairs share the same base. Secondary key keeps the
-    // order stable within each bucket.
-    defs.sort_by(|a, b| {
-        b.active
-            .cmp(&a.active)
-            .then(a.asset_index.cmp(&b.asset_index))
-    });
 
     Ok(defs)
 }
@@ -794,6 +788,7 @@ pub fn create_instrument_from_def(
             let base_currency = get_currency(&def.base);
             let quote_currency = get_currency(&def.quote);
             let min_notional = Some(min_order_notional(quote_currency)?);
+            let info = serde_json::from_str::<Params>(&def.raw_data).ok();
 
             Some(InstrumentAny::CurrencyPair(
                 CurrencyPair::builder()
@@ -806,6 +801,7 @@ pub fn create_instrument_from_def(
                     .price_increment(price_increment)
                     .size_increment(size_increment)
                     .maybe_min_notional(min_notional)
+                    .maybe_info(info)
                     // Identical to ts_init for now
                     .ts_event(ts_init)
                     .ts_init(ts_init)
@@ -1665,7 +1661,7 @@ mod tests {
                 name: "ALIAS".to_string(),
                 tokens: [1, 0],
                 index: 1,
-                is_canonical: false, // Should be included but marked as inactive
+                is_canonical: false,
             },
         ];
 
@@ -1676,7 +1672,6 @@ mod tests {
 
         let defs = parse_spot_instruments(&meta).unwrap();
 
-        // Should have both PURR/USDC and ALIAS (non-canonical pairs are included for historical data)
         assert_eq!(defs.len(), 2);
 
         let purr_usdc = &defs[0];
@@ -1695,15 +1690,35 @@ mod tests {
         let alias = &defs[1];
         assert_eq!(alias.symbol, "PURR-USDC-SPOT");
         assert_eq!(alias.base, "PURR");
-        assert!(!alias.active); // Non-canonical pairs are marked as inactive
+        assert!(alias.active);
 
         let instrument = create_instrument_from_def(purr_usdc, UnixNanos::default()).unwrap();
 
         match instrument {
             InstrumentAny::CurrencyPair(pair) => {
                 let min_notional = pair.min_notional.unwrap();
+                let info = pair.info.unwrap();
                 assert_eq!(min_notional.currency, Currency::USDC());
                 assert_eq!(min_notional.as_decimal(), dec!(10));
+                assert_eq!(info.len(), 4);
+                assert_eq!(info.get_str("name"), Some("PURR/USDC"));
+                assert_eq!(info.get("tokens"), Some(&json!([1, 0])));
+                assert_eq!(info.get_u64("index"), Some(0));
+                assert_eq!(info.get_bool("isCanonical"), Some(true));
+            }
+            other => panic!("Expected CurrencyPair, was {other:?}"),
+        }
+
+        let instrument = create_instrument_from_def(alias, UnixNanos::default()).unwrap();
+
+        match instrument {
+            InstrumentAny::CurrencyPair(pair) => {
+                let info = pair.info.unwrap();
+                assert_eq!(info.len(), 4);
+                assert_eq!(info.get_str("name"), Some("ALIAS"));
+                assert_eq!(info.get("tokens"), Some(&json!([1, 0])));
+                assert_eq!(info.get_u64("index"), Some(1));
+                assert_eq!(info.get_bool("isCanonical"), Some(false));
             }
             other => panic!("Expected CurrencyPair, was {other:?}"),
         }
@@ -1761,9 +1776,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(defs.len(), 2);
-        assert!(defs[0].active, "canonical must sort first");
+        assert!(defs[0].active);
+        assert_eq!(defs[0].raw_symbol, "@107");
         assert_eq!(defs[0].asset_index, 10000 + 107);
-        assert!(!defs[1].active);
+        assert!(defs[1].active);
+        assert_eq!(defs[1].raw_symbol, "@3");
         assert_eq!(defs[1].asset_index, 10000 + 3);
     }
 
