@@ -378,6 +378,23 @@ the bundled fills is closed with an inferred fill from the status report's
 | Order status updates | ✓    | ✓            | ✓            | Real-time order state changes. |
 | Trade history        | ✓    | ✓            | ✓            | Execution and fill reports.    |
 
+#### Futures trade-history retention
+
+Binance retains USD-M and COIN-M account trades for the past three months. Because Binance does not
+define whether this means calendar months or a fixed duration, the adapter treats the most recent
+88 days as its complete Futures fill-history window.
+
+`generate_fill_reports` rejects an explicit start before that window. The boundary uses the
+command's `ts_init`, capped so it can trail the current client time by no more than 12 hours. An end
+time also requires a start time.
+
+For mass status, an unset `reconciliation_lookback_mins` or a value longer than the complete window
+applies that window. The returned `ExecutionMassStatus` sets `lookback_start` to the applied boundary
+and `reports_complete` to `false`; see the
+[mass-status history contract](../concepts/reconciliation.md#mass-status-history-contract). Binance
+Spot is unaffected. See the Binance
+[Futures change log](https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/change-log).
+
 ### Contingent orders
 
 | Feature            | Spot | USDT Futures | Coin Futures | Notes                                        |

@@ -42,7 +42,10 @@ use nautilus_common::{
 };
 use nautilus_core::{
     AtomicSet, MUTEX_POISONED, Params, UUID4, UnixNanos,
-    datetime::{NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND, checked_mins_to_nanos},
+    datetime::{
+        NANOSECONDS_IN_DAY, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
+        checked_mins_to_nanos,
+    },
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory};
@@ -135,6 +138,14 @@ const MAX_KEEPALIVE_FAILURES: u32 = 1;
 const USER_TRADES_MAX_INTERVAL_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 
 const USER_TRADES_PAGE_LIMIT: u32 = 1_000;
+
+// Binance does not define whether its three-month retention is calendar-based or fixed-duration
+// An 88-day interval leaves at least one day inside either interpretation
+// https://developers.binance.com/en/docs/products/derivatives-trading-usds-futures/change-log
+const USER_TRADES_COMPLETE_INTERVAL_NS: u64 = 88 * NANOSECONDS_IN_DAY;
+
+// Keep half the one-day retention safety margin when a command waits before execution
+const USER_TRADES_MAX_TS_INIT_AGE_NS: u64 = NANOSECONDS_IN_DAY / 2;
 
 const BINANCE_GTD_MIN_LEAD_SECS: u64 = 600;
 
@@ -2054,6 +2065,11 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 query_start_time <= query_end_time,
                 "fill report start time must not exceed end time"
             );
+            let complete_start = user_trades_complete_start(cmd.ts_init, self.clock.get_time_ns());
+            anyhow::ensure!(
+                start >= complete_start,
+                "Binance Futures fill report range is incomplete: start {start} precedes complete-history boundary {complete_start}"
+            );
             let mut window_start = query_start_time;
 
             loop {
@@ -2110,6 +2126,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 window_start = window_end.saturating_add(1);
             }
         } else {
+            anyhow::ensure!(
+                cmd.end.is_none(),
+                "Binance Futures fill report end time requires start time for a complete range"
+            );
             let mut from_id = 0;
 
             loop {
@@ -2256,24 +2276,30 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let ts_now = self.clock.get_time_ns();
 
-        let start = if let Some(mins) = lookback_mins {
+        let requested_start = if let Some(mins) = lookback_mins {
             let lookback_ns = checked_mins_to_nanos(mins)
                 .context("lookback minutes exceed the nanosecond range")?;
             Some(UnixNanos::from(ts_now.as_u64().saturating_sub(lookback_ns)))
         } else {
             None
         };
+        let complete_start = user_trades_complete_start(ts_now, ts_now);
+        let (report_start, fill_start, mut reports_complete) = match requested_start {
+            Some(start) if start < complete_start => (complete_start, Some(complete_start), false),
+            Some(start) => (start, Some(start), true),
+            None => (complete_start, None, false),
+        };
 
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .ts_init(ts_now)
             .open_only(true)
-            .start(start)
+            .start(Some(report_start))
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         let position_cmd = GeneratePositionStatusReportsBuilder::default()
             .ts_init(ts_now)
-            .start(start)
+            .start(Some(report_start))
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -2335,7 +2361,6 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         instrument_ids.dedup();
 
         let mut fill_reports = Vec::new();
-        let mut reports_complete = true;
 
         for instrument_id in instrument_ids {
             if self
@@ -2358,10 +2383,15 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             let fill_cmd = GenerateFillReportsBuilder::default()
                 .ts_init(ts_now)
                 .instrument_id(Some(instrument_id))
-                .start(start)
+                .start(fill_start)
                 .build()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            fill_reports.extend(self.generate_fill_reports(fill_cmd).await?);
+            fill_reports.extend(
+                self.generate_fill_reports(fill_cmd)
+                    .await?
+                    .into_iter()
+                    .filter(|report| report.ts_event >= report_start),
+            );
         }
 
         log::info!("Received {} OrderStatusReports", order_reports.len());
@@ -2379,7 +2409,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
-        mass_status.set_report_window(start, reports_complete);
+        mass_status.set_report_window(Some(report_start), reports_complete);
 
         Ok(Some(mass_status))
     }
@@ -3187,6 +3217,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         Ok(())
     }
+}
+
+fn user_trades_complete_start(ts_init: UnixNanos, ts_now: UnixNanos) -> UnixNanos {
+    let oldest_reference = ts_now.saturating_sub_ns(USER_TRADES_MAX_TS_INIT_AGE_NS);
+    ts_init
+        .max(oldest_reference)
+        .saturating_sub_ns(USER_TRADES_COMPLETE_INTERVAL_NS)
 }
 
 fn should_use_algo_cancel(is_algo: bool, is_triggered: bool, has_promoted_id: bool) -> bool {

@@ -127,6 +127,10 @@ fn exchange_info_response() -> serde_json::Value {
     load_fixture("exchange_info_usdm.json")
 }
 
+fn exchange_info_coinm_response() -> serde_json::Value {
+    load_fixture("exchange_info_delivery_coinm.json")
+}
+
 #[derive(Clone, Copy)]
 enum CommandResponse {
     Success,
@@ -186,6 +190,7 @@ enum ReportFixtureMode {
     HedgePositions,
     InvalidFill,
     PaginatedFills,
+    PreBoundaryFill,
     Populated,
     MismatchedAlgoId,
     DirectAlgo,
@@ -323,47 +328,31 @@ fn create_exec_test_router() -> Router {
 fn create_exec_test_router_with_command_responses(state: CommandResponseState) -> Router {
     Router::new()
         .route("/fapi/v1/ping", get(|| async { json_response(&json!({})) }))
+        .route("/dapi/v1/ping", get(|| async { json_response(&json!({})) }))
         .route(
             "/fapi/v1/exchangeInfo",
             get(|| async { json_response(&exchange_info_response()) }),
         )
         .route(
-            "/fapi/v1/positionSide/dual",
-            get(
-                |State(state): State<CommandResponseState>, headers: HeaderMap| async move {
-                    if !has_auth_headers(&headers) {
-                        return unauthorized_response();
-                    }
-                    json_response(&json!({"dualSidePosition": state.hedge_mode}))
-                },
-            ),
+            "/dapi/v1/exchangeInfo",
+            get(|| async { json_response(&exchange_info_coinm_response()) }),
         )
+        .route("/fapi/v1/positionSide/dual", get(handle_hedge_mode_query))
         .route(
             "/fapi/v1/listenKey",
-            post(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return unauthorized_response();
-                }
-                json_response(&json!({"listenKey": "test_listen_key"}))
-            })
-            .put(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return unauthorized_response();
-                }
-                json_response(&json!({}))
-            }),
+            post(handle_listen_key_create).put(handle_listen_key_keepalive),
         )
+        .route("/dapi/v1/positionSide/dual", get(handle_hedge_mode_query))
         .route(
-            "/fapi/v2/account",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return unauthorized_response();
-                }
-                json_response(&load_fixture("account_info_v2.json"))
-            }),
+            "/dapi/v1/listenKey",
+            post(handle_listen_key_create).put(handle_listen_key_keepalive),
         )
+        .route("/fapi/v2/account", get(handle_account_query))
+        .route("/dapi/v1/account", get(handle_account_query))
         .route("/fapi/v2/positionRisk", get(handle_position_risk_query))
+        .route("/dapi/v1/positionRisk", get(handle_position_risk_query))
         .route("/fapi/v1/openOrders", get(handle_open_orders_query))
+        .route("/dapi/v1/openOrders", get(handle_open_orders_query))
         .route(
             "/fapi/v1/order",
             post(handle_order_submit)
@@ -390,6 +379,10 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
             "/fapi/v1/openAlgoOrders",
             get(handle_open_algo_orders_query),
         )
+        .route(
+            "/dapi/v1/openAlgoOrders",
+            get(handle_open_algo_orders_query),
+        )
         .route("/fapi/v1/algoOrder", get(handle_algo_order_query))
         .route(
             "/fapi/v1/algoOpenOrders",
@@ -403,9 +396,42 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
         .route("/fapi/v1/allOrders", get(handle_all_orders_query))
         .route("/fapi/v1/allAlgoOrders", get(handle_all_algo_orders_query))
         .route("/fapi/v1/userTrades", get(handle_user_trades_query))
+        .route("/dapi/v1/userTrades", get(handle_user_trades_query))
         .route("/ws", get(handle_ws))
+        .route("/ws/{listen_key}", get(handle_ws))
         .route("/ws-fapi/v1", get(handle_ws_trading))
         .with_state(state)
+}
+
+async fn handle_hedge_mode_query(
+    State(state): State<CommandResponseState>,
+    headers: HeaderMap,
+) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response();
+    }
+    json_response(&json!({"dualSidePosition": state.hedge_mode}))
+}
+
+async fn handle_listen_key_create(headers: HeaderMap) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response();
+    }
+    json_response(&json!({"listenKey": "test_listen_key"}))
+}
+
+async fn handle_listen_key_keepalive(headers: HeaderMap) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response();
+    }
+    json_response(&json!({}))
+}
+
+async fn handle_account_query(headers: HeaderMap) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response();
+    }
+    json_response(&load_fixture("account_info_v2.json"))
 }
 
 async fn handle_position_risk_query(
@@ -431,6 +457,7 @@ async fn handle_position_risk_query(
         }
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
+        | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => json_response(&load_fixture("position_risk.json")),
@@ -461,6 +488,7 @@ async fn handle_open_orders_query(
         }
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
+        | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
         | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
@@ -494,6 +522,7 @@ async fn handle_open_algo_orders_query(
         }
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
+        | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
         | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
@@ -548,6 +577,7 @@ async fn handle_all_algo_orders_query(
         | ReportFixtureMode::Gtd => json_response(&json!([])),
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
+        | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
         | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
@@ -618,6 +648,13 @@ async fn handle_user_trades_query(
             trade["commission"] = json!("invalid");
             json_response(&json!([trade]))
         }
+        ReportFixtureMode::PreBoundaryFill => {
+            let mut trade = load_fixture("user_trade.json");
+            trade["time"] = json!(
+                trade_time - (USER_TRADES_COMPLETE_LOOKBACK_MINS as i64 + 24 * 60) * 60 * 1_000
+            );
+            json_response(&json!([trade]))
+        }
         ReportFixtureMode::PaginatedFills => {
             let mut trade = load_fixture("user_trade.json");
             trade["time"] = json!(trade_time);
@@ -631,8 +668,10 @@ async fn handle_user_trades_query(
                     .collect();
                 json_response(&json!(trades))
             } else if from_id == Some(1001) {
+                let mut duplicate = trade.clone();
+                duplicate["id"] = json!(1000);
                 trade["id"] = json!(1001);
-                json_response(&json!([trade]))
+                json_response(&json!([duplicate, trade]))
             } else {
                 json_response(&json!([]))
             }
@@ -1265,6 +1304,24 @@ fn create_test_execution_client(
     create_test_execution_client_with_leverages(base_url_http, base_url_ws, None)
 }
 
+fn create_test_execution_client_for_product(
+    base_url_http: String,
+    base_url_ws: String,
+    product_type: BinanceProductType,
+) -> (
+    BinanceFuturesExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    create_test_execution_client_with_config(
+        base_url_http,
+        base_url_ws,
+        product_type,
+        None,
+        BinanceInstrumentProviderConfig::default(),
+    )
+}
+
 fn create_test_execution_client_with_leverages(
     base_url_http: String,
     base_url_ws: String,
@@ -1277,6 +1334,7 @@ fn create_test_execution_client_with_leverages(
     create_test_execution_client_with_config(
         base_url_http,
         base_url_ws,
+        BinanceProductType::UsdM,
         futures_leverages,
         BinanceInstrumentProviderConfig::default(),
     )
@@ -1291,12 +1349,19 @@ fn create_test_execution_client_with_provider(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
-    create_test_execution_client_with_config(base_url_http, base_url_ws, None, instrument_provider)
+    create_test_execution_client_with_config(
+        base_url_http,
+        base_url_ws,
+        BinanceProductType::UsdM,
+        None,
+        instrument_provider,
+    )
 }
 
 fn create_test_execution_client_with_config(
     base_url_http: String,
     base_url_ws: String,
+    product_type: BinanceProductType,
     futures_leverages: Option<HashMap<String, u32>>,
     instrument_provider: BinanceInstrumentProviderConfig,
 ) -> (
@@ -1323,7 +1388,7 @@ fn create_test_execution_client_with_config(
 
     let config = BinanceExecutionClientConfig {
         account_id,
-        product_type: BinanceProductType::UsdM,
+        product_type,
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
         use_ws_trading: false,
@@ -4184,6 +4249,196 @@ async fn test_generate_mass_status_rejects_overflowing_lookback() {
     );
 }
 
+#[derive(Clone, Copy, Debug)]
+enum FillRangeCoverage {
+    WhollyBefore,
+    Crossing,
+    ExactBoundary,
+}
+
+const USER_TRADES_COMPLETE_LOOKBACK_MINS: u64 = 88 * 24 * 60;
+
+#[rstest]
+#[case::usdm_wholly_before(BinanceProductType::UsdM, FillRangeCoverage::WhollyBefore)]
+#[case::usdm_crossing(BinanceProductType::UsdM, FillRangeCoverage::Crossing)]
+#[case::usdm_exact_boundary(BinanceProductType::UsdM, FillRangeCoverage::ExactBoundary)]
+#[case::coinm_wholly_before(BinanceProductType::CoinM, FillRangeCoverage::WhollyBefore)]
+#[case::coinm_crossing(BinanceProductType::CoinM, FillRangeCoverage::Crossing)]
+#[case::coinm_exact_boundary(BinanceProductType::CoinM, FillRangeCoverage::ExactBoundary)]
+#[tokio::test]
+async fn test_generate_fill_reports_enforces_complete_history_boundary(
+    #[case] product_type: BinanceProductType,
+    #[case] coverage: FillRangeCoverage,
+) {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Empty,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) =
+        create_test_execution_client_for_product(base_url_http, base_url_ws, product_type);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(Some(USER_TRADES_COMPLETE_LOOKBACK_MINS))
+        .await
+        .unwrap()
+        .unwrap();
+    let complete_start = mass_status.lookback_start().unwrap();
+    let one_millisecond = 1_000_000;
+    let (start, end) = match coverage {
+        FillRangeCoverage::WhollyBefore => (
+            complete_start.saturating_sub_ns(2 * one_millisecond),
+            complete_start.saturating_sub_ns(one_millisecond),
+        ),
+        FillRangeCoverage::Crossing => (
+            complete_start.saturating_sub_ns(one_millisecond),
+            complete_start + one_millisecond,
+        ),
+        FillRangeCoverage::ExactBoundary => (complete_start, complete_start + one_millisecond),
+    };
+    let instrument_id = match product_type {
+        BinanceProductType::UsdM => test_instrument_id(),
+        BinanceProductType::CoinM => InstrumentId::from("BTCUSD_260925.BINANCE"),
+        _ => unreachable!(),
+    };
+    captured_queries.lock().unwrap().clear();
+
+    let result = client
+        .generate_fill_reports(GenerateFillReports::new(
+            nautilus_core::UUID4::new(),
+            mass_status.ts_init,
+            Some(instrument_id),
+            None,
+            Some(start),
+            Some(end),
+            None,
+            None,
+        ))
+        .await;
+
+    match coverage {
+        FillRangeCoverage::WhollyBefore | FillRangeCoverage::Crossing => {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                format!(
+                    "Binance Futures fill report range is incomplete: start {start} precedes complete-history boundary {complete_start}"
+                )
+            );
+            assert!(
+                captured_queries
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .all(|query| query.path != "userTrades")
+            );
+        }
+        FillRangeCoverage::ExactBoundary => {
+            assert!(result.unwrap().is_empty());
+            let query = wait_for_query(&captured_queries, "userTrades").await;
+            assert_eq!(
+                query.query["startTime"].parse::<u64>().unwrap(),
+                start.as_millis()
+            );
+        }
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_end_only_range() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Empty,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    captured_queries.lock().unwrap().clear();
+
+    let result = client
+        .generate_fill_reports(GenerateFillReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            Some(test_instrument_id()),
+            None,
+            None,
+            Some(UnixNanos::from(1_800_000_000_000_000_000)),
+            None,
+            None,
+        ))
+        .await;
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Binance Futures fill report end time requires start time for a complete range"
+    );
+    assert!(
+        captured_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|query| query.path != "userTrades")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_stale_command_boundary() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Empty,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    captured_queries.lock().unwrap().clear();
+
+    let ts_now = UnixNanos::from_millis(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64,
+    );
+    let ts_init = ts_now.saturating_sub_ns(24_u64 * 60 * 60 * 1_000_000_000);
+    let start = ts_init.saturating_sub_ns(USER_TRADES_COMPLETE_LOOKBACK_MINS * 60 * 1_000_000_000);
+    let result = client
+        .generate_fill_reports(GenerateFillReports::new(
+            nautilus_core::UUID4::new(),
+            ts_init,
+            Some(test_instrument_id()),
+            None,
+            Some(start),
+            Some(start + 1_000_000),
+            None,
+            None,
+        ))
+        .await;
+
+    assert!(result.unwrap_err().to_string().starts_with(&format!(
+        "Binance Futures fill report range is incomplete: start {start} precedes complete-history boundary"
+    )));
+    assert!(
+        captured_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|query| query.path != "userTrades")
+    );
+}
+
 #[rstest]
 #[case(Some(60), false)]
 #[case(None, true)]
@@ -4215,16 +4470,8 @@ async fn test_generate_mass_status_paginates_fill_reports(
     let fill_queries = wait_for_queries(&captured_queries, "userTrades", 2).await;
 
     assert_eq!(fill_reports.len(), 1001);
-    assert!(
-        fill_reports
-            .iter()
-            .any(|report| report.trade_id == TradeId::new("1"))
-    );
-    assert!(
-        fill_reports
-            .iter()
-            .any(|report| report.trade_id == TradeId::new("1001"))
-    );
+    assert_eq!(fill_reports.first().unwrap().trade_id, TradeId::new("1"));
+    assert_eq!(fill_reports.last().unwrap().trade_id, TradeId::new("1001"));
     assert_eq!(
         fill_queries[0].query.get("limit").map(String::as_str),
         Some("1000")
@@ -4286,6 +4533,63 @@ async fn test_generate_mass_status_splits_fill_lookback_into_supported_windows()
 }
 
 #[rstest]
+#[case::crossing(USER_TRADES_COMPLETE_LOOKBACK_MINS + 1, false)]
+#[case::exact_boundary(USER_TRADES_COMPLETE_LOOKBACK_MINS, true)]
+#[tokio::test]
+async fn test_generate_mass_status_exposes_fill_history_coverage(
+    #[case] lookback_mins: u64,
+    #[case] expected_complete: bool,
+) {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::Populated,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(Some(lookback_mins))
+        .await
+        .unwrap()
+        .unwrap();
+    let complete_start = mass_status
+        .ts_init
+        .saturating_sub_ns(USER_TRADES_COMPLETE_LOOKBACK_MINS * 60 * 1_000_000_000);
+    let expected_start = if expected_complete {
+        UnixNanos::from(
+            mass_status
+                .ts_init
+                .as_u64()
+                .saturating_sub(lookback_mins * 60 * 1_000_000_000),
+        )
+    } else {
+        complete_start
+    };
+    let fill_queries: Vec<_> = captured_queries
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|query| query.path == "userTrades")
+        .cloned()
+        .collect();
+
+    assert_eq!(mass_status.lookback_start(), Some(expected_start));
+    assert_eq!(mass_status.reports_complete(), expected_complete);
+    assert!(!fill_queries.is_empty());
+    assert_eq!(
+        fill_queries[0].query["startTime"].parse::<u64>().unwrap(),
+        expected_start.as_millis()
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_generate_mass_status_uses_maximum_fill_history_by_default() {
     let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
@@ -4320,6 +4624,32 @@ async fn test_generate_mass_status_uses_maximum_fill_history_by_default() {
     );
     assert!(!fill_queries[0].query.contains_key("startTime"));
     assert!(!fill_queries[0].query.contains_key("endTime"));
+    assert!(mass_status.lookback_start().is_some());
+    assert!(!mass_status.reports_complete());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_filters_fills_before_report_window() {
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::PreBoundaryFill,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(mass_status.fill_reports().is_empty());
+    assert!(mass_status.lookback_start().is_some());
+    assert!(!mass_status.reports_complete());
 }
 
 #[rstest]
