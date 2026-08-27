@@ -98,6 +98,7 @@ nautilus-trading = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
 indexmap = { workspace = true }
