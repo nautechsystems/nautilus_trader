@@ -2753,32 +2753,19 @@ async fn test_unscoped_spot_position_reports_fail_without_wallet_request() {
     let eth = Currency::from("ETH");
 
     for (symbol, quote) in [("ETHUSDT", "USDT"), ("ETHUSDC", "USDC")] {
-        let instrument = CurrencyPair::new(
-            format!("{symbol}-SPOT.BYBIT").into(),
-            symbol.into(),
-            eth,
-            Currency::from(quote),
-            2,
-            5,
-            Price::from("0.01"),
-            Quantity::from("0.00001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            0.into(),
-            0.into(),
-        );
+        let instrument = CurrencyPair::builder()
+            .instrument_id(format!("{symbol}-SPOT.BYBIT").into())
+            .raw_symbol(symbol.into())
+            .base_currency(eth)
+            .quote_currency(Currency::from(quote))
+            .price_precision(2)
+            .size_precision(5)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.00001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
         client.cache_instrument(InstrumentAny::CurrencyPair(instrument));
     }
 

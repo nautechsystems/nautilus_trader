@@ -6314,32 +6314,7 @@ mod tests {
         let mut manager =
             ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
                 .expect("valid config");
-        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-            InstrumentId::from("ETHUSDT-SPOT.BYBIT"),
-            Symbol::from("ETHUSDT"),
-            Currency::from("ETH"),
-            Currency::from("USDT"),
-            2,
-            5,
-            Price::from("0.01"),
-            Quantity::from("0.00001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ));
+        let instrument = test_bybit_spot_instrument();
         cache
             .borrow_mut()
             .add_instrument(instrument.clone())
@@ -6642,32 +6617,21 @@ mod tests {
     }
 
     fn test_bybit_spot_instrument() -> InstrumentAny {
-        InstrumentAny::CurrencyPair(CurrencyPair::new(
-            InstrumentId::from("ETHUSDT-SPOT.BYBIT"),
-            Symbol::from("ETHUSDT"),
-            Currency::from("ETH"),
-            Currency::from("USDT"),
-            2,
-            5,
-            Price::from("0.01"),
-            Quantity::from("0.00001"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UnixNanos::default(),
-            UnixNanos::default(),
-        ))
+        InstrumentAny::CurrencyPair(
+            CurrencyPair::builder()
+                .instrument_id(InstrumentId::from("ETHUSDT-SPOT.BYBIT"))
+                .raw_symbol(Symbol::from("ETHUSDT"))
+                .base_currency(Currency::from("ETH"))
+                .quote_currency(Currency::from("USDT"))
+                .price_precision(2)
+                .size_precision(5)
+                .price_increment(Price::from("0.01"))
+                .size_increment(Quantity::from("0.00001"))
+                .ts_event(UnixNanos::default())
+                .ts_init(UnixNanos::default())
+                .build()
+                .unwrap(),
+        )
     }
 
     fn insert_open_position(
