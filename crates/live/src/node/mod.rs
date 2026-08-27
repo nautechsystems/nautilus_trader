@@ -167,14 +167,6 @@ pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
 /// which shows up as lapsed heartbeats and reconnects rather than as backpressure.
 const DISPATCHES_PER_YIELD: usize = 64;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StrictSourcedReportResult {
-    PreflightRejected,
-    RecentlyProcessed,
-    ReconciliationRejected,
-    Applied,
-}
-
 /// High-level abstraction for a live Nautilus system node.
 ///
 /// Provides a simplified interface for running live systems
@@ -2055,13 +2047,9 @@ impl LiveNode {
     /// Validates and applies a strict sourced report before mutating manager observation state.
     ///
     /// The preflight precedes recent-fill deduplication. The shared engine entry applies both
-    /// validation fences and returns a result, so manager activity and close tracking are updated
-    /// only after the report was accepted by the engine.
-    fn process_strict_sourced_exec_report(
-        &mut self,
-        client_id: ClientId,
-        report: ExecutionReport,
-    ) -> StrictSourcedReportResult {
+    /// validation fences, so manager activity and close tracking are updated only after the report
+    /// was accepted by the engine.
+    fn process_strict_sourced_exec_report(&mut self, client_id: ClientId, report: ExecutionReport) {
         let sourced = SourcedExecutionReport::new(client_id, report);
 
         if let Err(e) = self
@@ -2071,7 +2059,7 @@ impl LiveNode {
             .preflight_sourced_execution_report(&sourced)
         {
             log::error!("Cannot dispatch sourced execution report: {e:#}");
-            return StrictSourcedReportResult::PreflightRejected;
+            return;
         }
 
         if let ExecutionReport::Fill(fill_report) = &sourced.report
@@ -2085,22 +2073,20 @@ impl LiveNode {
                 "Skipping recently processed sourced fill report: {}",
                 fill_report.trade_id,
             );
-            return StrictSourcedReportResult::RecentlyProcessed;
+            return;
         }
 
         if let Err(e) =
             ExecutionEngine::reconcile_sourced_execution_report(&self.kernel.exec_engine, &sourced)
         {
             log::error!("Cannot reconcile sourced execution report: {e:#}");
-            return StrictSourcedReportResult::ReconciliationRejected;
+            return;
         }
 
         self.exec_manager.observe_execution_report(&sourced.report);
         if let Some(client_order_id) = Self::closed_order_report_client_order_id(&sourced.report) {
             self.clear_closed_recon_tracking(&[client_order_id]);
         }
-
-        StrictSourcedReportResult::Applied
     }
 
     fn clear_closed_recon_tracking(&mut self, close_ids: &[ClientOrderId]) {
@@ -3889,6 +3875,7 @@ async fn drive_with_event_buffering<F: std::future::Future>(
                         if sourced_account_handling == SourcedAccountHandling::Dispatch
                             && matches!(&event.event, ExecutionEvent::Account(_)) =>
                     {
+                        pending.drain_sourced_exec_events();
                         AsyncRunner::handle_sourced_exec_event(event);
                     }
                     ingress => pending.buffer_execution_ingress(ingress),
@@ -3996,12 +3983,16 @@ impl PendingEvents {
             AsyncRunner::handle_exec_event(ExecutionEvent::Order(evt));
         }
 
-        for evt in self.sourced_exec_evts.drain(..) {
-            AsyncRunner::handle_sourced_exec_event(evt);
-        }
+        self.drain_sourced_exec_events();
 
         for cmd in self.exec_cmds.drain(..) {
             AsyncRunner::handle_trading_command(cmd);
+        }
+    }
+
+    fn drain_sourced_exec_events(&mut self) {
+        for evt in self.sourced_exec_evts.drain(..) {
+            AsyncRunner::handle_sourced_exec_event(evt);
         }
     }
 
@@ -4816,10 +4807,20 @@ mod tests {
             .unwrap()
             .event_count();
 
-        let rejected = node.process_strict_sourced_exec_report(
-            ClientId::from("UNREGISTERED-SOURCE"),
-            ExecutionReport::Fill(Box::new((*report).clone())),
-        );
+        node.process_sourced_exec_event(SourcedExecutionEvent {
+            client_id: ClientId::from("UNREGISTERED-SOURCE"),
+            event: ExecutionEvent::Report(ExecutionReport::Fill(Box::new((*report).clone()))),
+        });
+
+        {
+            let engine = node.kernel.exec_engine.borrow();
+            assert_eq!(engine.report_count(), report_count);
+            assert_eq!(engine.event_count(), event_count);
+            let cache = engine.cache().borrow();
+            let cached = cache.order(&fill.client_order_id).unwrap();
+            assert_eq!(cached.status(), OrderStatus::Accepted);
+            assert_eq!(cached.event_count(), cached_event_count);
+        }
 
         let source_client_id = ClientId::from("TEST-RECENT-FILL");
         let source_client = StubExecutionClient::new(
@@ -4836,11 +4837,11 @@ mod tests {
             .register_client(Box::new(source_client))
             .unwrap();
 
-        let deduplicated = node
-            .process_strict_sourced_exec_report(source_client_id, ExecutionReport::Fill(report));
+        node.process_sourced_exec_event(SourcedExecutionEvent {
+            client_id: source_client_id,
+            event: ExecutionEvent::Report(ExecutionReport::Fill(report)),
+        });
 
-        assert_eq!(rejected, StrictSourcedReportResult::PreflightRejected);
-        assert_eq!(deduplicated, StrictSourcedReportResult::RecentlyProcessed);
         assert!(source_registrations.borrow().is_empty());
         let engine = node.kernel.exec_engine.borrow();
         assert_eq!(engine.report_count(), report_count);
@@ -8500,15 +8501,15 @@ mod tests {
 
     #[rstest]
     #[tokio::test(start_paused = true)]
-    async fn test_sourced_account_registers_while_execution_client_connects() {
+    async fn test_sourced_bootstrap_account_preserves_lane_fifo_while_execution_client_connects() {
         msgbus::get_message_bus().borrow_mut().dispose();
         let account_id = AccountId::from("SOURCE-CONNECT-001");
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let received = Rc::new(Cell::new(0));
+        let dispatch_order = Rc::new(RefCell::new(Vec::new()));
         let (account_registered_tx, account_registered_rx) = tokio::sync::oneshot::channel();
         let account_registered_tx = Rc::new(RefCell::new(Some(account_registered_tx)));
         let handler_cache = cache.clone();
-        let handler_received = received.clone();
+        let account_dispatch_order = dispatch_order.clone();
         let handler_account_registered_tx = account_registered_tx.clone();
         msgbus::register_account_state_endpoint(
             MessagingSwitchboard::portfolio_update_account(),
@@ -8517,12 +8518,24 @@ mod tests {
                     .borrow_mut()
                     .add_account(AccountAny::Margin(MarginAccount::new(state.clone(), true)))
                     .unwrap();
-                handler_received.set(handler_received.get() + 1);
+                account_dispatch_order.borrow_mut().push("account");
 
                 if let Some(tx) = handler_account_registered_tx.borrow_mut().take() {
                     tx.send(())
                         .expect("execution client connect should await account registration");
                 }
+            }),
+        );
+        let report_dispatch_order = dispatch_order.clone();
+        msgbus::register_sourced_execution_report_endpoint(
+            MessagingSwitchboard::exec_engine_reconcile_sourced_execution_report(),
+            TypedIntoHandler::from(move |report: SourcedExecutionReport| {
+                let kind = match report.report {
+                    ExecutionReport::Order(_) => "order",
+                    ExecutionReport::Fill(_) => "fill",
+                    _ => panic!("unexpected non-strict sourced execution report"),
+                };
+                report_dispatch_order.borrow_mut().push(kind);
             }),
         );
 
@@ -8544,7 +8557,6 @@ mod tests {
         let connect_account_id = account_id;
         let connect = async move {
             sink.send(stub_order_report_event()).unwrap();
-            sink.send(stub_exec_event()).unwrap();
             sink.send(ExecutionEvent::Account(AccountState::new(
                 connect_account_id,
                 AccountType::Margin,
@@ -8561,6 +8573,7 @@ mod tests {
             account_registered_rx
                 .await
                 .expect("account registration handler should remain available");
+            sink.send(stub_exec_event()).unwrap();
         };
         let mut pending = PendingEvents::default();
 
@@ -8583,17 +8596,25 @@ mod tests {
         .await
         .expect("sourced account should be registered during execution client connect");
 
+        flush_all_pending(
+            &mut pending,
+            &mut time_evt_rx,
+            &mut system_evt_rx,
+            &mut system_cmd_rx,
+            &mut exec_evt_rx,
+            &mut sourced_exec,
+            &mut exec_cmd_rx,
+            &mut data_evt_rx,
+            &mut data_cmd_rx,
+        );
+
         assert!(cache.borrow().account(&account_id).is_some());
-        assert_eq!(received.get(), 1);
-        assert_eq!(pending.sourced_exec_evts.len(), 2);
-        assert!(matches!(
-            &pending.sourced_exec_evts[0].event,
-            ExecutionEvent::Report(ExecutionReport::Order(_))
-        ));
-        assert!(matches!(
-            &pending.sourced_exec_evts[1].event,
-            ExecutionEvent::Report(ExecutionReport::Fill(_))
-        ));
+        assert_eq!(
+            dispatch_order.borrow().as_slice(),
+            &["order", "account", "fill"]
+        );
+        assert!(pending.is_empty());
+        msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     #[rstest]

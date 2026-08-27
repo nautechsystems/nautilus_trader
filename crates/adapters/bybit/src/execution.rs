@@ -28,15 +28,12 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
     live::runner::get_exec_event_sender,
-    messages::{
-        ExecutionEvent,
-        execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-            GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
-            SubmitOrder, SubmitOrderList,
-        },
+    messages::execution::{
+        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -47,7 +44,7 @@ use nautilus_core::{
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControl,
     execution::failure::CommandFailure,
-    runner::{SourcedExecutionEventSink, get_sourced_exec_event_sink},
+    runner::get_sourced_exec_event_sink,
     task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
@@ -377,19 +374,11 @@ impl BybitExecutionClient {
     }
 
     fn bind_execution_event_target(&mut self) {
-        self.bind_execution_event_target_with(get_exec_event_sender, get_sourced_exec_event_sink);
-    }
-
-    fn bind_execution_event_target_with(
-        &mut self,
-        legacy_sender: impl FnOnce() -> tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
-        sourced_sink: impl FnOnce(ClientId) -> SourcedExecutionEventSink,
-    ) {
         if self.use_sourced_execution_events {
             self.emitter
-                .set_sourced_sink(sourced_sink(self.core.client_id));
+                .set_sourced_sink(get_sourced_exec_event_sink(self.core.client_id));
         } else {
-            self.emitter.set_sender(legacy_sender());
+            self.emitter.set_sender(get_exec_event_sender());
         }
     }
 
@@ -2286,12 +2275,13 @@ mod tests {
             ExecutionEvent,
             execution::{CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList},
         },
+        msgbus::{self, MessagingSwitchboard, TypedHandler},
     };
-    use nautilus_core::{Params, UUID4};
+    use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_live::{ExecutionClientCore, runner::AsyncRunner};
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderStatus},
-        events::OrderEventAny,
+        events::{AccountState, OrderEventAny},
         identifiers::{ClientOrderId, OrderListId, PositionId, StrategyId, TraderId, VenueOrderId},
         orders::{OrderList, builder::OrderTestBuilder},
         types::Quantity,
@@ -2335,30 +2325,51 @@ mod tests {
     #[rstest]
     #[case(false)]
     #[case(true)]
-    fn test_sourced_execution_event_setting_is_frozen_at_construction(#[case] enabled: bool) {
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_sourced_execution_event_setting_is_frozen_at_construction(#[case] enabled: bool) {
+        msgbus::get_message_bus().borrow_mut().dispose();
+        let received = Rc::new(Cell::new(0));
+        let handler_received = received.clone();
+        msgbus::register_account_state_endpoint(
+            MessagingSwitchboard::portfolio_update_account(),
+            TypedHandler::from(move |_: &AccountState| {
+                handler_received.set(handler_received.get() + 1);
+            }),
+        );
+
         let (mut client, _cache) = test_execution_client_with_sourced_events(enabled);
         let runner = AsyncRunner::new();
         runner.bind_senders();
-        let legacy_calls = Cell::new(0);
-        let sourced_calls = Cell::new(0);
 
         assert_eq!(client.use_sourced_execution_events, enabled);
         client.config.use_sourced_execution_events = !enabled;
         assert_eq!(client.use_sourced_execution_events, enabled);
-        client.bind_execution_event_target_with(
-            || {
-                legacy_calls.set(legacy_calls.get() + 1);
-                get_exec_event_sender()
-            },
-            |client_id| {
-                sourced_calls.set(sourced_calls.get() + 1);
-                assert_eq!(client_id, *BYBIT_CLIENT_ID);
-                get_sourced_exec_event_sink(client_id)
-            },
+        client.bind_execution_event_target();
+        client.emitter.send_account_state(AccountState::new(
+            AccountId::from("BYBIT-001"),
+            AccountType::Margin,
+            vec![],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+            None,
+        ));
+
+        let mut channels = runner.take_channels();
+        assert_eq!(channels.exec_evt_rx.len(), (!enabled) as usize);
+        assert!(
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                AsyncRunner::handle_next_exec_event(&mut channels.exec_evt_rx),
+            )
+            .await
+            .expect("execution event should be available on the configured lane")
         );
 
-        assert_eq!(legacy_calls.get(), (!enabled) as usize);
-        assert_eq!(sourced_calls.get(), enabled as usize);
+        assert_eq!(received.get(), 1);
+        msgbus::get_message_bus().borrow_mut().dispose();
     }
 
     async fn wait_for_spawned_tasks(client: &BybitExecutionClient) {
