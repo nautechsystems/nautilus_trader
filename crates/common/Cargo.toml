@@ -71,7 +71,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-core = { workspace = true }
 nautilus-indicators = { workspace = true, optional = true }
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 nautilus-serialization = { workspace = true, optional = true }
 
 ahash = { workspace = true }

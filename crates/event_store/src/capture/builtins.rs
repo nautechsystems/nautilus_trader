@@ -2266,7 +2266,7 @@ mod tests {
     }
 
     // Walks every OrderEventAny variant. Builds each variant from `Default::default()`
-    // (gated by the `stubs` feature on `nautilus-model`) with the test client_order_id
+    // (gated by the `test-support` feature on `nautilus-model`) with the test client_order_id
     // patched in, so the assertion can verify the index value alongside the tag.
     #[rstest]
     #[case::initialized(ev_initialized(), PAYLOAD_TYPE_ORDER_INITIALIZED, false)]

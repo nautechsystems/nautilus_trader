@@ -585,7 +585,7 @@ fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
 ### Test specs
 
 Events with many constructor arguments use a fluent `bon` spec next to the event under
-`events/<event>/spec/`. Gate the module with `#[cfg(any(test, feature = "stubs"))]` so downstream
+`events/<event>/spec/`. Gate the module with `#[cfg(any(test, feature = "test-support"))]` so downstream
 tests can opt in without adding the spec to production builds.
 
 - Derive `bon::Builder` with `finish_fn = into_spec`.

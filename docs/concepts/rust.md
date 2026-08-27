@@ -92,7 +92,7 @@ The Nautilus crates are published to
 nautilus-backtest = "0.62"
 nautilus-common = "0.62"
 nautilus-execution = "0.62"
-nautilus-model = { version = "0.62", features = ["stubs"] }
+nautilus-model = { version = "0.62", features = ["test-support"] }
 nautilus-trading = { version = "0.62", features = ["examples"] }
 
 anyhow = "1"
@@ -115,7 +115,7 @@ same git source to avoid type mismatches between crates.io and git versions:
 nautilus-backtest = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop" }
 nautilus-common = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop" }
 nautilus-execution = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop" }
-nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["stubs"] }
+nautilus-model = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["test-support"] }
 nautilus-trading = { git = "https://github.com/nautechsystems/nautilus_trader.git", branch = "develop", features = ["examples"] }
 ```
 
@@ -126,7 +126,7 @@ The minimum supported Rust version (MSRV) is **1.98.0**.
 | Flag             | Crate               | Effect                                                        |
 | ---------------- | ------------------- | ------------------------------------------------------------- |
 | `high-precision` | `nautilus-model`    | 16-digit fixed precision (default is 9). Required for crypto. |
-| `stubs`          | `nautilus-model`    | Test instrument stubs (`audusd_sim`, etc.).                   |
+| `test-support`   | `nautilus-model`    | Test fixtures, builders, specs, and defaults.                 |
 | `examples`       | `nautilus-trading`  | Example strategies (`EmaCross`, `GridMarketMaker`).           |
 | `streaming`      | `nautilus-backtest` | Catalog-based data streaming via `BacktestNode`.              |
 | `defi`           | `nautilus-model`    | DeFi data types. Implies `high-precision`.                    |

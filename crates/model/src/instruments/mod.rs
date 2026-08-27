@@ -37,7 +37,7 @@ pub mod synthetic;
 pub mod tick_scheme;
 pub mod tokenized_asset;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 use std::{fmt::Display, str::FromStr};

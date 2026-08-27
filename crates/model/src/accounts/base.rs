@@ -553,7 +553,7 @@ fn non_spendable_balance(current_balance: AccountBalance) -> AccountBalance {
     }
 }
 
-#[cfg(all(test, feature = "stubs"))]
+#[cfg(all(test, feature = "test-support"))]
 mod tests {
     use rstest::rstest;
 

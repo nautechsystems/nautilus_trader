@@ -19,7 +19,7 @@ Add the following to your `Cargo.toml`. The `streaming` and
 [dependencies]
 nautilus-backtest = { version = "0.62", features = ["streaming"] }
 nautilus-execution = "0.62"
-nautilus-model = { version = "0.62", features = ["stubs"] }
+nautilus-model = { version = "0.62", features = ["test-support"] }
 nautilus-persistence = "0.62"
 nautilus-trading = { version = "0.62", features = ["examples"] }
 

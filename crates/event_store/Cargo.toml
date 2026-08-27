@@ -52,7 +52,7 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]
-nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-model = { workspace = true, features = ["test-support"] }
 
 async-trait = { workspace = true }
 criterion = { workspace = true }

@@ -23,7 +23,7 @@ pub mod margin;
 pub mod margin_model;
 pub mod wallet;
 
-#[cfg(any(test, feature = "stubs"))]
+#[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
 use enum_dispatch::enum_dispatch;
