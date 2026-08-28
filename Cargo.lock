@@ -6410,6 +6410,7 @@ version = "0.63.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
+ "arc-swap",
  "async-trait",
  "bon",
  "bytes",
