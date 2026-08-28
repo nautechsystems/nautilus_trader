@@ -2638,7 +2638,7 @@ impl WebSocketClient {
     ///
     /// `cancellation_token` aborts the initial connection only, and is observed during the
     /// connection rate-limit wait, the dial itself, and each backoff delay. It has no effect once
-    /// this function returns a client: use [`Self::close`] to stop an established one, whose
+    /// this function returns a client: use [`WebSocketClient::disconnect`] to stop an established one, whose
     /// reconnect loop the token does not govern.
     ///
     /// The message handler is required:
