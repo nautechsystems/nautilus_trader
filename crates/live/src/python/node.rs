@@ -16,7 +16,7 @@
 //! Python bindings for live node.
 
 use std::{
-    cell::{Ref, RefCell, RefMut},
+    cell::{Cell, Ref, RefCell, RefMut},
     collections::HashMap,
     fmt::Debug,
     future::Future,
@@ -838,7 +838,9 @@ impl PyLiveNode {
     ) -> PyResult<PyLiveNodeBuilder> {
         match LiveNode::builder(trader_id, environment) {
             Ok(builder) => Ok(PyLiveNodeBuilder {
-                inner: Rc::new(RefCell::new(Some(builder.with_name(name)))),
+                state: Rc::new(Cell::new(PyLiveNodeBuilderState::Ready(Box::new(
+                    builder.with_name(name),
+                )))),
             }),
             Err(e) => Err(to_pyruntime_err(e)),
         }
@@ -1940,11 +1942,10 @@ fn register_data_tester(node: &mut LiveNode, config: &Bound<'_, PyAny>) -> PyRes
 
 /// Python wrapper for `LiveNodeBuilder` that uses interior mutability
 /// to work around PyO3's shared ownership model.
-#[derive(Debug)]
 #[pyclass(name = "LiveNodeBuilder", module = "nautilus_trader.live", unsendable)]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
 pub struct PyLiveNodeBuilder {
-    inner: Rc<RefCell<Option<LiveNodeBuilder>>>,
+    state: Rc<Cell<PyLiveNodeBuilderState>>,
 }
 
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
@@ -1952,281 +1953,117 @@ pub struct PyLiveNodeBuilder {
 impl PyLiveNodeBuilder {
     #[pyo3(name = "with_instance_id")]
     fn py_with_instance_id(&self, instance_id: UUID4) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_instance_id(instance_id));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_instance_id(instance_id))
     }
 
     #[pyo3(name = "with_load_state")]
     fn py_with_load_state(&self, load_state: bool) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_load_state(load_state));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_load_state(load_state))
     }
 
     #[pyo3(name = "with_save_state")]
     fn py_with_save_state(&self, save_state: bool) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_save_state(save_state));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_save_state(save_state))
     }
 
     #[pyo3(name = "with_timeout_connection")]
     fn py_with_timeout_connection(&self, timeout_secs: u64) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_timeout_connection(timeout_secs));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_timeout_connection(timeout_secs))
     }
 
     #[pyo3(name = "with_timeout_reconciliation")]
     fn py_with_timeout_reconciliation(&self, timeout_secs: u64) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_timeout_reconciliation(timeout_secs));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_timeout_reconciliation(timeout_secs))
     }
 
     #[pyo3(name = "with_timeout_portfolio")]
     fn py_with_timeout_portfolio(&self, timeout_secs: u64) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_timeout_portfolio(timeout_secs));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_timeout_portfolio(timeout_secs))
     }
 
     #[pyo3(name = "with_timeout_disconnection_secs")]
     fn py_with_timeout_disconnection_secs(&self, timeout_secs: u64) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_timeout_disconnection_secs(timeout_secs));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_timeout_disconnection_secs(timeout_secs))
     }
 
     #[pyo3(name = "with_delay_post_stop_secs")]
     fn py_with_delay_post_stop_secs(&self, delay_secs: u64) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_delay_post_stop_secs(delay_secs));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_delay_post_stop_secs(delay_secs))
     }
 
     #[pyo3(name = "with_delay_shutdown_secs")]
     fn py_with_delay_shutdown_secs(&self, delay_secs: u64) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_delay_shutdown_secs(delay_secs));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_delay_shutdown_secs(delay_secs))
     }
 
     #[pyo3(name = "with_reconciliation")]
     fn py_with_reconciliation(&self, reconciliation: bool) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_reconciliation(reconciliation));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_reconciliation(reconciliation))
     }
 
     #[pyo3(name = "with_controller")]
     fn py_with_controller(&self, controller: ImportableControllerConfig) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_controller(controller));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_controller(controller))
     }
 
     #[pyo3(name = "with_reconciliation_lookback_mins")]
     fn py_with_reconciliation_lookback_mins(&self, mins: u32) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_reconciliation_lookback_mins(mins));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_reconciliation_lookback_mins(mins))
     }
 
     #[pyo3(name = "with_cache_config")]
     fn py_with_cache_config(&self, config: CacheConfig) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_cache_config(config));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_cache_config(config))
     }
 
     #[pyo3(name = "with_cache_database_factory")]
     fn py_with_cache_database_factory(&self, factory: Py<PyAny>) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if inner_ref.is_none() {
-            return Err(to_pyruntime_err("Builder already consumed"));
-        }
-
+        let mut operation = self.begin_operation()?;
         let factory =
             Python::attach(|py| get_global_cache_database_factory_registry().extract(py, factory))?;
-        let builder = inner_ref.take().expect("Builder checked above");
-        *inner_ref = Some(builder.with_cache_database_factory(factory));
-        Ok(Self {
-            inner: self.inner.clone(),
-        })
+        let builder = operation.take_builder()?;
+        operation.complete(builder.with_cache_database_factory(factory));
+        Ok(self.shared())
     }
 
     #[pyo3(name = "with_msgbus_config")]
     fn py_with_msgbus_config(&self, config: MessageBusConfig) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_msgbus_config(config));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_msgbus_config(config))
     }
 
     #[pyo3(name = "with_external_msgbus_factory")]
     fn py_with_external_msgbus_factory(&self, factory: Py<PyAny>) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if inner_ref.is_none() {
-            return Err(to_pyruntime_err("Builder already consumed"));
-        }
-
+        let mut operation = self.begin_operation()?;
         let factory =
             Python::attach(|py| get_global_msgbus_factory_registry().extract(py, factory))?;
-        let builder = inner_ref.take().expect("Builder checked above");
-        *inner_ref = Some(builder.with_external_msgbus_factory(factory));
-        Ok(Self {
-            inner: self.inner.clone(),
-        })
+        let builder = operation.take_builder()?;
+        operation.complete(builder.with_external_msgbus_factory(factory));
+        Ok(self.shared())
     }
 
     #[pyo3(name = "with_portfolio_config")]
     fn py_with_portfolio_config(&self, config: PortfolioConfig) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_portfolio_config(config));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_portfolio_config(config))
     }
 
     #[pyo3(name = "with_data_engine_config")]
     fn py_with_data_engine_config(&self, config: LiveDataEngineConfig) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_data_engine_config(config));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_data_engine_config(config))
     }
 
     #[pyo3(name = "with_risk_engine_config")]
     fn py_with_risk_engine_config(&self, config: LiveRiskEngineConfig) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_risk_engine_config(config));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_risk_engine_config(config))
     }
 
     #[pyo3(name = "with_exec_engine_config")]
     fn py_with_exec_engine_config(&self, config: LiveExecutionEngineConfig) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_exec_engine_config(config));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_exec_engine_config(config))
     }
 
     #[pyo3(name = "with_logging")]
     fn py_with_logging(&self, logging: LoggerConfig) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            *inner_ref = Some(builder.with_logging(logging));
-            Ok(Self {
-                inner: self.inner.clone(),
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        self.update_builder(|builder| builder.with_logging(logging))
     }
 
     #[pyo3(name = "add_data_client", signature = (name, factory, config, routing=None))]
@@ -2238,46 +2075,30 @@ impl PyLiveNodeBuilder {
         config: Py<PyAny>,
         routing: Option<RoutingConfig>,
     ) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            Python::attach(|py| -> PyResult<Self> {
-                // Use the global registry to extract Py<PyAny>s to trait objects
-                let registry = get_global_pyo3_registry();
-
-                let boxed_factory = registry.extract_factory(py, factory.clone_ref(py))?;
-                let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
-
-                // Use the factory name from the original factory for the client name
-                let factory_name = factory
-                    .getattr(py, "name")?
-                    .call0(py)?
-                    .extract::<String>(py)?;
-                let client_name = name.unwrap_or(factory_name);
-
-                // Add the data client to the builder using boxed trait objects
-                let result = match routing {
-                    Some(routing) => builder.add_data_client_with_routing(
-                        Some(client_name),
-                        boxed_factory,
-                        boxed_config,
-                        routing,
-                    ),
-                    None => builder.add_data_client(Some(client_name), boxed_factory, boxed_config),
-                };
-
-                match result {
-                    Ok(updated_builder) => {
-                        *inner_ref = Some(updated_builder);
-                        Ok(Self {
-                            inner: self.inner.clone(),
-                        })
-                    }
-                    Err(e) => Err(to_pyruntime_err(format!("Failed to add data client: {e}"))),
-                }
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        let mut operation = self.begin_operation()?;
+        Python::attach(|py| -> PyResult<Self> {
+            let registry = get_global_pyo3_registry();
+            let boxed_factory = registry.extract_factory(py, factory.clone_ref(py))?;
+            let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
+            let factory_name = factory
+                .getattr(py, "name")?
+                .call0(py)?
+                .extract::<String>(py)?;
+            let client_name = name.unwrap_or(factory_name);
+            let builder = operation.take_builder()?;
+            let updated_builder = match routing {
+                Some(routing) => builder.add_data_client_with_routing(
+                    Some(client_name),
+                    boxed_factory,
+                    boxed_config,
+                    routing,
+                ),
+                None => builder.add_data_client(Some(client_name), boxed_factory, boxed_config),
+            }
+            .map_err(|e| to_pyruntime_err(format!("Failed to add data client: {e}")))?;
+            operation.complete(updated_builder);
+            Ok(self.shared())
+        })
     }
 
     #[pyo3(name = "add_exec_client", signature = (name, factory, config, routing=None))]
@@ -2289,43 +2110,30 @@ impl PyLiveNodeBuilder {
         config: Py<PyAny>,
         routing: Option<RoutingConfig>,
     ) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            Python::attach(|py| -> PyResult<Self> {
-                let registry = get_global_pyo3_registry();
-
-                let boxed_factory = registry.extract_exec_factory(py, factory.clone_ref(py))?;
-                let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
-
-                let factory_name = factory
-                    .getattr(py, "name")?
-                    .call0(py)?
-                    .extract::<String>(py)?;
-                let client_name = name.unwrap_or(factory_name);
-
-                let result = match routing {
-                    Some(routing) => builder.add_exec_client_with_routing(
-                        Some(client_name),
-                        boxed_factory,
-                        boxed_config,
-                        routing,
-                    ),
-                    None => builder.add_exec_client(Some(client_name), boxed_factory, boxed_config),
-                };
-
-                match result {
-                    Ok(updated_builder) => {
-                        *inner_ref = Some(updated_builder);
-                        Ok(Self {
-                            inner: self.inner.clone(),
-                        })
-                    }
-                    Err(e) => Err(to_pyruntime_err(format!("Failed to add exec client: {e}"))),
-                }
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        let mut operation = self.begin_operation()?;
+        Python::attach(|py| -> PyResult<Self> {
+            let registry = get_global_pyo3_registry();
+            let boxed_factory = registry.extract_exec_factory(py, factory.clone_ref(py))?;
+            let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
+            let factory_name = factory
+                .getattr(py, "name")?
+                .call0(py)?
+                .extract::<String>(py)?;
+            let client_name = name.unwrap_or(factory_name);
+            let builder = operation.take_builder()?;
+            let updated_builder = match routing {
+                Some(routing) => builder.add_exec_client_with_routing(
+                    Some(client_name),
+                    boxed_factory,
+                    boxed_config,
+                    routing,
+                ),
+                None => builder.add_exec_client(Some(client_name), boxed_factory, boxed_config),
+            }
+            .map_err(|e| to_pyruntime_err(format!("Failed to add exec client: {e}")))?;
+            operation.complete(updated_builder);
+            Ok(self.shared())
+        })
     }
 
     #[pyo3(name = "add_simulated_exec_client")]
@@ -2336,56 +2144,130 @@ impl PyLiveNodeBuilder {
         factory: Py<PyAny>,
         config: Py<PyAny>,
     ) -> PyResult<Self> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            Python::attach(|py| -> PyResult<Self> {
-                let registry = get_global_pyo3_registry();
-
-                let boxed_factory = registry.extract_sim_exec_factory(py, factory.clone_ref(py))?;
-                let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
-
-                let factory_name = factory
-                    .getattr(py, "name")?
-                    .call0(py)?
-                    .extract::<String>(py)?;
-                let client_name = name.unwrap_or(factory_name);
-
-                match builder.add_simulated_exec_client(
-                    Some(client_name),
-                    boxed_factory,
-                    boxed_config,
-                ) {
-                    Ok(updated_builder) => {
-                        *inner_ref = Some(updated_builder);
-                        Ok(Self {
-                            inner: self.inner.clone(),
-                        })
-                    }
-                    Err(e) => Err(to_pyruntime_err(format!(
-                        "Failed to add simulated exec client: {e}"
-                    ))),
-                }
-            })
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        let mut operation = self.begin_operation()?;
+        Python::attach(|py| -> PyResult<Self> {
+            let registry = get_global_pyo3_registry();
+            let boxed_factory = registry.extract_sim_exec_factory(py, factory.clone_ref(py))?;
+            let boxed_config = registry.extract_config(py, config.clone_ref(py))?;
+            let factory_name = factory
+                .getattr(py, "name")?
+                .call0(py)?
+                .extract::<String>(py)?;
+            let client_name = name.unwrap_or(factory_name);
+            let builder = operation.take_builder()?;
+            let updated_builder = builder
+                .add_simulated_exec_client(Some(client_name), boxed_factory, boxed_config)
+                .map_err(|e| {
+                    to_pyruntime_err(format!("Failed to add simulated exec client: {e}"))
+                })?;
+            operation.complete(updated_builder);
+            Ok(self.shared())
+        })
     }
 
     #[pyo3(name = "build")]
     fn py_build(&self) -> PyResult<PyLiveNode> {
-        let mut inner_ref = self.inner.borrow_mut();
-        if let Some(builder) = inner_ref.take() {
-            match builder.build() {
-                Ok(node) => Ok(PyLiveNode::new(node)),
-                Err(e) => Err(to_pyruntime_err(e)),
-            }
-        } else {
-            Err(to_pyruntime_err("Builder already consumed"))
-        }
+        let mut operation = self.begin_operation()?;
+        let builder = operation.take_builder()?;
+        builder
+            .build()
+            .map(PyLiveNode::new)
+            .map_err(to_pyruntime_err)
     }
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+}
+
+const BUILDER_OPERATION_IN_PROGRESS: &str = "Builder operation already in progress";
+const BUILDER_OPERATION_VALUE_TAKEN: &str = "Builder operation value already taken";
+
+enum PyLiveNodeBuilderState {
+    Ready(Box<LiveNodeBuilder>),
+    InProgress,
+    Consumed,
+}
+
+struct PyLiveNodeBuilderOperation<'a> {
+    state: &'a Cell<PyLiveNodeBuilderState>,
+    builder: Option<LiveNodeBuilder>,
+}
+
+impl PyLiveNodeBuilder {
+    fn begin_operation(&self) -> PyResult<PyLiveNodeBuilderOperation<'_>> {
+        match self.state.replace(PyLiveNodeBuilderState::InProgress) {
+            PyLiveNodeBuilderState::Ready(builder) => Ok(PyLiveNodeBuilderOperation {
+                state: &self.state,
+                builder: Some(*builder),
+            }),
+            PyLiveNodeBuilderState::InProgress => {
+                self.state.set(PyLiveNodeBuilderState::InProgress);
+                Err(to_pyruntime_err(BUILDER_OPERATION_IN_PROGRESS))
+            }
+            PyLiveNodeBuilderState::Consumed => {
+                self.state.set(PyLiveNodeBuilderState::Consumed);
+                Err(to_pyruntime_err("Builder already consumed"))
+            }
+        }
+    }
+
+    fn update_builder<F>(&self, update: F) -> PyResult<Self>
+    where
+        F: FnOnce(LiveNodeBuilder) -> LiveNodeBuilder,
+    {
+        let mut operation = self.begin_operation()?;
+        let builder = operation.take_builder()?;
+        operation.complete(update(builder));
+        Ok(self.shared())
+    }
+
+    fn shared(&self) -> Self {
+        Self {
+            state: self.state.clone(),
+        }
+    }
+}
+
+impl Debug for PyLiveNodeBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Preserve the existing Python repr despite the internal state change
+        let state = self.state.replace(PyLiveNodeBuilderState::InProgress);
+        let result = match &state {
+            PyLiveNodeBuilderState::Ready(builder) => write!(
+                f,
+                "PyLiveNodeBuilder {{ inner: RefCell {{ value: Some({builder:?}) }} }}"
+            ),
+            PyLiveNodeBuilderState::InProgress => {
+                f.write_str("PyLiveNodeBuilder { inner: <operation active> }")
+            }
+            PyLiveNodeBuilderState::Consumed => {
+                f.write_str("PyLiveNodeBuilder { inner: RefCell { value: None } }")
+            }
+        };
+        self.state.set(state);
+        result
+    }
+}
+
+impl PyLiveNodeBuilderOperation<'_> {
+    fn take_builder(&mut self) -> PyResult<LiveNodeBuilder> {
+        self.builder
+            .take()
+            .ok_or_else(|| to_pyruntime_err(BUILDER_OPERATION_VALUE_TAKEN))
+    }
+
+    fn complete(&mut self, builder: LiveNodeBuilder) {
+        self.builder = Some(builder);
+    }
+}
+
+impl Drop for PyLiveNodeBuilderOperation<'_> {
+    fn drop(&mut self) {
+        self.state.set(match self.builder.take() {
+            Some(builder) => PyLiveNodeBuilderState::Ready(Box::new(builder)),
+            None => PyLiveNodeBuilderState::Consumed,
+        });
     }
 }
 
@@ -2463,7 +2345,10 @@ mod tests {
     };
     use rstest::rstest;
 
-    use super::{LiveNode, PyLiveNode, PyLiveNodeBuilder};
+    use super::{
+        BUILDER_OPERATION_IN_PROGRESS, LiveNode, PyLiveNode, PyLiveNodeBuilder,
+        PyLiveNodeBuilderState, get_global_pyo3_registry,
+    };
     use crate::node::config::RoutingConfig;
 
     #[derive(Clone, Copy, Debug)]
@@ -2565,9 +2450,20 @@ mod tests {
             .unwrap();
 
             let node = builder.py_build().unwrap();
+            let consumed_error = builder
+                .py_with_msgbus_config(MessageBusConfig::default())
+                .unwrap_err();
 
             assert!(!node.node_mut().unwrap().is_running());
             assert_eq!(TEST_MSGBUS_FACTORY_CALLS.load(Ordering::SeqCst), 1);
+            assert_eq!(
+                consumed_error.to_string(),
+                "RuntimeError: Builder already consumed"
+            );
+            assert_eq!(
+                builder.__repr__(),
+                "PyLiveNodeBuilder { inner: RefCell { value: None } }"
+            );
             get_message_bus().borrow_mut().dispose();
         });
     }
@@ -2797,6 +2693,52 @@ mod tests {
             builder
                 .py_with_cache_config(CacheConfig::default())
                 .unwrap();
+        });
+    }
+
+    #[rstest]
+    fn test_python_builder_restores_state_after_factory_type_reentry() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let builder = Py::new(
+                py,
+                PyLiveNode::py_builder(
+                    "TEST".to_string(),
+                    TraderId::from("TESTER-001"),
+                    Environment::Sandbox,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let locals = PyDict::new(py);
+            locals.set_item("builder", &builder).unwrap();
+            py.run(
+                pyo3::ffi::c_str!(
+                    "class ReentrantFactory:\n    def __getattribute__(self, name):\n        if name == '__class__':\n            builder.with_load_state(True)\n        return object.__getattribute__(self, name)\n\nfactory = ReentrantFactory()"
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            let factory = locals.get_item("factory").unwrap();
+
+            let error = builder
+                .call_method1(py, "with_cache_database_factory", (factory,))
+                .unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                format!("RuntimeError: {BUILDER_OPERATION_IN_PROGRESS}")
+            );
+            let builder_ref = builder.borrow(py);
+            let state = builder_ref
+                .state
+                .replace(PyLiveNodeBuilderState::InProgress);
+            let is_ready = matches!(&state, PyLiveNodeBuilderState::Ready(_));
+            builder_ref.state.set(state);
+            assert!(is_ready);
+            locals.call_method0("clear").unwrap();
         });
     }
 
@@ -3100,6 +3042,126 @@ mod tests {
         fn config_type(&self) -> &'static str {
             "TestDataClientConfig"
         }
+    }
+
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "signature must match the factory extractor function pointer"
+    )]
+    fn extract_reentrant_data_client_factory(
+        _py: Python<'_>,
+        _factory: Py<pyo3::PyAny>,
+    ) -> pyo3::PyResult<Box<dyn DataClientFactory>> {
+        Ok(Box::new(VenueLessDataClientFactory))
+    }
+
+    #[expect(
+        clippy::unnecessary_wraps,
+        reason = "signature must match the config extractor function pointer"
+    )]
+    fn extract_reentrant_data_client_config(
+        _py: Python<'_>,
+        _config: Py<pyo3::PyAny>,
+    ) -> pyo3::PyResult<Box<dyn ClientConfig>> {
+        Ok(Box::new(TestDataClientConfig))
+    }
+
+    #[rstest]
+    fn test_python_builder_blocks_factory_name_reentry() {
+        get_global_pyo3_registry()
+            .register_factory_extractor(
+                "REENTRANT_DATA".to_string(),
+                extract_reentrant_data_client_factory,
+            )
+            .unwrap();
+        get_global_pyo3_registry()
+            .register_config_extractor(
+                "ReentrantDataClientConfig".to_string(),
+                extract_reentrant_data_client_config,
+            )
+            .unwrap();
+        Python::initialize();
+
+        Python::attach(|py| {
+            let builder = Py::new(
+                py,
+                PyLiveNode::py_builder(
+                    "TEST".to_string(),
+                    TraderId::from("TESTER-001"),
+                    Environment::Sandbox,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let locals = PyDict::new(py);
+            locals.set_item("builder", &builder).unwrap();
+            py.run(
+                pyo3::ffi::c_str!(
+                    "class ReentrantDataClientFactory:\n    def __init__(self):\n        self.reprs = []\n        self.results = []\n\n    def name(self):\n        self.reprs.append(repr(builder))\n        try:\n            builder.with_save_state(True)\n        except RuntimeError as e:\n            self.results.append((type(e).__name__, str(e)))\n        return 'REENTRANT_DATA'\n\nclass ReentrantDataClientConfig:\n    pass\n\nfactory = ReentrantDataClientFactory()\nconfig = ReentrantDataClientConfig()"
+                ),
+                Some(&locals),
+                None,
+            )
+            .unwrap();
+            let factory = locals.get_item("factory").unwrap();
+            let config = locals.get_item("config").unwrap();
+
+            builder
+                .call_method1(py, "add_data_client", (py.None(), &factory, &config))
+                .unwrap();
+
+            let results = factory
+                .getattr("results")
+                .unwrap()
+                .extract::<Vec<(String, String)>>()
+                .unwrap();
+            assert_eq!(
+                results,
+                vec![
+                    (
+                        "RuntimeError".to_string(),
+                        BUILDER_OPERATION_IN_PROGRESS.to_string(),
+                    ),
+                    (
+                        "RuntimeError".to_string(),
+                        BUILDER_OPERATION_IN_PROGRESS.to_string(),
+                    ),
+                ]
+            );
+            assert_eq!(
+                factory
+                    .getattr("reprs")
+                    .unwrap()
+                    .extract::<Vec<String>>()
+                    .unwrap(),
+                vec!["PyLiveNodeBuilder { inner: <operation active> }"; 2]
+            );
+            let builder_ref = builder.borrow(py);
+            let state = builder_ref
+                .state
+                .replace(PyLiveNodeBuilderState::InProgress);
+            let is_ready = matches!(&state, PyLiveNodeBuilderState::Ready(_));
+            builder_ref.state.set(state);
+            assert!(is_ready);
+            drop(builder_ref);
+
+            let duplicate_error = builder
+                .call_method1(py, "add_data_client", (py.None(), factory, config))
+                .unwrap_err();
+
+            assert_eq!(
+                duplicate_error.to_string(),
+                "RuntimeError: Failed to add data client: Data client 'REENTRANT_DATA' is already registered"
+            );
+            let builder_ref = builder.borrow(py);
+            let state = builder_ref
+                .state
+                .replace(PyLiveNodeBuilderState::InProgress);
+            let is_consumed = matches!(&state, PyLiveNodeBuilderState::Consumed);
+            builder_ref.state.set(state);
+            assert!(is_consumed);
+            locals.call_method0("clear").unwrap();
+        });
     }
 
     #[derive(Debug)]
