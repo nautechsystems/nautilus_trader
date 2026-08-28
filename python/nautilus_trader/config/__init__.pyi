@@ -25,6 +25,8 @@ from nautilus_trader.live import LiveRiskEngineConfig as LiveRiskEngineConfig
 from nautilus_trader.live import PluginConfig as PluginConfig
 from nautilus_trader.live import QueueMonitorConfig as QueueMonitorConfig
 from nautilus_trader.live import RoutingConfig as RoutingConfig
+from nautilus_trader.persistence import DataCatalogConfig as DataCatalogConfig
+from nautilus_trader.persistence import StreamingConfig as StreamingConfig
 from nautilus_trader.portfolio import PortfolioConfig as PortfolioConfig
 from nautilus_trader.risk import RiskEngineConfig as RiskEngineConfig
 from nautilus_trader.trading import ExecutionAlgorithmConfig as ExecutionAlgorithmConfig
@@ -42,6 +44,7 @@ __all__ = [
     "BacktestVenueConfig",
     "CacheConfig",
     "DataActorConfig",
+    "DataCatalogConfig",
     "DataClientConfig",
     "DataEngineConfig",
     "ExecutionAlgorithmConfig",
@@ -66,5 +69,6 @@ __all__ = [
     "RiskEngineConfig",
     "RoutingConfig",
     "StrategyConfig",
+    "StreamingConfig",
     "TearsheetConfig",
 ]
