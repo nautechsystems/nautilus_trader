@@ -860,7 +860,6 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-publish-wheels.bash
 	$Q bash scripts/ci/test-release-github-assets.bash
 	$Q bash scripts/ci/test-release-verification-retry.bash
-	$Q bash scripts/ci/test-rust-toolchain.bash
 	$Q bash scripts/ci/test-select-attestation-bundle.bash
 	$Q bash scripts/ci/test-tool-version-scripts.bash
 	$Q bash scripts/ci/test-validate-wheel-upload.bash

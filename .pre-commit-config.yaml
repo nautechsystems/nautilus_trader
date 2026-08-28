@@ -412,15 +412,11 @@ repos:
       - id: cargo-cooldown
         name: cargo cooldown
         description: Blocks crate versions published inside the cooldown window
-        entry: >-
-          bash scripts/check-cargo-cooldown.sh
-          --lock Cargo.lock
-          --lock crates/adapters/lighter/fuzz/pornin/Cargo.lock
+        entry: bash scripts/check-cargo-cooldown.sh
         language: system
         files: >-
           (?x)^(
-            Cargo\.(lock|toml)|
-            crates/adapters/lighter/fuzz/pornin/Cargo\.lock|
+            (?:.*/)?Cargo\.(lock|toml)|
             scripts/check-cargo-cooldown\.sh
           )$
         pass_filenames: false
