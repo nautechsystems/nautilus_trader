@@ -48,9 +48,27 @@ sha256 = "56edcb6426e45ad4646493831bfa66e8c454a098114baf24e9be0b8e032970db"
 executable = false
 
 [[file]]
+artifact = "markdown-standard"
+path = "docs/developer_guide/markdown_style.md"
+sha256 = "b08f946b87cad7bf75b4dad8f3f5afffd80ab8a461d9bdbf4092176bd6dfcbd5"
+executable = false
+
+[[file]]
+artifact = "markdown-table-check"
+path = "scripts/check-markdown-tables.py"
+sha256 = "b192e4bba9b5fa2e52a39582ba048f9ab3638a1299548d8d856803d259aa6d18"
+executable = false
+
+[[file]]
 artifact = "sync-check"
 path = "scripts/check-nautilus-engineering-sync.bash"
 sha256 = "4d9fd0173ef208e40d55c7aef2939143b564f0b135f35dbc969bcb710b2a4ce9"
+executable = true
+
+[[file]]
+artifact = "github-action-pin-check"
+path = "scripts/ci/check-github-action-shas.sh"
+sha256 = "70967bb1f127845e195f18319fa814c95b64378c851f79f4179ca67f58aa3360"
 executable = true
 
 [[file]]

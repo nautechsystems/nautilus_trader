@@ -2,10 +2,9 @@
 
 Standard revision: 1
 
-This document defines the shared Markdown baseline for AgentSkills and repositories that adopt a
-local copy. The maintained source is `references/markdown-style.md` in the AgentSkills repository.
-Keep repository copies byte-for-byte identical and put repository-specific additions in a separate
-local guide.
+This document defines a shared Markdown baseline for repositories that adopt a local copy. Keep
+copies byte-for-byte identical to the maintained source and put repository-specific additions in a
+separate local guide.
 
 ## Language and extensions
 
@@ -67,6 +66,33 @@ Example:
 
 1. First step
 1. Second step
+```
+
+## Admonitions
+
+- Use only the admonition syntax that the repository documents and renders.
+- When the repository documents and renders GitHub alerts without a stricter local syntax, use the
+  GitHub blockquote alert form with one of `NOTE`, `TIP`, `IMPORTANT`, `WARNING`, or `CAUTION`.
+- When support for that extension is absent or unconfirmed, use a portable blockquote with a bold
+  text label.
+- For a multi-paragraph admonition, prefix every content line and blank continuation line with `>`.
+  A bare blank line ends the admonition.
+- Keep the type label in the source and rendered output. Do not convey meaning through color or an
+  icon alone.
+- Preserve established, supported admonition syntax during a narrow edit. Do not convert it only to
+  impose this fallback.
+
+GitHub alert:
+
+```markdown
+> [!WARNING]
+> Back up the database before running the migration.
+```
+
+Portable fallback:
+
+```markdown
+> **Warning:** Back up the database before running the migration.
 ```
 
 ## Tables
@@ -155,9 +181,9 @@ Use three hyphens:
 - End each file with one newline.
 - Do not leave trailing whitespace.
 
-## Agent guidance
+## Editing guidance
 
-When generating or modifying Markdown:
+When creating or modifying Markdown:
 
 - For narrow edits, preserve surrounding style and use markdownlint without loading the full guide
   unless both leave a concrete question unanswered.

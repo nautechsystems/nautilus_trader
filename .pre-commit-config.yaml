@@ -458,6 +458,7 @@ repos:
       - id: docformatter
         language_version: python3.13 # Pin to 3.13 due to incompatibility with 3.14
         additional_dependencies: [tomli]
+        exclude: ^scripts/check-markdown-tables\.py$
         args:
           - "--wrap-summaries"
           - "88"

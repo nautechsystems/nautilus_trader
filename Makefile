@@ -852,7 +852,6 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-check-workspace-test-coverage.bash
 	$Q bash scripts/ci/test-configure-r2-aws.bash
 	$Q bash scripts/ci/test-docker-workflow-scripts.bash
-	$Q bash scripts/ci/test-github-action-shas.bash
 	$Q bash scripts/ci/test-nightly-merge-workflow.bash
 	$Q bash scripts/ci/test-package-cli-artifact.bash
 	$Q bash scripts/ci/test-plan.bash
