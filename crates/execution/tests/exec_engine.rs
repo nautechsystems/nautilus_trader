@@ -2661,6 +2661,75 @@ fn test_process_same_side_fill_publishes_position_changed_after_order_topic(
 }
 
 #[rstest]
+fn test_process_same_side_fill_snapshot_preserves_position_history(
+    mut execution_engine_with_config: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine_with_config);
+    let opening_fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-SNAPSHOT-OPEN"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(50_000),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        Some(Money::from("1 USD")),
+    ));
+    execution_engine_with_config.process(&opening_fill);
+
+    let position_id = *execution_engine_with_config
+        .cache()
+        .borrow()
+        .position_id(&order.client_order_id())
+        .unwrap();
+    let topic = switchboard::get_snapshot_position_topic(position_id);
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_ref().into();
+    let (handler, saver) = get_any_saving_handler::<PositionStateSnapshot>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    let fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("T-SNAPSHOT-UPDATE"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(25_000),
+        Price::from_str("1.0001").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        Some(position_id),
+        Some(Money::from("2 USD")),
+    ));
+    execution_engine_with_config.process(&fill);
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let snapshots = saver.get_messages();
+    let cached = execution_engine_with_config.cache().borrow();
+    let position = cached.position(&position_id).unwrap();
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&snapshots[0].position).unwrap(),
+        serde_json::to_value(&*position).unwrap(),
+    );
+    assert_eq!(snapshots[0].position.events.len(), 2);
+    assert_eq!(snapshots[0].position.replay_events.len(), 2);
+    assert_eq!(snapshots[0].position.trade_ids.len(), 2);
+}
+
+#[rstest]
 fn test_process_closing_fill_updates_cache_before_publishing_position_closed(
     mut execution_engine: ExecutionEngine,
 ) {

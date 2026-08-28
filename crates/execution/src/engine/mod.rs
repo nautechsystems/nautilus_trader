@@ -3982,6 +3982,13 @@ impl ExecutionEngine {
         fill: OrderFilled,
         oms_type: OmsType,
     ) -> Vec<PositionEvent> {
+        enum Action {
+            Open,
+            Reopen(Position),
+            Flip(Position),
+            Update,
+        }
+
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
         } else {
@@ -3989,10 +3996,21 @@ impl ExecutionEngine {
             return Vec::new();
         };
 
-        let position_opt = self.cache.borrow().position_owned(&position_id);
+        let action = {
+            let cache = self.cache.borrow();
 
-        match position_opt {
-            None => {
+            match cache.position(&position_id) {
+                None => Action::Open,
+                Some(position) if position.is_closed() => Action::Reopen(position.clone()),
+                Some(position) if self.will_flip_position(&position, &fill) => {
+                    Action::Flip(position.clone())
+                }
+                Some(_) => Action::Update,
+            }
+        };
+
+        match action {
+            Action::Open => {
                 if self.reject_reduce_only_position_open(&fill, oms_type) {
                     return Vec::new();
                 }
@@ -4000,21 +4018,21 @@ impl ExecutionEngine {
                 self.open_position(instrument, None, fill, oms_type)
                     .unwrap_or_default()
             }
-            Some(pos) if pos.is_closed() => {
+            Action::Reopen(position) => {
                 if self.reject_reduce_only_position_open(&fill, oms_type) {
                     return Vec::new();
                 }
 
-                self.open_position(instrument, Some(&pos), fill, oms_type)
+                self.open_position(instrument, Some(&position), fill, oms_type)
                     .unwrap_or_default()
             }
-            Some(mut pos) => {
-                if self.will_flip_position(&pos, &fill) {
-                    self.flip_position(instrument, &mut pos, &fill, oms_type)
-                } else {
-                    self.update_position(&mut pos, &fill).into_iter().collect()
-                }
+            Action::Flip(mut position) => {
+                self.flip_position(instrument, &mut position, &fill, oms_type)
             }
+            Action::Update => self
+                .update_position_from_fill(position_id, &fill)
+                .into_iter()
+                .collect(),
         }
     }
 
@@ -4207,6 +4225,43 @@ impl ExecutionEngine {
             Some(PositionEvent::PositionClosed(event))
         } else {
             let event = PositionChanged::create(position, fill, UUID4::new(), ts_init);
+            Some(PositionEvent::PositionChanged(event))
+        }
+    }
+
+    fn update_position_from_fill(
+        &self,
+        position_id: PositionId,
+        fill: &OrderFilled,
+    ) -> Option<PositionEvent> {
+        let position = match self
+            .cache
+            .borrow_mut()
+            .update_position_from_fill(position_id, fill)
+        {
+            Ok(position) => position,
+            Err(e) => {
+                log::error!("Failed to update position: {e:?}");
+                return None;
+            }
+        };
+
+        if self.config.snapshot_positions {
+            let position = self
+                .cache
+                .borrow()
+                .position_owned(&position_id)
+                .expect("Updated position is no longer cached");
+            self.create_position_state_snapshot(&position, false);
+        }
+
+        let ts_init = self.clock.borrow().timestamp_ns();
+
+        if position.is_closed() {
+            let event = PositionClosed::create(&position, fill, UUID4::new(), ts_init);
+            Some(PositionEvent::PositionClosed(event))
+        } else {
+            let event = PositionChanged::create(&position, fill, UUID4::new(), ts_init);
             Some(PositionEvent::PositionChanged(event))
         }
     }

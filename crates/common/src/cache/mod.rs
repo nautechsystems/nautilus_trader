@@ -74,7 +74,7 @@ use nautilus_model::{
         AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
         PriceType, TriggerType,
     },
-    events::{AccountState, OrderEventAny},
+    events::{AccountState, OrderEventAny, OrderFilled},
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId,
         PositionId, StrategyId, Venue, VenueOrderId,
@@ -5285,15 +5285,7 @@ impl Cache {
             anyhow::bail!("Cannot update position {}: not found in cache", position.id);
         };
 
-        // Update open/closed state
-
-        if position.is_open() {
-            self.index.positions_open.insert(position.id);
-            self.index.positions_closed.remove(&position.id);
-        } else {
-            self.index.positions_closed.insert(position.id);
-            self.index.positions_open.remove(&position.id);
-        }
+        self.refresh_position_indexes(position);
 
         *position_cell.borrow_mut() = position.clone();
 
@@ -5306,6 +5298,51 @@ impl Cache {
         }
 
         Ok(())
+    }
+
+    /// Updates a cached position by applying an order fill in place.
+    ///
+    /// Returns a transient copy of the updated state without stored history. The canonical cached
+    /// position retains its complete history.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the position is not already held in the cache, or if updating the
+    /// position in the database fails.
+    pub fn update_position_from_fill(
+        &mut self,
+        position_id: PositionId,
+        fill: &OrderFilled,
+    ) -> anyhow::Result<Position> {
+        let Some(position_cell) = self.positions.get(&position_id).cloned() else {
+            anyhow::bail!("Cannot update position {position_id}: not found in cache");
+        };
+
+        let _specified_side = fill.specified_side();
+
+        let position = {
+            let mut position = position_cell.borrow_mut();
+            position.apply(fill);
+            position.clone_without_events()
+        };
+
+        self.refresh_position_indexes(&position);
+
+        if let Some(database) = &mut self.database {
+            database.update_position(&position_cell.borrow())?;
+        }
+
+        Ok(position)
+    }
+
+    fn refresh_position_indexes(&mut self, position: &Position) {
+        if position.is_open() {
+            self.index.positions_open.insert(position.id);
+            self.index.positions_closed.remove(&position.id);
+        } else {
+            self.index.positions_closed.insert(position.id);
+            self.index.positions_open.remove(&position.id);
+        }
     }
 
     /// Gets the OMS type for the `position_id`.

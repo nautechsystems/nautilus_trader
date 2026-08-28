@@ -2580,6 +2580,11 @@ mod tests {
             ],
         ),
         cache_mutation(
+            "update_position_from_fill",
+            CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
+            &[PAYLOAD_TYPE_ORDER_FILLED],
+        ),
+        cache_mutation(
             "snapshot_position",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],

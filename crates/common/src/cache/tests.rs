@@ -18,6 +18,7 @@
 use std::{
     borrow::Cow,
     cell::RefCell,
+    panic::{AssertUnwindSafe, catch_unwind},
     rc::Rc,
     sync::{Arc, Mutex},
 };
@@ -3185,6 +3186,179 @@ fn test_update_position_moves_held_position_to_closed_index(
     assert!(cache.position(&position_id).unwrap().is_closed());
     assert!(!cache.index.positions_open.contains(&position_id));
     assert!(cache.index.positions_closed.contains(&position_id));
+}
+
+#[rstest]
+#[case::increase(OrderSide::Buy, Quantity::from(25_000), false)]
+#[case::close(OrderSide::Sell, Quantity::from(100_000), true)]
+fn test_update_position_from_fill_applies_to_canonical_state(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] side: OrderSide,
+    #[case] last_qty: Quantity,
+    #[case] expected_closed: bool,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let opening_fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new("O-IN-PLACE-OPEN"))
+        .trade_id(TradeId::new("T-IN-PLACE-OPEN"))
+        .position_id(PositionId::new("P-IN-PLACE"))
+        .last_px(Price::from("1.00000"))
+        .liquidity_side(LiquiditySide::Maker)
+        .commission(Money::from("1 USD"))
+        .build();
+    let position = Position::new(&instrument, opening_fill);
+    let position_id = position.id;
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    {
+        let mut cached = cache.position_mut(&position_id).unwrap();
+        cached.events.reserve(4);
+        cached.replay_events.reserve(4);
+    }
+    let (events_ptr, replay_events_ptr) = {
+        let cached = cache.position(&position_id).unwrap();
+        (cached.events.as_ptr(), cached.replay_events.as_ptr())
+    };
+
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new("O-IN-PLACE-UPDATE"))
+        .trade_id(TradeId::new("T-IN-PLACE-UPDATE"))
+        .order_side(side)
+        .last_qty(last_qty)
+        .last_px(Price::from("1.00010"))
+        .liquidity_side(LiquiditySide::Maker)
+        .position_id(position_id)
+        .commission(Money::from("2 USD"))
+        .build();
+    let mut expected = position;
+    expected.apply(&fill);
+    let expected_state = expected.clone_without_events();
+
+    let state = cache.update_position_from_fill(position_id, &fill).unwrap();
+
+    let cached = cache.position(&position_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&expected).unwrap(),
+    );
+    assert_eq!(
+        serde_json::to_value(&state).unwrap(),
+        serde_json::to_value(&expected_state).unwrap(),
+    );
+    assert_eq!(cached.events.as_ptr(), events_ptr);
+    assert_eq!(cached.replay_events.as_ptr(), replay_events_ptr);
+    assert_eq!(cached.is_closed(), expected_closed);
+    assert_eq!(cache.is_position_closed(&position_id), expected_closed);
+    assert_eq!(cache.is_position_open(&position_id), !expected_closed);
+}
+
+#[rstest]
+fn test_update_position_from_fill_refuses_unknown_position(audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let position_id = PositionId::new("P-IN-PLACE-UNKNOWN");
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new("O-IN-PLACE-UNKNOWN"))
+        .trade_id(TradeId::new("T-IN-PLACE-UNKNOWN"))
+        .last_px(Price::from("1.0"))
+        .liquidity_side(LiquiditySide::Maker)
+        .position_id(position_id)
+        .commission(Money::from("2 USD"))
+        .build();
+    let mut cache = Cache::default();
+
+    let error = cache
+        .update_position_from_fill(position_id, &fill)
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("Cannot update position {position_id}: not found in cache"),
+    );
+    assert!(cache.positions.is_empty());
+    assert!(cache.index.positions_open.is_empty());
+    assert!(cache.index.positions_closed.is_empty());
+}
+
+#[rstest]
+fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let position_id = PositionId::new("P-IN-PLACE-DUPLICATE");
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new("O-IN-PLACE-DUPLICATE"))
+        .trade_id(TradeId::new("T-IN-PLACE-DUPLICATE"))
+        .last_px(Price::from("1.0"))
+        .liquidity_side(LiquiditySide::Maker)
+        .position_id(position_id)
+        .commission(Money::from("2 USD"))
+        .build();
+    let position = Position::new(&instrument, fill.clone());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        cache.update_position_from_fill(position_id, &fill)
+    }));
+
+    assert!(result.is_err());
+    let cached = cache.position(&position_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&position).unwrap(),
+    );
+    assert!(cache.is_position_open(&position_id));
+    assert!(!cache.is_position_closed(&position_id));
+}
+
+#[rstest]
+fn test_update_position_from_fill_invalid_side_leaves_canonical_state_unchanged(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let position_id = PositionId::new("P-IN-PLACE-INVALID-SIDE");
+    let client_order_id = ClientOrderId::new("O-IN-PLACE-INVALID-SIDE");
+    let fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .trade_id(TradeId::new("T-IN-PLACE-VALID-SIDE"))
+        .last_px(Price::from("1.0"))
+        .liquidity_side(LiquiditySide::Maker)
+        .position_id(position_id)
+        .commission(Money::from("2 USD"))
+        .build();
+    let position = Position::new(&instrument, fill);
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let invalid_fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .trade_id(TradeId::new("T-IN-PLACE-INVALID-SIDE"))
+        .order_side(OrderSide::NoOrderSide)
+        .last_px(Price::from("1.0"))
+        .liquidity_side(LiquiditySide::Maker)
+        .position_id(position_id)
+        .commission(Money::from("2 USD"))
+        .build();
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        cache.update_position_from_fill(position_id, &invalid_fill)
+    }));
+
+    assert!(result.is_err());
+    let cached = cache.position(&position_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&position).unwrap(),
+    );
+    assert!(cache.is_position_open(&position_id));
+    assert!(!cache.is_position_closed(&position_id));
 }
 
 // -- DATA ------------------------------------------------------------------------------------
@@ -8679,6 +8853,51 @@ fn test_update_position_commits_canonical_state_when_database_update_fails() {
     assert_eq!(
         serde_json::to_value(&*cached).unwrap(),
         serde_json::to_value(&closed).unwrap(),
+    );
+    assert!(cached.is_closed());
+    assert!(cache.is_position_closed(&position_id));
+    assert!(!cache.is_position_open(&position_id));
+}
+
+#[rstest]
+fn test_update_position_from_fill_commits_canonical_state_when_database_update_fails() {
+    let database = SnapshotBlobTestDatabase::fail_update_position();
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let opening_fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new("O-IN-PLACE-DATABASE-OPEN"))
+        .trade_id(TradeId::new("T-IN-PLACE-DATABASE-OPEN"))
+        .position_id(PositionId::new("P-IN-PLACE-DATABASE-FAILURE"))
+        .last_px(Price::from("1.00000"))
+        .liquidity_side(LiquiditySide::Maker)
+        .commission(Money::from("2 USD"))
+        .build();
+    let position = Position::new(&instrument, opening_fill);
+    let position_id = position.id;
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    let closing_fill = OrderFilledSpec::builder()
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::new("O-IN-PLACE-DATABASE-CLOSE"))
+        .trade_id(TradeId::new("T-IN-PLACE-DATABASE-CLOSE"))
+        .order_side(OrderSide::Sell)
+        .position_id(position_id)
+        .last_px(Price::from("1.00010"))
+        .liquidity_side(LiquiditySide::Maker)
+        .commission(Money::from("2 USD"))
+        .build();
+    let mut expected = position;
+    expected.apply(&closing_fill);
+
+    let error = cache
+        .update_position_from_fill(position_id, &closing_fill)
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), "update position failed");
+    let cached = cache.position(&position_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&*cached).unwrap(),
+        serde_json::to_value(&expected).unwrap(),
     );
     assert!(cached.is_closed());
     assert!(cache.is_position_closed(&position_id));
