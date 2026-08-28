@@ -1884,6 +1884,14 @@ impl BacktestEngine {
         }
         self.last_module_ns = Some(ts_now);
 
+        if self
+            .venues
+            .values()
+            .all(|exchange| !exchange.borrow().has_modules())
+        {
+            return Ok(());
+        }
+
         // Pre-settle handler-generated work so modules see final state
         self.drain_command_queues();
         self.settle_venues(ts_now);
@@ -1903,6 +1911,14 @@ impl BacktestEngine {
             return;
         }
         self.last_liquidation_ns = Some(ts_now);
+
+        if self
+            .venues
+            .values()
+            .all(|exchange| !exchange.borrow().liquidation_enabled())
+        {
+            return;
+        }
 
         for exchange in self.venues.values() {
             exchange.borrow_mut().process_liquidations(ts_now);
@@ -2202,7 +2218,7 @@ fn log_portfolio_performance(analyzer: &PortfolioAnalyzer) {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::{cell::Cell, rc::Rc};
 
     use indexmap::IndexMap;
     use nautilus_common::{
@@ -2248,6 +2264,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+    use crate::modules::{
+        AccountAdjustmentOutcome, ExchangeContext, SimulationModule, SimulationModuleHandle,
+        SimulationModuleResult,
+    };
 
     #[derive(Debug)]
     struct BacktestReplayKernelEventStore {
@@ -2315,6 +2335,37 @@ mod tests {
     impl DataActor for TestStrategy {}
 
     nautilus_strategy!(TestStrategy);
+
+    struct TestSimulationModule {
+        process_count: Rc<Cell<u32>>,
+    }
+
+    impl SimulationModule for TestSimulationModule {
+        fn pre_process(&self, _data: &Data) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn process(
+            &self,
+            _ts_now: UnixNanos,
+            _ctx: &ExchangeContext,
+        ) -> anyhow::Result<SimulationModuleResult> {
+            self.process_count.set(self.process_count.get() + 1);
+            Ok(SimulationModuleResult::NotReady)
+        }
+
+        fn acknowledge(&self, _outcomes: &[AccountAdjustmentOutcome]) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn log_diagnostics(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn reset(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
 
     fn create_engine() -> BacktestEngine {
         let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
@@ -2397,6 +2448,89 @@ mod tests {
 
     fn send_execution_command(command: TradingCommand) {
         msgbus::send_trading_command(MessagingSwitchboard::exec_engine_execute(), command);
+    }
+
+    #[rstest]
+    #[case(false, false, 0)]
+    #[case(false, true, 1)]
+    #[case(true, true, 1)]
+    fn test_run_venue_modules_settles_only_when_enabled(
+        #[case] first_enabled: bool,
+        #[case] second_enabled: bool,
+        #[case] expected_ns: u64,
+    ) {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let process_count = Rc::new(Cell::new(0));
+
+        for (venue, enabled) in [
+            (Venue::from("BINANCE"), first_enabled),
+            (Venue::from("SIM"), second_enabled),
+        ] {
+            let modules = enabled
+                .then(|| {
+                    SimulationModuleHandle::new(TestSimulationModule {
+                        process_count: Rc::clone(&process_count),
+                    })
+                })
+                .into_iter()
+                .collect();
+            let venue_config = SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .modules(modules)
+                .build()
+                .unwrap();
+            engine.add_venue(venue_config).unwrap();
+        }
+
+        engine.run_venue_modules(UnixNanos::from(1)).unwrap();
+
+        assert_eq!(
+            engine.kernel.clock.borrow().timestamp_ns(),
+            UnixNanos::from(expected_ns)
+        );
+        assert_eq!(
+            process_count.get(),
+            u32::from(first_enabled) + u32::from(second_enabled)
+        );
+    }
+
+    #[rstest]
+    #[case(false, false, 0)]
+    #[case(false, true, 1)]
+    #[case(true, true, 1)]
+    fn test_run_venue_liquidations_settles_only_when_enabled(
+        #[case] first_enabled: bool,
+        #[case] second_enabled: bool,
+        #[case] expected_ns: u64,
+    ) {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+
+        for (venue, enabled) in [
+            (Venue::from("BINANCE"), first_enabled),
+            (Venue::from("SIM"), second_enabled),
+        ] {
+            let venue_config = SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USDT")])
+                .liquidation_enabled(enabled)
+                .build()
+                .unwrap();
+            engine.add_venue(venue_config).unwrap();
+        }
+
+        engine.run_venue_liquidations(UnixNanos::from(1));
+
+        assert_eq!(
+            engine.kernel.clock.borrow().timestamp_ns(),
+            UnixNanos::from(expected_ns)
+        );
     }
 
     #[rstest]

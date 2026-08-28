@@ -306,6 +306,16 @@ impl SimulatedExchange {
         self.latency_model = Some(latency_model);
     }
 
+    #[must_use]
+    pub(crate) const fn has_modules(&self) -> bool {
+        !self.modules.is_empty()
+    }
+
+    #[must_use]
+    pub(crate) const fn liquidation_enabled(&self) -> bool {
+        self.liquidation_enabled
+    }
+
     pub(crate) fn check_module_error(&self) -> anyhow::Result<()> {
         if let Some(error) = &self.module_error {
             anyhow::bail!("Simulation module failure requires exchange reset: {error}");
@@ -2057,6 +2067,26 @@ mod tests {
         }
 
         SimulatedExchange::new(config, cache, clock).unwrap()
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_liquidation_enabled(#[case] expected: bool) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let config = SimulatedVenueConfig::builder()
+            .venue(Venue::new("SIM"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
+            .liquidation_enabled(expected)
+            .build()
+            .unwrap();
+        let exchange = SimulatedExchange::new(config, cache, clock).unwrap();
+
+        assert_eq!(exchange.liquidation_enabled(), expected);
     }
 
     #[rstest]
