@@ -15,9 +15,10 @@
 
 //! Shared state for the Derive execution WebSocket dispatch loop.
 //!
-//! Holds identity context for orders submitted through this client plus the
-//! cross-stream deduplication gates that keep replay frames and concurrent
-//! `.orders` / `.trades` updates from emitting duplicate events.
+//! Holds instrument precision, identity context for orders submitted through
+//! this client, and the cross-stream deduplication gates that keep replay
+//! frames and concurrent `.orders` / `.trades` updates from emitting duplicate
+//! events.
 //!
 //! Tracked orders (those whose identity was registered at submission time)
 //! produce proper order events (`OrderAccepted`, `OrderFilled`, `OrderCanceled`,
@@ -55,14 +56,17 @@ pub struct OrderIdentity {
 
 /// Shared dispatch state for the Derive WS execution loop.
 ///
-/// `order_identities` populates on successful `submit_order` and is consulted
-/// by both the `.orders` and `.trades` dispatch paths to decide whether a
-/// frame belongs to a tracked or external order. `pending_modifies` and
-/// `bound_venue_order_ids` track the in-flight and current venue order id of a
-/// `private/replace` so the dispatch suppresses events for the superseded leg.
+/// Instrument precision populates from instrument definitions and governs
+/// execution report values. `order_identities` populates on successful
+/// `submit_order` and is consulted by both the `.orders` and `.trades`
+/// dispatch paths to decide whether a frame belongs to a tracked or external
+/// order. `pending_modifies` and `bound_venue_order_ids` track the in-flight
+/// and current venue order id of a `private/replace` so the dispatch suppresses
+/// events for the superseded leg.
 #[derive(Debug, Default)]
 pub struct WsDispatchState {
     order_identities: Mutex<AHashMap<ClientOrderId, OrderIdentity>>,
+    instrument_precisions: Mutex<AHashMap<InstrumentId, (u8, u8)>>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     emitted_canceled: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
@@ -75,6 +79,31 @@ impl WsDispatchState {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Records price and size precision for execution report parsing.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub(crate) fn register_instrument_precision(
+        &self,
+        instrument_id: InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) {
+        self.instrument_precisions
+            .lock()
+            .expect(MUTEX_POISONED)
+            .insert(instrument_id, (price_precision, size_precision));
+    }
+
+    /// Returns price and size precision for an instrument, when registered.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    #[must_use]
+    pub(crate) fn instrument_precision(&self, instrument_id: &InstrumentId) -> Option<(u8, u8)> {
+        self.instrument_precisions
+            .lock()
+            .expect(MUTEX_POISONED)
+            .get(instrument_id)
+            .copied()
     }
 
     /// Registers an order identity captured at submission so subsequent WS
@@ -333,6 +362,16 @@ mod tests {
             order_side: OrderSide::Buy,
             order_type: OrderType::Limit,
         }
+    }
+
+    #[rstest]
+    fn test_instrument_precision_roundtrip() {
+        let state = WsDispatchState::new();
+        let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+        assert_eq!(state.instrument_precision(&instrument_id), None);
+        state.register_instrument_precision(instrument_id, 2, 3);
+        assert_eq!(state.instrument_precision(&instrument_id), Some((2, 3)));
     }
 
     #[rstest]

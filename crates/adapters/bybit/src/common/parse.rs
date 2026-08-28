@@ -1154,22 +1154,16 @@ pub fn parse_position_status_report(
 ) -> anyhow::Result<PositionStatusReport> {
     let instrument_id = instrument.id();
 
-    // Parse position size
-    let size_f64 = position
-        .size
-        .parse::<f64>()
-        .with_context(|| format!("Failed to parse position size '{}'", position.size))?;
+    let size = parse_quantity_with_precision(
+        &position.size,
+        instrument.size_precision(),
+        "position.size",
+    )?;
 
     // Determine position side and quantity
     let (position_side, quantity) = match position.side {
-        BybitPositionSide::Buy => {
-            let qty = Quantity::new(size_f64, instrument.size_precision());
-            (PositionSideSpecified::Long, qty)
-        }
-        BybitPositionSide::Sell => {
-            let qty = Quantity::new(size_f64, instrument.size_precision());
-            (PositionSideSpecified::Short, qty)
-        }
+        BybitPositionSide::Buy => (PositionSideSpecified::Long, size),
+        BybitPositionSide::Sell => (PositionSideSpecified::Short, size),
         BybitPositionSide::Flat => {
             let qty = Quantity::zero(instrument.size_precision());
             (PositionSideSpecified::Flat, qty)
@@ -1298,10 +1292,8 @@ pub(crate) fn parse_price_with_precision(
     precision: u8,
     field: &str,
 ) -> anyhow::Result<Price> {
-    let parsed = value
-        .parse::<f64>()
-        .with_context(|| format!("Failed to parse {field}='{value}' as f64"))?;
-    Price::new_checked(parsed, precision).with_context(|| {
+    let parsed = parse_decimal(value, field)?;
+    Price::from_decimal_dp(parsed, precision).with_context(|| {
         format!("Failed to construct Price for {field} with precision {precision}")
     })
 }
@@ -1311,10 +1303,8 @@ pub(crate) fn parse_quantity_with_precision(
     precision: u8,
     field: &str,
 ) -> anyhow::Result<Quantity> {
-    let parsed = value
-        .parse::<f64>()
-        .with_context(|| format!("Failed to parse {field}='{value}' as f64"))?;
-    Quantity::new_checked(parsed, precision).with_context(|| {
+    let parsed = parse_decimal(value, field)?;
+    Quantity::from_decimal_dp(parsed, precision).with_context(|| {
         format!("Failed to construct Quantity for {field} with precision {precision}")
     })
 }
@@ -1998,6 +1988,28 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_price_with_precision_preserves_decimal_value() {
+        let price = parse_price_with_precision("9000000.000000001", 9, "test.price").unwrap();
+
+        assert_eq!(price, Price::from("9000000.000000001"));
+        assert_eq!(price.precision, 9);
+    }
+
+    #[rstest]
+    #[case("25.000", 2, "25.00")]
+    #[case("9000000.000000001", 9, "9000000.000000001")]
+    fn test_parse_quantity_with_precision_preserves_decimal_value(
+        #[case] value: &str,
+        #[case] precision: u8,
+        #[case] expected: &str,
+    ) {
+        let quantity = parse_quantity_with_precision(value, precision, "test.quantity").unwrap();
+
+        assert_eq!(quantity, Quantity::from(expected));
+        assert_eq!(quantity.precision, precision);
+    }
+
+    #[rstest]
     #[case::post_only_cross("EC_PostOnlyWillTakeLiquidity", true)]
     #[case::post_only_cross_with_prefix("Order rejected: EC_PostOnlyWillTakeLiquidity", true)]
     #[case::other_reason("EC_OrigClOrdIDDoesNotExist", false)]
@@ -2356,6 +2368,30 @@ mod tests {
             Some(Decimal::try_from(3000.00).unwrap())
         );
         assert_eq!(report.ts_last, UnixNanos::new(1_697_673_700_112_000_000));
+    }
+
+    #[rstest]
+    fn parse_http_position_preserves_decimal_quantity() {
+        use crate::http::models::BybitPositionListResponse;
+
+        let json = load_test_json("http_get_positions.json");
+        let response: BybitPositionListResponse = serde_json::from_str(&json).unwrap();
+        let mut position = response.result.list[0].clone();
+        position.size = "9000000.000000001".to_string();
+
+        let json = load_test_json("http_get_instruments_linear.json");
+        let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
+        let mut definition = response.result.list[0].clone();
+        definition.lot_size_filter.qty_step = "0.000000001".to_string();
+        let fee_rate = sample_fee_rate("BTCUSDT", "0.00055", "0.0001", Some("BTC"));
+        let instrument = parse_linear_instrument(&definition, &fee_rate, TS, TS).unwrap();
+
+        let report =
+            parse_position_status_report(&position, AccountId::new("BYBIT-001"), &instrument, TS)
+                .unwrap();
+
+        assert_eq!(report.quantity, Quantity::from("9000000.000000001"));
+        assert_eq!(report.quantity.precision, 9);
     }
 
     #[rstest]

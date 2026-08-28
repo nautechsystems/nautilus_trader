@@ -166,8 +166,8 @@ pub fn parse_spot_instrument(
     let price_precision = precision_from_increment(&product.price_increment);
     let size_precision = precision_from_increment(&product.base_increment);
 
-    let price_increment = Price::from(product.price_increment.as_str());
-    let size_increment = Quantity::from(product.base_increment.as_str());
+    let price_increment = parse_price(&product.price_increment, price_precision)?;
+    let size_increment = parse_quantity(&product.base_increment, size_precision)?;
 
     let min_quantity = parse_optional_quantity(&product.base_min_size);
     let max_quantity = parse_optional_quantity(&product.base_max_size);
@@ -211,8 +211,8 @@ pub fn parse_perpetual_instrument(
     let price_precision = precision_from_increment(&product.price_increment);
     let size_precision = precision_from_increment(&product.base_increment);
 
-    let price_increment = Price::from(product.price_increment.as_str());
-    let size_increment = Quantity::from(product.base_increment.as_str());
+    let price_increment = parse_price(&product.price_increment, price_precision)?;
+    let size_increment = parse_quantity(&product.base_increment, size_precision)?;
 
     let min_quantity = parse_optional_quantity(&product.base_min_size);
     let max_quantity = parse_optional_quantity(&product.base_max_size);
@@ -260,8 +260,8 @@ pub fn parse_future_instrument(
     let price_precision = precision_from_increment(&product.price_increment);
     let size_precision = precision_from_increment(&product.base_increment);
 
-    let price_increment = Price::from(product.price_increment.as_str());
-    let size_increment = Quantity::from(product.base_increment.as_str());
+    let price_increment = parse_price(&product.price_increment, price_precision)?;
+    let size_increment = parse_quantity(&product.base_increment, size_precision)?;
 
     let min_quantity = parse_optional_quantity(&product.base_min_size);
     let max_quantity = parse_optional_quantity(&product.base_max_size);
@@ -1178,6 +1178,7 @@ mod tests {
     #[case("5", 0)]
     #[case("0.1", 1)]
     #[case("0.001", 3)]
+    #[case("25.000", 0)]
     fn test_precision_from_increment(#[case] increment: &str, #[case] expected: u8) {
         assert_eq!(precision_from_increment(increment), expected);
     }
@@ -1257,6 +1258,61 @@ mod tests {
         assert_eq!(pair.size_increment(), Quantity::from("0.00000001"));
         assert_eq!(pair.min_quantity(), Some(Quantity::from("0.00000001")));
         assert_eq!(pair.max_quantity(), Some(Quantity::from("3400")));
+    }
+
+    #[rstest]
+    fn test_parse_spot_instrument_normalizes_padded_increments() {
+        let json = load_test_fixture("http_product.json");
+        let mut product: crate::http::models::Product = serde_json::from_str(&json).unwrap();
+        product.price_increment = "25.000".to_string();
+        product.base_increment = "1.2300".to_string();
+
+        let instrument = parse_spot_instrument(&product, UnixNanos::default()).unwrap();
+        let InstrumentAny::CurrencyPair(pair) = instrument else {
+            panic!("Expected CurrencyPair");
+        };
+
+        assert_eq!(pair.price_precision(), 0);
+        assert_eq!(pair.price_increment(), Price::from("25"));
+        assert_eq!(pair.price_increment().precision, 0);
+        assert_eq!(pair.size_precision(), 2);
+        assert_eq!(pair.size_increment(), Quantity::from("1.23"));
+        assert_eq!(pair.size_increment().precision, 2);
+    }
+
+    #[rstest]
+    fn test_parse_derivative_instruments_normalize_padded_increments() {
+        let json = load_test_fixture("http_products_future.json");
+        let response: crate::http::models::ProductsResponse = serde_json::from_str(&json).unwrap();
+        let mut perp_product = response
+            .products
+            .iter()
+            .find(|product| product.display_name.contains("PERP"))
+            .unwrap()
+            .clone();
+        let mut future_product = response
+            .products
+            .iter()
+            .find(|product| !product.display_name.contains("PERP"))
+            .unwrap()
+            .clone();
+
+        for product in [&mut perp_product, &mut future_product] {
+            product.price_increment = "25.000".to_string();
+            product.base_increment = "1.2300".to_string();
+        }
+
+        let perp = parse_perpetual_instrument(&perp_product, UnixNanos::default()).unwrap();
+        let future = parse_future_instrument(&future_product, UnixNanos::default()).unwrap();
+
+        for instrument in [&perp, &future] {
+            assert_eq!(instrument.price_precision(), 0);
+            assert_eq!(instrument.price_increment(), Price::from("25"));
+            assert_eq!(instrument.price_increment().precision, 0);
+            assert_eq!(instrument.size_precision(), 2);
+            assert_eq!(instrument.size_increment(), Quantity::from("1.23"));
+            assert_eq!(instrument.size_increment().precision, 2);
+        }
     }
 
     #[rstest]

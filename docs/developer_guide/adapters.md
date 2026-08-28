@@ -462,9 +462,25 @@ Model the wire format, not an imagined stable subset:
   protocol version change.
 - Keep raw models separate from Nautilus domain objects. Convert at one auditable boundary.
 - Deserialize prices, quantities, money, fees, and other discrete values as `Decimal`. Construct
-  domain values with `Price::from_decimal_dp`, `Quantity::from_decimal_dp`, `Money::from_decimal`,
-  or `Money::zero`; never route wire values through `f64`. See
-  [domain numeric types](rust.md#domain-numeric-types).
+  domain values with `Price::from_decimal`, `Price::from_decimal_dp`, `Quantity::from_decimal`,
+  `Quantity::from_decimal_dp`, `Money::from_decimal`, or `Money::zero`; never route wire values
+  through `f64`. See [domain numeric types](rust.md#domain-numeric-types).
+- Choose domain precision from the field contract, not incidental payload formatting:
+
+| Field contract                                     | `"25.000"` result       | Conversion                                                          |
+| -------------------------------------------------- | ----------------------- | ------------------------------------------------------------------- |
+| Venue-declared scale is meaningful                 | `25.000` at precision 3 | Use `Price::from_decimal` or `Quantity::from_decimal`.              |
+| Documented trailing zeros are non-semantic padding | `25` at precision 0     | Call `Decimal::normalize`, then use the scale-inferred constructor. |
+| Instrument or currency precision governs the value | `25.00` at precision 2  | Use `Price::from_decimal_dp` or `Quantity::from_decimal_dp`.        |
+
+Use instrument or currency precision for event and report values when available. A venue may send
+the same value as `"25"`, `"25.0"`, or `"25.000"`, so do not infer precision per payload unless
+the adapter defines and tests an explicit compatibility fallback. The declared-precision
+constructors apply banker's rounding when a value has excess non-zero digits; validate round-trip
+equality when the field contract requires exact representation. During reconciliation, follow
+[instrument resolution](#instrument-resolution-during-reconciliation) when precision metadata is
+missing.
+
 - Pass required parsing context explicitly, including instrument precision, currencies, account
   identity, and `ts_init`. Keep live client state outside parsers.
 - Treat missing, null, and empty values according to the venue schema. Do not collapse them into one

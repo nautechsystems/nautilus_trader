@@ -62,7 +62,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, Venue, VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Price, Quantity},
@@ -91,8 +91,9 @@ use crate::{
         DeriveCredentials, DeriveHttpClient,
         models::{DeriveInstrument, DeriveOrder, DeriveReplaceOutcome, DeriveTrade},
         parse::{
-            parse_derive_order_to_report, parse_derive_position_to_report,
-            parse_derive_subaccount_to_balances, parse_derive_trade_to_fill_report,
+            parse_derive_order_to_report_with_precision,
+            parse_derive_position_to_report_with_precision, parse_derive_subaccount_to_balances,
+            parse_derive_trade_to_fill_report_with_precision,
         },
         query::{
             DeriveCancelByInstrumentParams, DeriveCancelByLabelParams, DeriveCancelParams,
@@ -272,6 +273,16 @@ impl DeriveExecutionClient {
     /// re-querying the venue.
     pub fn cache_instrument(&self, instrument: DeriveInstrument) {
         let instrument_id = format_instrument_id(instrument.instrument_name);
+        if let (Ok(price_increment), Ok(size_increment)) = (
+            Price::from_decimal(instrument.tick_size),
+            Quantity::from_decimal(instrument.amount_step),
+        ) {
+            self.dispatch_state.register_instrument_precision(
+                instrument_id,
+                price_increment.precision,
+                size_increment.precision,
+            );
+        }
         self.instruments.insert(instrument_id, instrument);
     }
 
@@ -614,7 +625,12 @@ impl ExecutionClient for DeriveExecutionClient {
         Ok(())
     }
 
-    fn on_instrument(&mut self, _instrument: InstrumentAny) {
+    fn on_instrument(&mut self, instrument: InstrumentAny) {
+        self.dispatch_state.register_instrument_precision(
+            instrument.id(),
+            instrument.price_precision(),
+            instrument.size_precision(),
+        );
         // The exec-side instrument cache holds `DeriveInstrument` records so
         // signing can pull `base_asset_address` / `base_asset_sub_id`; the
         // generic `InstrumentAny` shape published on the bus does not carry
@@ -737,8 +753,16 @@ impl ExecutionClient for DeriveExecutionClient {
             return Ok(None);
         }
 
+        let (price_precision, size_precision) =
+            report_precision(&self.dispatch_state, order.instrument_name.as_str());
         let ts_init = self.clock.get_time_ns();
-        let mut report = parse_derive_order_to_report(&order, self.core.account_id, ts_init)?;
+        let mut report = parse_derive_order_to_report_with_precision(
+            &order,
+            self.core.account_id,
+            price_precision,
+            size_precision,
+            ts_init,
+        )?;
         // Prefer the parsed label (the venue's source of truth); only stamp
         // the cmd's id when the venue order has no label at all.
         if report.client_order_id.is_none()
@@ -1888,6 +1912,7 @@ impl ExecutionClient for DeriveExecutionClient {
         let account_id = self.core.account_id;
         let emitter = self.emitter.clone();
         let clock = self.clock;
+        let dispatch_state = Arc::clone(&self.dispatch_state);
         let voi = venue_order_id.to_string();
 
         self.spawn_task("query_order", async move {
@@ -1923,8 +1948,16 @@ impl ExecutionClient for DeriveExecutionClient {
                 }
             };
 
+            let (price_precision, size_precision) =
+                report_precision(&dispatch_state, order.instrument_name.as_str());
             let ts_init = clock.get_time_ns();
-            let report = parse_derive_order_to_report(&order, account_id, ts_init)?;
+            let report = parse_derive_order_to_report_with_precision(
+                &order,
+                account_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            )?;
             emitter.send_order_status_report(report);
             Ok(())
         });
@@ -2045,7 +2078,15 @@ impl DeriveReconciliationContext {
         let mut reports = Vec::with_capacity(orders.len());
 
         for order in orders {
-            match parse_derive_order_to_report(&order, self.account_id, ts_init) {
+            let (price_precision, size_precision) =
+                report_precision(&self.dispatch_state, order.instrument_name.as_str());
+            match parse_derive_order_to_report_with_precision(
+                &order,
+                self.account_id,
+                price_precision,
+                size_precision,
+                ts_init,
+            ) {
                 Ok(mut report) => {
                     if report.client_order_id.is_some_and(|client_order_id| {
                         ambiguous_client_order_ids.contains(&client_order_id)
@@ -2109,10 +2150,14 @@ impl DeriveReconciliationContext {
                 continue;
             }
 
-            match parse_derive_trade_to_fill_report(
+            let (price_precision, size_precision) =
+                report_precision(&self.dispatch_state, trade.instrument_name.as_str());
+            match parse_derive_trade_to_fill_report_with_precision(
                 &trade,
                 self.account_id,
                 Currency::USDC(),
+                price_precision,
+                size_precision,
                 ts_init,
             ) {
                 Ok(Some(report)) => {
@@ -2155,7 +2200,14 @@ impl DeriveReconciliationContext {
 
             instruments.insert(instrument_id);
 
-            match parse_derive_position_to_report(&position, self.account_id, ts_init) {
+            let (_, size_precision) =
+                report_precision(&self.dispatch_state, position.instrument_name.as_str());
+            match parse_derive_position_to_report_with_precision(
+                &position,
+                self.account_id,
+                size_precision,
+                ts_init,
+            ) {
                 Ok(report) => reports.push(report),
                 Err(e) => log::warn!("Skipping position in status report: {e}"),
             }
@@ -2384,6 +2436,16 @@ fn add_missing_flat_position_reports(
     }
 }
 
+fn report_precision(
+    dispatch_state: &WsDispatchState,
+    instrument_name: &str,
+) -> (Option<u8>, Option<u8>) {
+    let instrument_id = format_instrument_id(instrument_name);
+    dispatch_state
+        .instrument_precision(&instrument_id)
+        .map_or((None, None), |(price, size)| (Some(price), Some(size)))
+}
+
 fn handle_ws_message(
     message: DeriveWsMessage,
     emitter: &ExecutionEventEmitter,
@@ -2444,7 +2506,15 @@ pub fn dispatch_orders_payload(
     let ts_init = clock.get_time_ns();
 
     for order in data.orders {
-        let report = match parse_derive_order_to_report(&order, account_id, ts_init) {
+        let (price_precision, size_precision) =
+            report_precision(dispatch_state, order.instrument_name.as_str());
+        let report = match parse_derive_order_to_report_with_precision(
+            &order,
+            account_id,
+            price_precision,
+            size_precision,
+            ts_init,
+        ) {
             Ok(report) => report,
             Err(e) => {
                 log::warn!("Failed to parse Derive order WS update: {e}");
@@ -2486,7 +2556,16 @@ pub fn dispatch_trades_payload(
     let ts_init = clock.get_time_ns();
 
     for trade in data.trades {
-        match parse_derive_trade_to_fill_report(&trade, account_id, fee_currency, ts_init) {
+        let (price_precision, size_precision) =
+            report_precision(dispatch_state, trade.instrument_name.as_str());
+        match parse_derive_trade_to_fill_report_with_precision(
+            &trade,
+            account_id,
+            fee_currency,
+            price_precision,
+            size_precision,
+            ts_init,
+        ) {
             Ok(Some(report)) => {
                 if dispatch_state.check_and_insert_trade(report.trade_id) {
                     log::debug!(
@@ -3002,7 +3081,10 @@ async fn cached_or_fetch_instrument(
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, messages::ExecutionEvent};
+    use nautilus_common::{
+        cache::Cache,
+        messages::{ExecutionEvent, ExecutionReport},
+    };
     use nautilus_core::UnixNanos;
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
@@ -3016,7 +3098,11 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::common::{consts::DERIVE, enums::DeriveEnvironment};
+    use crate::common::{
+        consts::DERIVE,
+        enums::{DeriveEnvironment, DeriveOrderStatus, DeriveOrderType},
+        parse::parse_derive_instrument_any,
+    };
 
     const TEST_WALLET: &str = "0x0000000000000000000000000000000000001234";
     const TEST_SESSION_KEY: &str =
@@ -3342,6 +3428,90 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cache_instrument_registers_report_precision() {
+        let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let instrument = sample_derive_instrument();
+        let instrument_id = format_instrument_id(instrument.instrument_name.as_str());
+
+        client.cache_instrument(instrument);
+
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&instrument_id),
+            Some((2, 3)),
+        );
+    }
+
+    #[rstest]
+    fn test_order_dispatch_uses_registered_instrument_precision() {
+        let clock = get_atomic_clock_realtime();
+        let client = test_client_with_instrument();
+
+        let mut order: DeriveOrder = serde_json::from_str(include_str!(
+            "../test_data/perps/http_order_eth_partially_filled.json"
+        ))
+        .unwrap();
+        order.amount = Decimal::from_str_exact("25.000").unwrap();
+        order.filled_amount = Decimal::from_str_exact("5.000").unwrap();
+        order.limit_price = Decimal::from_str_exact("25.000").unwrap();
+        order.order_status = DeriveOrderStatus::Open;
+        order.order_type = DeriveOrderType::Limit;
+
+        let (emitter, mut rx) = test_emitter(clock);
+        dispatch_orders_payload(
+            DeriveOrdersSubscriptionData {
+                orders: vec![order],
+            },
+            &emitter,
+            AccountId::from("DERIVE-001"),
+            clock,
+            &client.dispatch_state,
+        );
+
+        let event = rx.try_recv().unwrap();
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            panic!("Expected OrderStatusReport");
+        };
+        assert_eq!(report.price, Some(Price::from("25.00")));
+        assert_eq!(report.price.unwrap().precision, 2);
+        assert_eq!(report.quantity, Quantity::from("25.000"));
+        assert_eq!(report.quantity.precision, 3);
+        assert_eq!(report.filled_qty, Quantity::from("5.000"));
+        assert_eq!(report.filled_qty.precision, 3);
+    }
+
+    #[rstest]
+    fn test_trade_dispatch_uses_registered_instrument_precision() {
+        let clock = get_atomic_clock_realtime();
+        let client = test_client_with_instrument();
+        let mut trade: DeriveTrade = serde_json::from_str(include_str!(
+            "../test_data/perps/http_private_trade_eth.json"
+        ))
+        .unwrap();
+        trade.trade_amount = Decimal::from_str_exact("25.000").unwrap();
+        trade.trade_price = Decimal::from_str_exact("25.000").unwrap();
+
+        let (emitter, mut rx) = test_emitter(clock);
+        dispatch_trades_payload(
+            DeriveTradesSubscriptionData {
+                trades: vec![trade],
+            },
+            &emitter,
+            AccountId::from("DERIVE-001"),
+            clock,
+            &client.dispatch_state,
+        );
+
+        let event = rx.try_recv().unwrap();
+        let ExecutionEvent::Report(ExecutionReport::Fill(report)) = event else {
+            panic!("Expected FillReport");
+        };
+        assert_eq!(report.last_px, Price::from("25.00"));
+        assert_eq!(report.last_px.precision, 2);
+        assert_eq!(report.last_qty, Quantity::from("25.000"));
+        assert_eq!(report.last_qty.precision, 3);
+    }
+
+    #[rstest]
     fn test_emit_tracked_event_suppresses_in_flight_replace_cancel_leg() {
         // Derive's `private/replace` cancels the old order; the `.orders`
         // cancel-of-old leg can arrive before `modify_order` rebinds the order,
@@ -3478,5 +3648,19 @@ mod tests {
         );
         emitter.set_sender(tx);
         (emitter, rx)
+    }
+
+    fn sample_derive_instrument() -> DeriveInstrument {
+        serde_json::from_str(include_str!("../test_data/perps/instrument_eth.json")).unwrap()
+    }
+
+    fn test_client_with_instrument() -> DeriveExecutionClient {
+        let mut client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let instrument =
+            parse_derive_instrument_any(&sample_derive_instrument(), UnixNanos::default())
+                .unwrap()
+                .unwrap();
+        client.on_instrument(instrument);
+        client
     }
 }
