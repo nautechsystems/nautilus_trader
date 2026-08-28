@@ -36,6 +36,7 @@ use nautilus_common::{
     timer::TimeEvent,
 };
 use nautilus_core::{Params, UUID4};
+use nautilus_execution::order_manager::OrderManagerAction;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, PositionSide, TimeInForce, TriggerType},
     events::{
@@ -396,7 +397,7 @@ pub trait Strategy: DataActor {
 
         let mut updating = false;
 
-        if quantity.is_some_and(|q| q != order.quantity()) {
+        if quantity.is_some_and(|q| q != order.quantity() || order.is_pending_update()) {
             updating = true;
         }
 
@@ -810,7 +811,7 @@ pub trait Strategy: DataActor {
     where
         Self: StrategyNative,
     {
-        if order.is_active_local() {
+        if order.is_active_local() || order.is_pending_update() {
             return Ok(true);
         }
 
@@ -1404,18 +1405,17 @@ pub trait Strategy: DataActor {
             }
         }
 
-        // Contingent order manager observes events before user handlers so OCO
-        // bookkeeping is consistent with what the strategy then sees.
-        {
+        let manager_actions = {
             let core = StrategyNative::strategy_core_mut(self);
-            if let Some(manager) = &mut core.order_manager {
-                let actions = manager.handle_event(&event);
-                debug_assert!(
-                    actions.is_empty(),
-                    "inactive strategy order manager returned actions"
-                );
+            if core.config.manage_contingent_orders {
+                core.order_manager
+                    .as_mut()
+                    .map_or_else(Vec::new, |manager| manager.handle_event(&event))
+            } else {
+                Vec::new()
             }
-        }
+        };
+        self.dispatch_manager_actions(manager_actions);
 
         match &event {
             OrderEventAny::Initialized(e) => self.on_order_initialized(e.clone()),
@@ -1437,6 +1437,48 @@ pub trait Strategy: DataActor {
             OrderEventAny::FillVoided(e) => self.on_order_fill_voided(e),
         }
         self.on_order_event(event);
+    }
+
+    fn dispatch_manager_actions(&mut self, actions: Vec<OrderManagerAction>)
+    where
+        Self: StrategyNative,
+    {
+        for action in actions {
+            match action {
+                OrderManagerAction::PublishInitialized(event) => {
+                    let topic = msgbus::switchboard::get_event_order_topic(event.strategy_id());
+                    msgbus::publish_order_event(topic, &event);
+                }
+                OrderManagerAction::SubmitToEmulator(command) => {
+                    send_emulator_command(TradingCommand::SubmitOrder(command));
+                }
+                OrderManagerAction::SubmitToRisk(command) => {
+                    send_risk_command(TradingCommand::SubmitOrder(command));
+                }
+                OrderManagerAction::SubmitToAlgorithm {
+                    command,
+                    exec_algorithm_id,
+                } => send_algo_command(command, exec_algorithm_id),
+                OrderManagerAction::CancelLocal(order) => {
+                    let client_order_id = order.client_order_id();
+                    if let Err(e) = self.cancel_order(client_order_id, None, None) {
+                        log::error!(
+                            "Failed to dispatch contingent cancel for {client_order_id}: {e}"
+                        );
+                    }
+                }
+                OrderManagerAction::ModifyLocalQuantity { order, quantity } => {
+                    let client_order_id = order.client_order_id();
+                    if let Err(e) =
+                        self.modify_order(client_order_id, Some(quantity), None, None, None, None)
+                    {
+                        log::error!(
+                            "Failed to dispatch contingent modify for {client_order_id}: {e}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// Handles a position event, dispatching to the appropriate handler.
@@ -2345,7 +2387,8 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         enums::{
-            LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType, PositionSide,
+            ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
+            PositionAdjustmentType, PositionSide,
         },
         events::{
             OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
@@ -2380,6 +2423,7 @@ mod tests {
         on_order_filled_called: bool,
         on_order_fill_voided_called: bool,
         on_order_expired_called: bool,
+        order_event_timeline: Rc<RefCell<Vec<&'static str>>>,
         on_position_event_called: bool,
         on_position_opened_called: bool,
         on_position_changed_called: bool,
@@ -2433,6 +2477,7 @@ mod tests {
                 on_order_filled_called: false,
                 on_order_fill_voided_called: false,
                 on_order_expired_called: false,
+                order_event_timeline: Rc::new(RefCell::new(Vec::new())),
                 on_position_event_called: false,
                 on_position_opened_called: false,
                 on_position_changed_called: false,
@@ -2450,6 +2495,7 @@ mod tests {
 
         fn on_order_filled(&mut self, _event: &OrderFilled) {
             self.on_order_filled_called = true;
+            self.order_event_timeline.borrow_mut().push("specific");
         }
 
         fn on_order_fill_voided(&mut self, _event: &OrderFillVoided) {
@@ -2462,6 +2508,7 @@ mod tests {
 
         fn on_order_event(&mut self, _event: OrderEventAny) {
             self.on_order_event_called = true;
+            self.order_event_timeline.borrow_mut().push("aggregate");
         }
 
         fn on_order_accepted(&mut self, _event: OrderAccepted) {
@@ -2749,6 +2796,23 @@ mod tests {
         cache.add_order(order.clone(), None, None, true).unwrap();
     }
 
+    fn make_submit_command(order: &OrderAny) -> SubmitOrder {
+        SubmitOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            order.init_event().clone(),
+            order.exec_algorithm_id(),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None, // correlation_id
+        )
+    }
+
     fn add_order_to_cache_and_own_book(strategy: &TestStrategy, order: &OrderAny) {
         let cache_rc = strategy.core.cache_rc();
         let mut cache = cache_rc.borrow_mut();
@@ -2907,6 +2971,257 @@ mod tests {
 
         assert!(strategy.on_order_rejected_called);
         assert!(strategy.on_order_event_called);
+    }
+
+    #[rstest]
+    fn test_dispatch_manager_actions_routes_every_action() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+        let strategy_id = StrategyId::from("TEST-001");
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let initialized_order = make_initialized_market_order("O-MANAGER-INIT");
+        let emulator_order = OrderTestBuilder::new(OrderType::StopMarket)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-MANAGER-EMULATOR"))
+            .side(OrderSide::Buy)
+            .trigger_price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::BidAsk)
+            .build();
+        let risk_order = make_initialized_market_order("O-MANAGER-RISK");
+        let algorithm_order = make_initialized_algorithm_order("O-MANAGER-ALGORITHM");
+        let cancel_order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-MANAGER-CANCEL"))
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.0"))
+            .quantity(Quantity::from(100_000))
+            .submit(true)
+            .build();
+        let missing_cancel_order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-MANAGER-MISSING-CANCEL"))
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.0"))
+            .quantity(Quantity::from(100_000))
+            .submit(true)
+            .build();
+        let modify_order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-MANAGER-MODIFY"))
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.0"))
+            .quantity(Quantity::from(100_000))
+            .submit(true)
+            .build();
+        add_order_to_cache(&strategy, &cancel_order);
+        add_order_to_cache(&strategy, &modify_order);
+
+        let (order_handler, order_events) =
+            get_typed_message_saving_handler(Some(Ustr::from("manager-action-order-events")));
+        let order_topic = format!("events.order.{strategy_id}");
+        msgbus::subscribe_order_events(order_topic.clone().into(), order_handler.clone(), None);
+        let (emulator_handler, emulator_messages): (
+            _,
+            TypedIntoMessageSavingHandler<TradingCommand>,
+        ) = get_typed_into_message_saving_handler(Some(Ustr::from("OrderEmulator.execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::order_emulator_execute(),
+            emulator_handler,
+        );
+        let (risk_handler, risk_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("RiskEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_queue_execute(),
+            risk_handler,
+        );
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+        let (algorithm_handler, algorithm_messages) =
+            get_any_saving_handler::<TradingCommand>(Some(Ustr::from("TWAP.execute")));
+        msgbus::register_any("TWAP.execute".into(), algorithm_handler);
+
+        strategy.dispatch_manager_actions(vec![
+            OrderManagerAction::CancelLocal(missing_cancel_order),
+            OrderManagerAction::PublishInitialized(OrderEventAny::Initialized(
+                initialized_order.init_event().clone(),
+            )),
+            OrderManagerAction::SubmitToEmulator(make_submit_command(&emulator_order)),
+            OrderManagerAction::SubmitToRisk(make_submit_command(&risk_order)),
+            OrderManagerAction::SubmitToAlgorithm {
+                command: make_submit_command(&algorithm_order),
+                exec_algorithm_id: ExecAlgorithmId::from("TWAP"),
+            },
+            OrderManagerAction::CancelLocal(cancel_order.clone()),
+            OrderManagerAction::ModifyLocalQuantity {
+                order: modify_order.clone(),
+                quantity: Quantity::from(50_000),
+            },
+            OrderManagerAction::ModifyLocalQuantity {
+                order: modify_order.clone(),
+                quantity: Quantity::from(100_000),
+            },
+        ]);
+        msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
+
+        let order_events = order_events.get_messages();
+        assert_eq!(order_events.len(), 3);
+        assert!(matches!(
+            &order_events[0],
+            OrderEventAny::Initialized(event)
+                if event.client_order_id == initialized_order.client_order_id()
+        ));
+        assert!(matches!(
+            &order_events[1],
+            OrderEventAny::PendingCancel(event)
+                if event.client_order_id == cancel_order.client_order_id()
+        ));
+        assert!(matches!(
+            &order_events[2],
+            OrderEventAny::PendingUpdate(event)
+                if event.client_order_id == modify_order.client_order_id()
+        ));
+        assert!(matches!(
+            emulator_messages.get_messages().as_slice(),
+            [TradingCommand::SubmitOrder(command)]
+                if command.client_order_id == emulator_order.client_order_id()
+        ));
+        assert!(matches!(
+            risk_messages.get_messages().as_slice(),
+            [
+                TradingCommand::SubmitOrder(submit),
+                TradingCommand::ModifyOrder(first_modify),
+                TradingCommand::ModifyOrder(second_modify),
+            ]
+
+                if submit.client_order_id == risk_order.client_order_id()
+                    && first_modify.client_order_id == modify_order.client_order_id()
+                    && first_modify.quantity == Some(Quantity::from(50_000))
+                    && second_modify.client_order_id == modify_order.client_order_id()
+                    && second_modify.quantity == Some(Quantity::from(100_000))
+        ));
+        assert!(matches!(
+            algorithm_messages.get_messages().as_slice(),
+            [TradingCommand::SubmitOrder(command)]
+                if command.client_order_id == algorithm_order.client_order_id()
+        ));
+        assert!(matches!(
+            exec_messages.get_messages().as_slice(),
+            [TradingCommand::CancelOrder(command)]
+                if command.client_order_id == cancel_order.client_order_id()
+        ));
+    }
+
+    #[rstest]
+    #[case::disabled(false)]
+    #[case::enabled(true)]
+    fn test_contingent_manager_dispatch_precedes_user_handlers_and_is_idempotent(
+        #[case] manage_contingent_orders: bool,
+    ) {
+        let mut strategy = TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("TEST-001")),
+            order_id_tag: Some("001".to_string()),
+            manage_contingent_orders,
+            ..Default::default()
+        });
+        register_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        let timeline = strategy.order_event_timeline.clone();
+        let endpoint_timeline = timeline.clone();
+        let exec_handler = TypedIntoHandler::from(move |command: TradingCommand| {
+            assert!(matches!(command, TradingCommand::CancelOrder(_)));
+            endpoint_timeline.borrow_mut().push("endpoint");
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let parent_id = ClientOrderId::from("O-CONTINGENT-PARENT");
+        let sibling_id = ClientOrderId::from("O-CONTINGENT-SIBLING");
+        let parent = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(instrument_id)
+            .client_order_id(parent_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("50000.0"))
+            .quantity(Quantity::from(100_000))
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![parent_id, sibling_id])
+            .submit(true)
+            .build();
+        let sibling = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("TEST-001"))
+            .instrument_id(instrument_id)
+            .client_order_id(sibling_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("51000.0"))
+            .quantity(Quantity::from(100_000))
+            .submit(true)
+            .build();
+        add_order_to_cache(&strategy, &parent);
+        add_order_to_cache(&strategy, &sibling);
+        let event = OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(parent.trader_id())
+                .strategy_id(parent.strategy_id())
+                .instrument_id(parent.instrument_id())
+                .client_order_id(parent.client_order_id())
+                .venue_order_id(VenueOrderId::from("V-CONTINGENT-PARENT"))
+                .account_id(AccountId::from("ACCOUNT-001"))
+                .trade_id(TradeId::from("T-CONTINGENT-PARENT"))
+                .order_side(parent.order_side())
+                .order_type(parent.order_type())
+                .last_qty(parent.quantity())
+                .last_px(Price::from("50000.0"))
+                .liquidity_side(LiquiditySide::Taker)
+                .build(),
+        );
+        strategy
+            .core
+            .cache_rc()
+            .borrow_mut()
+            .update_order(&event)
+            .unwrap();
+
+        strategy.handle_order_event(event.clone());
+        strategy.handle_order_event(event);
+
+        let timeline = timeline.borrow();
+        let sibling_status = strategy
+            .core
+            .cache_ref()
+            .order(&sibling_id)
+            .unwrap()
+            .status();
+
+        if manage_contingent_orders {
+            assert_eq!(
+                timeline.as_slice(),
+                ["endpoint", "specific", "aggregate", "specific", "aggregate"]
+            );
+            assert_eq!(sibling_status, OrderStatus::PendingCancel);
+        } else {
+            assert_eq!(
+                timeline.as_slice(),
+                ["specific", "aggregate", "specific", "aggregate"]
+            );
+            assert_eq!(sibling_status, OrderStatus::Submitted);
+        }
     }
 
     #[rstest]
