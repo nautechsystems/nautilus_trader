@@ -1278,7 +1278,7 @@ fn build_live_execution_node(
 ) -> anyhow::Result<LiveNode> {
     let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(5.0),
-        position_check_interval_secs: Some(10.0),
+        position_check_interval_secs: None,
         ..Default::default()
     };
     let node = LiveNode::builder(trader_id, Environment::Live)?

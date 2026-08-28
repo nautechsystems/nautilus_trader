@@ -111,7 +111,7 @@ async fn main() -> anyhow::Result<()> {
     let exec_factory = BetfairExecutionClientFactory::new();
     let exec_engine_config = LiveExecutionEngineConfig {
         open_check_interval_secs: Some(10.0),
-        position_check_interval_secs: Some(30.0),
+        position_check_interval_secs: None,
         ..Default::default()
     };
 

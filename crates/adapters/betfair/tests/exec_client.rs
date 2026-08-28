@@ -172,6 +172,9 @@ async fn test_exec_client_creation() {
     assert_eq!(client.account_id(), AccountId::from("BETFAIR-001"));
     assert_eq!(client.venue(), *BETFAIR_VENUE);
     assert_eq!(client.oms_type(), OmsType::Netting);
+    assert!(
+        !client.provides_bulk_position_coverage(InstrumentId::from("1.234567-12345-0.0.BETFAIR"))
+    );
     assert!(!client.is_connected());
 }
 

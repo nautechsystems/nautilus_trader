@@ -1322,6 +1322,10 @@ impl ExecutionClient for BetfairExecutionClient {
         self.core.cache().account_owned(&self.core.account_id)
     }
 
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        false
+    }
+
     fn generate_account_state(
         &self,
         balances: Vec<AccountBalance>,
