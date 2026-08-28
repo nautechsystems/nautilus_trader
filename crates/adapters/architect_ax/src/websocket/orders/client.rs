@@ -17,6 +17,7 @@
 
 use std::{
     fmt::Debug,
+    num::NonZeroU32,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering},
@@ -41,14 +42,14 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
-    backoff::ExponentialBackoff,
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, ReconnectHeaders, TransportBackend, WebSocketClient,
-        WebSocketConfig, channel_message_handler,
+        AuthTracker, InitialConnectRetryPolicy, PingHandler, ReconnectHeaders, TransportBackend,
+        WebSocketClient, WebSocketConfig, channel_message_handler,
     },
 };
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::handler::{AxOrdersWsFeedHandler, HandlerCommand, WsOrderInfo};
@@ -130,6 +131,7 @@ pub struct AxOrdersWebSocketClient {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<AxOrdersWsMessage>>>,
     signal: Arc<AtomicBool>,
+    cancellation_token: Arc<ArcSwap<CancellationToken>>,
     task_handle: Option<tokio::task::JoinHandle<()>>,
     auth_tracker: AuthTracker,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
@@ -163,6 +165,7 @@ impl Clone for AxOrdersWebSocketClient {
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None, // Each clone gets its own receiver
             signal: Arc::clone(&self.signal),
+            cancellation_token: Arc::clone(&self.cancellation_token),
             task_handle: None,
             auth_tracker: self.auth_tracker.clone(),
             instruments_cache: Arc::clone(&self.instruments_cache),
@@ -178,6 +181,16 @@ impl Clone for AxOrdersWebSocketClient {
 }
 
 impl AxOrdersWebSocketClient {
+    fn initial_connect_retry_policy() -> InitialConnectRetryPolicy {
+        InitialConnectRetryPolicy {
+            max_attempts: NonZeroU32::new(5).expect("initial connect attempts must be non-zero"),
+            delay_initial: Duration::from_millis(500),
+            delay_max: Duration::from_secs(5),
+            backoff_factor: 2.0,
+            jitter_ms: 250,
+        }
+    }
+
     /// Creates a new Ax orders WebSocket client.
     #[must_use]
     pub fn new(
@@ -202,6 +215,7 @@ impl AxOrdersWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
+            cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             task_handle: None,
             auth_tracker: AuthTracker::default(),
             instruments_cache: Arc::new(AtomicMap::new()),
@@ -396,10 +410,10 @@ impl AxOrdersWebSocketClient {
     ///
     /// Returns an error if the connection cannot be established.
     pub async fn connect(&mut self, bearer_token: &str) -> AxOrdersWsResult<()> {
-        const MAX_RETRIES: u32 = 5;
-        const CONNECTION_TIMEOUT_SECS: u64 = 10;
-
         self.signal.store(false, Ordering::Release);
+        let cancellation_token = CancellationToken::new();
+        self.cancellation_token
+            .store(Arc::new(cancellation_token.clone()));
 
         let (raw_handler, raw_rx) = channel_message_handler();
 
@@ -431,74 +445,18 @@ impl AxOrdersWebSocketClient {
             proxy_url: self.proxy_url.clone(),
         };
 
-        // Retry initial connection with exponential backoff
-        let mut backoff = ExponentialBackoff::new(
-            Duration::from_millis(500),
-            Duration::from_millis(5000),
-            2.0,
-            250,
-            false,
-        )
-        .map_err(|e| AxOrdersWsClientError::Transport(e.to_string()))?;
-
-        let mut last_error: String;
-        let mut attempt = 0;
-
-        let client = loop {
-            attempt += 1;
-
-            match tokio::time::timeout(
-                Duration::from_secs(CONNECTION_TIMEOUT_SECS),
-                WebSocketClient::builder()
-                    .config(config.clone())
-                    .message_handler(raw_handler.clone())
-                    .ping_handler(ping_handler.clone())
-                    .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
-                    .connect(),
-            )
+        let client = WebSocketClient::builder()
+            .config(config.clone())
+            .message_handler(raw_handler.clone())
+            .ping_handler(ping_handler.clone())
+            .initial_connect_retry_policy(Self::initial_connect_retry_policy())
+            .cancellation_token(cancellation_token)
+            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .connect()
             .await
-            {
-                Ok(Ok(client)) => {
-                    if attempt > 1 {
-                        log::debug!("WebSocket connection established after {attempt} attempts");
-                    }
-                    break client;
-                }
-                Ok(Err(e)) => {
-                    last_error = e.to_string();
-                    log::warn!(
-                        "WebSocket connection attempt failed: attempt={attempt}, max_retries={MAX_RETRIES}, url={}, error={last_error}",
-                        self.url
-                    );
-                }
-                Err(_) => {
-                    last_error = format!("Connection timeout after {CONNECTION_TIMEOUT_SECS}s");
-                    log::warn!(
-                        "WebSocket connection attempt timed out: attempt={attempt}, max_retries={MAX_RETRIES}, url={}",
-                        self.url
-                    );
-                }
-            }
-
-            if attempt >= MAX_RETRIES {
-                return Err(AxOrdersWsClientError::Transport(format!(
-                    "Failed to connect to {} after {MAX_RETRIES} attempts: {}",
-                    self.url,
-                    if last_error.is_empty() {
-                        "unknown error"
-                    } else {
-                        &last_error
-                    }
-                )));
-            }
-
-            let delay = backoff.next_duration();
-            log::debug!(
-                "Retrying in {delay:?} (attempt {}/{MAX_RETRIES})",
-                attempt + 1
-            );
-            tokio::time::sleep(delay).await;
-        };
+            .map_err(|e| {
+                AxOrdersWsClientError::Transport(format!("Failed to connect to {}: {e}", self.url))
+            })?;
 
         self.connection_mode.store(client.connection_mode_atomic());
         let reconnect_handle = client.reconnect_handle();
@@ -726,6 +684,7 @@ impl AxOrdersWebSocketClient {
         log::debug!("Closing WebSocket client");
 
         // Send disconnect first to allow graceful cleanup before signal
+        self.cancellation_token.load().cancel();
         let _ = self.send_cmd(HandlerCommand::Disconnect).await;
         tokio::time::sleep(Duration::from_millis(50)).await;
         self.signal.store(true, Ordering::Release);

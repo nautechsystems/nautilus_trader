@@ -28,7 +28,7 @@
 //! seconds resets its attempt count and backoff delay; shorter-lived connections continue the
 //! current cycle.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, num::NonZeroU32, time::Duration};
 
 use nautilus_core::string::secret::REDACTED;
 use serde::{Deserialize, Serialize};
@@ -349,6 +349,42 @@ impl WebSocketConfig {
             self.heartbeat_interval_secs,
         )
     }
+}
+
+/// Retry policy for establishing the initial handler-mode connection.
+///
+/// Supplied to the client builder rather than held in [`WebSocketConfig`], because it governs a
+/// single invocation of `connect` and has no meaning once a client exists. Without a policy the
+/// builder makes exactly one attempt.
+///
+/// This does not affect automatic reconnection after a connection has been established; that is
+/// configured by the `reconnect_*` fields of [`WebSocketConfig`].
+///
+/// An attempt is retried only after `ConnectionClosed`, `ConnectionReset`, or `ClosedByPeer`; an
+/// I/O error of any kind except `InvalidInput`, `InvalidData`, `Unsupported`, and
+/// `PermissionDenied`; or an HTTP upgrade or proxy `CONNECT` rejection carrying status 408, 425,
+/// 429, or 500 through 599. Every other transport error and rejection status returns immediately
+/// without waiting for a backoff delay, however many attempts remain.
+///
+/// The classification is by error variant, not by cause, and the backends do not map causes to
+/// variants uniformly - a TLS failure is permanent as `Tls` but follows the I/O rule where a
+/// backend reports it as `Io`. A permanent failure on the first attempt is indistinguishable from
+/// an exhausted ladder by the returned error alone.
+#[derive(Clone, Debug)]
+pub struct InitialConnectRetryPolicy {
+    /// Maximum number of connection attempts, including the first attempt.
+    ///
+    /// This is an upper bound rather than a promise: a failure classified as permanent returns
+    /// before the bound is reached.
+    pub max_attempts: NonZeroU32,
+    /// Delay before the second connection attempt.
+    pub delay_initial: Duration,
+    /// Maximum delay between connection attempts.
+    pub delay_max: Duration,
+    /// Multiplier applied to the delay after each failed attempt.
+    pub backoff_factor: f64,
+    /// Maximum random jitter added to each delay, in milliseconds.
+    pub jitter_ms: u64,
 }
 
 #[cfg(test)]

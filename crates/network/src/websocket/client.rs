@@ -60,6 +60,7 @@ use std::{
 
 use futures_util::{SinkExt, StreamExt};
 use http::HeaderName;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 #[cfg(any(feature = "turmoil", feature = "transport-sockudo"))]
 use rustls::ClientConfig;
@@ -81,13 +82,14 @@ use tokio_tungstenite::connect_async_with_config;
 use tokio_tungstenite::tungstenite::{
     client::IntoClientRequest, handshake::client::Request, http::HeaderValue,
 };
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 #[cfg(not(feature = "turmoil"))]
 use super::proxy::{ProxyKind, WsTarget, tunnel_via_proxy};
 use super::{
     auth::{AuthState, AuthTracker},
-    config::{TransportBackend, WebSocketConfig},
+    config::{InitialConnectRetryPolicy, TransportBackend, WebSocketConfig},
     consts::{
         CONNECTION_STATE_CHECK_INTERVAL_MS, GRACEFUL_SHUTDOWN_DELAY_MS,
         GRACEFUL_SHUTDOWN_TIMEOUT_SECS,
@@ -182,6 +184,12 @@ pub struct WebSocketClientInner {
 struct ConnectionRateLimit {
     limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
     keys: Arc<[Ustr]>,
+}
+
+#[derive(Default)]
+struct InitialConnectOptions {
+    retry_policy: Option<InitialConnectRetryPolicy>,
+    cancellation_token: Option<CancellationToken>,
 }
 
 impl WebSocketClientInner {
@@ -322,6 +330,7 @@ impl WebSocketClientInner {
             ping_handler.map(IncomingPingHandler::Ping),
             None,
             None,
+            InitialConnectOptions::default(),
         )
         .await
     }
@@ -332,6 +341,7 @@ impl WebSocketClientInner {
         ping_handler: Option<IncomingPingHandler>,
         state_sink: Option<SocketStateSink>,
         connection_rate_limit: Option<ConnectionRateLimit>,
+        initial_connect_options: InitialConnectOptions,
     ) -> Result<Self, TransportError> {
         install_cryptographic_provider();
 
@@ -375,33 +385,98 @@ impl WebSocketClientInner {
 
         let reconnect_headers = ReconnectHeaders::new(config.headers.clone());
 
-        if let Some(rate_limit) = &connection_rate_limit {
-            rate_limit
-                .limiter
-                .await_keys_ready(Some(&rate_limit.keys))
-                .await;
-        }
+        let cancellation_token = initial_connect_options
+            .cancellation_token
+            .unwrap_or_default();
+        let max_attempts = initial_connect_options
+            .retry_policy
+            .as_ref()
+            .map_or(1, |policy| policy.max_attempts.get());
+        let mut initial_connect_backoff = initial_connect_options
+            .retry_policy
+            .as_ref()
+            .map(|policy| {
+                ExponentialBackoff::new(
+                    policy.delay_initial,
+                    policy.delay_max,
+                    policy.backoff_factor,
+                    policy.jitter_ms,
+                    false,
+                )
+            })
+            .transpose()
+            .map_err(|e| {
+                TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+            })?;
 
-        // Bound the connection attempt: a server that accepts TCP but never upgrades must not hang the caller
-        let (writer, reader) = dst::time::timeout(
-            connect_timeout,
-            Box::pin(Self::connect_with_server(
-                &config.url,
-                config.headers.clone(),
-                config.backend,
-                config.proxy_url.as_deref(),
-            )),
-        )
-        .await
-        .map_err(|_| {
-            TransportError::Io(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                format!(
-                    "connection timed out after {}s",
-                    connect_timeout.as_secs_f64()
-                ),
-            ))
-        })??;
+        let mut attempt = 0;
+        let (writer, reader) = loop {
+            attempt += 1;
+
+            if let Some(rate_limit) = &connection_rate_limit {
+                tokio::select! {
+                    biased;
+                    () = cancellation_token.cancelled() => return Err(initial_connect_cancelled()),
+                    () = rate_limit.limiter.await_keys_ready(Some(&rate_limit.keys)) => {}
+                }
+            }
+
+            // Bound the connection attempt: a server that accepts TCP but never upgrades must not hang the caller.
+            let result = tokio::select! {
+                biased;
+                () = cancellation_token.cancelled() => return Err(initial_connect_cancelled()),
+                result = dst::time::timeout(
+                    connect_timeout,
+                    Box::pin(Self::connect_with_server(
+                        &config.url,
+                        config.headers.clone(),
+                        config.backend,
+                        config.proxy_url.as_deref(),
+                    )),
+                ) => result.unwrap_or_else(|_| {
+                    // A timed-out attempt is transient and must reach the retry
+                    // classification below rather than aborting the ladder.
+                    Err(TransportError::Io(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        format!(
+                            "connection timed out after {}s",
+                            connect_timeout.as_secs_f64()
+                        ),
+                    )))
+                }),
+            };
+
+            match result {
+                Ok(transport) => {
+                    if attempt > 1 {
+                        log::info!("WebSocket connection established after {attempt} attempts");
+                    }
+                    break transport;
+                }
+                Err(e) if attempt < max_attempts && is_retryable_initial_connect_error(&e) => {
+                    // The URL is redacted for the same reason `WebSocketConfig::Debug` redacts it:
+                    // it can carry credentials, tokens, or signed query parameters.
+                    log::warn!(
+                        "WebSocket connection attempt {attempt}/{max_attempts} to {REDACTED} failed: {e}"
+                    );
+                }
+                Err(e) => return Err(e),
+            }
+
+            let delay = initial_connect_backoff
+                .as_mut()
+                .expect("multiple attempts require a retry policy")
+                .next_duration();
+            log::debug!(
+                "Retrying in {delay:?} (attempt {}/{max_attempts})",
+                attempt + 1,
+            );
+            tokio::select! {
+                biased;
+                () = cancellation_token.cancelled() => return Err(initial_connect_cancelled()),
+                () = dst::time::sleep(delay) => {}
+            }
+        };
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let connection_epoch = Arc::new(AtomicU64::new(0));
@@ -803,8 +878,7 @@ impl WebSocketClientInner {
             None,
             headers,
         )
-        .await
-        .map_err(TransportError::from)?;
+        .await?;
 
         // Reading the HTTP 101 may also read the first WebSocket frame prefix;
         // replay it only when present so the ordinary path stays unwrapped.
@@ -838,6 +912,43 @@ fn tungstenite_request(
 
 fn is_connection_drop_transport_error(err: &TransportError) -> bool {
     err.is_closed() || matches!(err, TransportError::Io(e) if is_connection_drop_io_error(e))
+}
+
+fn is_retryable_initial_connect_error(err: &TransportError) -> bool {
+    match err {
+        TransportError::ConnectionClosed
+        | TransportError::ConnectionReset
+        | TransportError::ClosedByPeer(_) => true,
+        TransportError::Io(error) => !matches!(
+            error.kind(),
+            std::io::ErrorKind::InvalidInput
+                | std::io::ErrorKind::InvalidData
+                | std::io::ErrorKind::Unsupported
+                | std::io::ErrorKind::PermissionDenied
+        ),
+        TransportError::UpgradeRejected(status) | TransportError::ProxyConnectRejected(status) => {
+            retryable_status(*status)
+        }
+        TransportError::InvalidUrl(_)
+        | TransportError::Handshake(_)
+        | TransportError::Tls(_)
+        | TransportError::Protocol(_)
+        | TransportError::MessageTooLarge
+        | TransportError::FrameTooLarge
+        | TransportError::InvalidUtf8
+        | TransportError::Other(_) => false,
+    }
+}
+
+const fn retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 425 | 429 | 500..=599)
+}
+
+fn initial_connect_cancelled() -> TransportError {
+    TransportError::Io(std::io::Error::new(
+        std::io::ErrorKind::Interrupted,
+        "initial WebSocket connection cancelled",
+    ))
 }
 
 // Debug when we asked to disconnect (Disconnect/Closed), else Warn for a peer close
@@ -891,6 +1002,40 @@ mod connection_error_tests {
         #[case] expected: bool,
     ) {
         assert_eq!(is_connection_drop_transport_error(&err), expected);
+    }
+
+    #[rstest]
+    #[case(408, true)]
+    #[case(425, true)]
+    #[case(429, true)]
+    #[case(500, true)]
+    #[case(503, true)]
+    #[case(599, true)]
+    #[case(400, false)]
+    #[case(401, false)]
+    #[case(403, false)]
+    #[case(404, false)]
+    #[case(407, false)]
+    #[case(409, false)]
+    #[case(426, false)]
+    #[case(499, false)]
+    #[case(600, false)]
+    #[case(101, false)]
+    #[case(200, false)]
+    fn initial_connect_retryable_status_policy(#[case] status: u16, #[case] expected: bool) {
+        assert_eq!(retryable_status(status), expected);
+    }
+
+    #[rstest]
+    #[case(TransportError::UpgradeRejected(429), true)]
+    #[case(TransportError::UpgradeRejected(503), true)]
+    #[case(TransportError::UpgradeRejected(404), false)]
+    #[case(TransportError::ProxyConnectRejected(429), true)]
+    #[case(TransportError::ProxyConnectRejected(407), false)]
+    #[case(TransportError::ConnectionClosed, true)]
+    #[case(TransportError::Handshake("malformed".into()), false)]
+    fn initial_connect_error_classification(#[case] err: TransportError, #[case] expected: bool) {
+        assert_eq!(is_retryable_initial_connect_error(&err), expected);
     }
 }
 
@@ -2487,6 +2632,15 @@ impl WebSocketClient {
     /// creates one from `default_quota` and `keyed_quotas`. `connection_rate_limiter` gates the
     /// initial connection and reconnects using `connection_rate_keys`.
     ///
+    /// Without `initial_connect_retry_policy` the builder makes exactly one connection attempt.
+    /// With one, failures classified as retryable are retried up to its `max_attempts`; see
+    /// [`InitialConnectRetryPolicy`] for which failures return before that bound is reached.
+    ///
+    /// `cancellation_token` aborts the initial connection only, and is observed during the
+    /// connection rate-limit wait, the dial itself, and each backoff delay. It has no effect once
+    /// this function returns a client: use [`WebSocketClient::disconnect`] to stop an established one, whose
+    /// reconnect loop the token does not govern.
+    ///
     /// The message handler is required:
     ///
     /// ```compile_fail
@@ -2513,6 +2667,8 @@ impl WebSocketClient {
         state_sink: Option<SocketStateSink>,
         connection_rate_limiter: Option<Arc<RateLimiter<Ustr, MonotonicClock>>>,
         #[builder(default)] connection_rate_keys: Arc<[Ustr]>,
+        initial_connect_retry_policy: Option<InitialConnectRetryPolicy>,
+        cancellation_token: Option<CancellationToken>,
     ) -> Result<Self, TransportError> {
         let rate_limiter = Self::resolve_rate_limiter(default_quota, keyed_quotas, rate_limiter)?;
         let connection_rate_limit =
@@ -2524,6 +2680,10 @@ impl WebSocketClient {
             rate_limiter,
             state_sink,
             connection_rate_limit,
+            InitialConnectOptions {
+                retry_policy: initial_connect_retry_policy,
+                cancellation_token,
+            },
         )
         .await
     }
@@ -2533,7 +2693,7 @@ impl WebSocketClient {
     /// The initial connection has epoch `0`. Each replacement connection increments the epoch,
     /// and both its incoming messages and `RECONNECTED` notification carry that new value. Use
     /// [`Self::send_text_on_connection`] to bind an outgoing message to one of those epochs.
-    /// Rate-limit and state options match [`Self::builder`].
+    /// Rate-limit, state, initial-connect retry, and cancellation options match [`Self::builder`].
     /// Set either `ping_handler` or `epoch_ping_handler` when custom ping handling is required.
     ///
     /// The epoch handler is required:
@@ -2567,6 +2727,8 @@ impl WebSocketClient {
         state_sink: Option<SocketStateSink>,
         connection_rate_limiter: Option<Arc<RateLimiter<Ustr, MonotonicClock>>>,
         #[builder(default)] connection_rate_keys: Arc<[Ustr]>,
+        initial_connect_retry_policy: Option<InitialConnectRetryPolicy>,
+        cancellation_token: Option<CancellationToken>,
     ) -> Result<Self, TransportError> {
         let ping_handler = match (ping_handler, epoch_ping_handler) {
             (Some(_), Some(_)) => {
@@ -2589,6 +2751,10 @@ impl WebSocketClient {
             rate_limiter,
             state_sink,
             connection_rate_limit,
+            InitialConnectOptions {
+                retry_policy: initial_connect_retry_policy,
+                cancellation_token,
+            },
         )
         .await
     }
@@ -2646,6 +2812,7 @@ impl WebSocketClient {
         rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
         state_sink: Option<SocketStateSink>,
         connection_rate_limit: Option<ConnectionRateLimit>,
+        initial_connect_options: InitialConnectOptions,
     ) -> Result<Self, TransportError> {
         log::debug!("Connecting");
         let inner = WebSocketClientInner::connect_url_with_handler(
@@ -2654,6 +2821,7 @@ impl WebSocketClient {
             ping_handler,
             state_sink,
             connection_rate_limit,
+            initial_connect_options,
         )
         .await?;
         let connection_mode = inner.connection_mode.clone();
@@ -3452,8 +3620,10 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_common::testing::wait_until_async;
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
     use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
         sync::{mpsc, oneshot},
         task::{self, JoinHandle},
@@ -3473,7 +3643,10 @@ mod tests {
         http::{HttpClient, Method},
         mode::ConnectionMode,
         ratelimiter::quota::Quota,
-        websocket::{TransportBackend, WebSocketClient, WebSocketConfig},
+        transport::TransportError,
+        websocket::{
+            InitialConnectRetryPolicy, TransportBackend, WebSocketClient, WebSocketConfig,
+        },
     };
 
     const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
@@ -3529,7 +3702,7 @@ mod tests {
 
     impl Log for NetworkLogCapture {
         fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-            metadata.level() == Level::Trace
+            matches!(metadata.level(), Level::Trace | Level::Warn)
                 && matches!(
                     metadata.target(),
                     "nautilus_network::http::client" | "nautilus_network::websocket::client"
@@ -3542,6 +3715,7 @@ mod tests {
                 if message.starts_with("Sending ")
                     || message.starts_with("Received ")
                     || message.starts_with("Replaced ")
+                    || message.starts_with("WebSocket connection attempt ")
                 {
                     self.messages.lock().unwrap().push(message);
                 }
@@ -3778,8 +3952,72 @@ mod tests {
             .await
             .unwrap();
 
+        // The initial-connect retry warning names the endpoint, which can carry credentials or
+        // signed query data, so it must report the redaction placeholder rather than the URL.
+        let rejecting = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let rejecting_port = rejecting.local_addr().unwrap().port();
+
+        let rejecting_server = task::spawn(async move {
+            loop {
+                let (mut stream, _) = rejecting.accept().await.unwrap();
+                let mut request = [0; 1024];
+                let _ = stream.read(&mut request).await.unwrap();
+                stream
+                    .write_all(b"HTTP/1.1 503 Service Unavailable\r\n\r\n")
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let retry_config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{rejecting_port}/?token={SECRET_MARKER}"),
+            headers: vec![],
+            heartbeat_interval_secs: None,
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(5_000),
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
+            reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
+            proxy_url: None,
+        };
+        let retry_error = WebSocketClient::builder()
+            .config(retry_config)
+            .message_handler(Arc::new(|_| {}))
+            .initial_connect_retry_policy(InitialConnectRetryPolicy {
+                max_attempts: NonZeroU32::new(2).unwrap(),
+                delay_initial: Duration::from_millis(1),
+                delay_max: Duration::from_millis(1),
+                backoff_factor: 1.0,
+                jitter_ms: 0,
+            })
+            .connect()
+            .await
+            .expect_err("server always rejects the upgrade");
+        rejecting_server.abort();
+
+        assert!(
+            matches!(retry_error, TransportError::UpgradeRejected(503)),
+            "expected a 503 upgrade rejection, was: {retry_error:?}"
+        );
+
         let messages = NETWORK_LOG_CAPTURE.messages();
         let invalid_header_message = invalid_header_error.to_string();
+
+        // Asserted positively so the blanket secret assertion below cannot pass vacuously by
+        // capturing no warning at all.
+        let retry_warning = messages
+            .iter()
+            .find(|message| message.starts_with("WebSocket connection attempt 1/2 "))
+            .expect("initial-connect retry warning was not captured");
+        assert!(
+            retry_warning.contains(REDACTED),
+            "retry warning omitted the redaction placeholder: {retry_warning}"
+        );
 
         assert!(
             messages.iter().all(|message| {
@@ -4508,8 +4746,9 @@ mod rust_tests {
     #[cfg(feature = "transport-sockudo")]
     use sockudo_ws::handshake as sockudo_handshake;
     #[cfg(feature = "transport-sockudo")]
-    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncRead;
     use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
         task::{self, JoinHandle},
         time::{Duration, sleep},
@@ -4601,6 +4840,272 @@ mod rust_tests {
         }
     }
 
+    fn initial_connect_test_policy() -> InitialConnectRetryPolicy {
+        InitialConnectRetryPolicy {
+            max_attempts: std::num::NonZeroU32::new(5).unwrap(),
+            delay_initial: Duration::from_secs(30),
+            delay_max: Duration::from_secs(30),
+            backoff_factor: 2.0,
+            jitter_ms: 0,
+        }
+    }
+
+    async fn rejected_upgrade_attempts(status: u16, backend: TransportBackend) -> u64 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicU64::new(0));
+        let accepted_server = Arc::clone(&accepted);
+
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                accepted_server.fetch_add(1, Ordering::SeqCst);
+                let mut request = Vec::new();
+
+                loop {
+                    let mut chunk = [0; 1024];
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&chunk[..n]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                stream
+                    .write_all(format!("HTTP/1.1 {status}\r\n\r\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+        let mut config = reconnect_test_config(port);
+        config.backend = backend;
+        let policy = InitialConnectRetryPolicy {
+            max_attempts: std::num::NonZeroU32::new(3).unwrap(),
+            delay_initial: Duration::from_millis(1),
+            delay_max: Duration::from_millis(1),
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+        };
+
+        WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .initial_connect_retry_policy(policy)
+            .connect()
+            .await
+            .expect_err("server always rejects the upgrade");
+
+        let attempts = accepted.load(Ordering::SeqCst);
+        server.abort();
+        attempts
+    }
+
+    async fn closed_proxy_attempts() -> u64 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = listener.local_addr().unwrap();
+        let accepted = Arc::new(AtomicU64::new(0));
+        let accepted_server = Arc::clone(&accepted);
+
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                accepted_server.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0; 1024];
+                let _ = stream.read(&mut request).await.unwrap();
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+        let mut config = reconnect_test_config(9);
+        config.proxy_url = Some(format!("http://{proxy_addr}"));
+        let policy = InitialConnectRetryPolicy {
+            max_attempts: std::num::NonZeroU32::new(3).unwrap(),
+            delay_initial: Duration::from_millis(1),
+            delay_max: Duration::from_millis(1),
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+        };
+
+        WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .initial_connect_retry_policy(policy)
+            .connect()
+            .await
+            .expect_err("proxy always closes before its CONNECT response");
+
+        let attempts = accepted.load(Ordering::SeqCst);
+        server.abort();
+        attempts
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn initial_connect_cancellation_interrupts_in_flight_handshake() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.unwrap();
+            let _ = accepted_tx.send(());
+            std::future::pending::<()>().await;
+        });
+        let token = CancellationToken::new();
+        let (handler, _rx) = channel_message_handler();
+        let mut config = reconnect_test_config(port);
+        config.connect_timeout_ms = Some(10_000);
+        let connect = WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .initial_connect_retry_policy(initial_connect_test_policy())
+            .cancellation_token(token.clone())
+            .connect();
+        tokio::pin!(connect);
+
+        tokio::select! {
+            biased;
+            result = &mut connect => panic!("connect completed before cancellation: {result:?}"),
+            result = accepted_rx => result.unwrap(),
+        }
+        token.cancel();
+
+        let err = tokio::time::timeout(Duration::from_millis(250), connect)
+            .await
+            .expect("cancellation should interrupt the handshake")
+            .expect_err("cancelled connect should fail");
+        assert!(
+            matches!(err, TransportError::Io(ref e) if e.kind() == std::io::ErrorKind::Interrupted)
+        );
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn timed_out_initial_connect_attempt_is_retried() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicU64::new(0));
+        let accepted_server = Arc::clone(&accepted);
+
+        // Accept the TCP connection but never complete the upgrade, so every attempt
+        // reaches the connect timeout rather than failing fast.
+        let server = tokio::spawn(async move {
+            let mut held = Vec::new();
+
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                accepted_server.fetch_add(1, Ordering::SeqCst);
+                held.push(stream);
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+        let mut config = reconnect_test_config(port);
+        config.connect_timeout_ms = Some(50);
+        let policy = InitialConnectRetryPolicy {
+            max_attempts: std::num::NonZeroU32::new(3).unwrap(),
+            delay_initial: Duration::from_millis(1),
+            delay_max: Duration::from_millis(1),
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+        };
+
+        let err = WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .initial_connect_retry_policy(policy)
+            .connect()
+            .await
+            .expect_err("every attempt times out");
+
+        assert!(
+            matches!(err, TransportError::Io(ref e) if e.kind() == std::io::ErrorKind::TimedOut)
+        );
+
+        // The ladder must exhaust its attempts: a timeout is transient, so returning after
+        // the first one leaves this at 1. Wait for the count rather than sampling it, since
+        // the final connection can complete through the listen backlog before the accepting
+        // task is scheduled to record it.
+        let counted = tokio::time::timeout(Duration::from_secs(1), async {
+            while accepted.load(Ordering::SeqCst) < 3 {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        assert!(
+            counted.is_ok(),
+            "expected 3 connection attempts, observed {}",
+            accepted.load(Ordering::SeqCst)
+        );
+        // Exactly three: the wait above resolves the scheduling race, but the ladder must
+        // also stop at its configured maximum rather than exceeding it.
+        assert_eq!(accepted.load(Ordering::SeqCst), 3);
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::too_many_requests(429)]
+    #[case::server_error(503)]
+    #[tokio::test]
+    async fn transient_upgrade_rejection_is_retried(#[case] status: u16) {
+        assert_eq!(
+            rejected_upgrade_attempts(status, TransportBackend::Tungstenite).await,
+            3
+        );
+    }
+
+    #[cfg(feature = "transport-sockudo")]
+    #[rstest]
+    #[tokio::test]
+    async fn sockudo_too_many_requests_upgrade_rejection_is_retried() {
+        assert_eq!(
+            rejected_upgrade_attempts(429, TransportBackend::Sockudo).await,
+            3
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn permanent_upgrade_rejection_is_not_retried() {
+        assert_eq!(
+            rejected_upgrade_attempts(404, TransportBackend::Tungstenite).await,
+            1
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn proxy_close_before_connect_response_is_retried() {
+        assert_eq!(closed_proxy_attempts().await, 3);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn permanent_initial_connect_error_does_not_wait_for_retry_ladder() {
+        let (handler, _rx) = channel_message_handler();
+        let mut config = reconnect_test_config(1);
+        config.url = "not a websocket URL".to_string();
+        let connect = WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .initial_connect_retry_policy(initial_connect_test_policy())
+            .connect();
+
+        let err = tokio::time::timeout(Duration::from_millis(250), connect)
+            .await
+            .expect("permanent error should not enter retry backoff")
+            .expect_err("invalid URL should fail");
+        assert!(matches!(
+            err,
+            TransportError::InvalidUrl(_) | TransportError::Handshake(_)
+        ));
+    }
+
     #[rstest]
     #[tokio::test(start_paused = true)]
     async fn connection_rate_limit_gates_initial_connect_and_reconnect() {
@@ -4632,6 +5137,7 @@ mod rust_tests {
             None,
             None,
             Some(rate_limit),
+            InitialConnectOptions::default(),
         );
         tokio::pin!(initial);
         assert!(futures_util::poll!(&mut initial).is_pending());
@@ -4730,6 +5236,7 @@ mod rust_tests {
             None,
             None,
             None,
+            InitialConnectOptions::default(),
         )
         .await
         .unwrap();

@@ -250,10 +250,8 @@ async fn test_md_connection_failure_to_invalid_url() {
 
     assert!(matches!(err, AxWsClientError::Transport(_)));
     assert!(
-        message.starts_with(&format!(
-            "Transport error: Failed to connect to {url} after 5 attempts: "
-        )),
-        "expected the retry ladder to run to exhaustion, was: {message}"
+        message.starts_with(&format!("Transport error: Failed to connect to {url}: ")),
+        "expected the failure to name the endpoint, was: {message}"
     );
     assert!(
         !message.contains("Connection timeout"),
@@ -1299,10 +1297,8 @@ async fn test_orders_connection_failure_to_invalid_url() {
 
     assert!(matches!(err, AxOrdersWsClientError::Transport(_)));
     assert!(
-        message.starts_with(&format!(
-            "Transport error: Failed to connect to {url} after 5 attempts: "
-        )),
-        "expected the retry ladder to run to exhaustion, was: {message}"
+        message.starts_with(&format!("Transport error: Failed to connect to {url}: ")),
+        "expected the failure to name the endpoint, was: {message}"
     );
     assert!(
         !message.contains("Connection timeout"),
