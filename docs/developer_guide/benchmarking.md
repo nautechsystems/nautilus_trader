@@ -242,6 +242,10 @@ Source identity hashes staged diffs, unstaged diffs, and untracked file contents
 revision. Exact event, order, position, and account fingerprints are checked after
 every timed iteration without adding fingerprint work to the duration.
 
+Repeat `--scenario <name>` or `--boundary <name>` on the `compare` command to run a targeted subset.
+Omit both options to run the complete matrix. Raw output stores one full fingerprint for each
+selected scenario and boundary, then binds every timed sample to it by digest.
+
 The JSON output contains every elapsed sample, the observed host state, boundary definitions,
 medians, minimum-to-maximum spread, v2/v1 ratios, and percentage gaps. The driver requires at least
 three full sessions. It records CPU governor and `perf_event_paranoid` values but does not change

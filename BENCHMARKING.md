@@ -156,11 +156,11 @@ backend, source revision, wheel hash, loaded extension hash, Python version, and
 before timing. The loaded extension must byte-match the corresponding wheel member. After every
 timed sample, its worker repeats the complete wheel, extension, source, and runtime identity proof
 and checks its canonical digest against the coordinator's initial identity. Raw output stores each
-full identity once and binds every sample to it by digest. Source identity hashes staged diffs,
-unstaged diffs, and untracked file contents in addition to the revision. The driver also
-requires the v2 extension's embedded build revision to match the requested source revision. Any
-future Python CI integration must provide the same identity evidence for the package built from
-`python/pyproject.toml`.
+full identity and selected scenario/boundary fingerprint once, then binds every sample to both by
+digest. Source identity hashes staged diffs, unstaged diffs, and untracked file contents in addition
+to the revision. The driver also requires the v2 extension's embedded build revision to match the
+requested source revision. Any future Python CI integration must provide the same identity evidence
+for the package built from `python/pyproject.toml`.
 
 ---
 

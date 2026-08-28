@@ -104,6 +104,32 @@ def test_ordered_cases_runs_each_case_once_per_session() -> None:
     assert sessions[1] != sessions[2]
 
 
+def test_select_cases_retains_canonical_order() -> None:
+    """
+    Test targeted comparisons retain stable scenario and boundary ordering.
+    """
+    cases = benchmark.select_cases(
+        ["accumulating_market_large", "quote_trade_replay_small"],
+        ["load_build_run"],
+    )
+
+    assert [(scenario.name, boundary) for scenario, boundary in cases] == [
+        ("quote_trade_replay_small", "load_build_run"),
+        ("accumulating_market_large", "load_build_run"),
+    ]
+
+
+def test_ordered_cases_alternates_two_case_selection() -> None:
+    """
+    Test two-case selections change order between neighboring sessions.
+    """
+    cases = benchmark.select_cases(["accumulating_market_large"])
+
+    sessions = [benchmark.ordered_cases(index, cases) for index in range(3)]
+
+    assert sessions == [cases, list(reversed(cases)), cases]
+
+
 def test_summarize_reports_median_spread_ratio_and_gap() -> None:
     """
     Test summary statistics use raw elapsed samples without profile data.
@@ -304,3 +330,108 @@ def test_run_worker_records_and_revalidates_each_sample_identity(
     identities = iter([changed])
     with pytest.raises(RuntimeError, match=r"Identity mismatch for .* timed iteration 0"):
         benchmark.run_worker(args)
+
+
+def test_run_compare_counterbalances_runtimes_and_deduplicates_fingerprints(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """
+    Test selected cases counterbalance runtimes and store one full fingerprint.
+    """
+    output_path = tmp_path / "results.json"
+    args = benchmark.argparse.Namespace(
+        v1_python=tmp_path / "v1" / "python",
+        v1_artifact=tmp_path / "v1.whl",
+        v1_commit="v1-commit",
+        v1_source=tmp_path / "v1-source",
+        v2_python=tmp_path / "v2" / "python",
+        v2_artifact=tmp_path / "v2.whl",
+        v2_commit="v2-commit",
+        v2_source=tmp_path / "v2-source",
+        scenarios=["accumulating_market_large"],
+        boundaries=["load_build_run", "run_preloaded"],
+        sessions=3,
+        iterations=1,
+        output=output_path,
+    )
+    identities = {
+        "v1": {
+            "backend": "cython",
+            "high_precision": True,
+            "python_version": "3.12.3",
+            "source_commit": "v1-commit",
+        },
+        "v2": {
+            "backend": "pyo3",
+            "high_precision": True,
+            "python_version": "3.12.3",
+            "source_commit": "v2-commit",
+        },
+    }
+    fingerprint = {
+        "digests": {"result_digest": "sha256:result"},
+        "event_counts": {"iterations": 4_000},
+    }
+
+    def invoke_json(command: list[str]) -> dict[str, object]:
+        version = "v1" if Path(command[0]) == args.v1_python else "v2"
+        if command[2] == "identity":
+            return identities[version]
+        assert command[2] == "worker"
+        assert command[command.index("--scenario") + 1] == "accumulating_market_large"
+        assert command[command.index("--boundary") + 1] in benchmark.BOUNDARIES
+        return {
+            "samples": [
+                {
+                    "elapsed_ns": 10 if version == "v1" else 5,
+                    "fingerprint": fingerprint,
+                    "runtime_identity": identities[version],
+                },
+            ],
+        }
+
+    monkeypatch.setattr(benchmark, "invoke_json", invoke_json)
+    monkeypatch.setattr(benchmark, "environment_metadata", lambda: {"load_average": (0, 0, 0)})
+
+    benchmark.run_compare(args)
+
+    result = benchmark.json.loads(output_path.read_text(encoding="utf-8"))
+    fingerprint_digest = benchmark.digest(fingerprint)
+    assert result["boundaries"] == {
+        "run_preloaded": benchmark.BOUNDARY_DESCRIPTIONS["run_preloaded"],
+        "load_build_run": benchmark.BOUNDARY_DESCRIPTIONS["load_build_run"],
+    }
+    assert [scenario["name"] for scenario in result["matrix"]] == [
+        "accumulating_market_large",
+    ]
+    assert result["fingerprints"] == [
+        {
+            "boundary": "run_preloaded",
+            "fingerprint": fingerprint,
+            "fingerprint_digest": fingerprint_digest,
+            "scenario": "accumulating_market_large",
+        },
+        {
+            "boundary": "load_build_run",
+            "fingerprint": fingerprint,
+            "fingerprint_digest": fingerprint_digest,
+            "scenario": "accumulating_market_large",
+        },
+    ]
+    assert len(result["samples"]) == 12
+    assert all(sample["fingerprint_digest"] == fingerprint_digest for sample in result["samples"])
+    assert all("fingerprint" not in sample for sample in result["samples"])
+    first_versions = {}
+    for sample in result["samples"]:
+        first_versions.setdefault(
+            (sample["session"], sample["boundary"]),
+            sample["version"],
+        )
+    assert [
+        [first_versions[(session, boundary)] for session in range(1, 4)]
+        for boundary in benchmark.BOUNDARIES
+    ] == [
+        ["v1", "v2", "v1"],
+        ["v2", "v1", "v2"],
+    ]

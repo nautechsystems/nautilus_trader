@@ -162,6 +162,10 @@ SCENARIOS = (
 )
 
 BOUNDARIES = ("run_preloaded", "load_build_run")
+BOUNDARY_DESCRIPTIONS = {
+    "run_preloaded": "run only, after fixture generation, engine construction, and data load",
+    "load_build_run": "fixture generation, engine construction, data load, and run",
+}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1419,14 +1423,47 @@ def worker_command(
     ]
 
 
-def ordered_cases(session: int) -> list[tuple[Scenario, str]]:
+def select_cases(
+    scenario_names: list[str] | None = None,
+    boundary_names: list[str] | None = None,
+) -> list[tuple[Scenario, str]]:
+    """
+    Select benchmark cases while retaining canonical matrix order.
+    """
+    known_scenarios = {scenario.name for scenario in SCENARIOS}
+    requested_scenarios = set(scenario_names or known_scenarios)
+    unknown_scenarios = requested_scenarios - known_scenarios
+    if unknown_scenarios:
+        raise ValueError(f"Unknown scenarios: {sorted(unknown_scenarios)!r}")
+
+    requested_boundaries = set(boundary_names or BOUNDARIES)
+    unknown_boundaries = requested_boundaries - set(BOUNDARIES)
+    if unknown_boundaries:
+        raise ValueError(f"Unknown boundaries: {sorted(unknown_boundaries)!r}")
+
+    return [
+        (scenario, boundary)
+        for scenario in SCENARIOS
+        if scenario.name in requested_scenarios
+        for boundary in BOUNDARIES
+        if boundary in requested_boundaries
+    ]
+
+
+def ordered_cases(
+    session: int,
+    cases: list[tuple[Scenario, str]] | None = None,
+) -> list[tuple[Scenario, str]]:
     """
     Rotate and reverse cases so neighboring runtime order changes by session.
     """
-    cases = [(scenario, boundary) for scenario in SCENARIOS for boundary in BOUNDARIES]
+    cases = list(cases if cases is not None else select_cases())
+    if not cases:
+        raise ValueError("At least one benchmark case is required")
+    offset = session % len(cases)
     if session % 2:
         cases.reverse()
-    offset = session % len(cases)
+        offset = (offset + 1) % len(cases)
     return cases[offset:] + cases[:offset]
 
 
@@ -1468,13 +1505,19 @@ def summarize(samples: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return summaries
 
 
-def run_compare(args: argparse.Namespace) -> None:  # noqa: C901
+def run_compare(args: argparse.Namespace) -> None:
     """
     Coordinate the exact-identity interleaved comparison and write its raw record.
     """
     if args.sessions < MIN_SESSIONS:
         raise ValueError("At least three full sessions are required")
     script = Path(__file__).resolve()
+    cases = select_cases(args.scenarios, args.boundaries)
+    case_indices = {
+        (scenario.name, boundary): index for index, (scenario, boundary) in enumerate(cases)
+    }
+    scenarios = tuple(dict.fromkeys(scenario for scenario, _boundary in cases))
+    boundaries = tuple(dict.fromkeys(boundary for _scenario, boundary in cases))
     runtimes = {
         "v1": Runtime(
             python=Path(args.v1_python),
@@ -1504,11 +1547,11 @@ def run_compare(args: argparse.Namespace) -> None:  # noqa: C901
         raise RuntimeError("The v1 and v2 runtimes do not use the same precision mode")
 
     samples = []
-    expected_fingerprints: dict[tuple[str, str], str] = {}
+    expected_fingerprints: dict[tuple[str, str], dict[str, Any]] = {}
     for session in range(args.sessions):
-        for case_index, (scenario, boundary) in enumerate(ordered_cases(session)):
+        for scenario, boundary in ordered_cases(session, cases):
+            case_index = case_indices[(scenario.name, boundary)]
             version_order = ["v1", "v2"] if (session + case_index) % 2 == 0 else ["v2", "v1"]
-            case_fingerprints = {}
             for version in version_order:
                 runtime = runtimes[version]
                 output = invoke_json(
@@ -1526,20 +1569,18 @@ def run_compare(args: argparse.Namespace) -> None:  # noqa: C901
                         sample["runtime_identity"],
                         f"{version} sample identity",
                     )
-                    fingerprint_value = sample["fingerprint"]["digests"]["result_digest"]
                     key = (scenario.name, boundary)
-                    expected = expected_fingerprints.setdefault(key, fingerprint_value)
-                    if fingerprint_value != expected:
-                        raise RuntimeError(
-                            f"Fingerprint mismatch for {scenario.name}/{boundary}: "
-                            f"{version} produced {fingerprint_value}, expected {expected}",
-                        )
-                    case_fingerprints[version] = sample["fingerprint"]
+                    expected = expected_fingerprints.setdefault(key, sample["fingerprint"])
+                    require_fingerprint_match(
+                        expected,
+                        sample["fingerprint"],
+                        f"{scenario.name}/{boundary} {version} timed iteration {iteration}",
+                    )
                     samples.append(
                         {
                             "boundary": boundary,
                             "elapsed_ns": sample["elapsed_ns"],
-                            "fingerprint": sample["fingerprint"],
+                            "fingerprint_digest": digest(sample["fingerprint"]),
                             "iteration": iteration,
                             "runtime_identity_digest": digest(sample["runtime_identity"]),
                             "scenario": scenario.name,
@@ -1547,12 +1588,6 @@ def run_compare(args: argparse.Namespace) -> None:  # noqa: C901
                             "version": version,
                         },
                     )
-            if case_fingerprints["v1"] != case_fingerprints["v2"]:
-                require_fingerprint_match(
-                    case_fingerprints["v1"],
-                    case_fingerprints["v2"],
-                    f"{scenario.name}/{boundary} v1 versus v2",
-                )
 
     final_identities = {
         name: invoke_json(identity_command(script, runtime)) for name, runtime in runtimes.items()
@@ -1560,20 +1595,27 @@ def run_compare(args: argparse.Namespace) -> None:  # noqa: C901
     require_identity_match(identities, final_identities, "Final runtime identity")
     environment_after = environment_metadata()
     environment_after["sessions"] = args.sessions
+    fingerprints = []
+    for scenario, boundary in cases:
+        fingerprint_value = expected_fingerprints[(scenario.name, boundary)]
+        fingerprints.append(
+            {
+                "boundary": boundary,
+                "fingerprint": fingerprint_value,
+                "fingerprint_digest": digest(fingerprint_value),
+                "scenario": scenario.name,
+            },
+        )
     output = {
-        "boundaries": {
-            "load_build_run": "fixture generation, engine construction, data load, and run",
-            "run_preloaded": (
-                "run only, after fixture generation, engine construction, and data load"
-            ),
-        },
+        "boundaries": {boundary: BOUNDARY_DESCRIPTIONS[boundary] for boundary in boundaries},
         "driver_sha256": file_sha256(script),
         "ended_at_utc": dt.datetime.now(tz=dt.UTC).isoformat(),
         "environment_after": environment_after,
         "environment_before": environment_before,
+        "fingerprints": fingerprints,
         "identities": identities,
         "iterations_per_case": args.iterations,
-        "matrix": [dataclasses.asdict(scenario) for scenario in SCENARIOS],
+        "matrix": [dataclasses.asdict(scenario) for scenario in scenarios],
         "samples": samples,
         "sessions": args.sessions,
         "started_at_utc": started_at.isoformat(),
@@ -1612,6 +1654,18 @@ def parser() -> argparse.ArgumentParser:
     compare.add_argument("--v2-artifact", required=True)
     compare.add_argument("--v2-commit", required=True)
     compare.add_argument("--v2-source", required=True)
+    compare.add_argument(
+        "--scenario",
+        action="append",
+        choices=tuple(case.name for case in SCENARIOS),
+        dest="scenarios",
+    )
+    compare.add_argument(
+        "--boundary",
+        action="append",
+        choices=BOUNDARIES,
+        dest="boundaries",
+    )
     compare.add_argument("--sessions", type=int, default=3)
     compare.add_argument("--iterations", type=int, default=1)
     compare.add_argument("--output", required=True)
