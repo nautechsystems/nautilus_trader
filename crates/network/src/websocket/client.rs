@@ -876,8 +876,7 @@ impl WebSocketClientInner {
             None,
             headers,
         )
-        .await
-        .map_err(TransportError::from)?;
+        .await?;
 
         // Reading the HTTP 101 may also read the first WebSocket frame prefix;
         // replay it only when present so the ordinary path stays unwrapped.
@@ -925,6 +924,9 @@ fn is_retryable_initial_connect_error(err: &TransportError) -> bool {
                 | std::io::ErrorKind::Unsupported
                 | std::io::ErrorKind::PermissionDenied
         ),
+        TransportError::UpgradeRejected(status) | TransportError::ProxyConnectRejected(status) => {
+            retryable_status(*status)
+        }
         TransportError::InvalidUrl(_)
         | TransportError::Handshake(_)
         | TransportError::Tls(_)
@@ -934,6 +936,10 @@ fn is_retryable_initial_connect_error(err: &TransportError) -> bool {
         | TransportError::InvalidUtf8
         | TransportError::Other(_) => false,
     }
+}
+
+const fn retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 425 | 429 | 500..=599)
 }
 
 fn initial_connect_cancelled() -> TransportError {
@@ -994,6 +1000,40 @@ mod connection_error_tests {
         #[case] expected: bool,
     ) {
         assert_eq!(is_connection_drop_transport_error(&err), expected);
+    }
+
+    #[rstest]
+    #[case(408, true)]
+    #[case(425, true)]
+    #[case(429, true)]
+    #[case(500, true)]
+    #[case(503, true)]
+    #[case(599, true)]
+    #[case(400, false)]
+    #[case(401, false)]
+    #[case(403, false)]
+    #[case(404, false)]
+    #[case(407, false)]
+    #[case(409, false)]
+    #[case(426, false)]
+    #[case(499, false)]
+    #[case(600, false)]
+    #[case(101, false)]
+    #[case(200, false)]
+    fn initial_connect_retryable_status_policy(#[case] status: u16, #[case] expected: bool) {
+        assert_eq!(retryable_status(status), expected);
+    }
+
+    #[rstest]
+    #[case(TransportError::UpgradeRejected(429), true)]
+    #[case(TransportError::UpgradeRejected(503), true)]
+    #[case(TransportError::UpgradeRejected(404), false)]
+    #[case(TransportError::ProxyConnectRejected(429), true)]
+    #[case(TransportError::ProxyConnectRejected(407), false)]
+    #[case(TransportError::ConnectionClosed, true)]
+    #[case(TransportError::Handshake("malformed".into()), false)]
+    fn initial_connect_error_classification(#[case] err: TransportError, #[case] expected: bool) {
+        assert_eq!(is_retryable_initial_connect_error(&err), expected);
     }
 }
 
@@ -4728,6 +4768,99 @@ mod rust_tests {
         }
     }
 
+    async fn rejected_upgrade_attempts(status: u16, backend: TransportBackend) -> u64 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicU64::new(0));
+        let accepted_server = Arc::clone(&accepted);
+
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                accepted_server.fetch_add(1, Ordering::SeqCst);
+                let mut request = Vec::new();
+
+                loop {
+                    let mut chunk = [0; 1024];
+                    let n = stream.read(&mut chunk).await.unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    request.extend_from_slice(&chunk[..n]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                stream
+                    .write_all(format!("HTTP/1.1 {status}\r\n\r\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+        let mut config = reconnect_test_config(port);
+        config.backend = backend;
+        let policy = InitialConnectRetryPolicy {
+            max_attempts: std::num::NonZeroU32::new(3).unwrap(),
+            delay_initial: Duration::from_millis(1),
+            delay_max: Duration::from_millis(1),
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+        };
+
+        WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .initial_connect_retry_policy(policy)
+            .connect()
+            .await
+            .expect_err("server always rejects the upgrade");
+
+        let attempts = accepted.load(Ordering::SeqCst);
+        server.abort();
+        attempts
+    }
+
+    async fn closed_proxy_attempts() -> u64 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = listener.local_addr().unwrap();
+        let accepted = Arc::new(AtomicU64::new(0));
+        let accepted_server = Arc::clone(&accepted);
+
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                accepted_server.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0; 1024];
+                let _ = stream.read(&mut request).await.unwrap();
+            }
+        });
+
+        let (handler, _rx) = channel_message_handler();
+        let mut config = reconnect_test_config(9);
+        config.proxy_url = Some(format!("http://{proxy_addr}"));
+        let policy = InitialConnectRetryPolicy {
+            max_attempts: std::num::NonZeroU32::new(3).unwrap(),
+            delay_initial: Duration::from_millis(1),
+            delay_max: Duration::from_millis(1),
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+        };
+
+        WebSocketClient::builder()
+            .config(config)
+            .message_handler(handler)
+            .initial_connect_retry_policy(policy)
+            .connect()
+            .await
+            .expect_err("proxy always closes before its CONNECT response");
+
+        let attempts = accepted.load(Ordering::SeqCst);
+        server.abort();
+        attempts
+    }
+
     #[rstest]
     #[tokio::test]
     async fn initial_connect_cancellation_interrupts_in_flight_handshake() {
@@ -4831,6 +4964,42 @@ mod rust_tests {
         // also stop at its configured maximum rather than exceeding it.
         assert_eq!(accepted.load(Ordering::SeqCst), 3);
         server.abort();
+    }
+
+    #[rstest]
+    #[case::too_many_requests(429)]
+    #[case::server_error(503)]
+    #[tokio::test]
+    async fn transient_upgrade_rejection_is_retried(#[case] status: u16) {
+        assert_eq!(
+            rejected_upgrade_attempts(status, TransportBackend::Tungstenite).await,
+            3
+        );
+    }
+
+    #[cfg(feature = "transport-sockudo")]
+    #[rstest]
+    #[tokio::test]
+    async fn sockudo_too_many_requests_upgrade_rejection_is_retried() {
+        assert_eq!(
+            rejected_upgrade_attempts(429, TransportBackend::Sockudo).await,
+            3
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn permanent_upgrade_rejection_is_not_retried() {
+        assert_eq!(
+            rejected_upgrade_attempts(404, TransportBackend::Tungstenite).await,
+            1
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn proxy_close_before_connect_response_is_retried() {
+        assert_eq!(closed_proxy_attempts().await, 3);
     }
 
     #[rstest]

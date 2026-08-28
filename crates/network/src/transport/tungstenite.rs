@@ -123,9 +123,7 @@ impl From<tungstenite::Error> for TransportError {
             tungstenite::Error::Protocol(e) => Self::Protocol(e.to_string()),
             tungstenite::Error::Utf8(_) => Self::InvalidUtf8,
             tungstenite::Error::Url(e) => Self::InvalidUrl(e.to_string()),
-            tungstenite::Error::Http(resp) => {
-                Self::Handshake(format!("HTTP status {}", resp.status()))
-            }
+            tungstenite::Error::Http(resp) => Self::UpgradeRejected(resp.status().as_u16()),
             tungstenite::Error::HttpFormat(e) => Self::Handshake(e.to_string()),
             other => Self::Other(other.to_string()),
         }
