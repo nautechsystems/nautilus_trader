@@ -1339,7 +1339,10 @@ mod tests {
         handle_fok_rest_status(&venue_order, venue_order_id, &ctx);
 
         assert!(receiver.try_recv().is_err());
-        assert!(order_identities.get(&venue_order_id).is_none());
+        assert!(
+            order_identities.mark_accepted(venue_order_id),
+            "handler must not have marked the order accepted"
+        );
     }
 
     #[rstest]
