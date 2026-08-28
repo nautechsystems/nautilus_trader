@@ -1561,8 +1561,8 @@ impl BinanceFuturesAlgoOrder {
             report = report.with_activation_price(activation_price);
         }
 
-        if let Some(reduce_only) = self.reduce_only {
-            report = report.with_reduce_only(reduce_only);
+        if self.reduce_only == Some(true) || self.close_position == Some(true) {
+            report = report.with_reduce_only(true);
         }
 
         if let Some(expire_time) = parse_good_till_date(self.good_till_date)? {

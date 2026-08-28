@@ -183,6 +183,7 @@ type CapturedWsTradingMessages = Arc<std::sync::Mutex<Vec<serde_json::Value>>>;
 
 #[derive(Clone, Copy, Debug)]
 enum ReportFixtureMode {
+    ClosePosition,
     Delivery,
     Empty,
     FillsOnly,
@@ -447,13 +448,13 @@ async fn handle_position_risk_query(
         ReportFixtureMode::Empty | ReportFixtureMode::FillsOnly | ReportFixtureMode::Gtd => {
             json_response(&json!([]))
         }
+        ReportFixtureMode::ClosePosition | ReportFixtureMode::HedgePositions => {
+            json_response(&load_fixture("position_risk_hedge.json"))
+        }
         ReportFixtureMode::Delivery => {
             let mut positions = load_fixture("position_risk.json");
             positions[0]["symbol"] = json!("BTCUSDT_260925");
             json_response(&positions)
-        }
-        ReportFixtureMode::HedgePositions => {
-            json_response(&load_fixture("position_risk_hedge.json"))
         }
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
@@ -474,7 +475,9 @@ async fn handle_open_orders_query(
     }
     record_query(&state, "openOrders", query);
     match state.report_fixture_mode {
-        ReportFixtureMode::Empty | ReportFixtureMode::FillsOnly => json_response(&json!([])),
+        ReportFixtureMode::ClosePosition
+        | ReportFixtureMode::Empty
+        | ReportFixtureMode::FillsOnly => json_response(&json!([])),
         ReportFixtureMode::Gtd => {
             let mut order = load_fixture("order_response.json");
             order["timeInForce"] = json!("GTD");
@@ -509,6 +512,61 @@ async fn handle_open_algo_orders_query(
     record_query(&state, "openAlgoOrders", query);
     match state.report_fixture_mode {
         ReportFixtureMode::Empty | ReportFixtureMode::FillsOnly => json_response(&json!([])),
+        ReportFixtureMode::ClosePosition => {
+            let template = load_fixture("open_algo_orders.json")[0].clone();
+            let mut close_long = template.clone();
+            close_long["algoId"] = json!(123456790);
+            close_long["clientAlgoId"] = json!("close-long");
+            close_long["side"] = json!("SELL");
+            close_long["positionSide"] = json!("LONG");
+            close_long["closePosition"] = json!(true);
+            close_long["reduceOnly"] = json!(false);
+            close_long.as_object_mut().unwrap().remove("quantity");
+
+            let mut close_short = template.clone();
+            close_short["algoId"] = json!(123456791);
+            close_short["clientAlgoId"] = json!("close-short");
+            close_short["side"] = json!("BUY");
+            close_short["positionSide"] = json!("SHORT");
+            close_short["closePosition"] = json!(true);
+            close_short["reduceOnly"] = json!(false);
+            close_short.as_object_mut().unwrap().remove("quantity");
+
+            let mut ordinary = template.clone();
+            ordinary["algoId"] = json!(123456792);
+            ordinary["clientAlgoId"] = json!("ordinary-zero");
+            ordinary["side"] = json!("SELL");
+            ordinary["positionSide"] = json!("LONG");
+            ordinary["closePosition"] = json!(false);
+            ordinary["reduceOnly"] = json!(true);
+            ordinary.as_object_mut().unwrap().remove("quantity");
+
+            let mut venue_zero = template.clone();
+            venue_zero["algoId"] = json!(123456793);
+            venue_zero["clientAlgoId"] = json!("close-venue-zero");
+            venue_zero["side"] = json!("SELL");
+            venue_zero["positionSide"] = json!("LONG");
+            venue_zero["closePosition"] = json!(true);
+            venue_zero["reduceOnly"] = json!(false);
+            venue_zero["quantity"] = json!("0.0000");
+
+            let mut invalid_side = template;
+            invalid_side["algoId"] = json!(123456794);
+            invalid_side["clientAlgoId"] = json!("close-invalid-side");
+            invalid_side["side"] = json!("BUY");
+            invalid_side["positionSide"] = json!("LONG");
+            invalid_side["closePosition"] = json!(true);
+            invalid_side["reduceOnly"] = json!(false);
+            invalid_side.as_object_mut().unwrap().remove("quantity");
+
+            json_response(&json!([
+                close_long,
+                close_short,
+                ordinary,
+                venue_zero,
+                invalid_side
+            ]))
+        }
         ReportFixtureMode::Gtd => {
             let mut orders = load_fixture("open_algo_orders.json");
             orders[0]["timeInForce"] = json!("GTD");
@@ -572,6 +630,7 @@ async fn handle_all_algo_orders_query(
     record_query(&state, "allAlgoOrders", query);
     match state.report_fixture_mode {
         ReportFixtureMode::Delivery
+        | ReportFixtureMode::ClosePosition
         | ReportFixtureMode::Empty
         | ReportFixtureMode::FillsOnly
         | ReportFixtureMode::Gtd => json_response(&json!([])),
@@ -630,9 +689,10 @@ async fn handle_user_trades_query(
         - 30_000;
     record_query(&state, "userTrades", query);
     match state.report_fixture_mode {
-        ReportFixtureMode::Delivery | ReportFixtureMode::Empty | ReportFixtureMode::Gtd => {
-            json_response(&json!([]))
-        }
+        ReportFixtureMode::ClosePosition
+        | ReportFixtureMode::Delivery
+        | ReportFixtureMode::Empty
+        | ReportFixtureMode::Gtd => json_response(&json!([])),
         ReportFixtureMode::FillsOnly
         | ReportFixtureMode::Populated
         | ReportFixtureMode::HedgePositions
@@ -4176,6 +4236,114 @@ async fn test_generate_mass_status_uses_execution_instruments_without_shared_cac
     assert_eq!(fill.commission, Money::from("0.01000000 USDT"));
     assert!(mass_status.lookback_start().is_some());
     assert!(mass_status.reports_complete());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_restores_close_position_quantities() {
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::ClosePosition,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    let reports = mass_status.order_reports();
+    let close_long = reports.get(&VenueOrderId::from("123456790")).unwrap();
+    let close_short = reports.get(&VenueOrderId::from("123456791")).unwrap();
+    let ordinary = reports.get(&VenueOrderId::from("123456792")).unwrap();
+    let venue_zero = reports.get(&VenueOrderId::from("123456793")).unwrap();
+    let invalid_side = reports.get(&VenueOrderId::from("123456794")).unwrap();
+
+    assert_eq!(reports.len(), 5);
+    assert_eq!(close_long.order_side, OrderSide::Sell);
+    assert_eq!(close_long.order_type, OrderType::StopMarket);
+    assert_eq!(close_long.quantity, Quantity::from("0.005"));
+    assert!(close_long.reduce_only);
+    assert_eq!(close_short.order_side, OrderSide::Buy);
+    assert_eq!(close_short.order_type, OrderType::StopMarket);
+    assert_eq!(close_short.quantity, Quantity::from("0.002"));
+    assert!(close_short.reduce_only);
+    assert_eq!(ordinary.quantity, Quantity::from("0.000"));
+    assert!(ordinary.reduce_only);
+    assert_eq!(venue_zero.quantity, Quantity::from("0.005"));
+    assert!(venue_zero.reduce_only);
+    assert_eq!(invalid_side.quantity, Quantity::from("0.000"));
+    assert!(invalid_side.reduce_only);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_open_order_reports_restores_close_position_quantities() {
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::ClosePosition,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    add_test_instrument_to_cache(&cache);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let reports = client
+        .generate_order_status_reports(&GenerateOrderStatusReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+    let close_long = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("123456790"))
+        .unwrap();
+    let close_short = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("123456791"))
+        .unwrap();
+    let ordinary = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("123456792"))
+        .unwrap();
+    let venue_zero = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("123456793"))
+        .unwrap();
+    let invalid_side = reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from("123456794"))
+        .unwrap();
+
+    assert_eq!(reports.len(), 5);
+    assert_eq!(close_long.quantity, Quantity::from("0.005"));
+    assert!(close_long.reduce_only);
+    assert_eq!(close_short.quantity, Quantity::from("0.002"));
+    assert!(close_short.reduce_only);
+    assert_eq!(ordinary.quantity, Quantity::from("0.000"));
+    assert!(ordinary.reduce_only);
+    assert_eq!(venue_zero.quantity, Quantity::from("0.005"));
+    assert!(venue_zero.reduce_only);
+    assert_eq!(invalid_side.quantity, Quantity::from("0.000"));
+    assert!(invalid_side.reduce_only);
 }
 
 #[rstest]

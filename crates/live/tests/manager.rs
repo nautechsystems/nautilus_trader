@@ -734,6 +734,98 @@ async fn test_reconcile_mass_status_creates_external_order_accepted() {
     );
 }
 
+#[tokio::test]
+async fn test_reconcile_mass_status_materializes_restored_close_position_order() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("close-long");
+    ctx.add_instrument(test_instrument());
+
+    let report = OrderStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        Some(client_order_id),
+        VenueOrderId::from("123456790"),
+        OrderSide::Sell,
+        OrderType::StopMarket,
+        TimeInForce::Gtc,
+        OrderStatus::Accepted,
+        Quantity::from("0.005"),
+        Quantity::from("0.000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )
+    .with_trigger_price(Price::from("2500.00"))
+    .with_trigger_type(TriggerType::MarkPrice)
+    .with_reduce_only(true);
+    let mut mass_status = create_mass_status(vec![report], Vec::new());
+    mass_status.add_position_reports(vec![PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("0.005"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.0)),
+    )]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+    let order = ctx.get_order(&client_order_id).unwrap();
+
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(
+                event,
+                OrderEventAny::Accepted(accepted)
+                    if accepted.client_order_id == client_order_id
+            ))
+            .count(),
+        1
+    );
+    assert_eq!(result.external_orders.len(), 1);
+    assert_eq!(order.order_type(), OrderType::StopMarket);
+    assert_eq!(order.order_side(), OrderSide::Sell);
+    assert_eq!(order.quantity(), Quantity::from("0.005"));
+    assert_eq!(order.trigger_price(), Some(Price::from("2500.00")));
+    assert!(order.is_reduce_only());
+}
+
+#[tokio::test]
+async fn test_reconcile_mass_status_rejects_external_order_with_zero_quantity() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("ordinary-zero");
+    ctx.add_instrument(test_instrument());
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("123456792"),
+        instrument_id,
+        OrderStatus::Accepted,
+        Quantity::from("0.000"),
+        Quantity::from("0.000"),
+    );
+    let mass_status = create_mass_status(vec![report], Vec::new());
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert!(result.events.is_empty());
+    assert!(result.external_orders.is_empty());
+    assert!(ctx.get_order(&client_order_id).is_none());
+}
+
 #[rstest]
 #[case(None, true)]
 #[case(None, false)]

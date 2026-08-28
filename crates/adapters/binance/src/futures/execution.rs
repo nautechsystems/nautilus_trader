@@ -35,9 +35,8 @@ use nautilus_common::{
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-        GeneratePositionStatusReportsBuilder, ModifyOrder, PARAMS_CLOSE_POSITION, QueryAccount,
-        QueryOrder, SubmitOrder, SubmitOrderList,
+        GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder, ModifyOrder,
+        PARAMS_CLOSE_POSITION, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -76,7 +75,7 @@ use super::{
             BinanceFuturesAlgoOrderQueryResult, BinanceFuturesHttpClient, BinanceFuturesInstrument,
             is_algo_order_type,
         },
-        models::{BatchOrderResult, BinancePositionRisk},
+        models::{BatchOrderResult, BinanceFuturesAlgoOrder, BinancePositionRisk},
         query::{
             BatchCancelItem, BinanceAllOrdersParamsBuilder, BinanceOpenOrdersParamsBuilder,
             BinanceOrderQueryParamsBuilder, BinancePositionRiskParamsBuilder,
@@ -154,57 +153,6 @@ const BINANCE_GTD_MAX_MILLIS: u64 = 253_402_300_799_000;
 /// Query parameter declaring that the command's venue order ID is a Binance Algo Service
 /// `algoId`, rather than a regular matching-engine `orderId` or triggered `actualOrderId`.
 pub const BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM: &str = "venue_order_id_is_algo_id";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum BinanceFuturesAlgoLookup {
-    Skip,
-    AlgoId,
-    ClientAlgoId,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct FuturesOrderLifetime {
-    time_in_force: TimeInForce,
-    good_till_date: Option<i64>,
-}
-
-fn create_algo_order_status_report(
-    result: &BinanceFuturesAlgoOrderQueryResult,
-    account_id: AccountId,
-    instrument_id: InstrumentId,
-    price_precision: u8,
-    size_precision: u8,
-    treat_expired_as_canceled: bool,
-    ts_init: UnixNanos,
-) -> anyhow::Result<OrderStatusReport> {
-    if let Some(actual) = result.actual.as_ref() {
-        match result.algo.to_order_status_report_with_actual(
-            actual,
-            account_id,
-            instrument_id,
-            price_precision,
-            size_precision,
-            treat_expired_as_canceled,
-            ts_init,
-        ) {
-            Ok(report) => return Ok(report),
-            Err(e) => {
-                log::warn!(
-                    "Failed to convert matching-engine enrichment for algo order {}: {e}; falling back to Algo Service report",
-                    result.algo.algo_id
-                );
-            }
-        }
-    }
-
-    result.algo.to_order_status_report(
-        account_id,
-        instrument_id,
-        price_precision,
-        size_precision,
-        ts_init,
-    )
-}
 
 /// Live execution client for Binance Futures trading.
 ///
@@ -1007,6 +955,109 @@ impl BinanceFuturesExecutionClient {
         ))
     }
 
+    async fn generate_open_order_status_reports(
+        &self,
+        instrument_id: Option<InstrumentId>,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Vec<OpenOrderStatusReport>> {
+        if let Some(instrument_id) = instrument_id
+            && self
+                .http_client
+                .instrument_reconciliation(&instrument_id)
+                .is_none()
+        {
+            if self.is_instrument_out_of_scope(instrument_id) {
+                log::debug!(
+                    "Dropping out-of-scope Binance Futures order request for instrument {instrument_id}"
+                );
+                return Ok(Vec::new());
+            }
+
+            anyhow::bail!(
+                "Binance Futures open order request has unresolved instrument {instrument_id}"
+            );
+        }
+
+        let symbol = instrument_id.map(|id| format_binance_symbol(&id));
+        let mut builder = BinanceOpenOrdersParamsBuilder::default();
+
+        if let Some(symbol) = symbol {
+            builder.symbol(symbol);
+        }
+        let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        let (orders, algo_orders) = tokio::try_join!(
+            self.http_client.query_open_orders(&params),
+            self.http_client.query_open_algo_orders(instrument_id),
+        )?;
+        let mut reports = Vec::with_capacity(orders.len() + algo_orders.len());
+
+        for order in orders {
+            let instrument_id = instrument_id
+                .unwrap_or_else(|| format_instrument_id(&order.symbol, self.product_type));
+            let Some(instrument) = self.http_client.instrument_reconciliation(&instrument_id)
+            else {
+                if self.is_instrument_out_of_scope(instrument_id) {
+                    log::debug!(
+                        "Dropping out-of-scope Binance Futures open order for instrument {instrument_id}"
+                    );
+                    continue;
+                }
+                anyhow::bail!(
+                    "Binance Futures open order has unresolved instrument {instrument_id}"
+                );
+            };
+
+            if let Ok(report) = order.to_order_status_report(
+                self.core.account_id,
+                instrument.id(),
+                instrument.price_precision(),
+                instrument.size_precision(),
+                self.config.treat_expired_as_canceled,
+                ts_init,
+            ) {
+                reports.push(OpenOrderStatusReport {
+                    report,
+                    quantity_free_close_position_side: None,
+                });
+            }
+        }
+
+        for algo_order in algo_orders {
+            let instrument_id = instrument_id
+                .unwrap_or_else(|| format_instrument_id(&algo_order.symbol, self.product_type));
+            let Some(instrument) = self.http_client.instrument_reconciliation(&instrument_id)
+            else {
+                if self.is_instrument_out_of_scope(instrument_id) {
+                    log::debug!(
+                        "Dropping out-of-scope Binance Futures open algo order for instrument {instrument_id}"
+                    );
+                    continue;
+                }
+                anyhow::bail!(
+                    "Binance Futures open algo order has unresolved instrument {instrument_id}"
+                );
+            };
+
+            if let Ok(report) = algo_order.to_order_status_report(
+                self.core.account_id,
+                instrument.id(),
+                instrument.price_precision(),
+                instrument.size_precision(),
+                ts_init,
+            ) {
+                reports.push(OpenOrderStatusReport {
+                    report,
+                    quantity_free_close_position_side: quantity_free_close_position_side(
+                        &algo_order,
+                    ),
+                });
+            }
+        }
+
+        Ok(reports)
+    }
+
     async fn apply_futures_config(&self) -> anyhow::Result<()> {
         if let Some(ref leverages) = self.config.futures_leverages {
             for (symbol, leverage) in leverages {
@@ -1059,6 +1110,70 @@ impl BinanceFuturesExecutionClient {
         }
 
         Ok(())
+    }
+}
+
+fn quantity_free_close_position_side(
+    order: &BinanceFuturesAlgoOrder,
+) -> Option<PositionSideSpecified> {
+    let quantity_free = match order.quantity.as_deref() {
+        None => true,
+        Some(quantity) => quantity
+            .parse::<Decimal>()
+            .is_ok_and(|quantity| quantity.is_zero()),
+    };
+
+    if order.close_position != Some(true) || !quantity_free {
+        return None;
+    }
+
+    match (order.side, order.position_side) {
+        (BinanceSide::Sell, Some(BinancePositionSide::Long | BinancePositionSide::Both) | None) => {
+            Some(PositionSideSpecified::Long)
+        }
+        (BinanceSide::Buy, Some(BinancePositionSide::Short | BinancePositionSide::Both) | None) => {
+            Some(PositionSideSpecified::Short)
+        }
+        _ => None,
+    }
+}
+
+fn restore_close_position_quantities(
+    order_reports: &mut [OpenOrderStatusReport],
+    position_reports: &[PositionStatusReport],
+) {
+    // Binance accepts close-all orders without quantity and reports the omitted value as either
+    // absent or zero. Core reconciliation needs a positive quantity to materialize the order, so
+    // the current position leg is the narrowest valid source.
+    for order_report in order_reports {
+        let Some(position_side) = order_report.quantity_free_close_position_side else {
+            continue;
+        };
+
+        if order_report.report.quantity.is_positive() {
+            continue;
+        }
+
+        let mut matching_positions = position_reports.iter().filter(|position| {
+            position.account_id == order_report.report.account_id
+                && position.instrument_id == order_report.report.instrument_id
+                && position.position_side == position_side
+        });
+        let Some(position) = matching_positions.next() else {
+            continue;
+        };
+
+        if matching_positions.next().is_some() {
+            log::warn!(
+                "Cannot restore close-position quantity for order {}: multiple {:?} position reports for {}",
+                order_report.report.venue_order_id,
+                position_side,
+                order_report.report.instrument_id,
+            );
+            continue;
+        }
+
+        order_report.report.quantity = position.quantity;
     }
 }
 
@@ -1879,6 +1994,28 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
         let ts_init = self.clock.get_time_ns();
+
+        if cmd.open_only {
+            let mut reports = self
+                .generate_open_order_status_reports(cmd.instrument_id, ts_init)
+                .await?;
+
+            if reports.iter().any(|report| {
+                report.quantity_free_close_position_side.is_some()
+                    && !report.report.quantity.is_positive()
+            }) {
+                let position_cmd = GeneratePositionStatusReportsBuilder::default()
+                    .ts_init(ts_init)
+                    .instrument_id(cmd.instrument_id)
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let position_reports = self.generate_position_status_reports(&position_cmd).await?;
+                restore_close_position_quantities(&mut reports, &position_reports);
+            }
+
+            return Ok(reports.into_iter().map(|report| report.report).collect());
+        }
+
         let mut reports = Vec::new();
 
         if let Some(instrument_id) = cmd.instrument_id
@@ -1894,88 +2031,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 return Ok(reports);
             }
 
-            if cmd.open_only {
-                anyhow::bail!(
-                    "Binance Futures open order request has unresolved instrument {instrument_id}"
-                );
-            }
             log::warn!(
                 "Dropping historical Binance Futures orders for unresolved instrument {instrument_id}"
             );
             return Ok(reports);
         }
 
-        if cmd.open_only {
-            let symbol = cmd.instrument_id.map(|id| format_binance_symbol(&id));
-            let mut builder = BinanceOpenOrdersParamsBuilder::default();
-
-            if let Some(s) = symbol {
-                builder.symbol(s);
-            }
-            let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
-
-            let (orders, algo_orders) = tokio::try_join!(
-                self.http_client.query_open_orders(&params),
-                self.http_client.query_open_algo_orders(cmd.instrument_id),
-            )?;
-
-            for order in orders {
-                let instrument_id = cmd
-                    .instrument_id
-                    .unwrap_or_else(|| format_instrument_id(&order.symbol, self.product_type));
-                let Some(instrument) = self.http_client.instrument_reconciliation(&instrument_id)
-                else {
-                    if self.is_instrument_out_of_scope(instrument_id) {
-                        log::debug!(
-                            "Dropping out-of-scope Binance Futures open order for instrument {instrument_id}"
-                        );
-                        continue;
-                    }
-                    anyhow::bail!(
-                        "Binance Futures open order has unresolved instrument {instrument_id}"
-                    );
-                };
-
-                if let Ok(report) = order.to_order_status_report(
-                    self.core.account_id,
-                    instrument.id(),
-                    instrument.price_precision(),
-                    instrument.size_precision(),
-                    self.config.treat_expired_as_canceled,
-                    ts_init,
-                ) {
-                    reports.push(report);
-                }
-            }
-
-            for algo_order in algo_orders {
-                let instrument_id = cmd
-                    .instrument_id
-                    .unwrap_or_else(|| format_instrument_id(&algo_order.symbol, self.product_type));
-                let Some(instrument) = self.http_client.instrument_reconciliation(&instrument_id)
-                else {
-                    if self.is_instrument_out_of_scope(instrument_id) {
-                        log::debug!(
-                            "Dropping out-of-scope Binance Futures open algo order for instrument {instrument_id}"
-                        );
-                        continue;
-                    }
-                    anyhow::bail!(
-                        "Binance Futures open algo order has unresolved instrument {instrument_id}"
-                    );
-                };
-
-                if let Ok(report) = algo_order.to_order_status_report(
-                    self.core.account_id,
-                    instrument.id(),
-                    instrument.price_precision(),
-                    instrument.size_precision(),
-                    ts_init,
-                ) {
-                    reports.push(report);
-                }
-            }
-        } else if let Some(instrument_id) = cmd.instrument_id {
+        if let Some(instrument_id) = cmd.instrument_id {
             let Some(instrument) = self.http_client.instrument_reconciliation(&instrument_id)
             else {
                 if self.is_instrument_out_of_scope(instrument_id) {
@@ -2290,23 +2352,21 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             None => (complete_start, None, false),
         };
 
-        let order_cmd = GenerateOrderStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .open_only(true)
-            .start(Some(report_start))
-            .build()
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-
         let position_cmd = GeneratePositionStatusReportsBuilder::default()
             .ts_init(ts_now)
             .start(Some(report_start))
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let (order_reports, position_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
+        let (mut open_order_reports, position_reports) = tokio::try_join!(
+            self.generate_open_order_status_reports(None, ts_now),
             self.generate_position_status_reports(&position_cmd),
         )?;
+        restore_close_position_quantities(&mut open_order_reports, &position_reports);
+        let order_reports: Vec<_> = open_order_reports
+            .into_iter()
+            .map(|report| report.report)
+            .collect();
 
         let mut instrument_ids: Vec<_> = order_reports
             .iter()
@@ -3219,6 +3279,62 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BinanceFuturesAlgoLookup {
+    Skip,
+    AlgoId,
+    ClientAlgoId,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FuturesOrderLifetime {
+    time_in_force: TimeInForce,
+    good_till_date: Option<i64>,
+}
+
+struct OpenOrderStatusReport {
+    report: OrderStatusReport,
+    quantity_free_close_position_side: Option<PositionSideSpecified>,
+}
+
+fn create_algo_order_status_report(
+    result: &BinanceFuturesAlgoOrderQueryResult,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    treat_expired_as_canceled: bool,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    if let Some(actual) = result.actual.as_ref() {
+        match result.algo.to_order_status_report_with_actual(
+            actual,
+            account_id,
+            instrument_id,
+            price_precision,
+            size_precision,
+            treat_expired_as_canceled,
+            ts_init,
+        ) {
+            Ok(report) => return Ok(report),
+            Err(e) => {
+                log::warn!(
+                    "Failed to convert matching-engine enrichment for algo order {}: {e}; falling back to Algo Service report",
+                    result.algo.algo_id
+                );
+            }
+        }
+    }
+
+    result.algo.to_order_status_report(
+        account_id,
+        instrument_id,
+        price_precision,
+        size_precision,
+        ts_init,
+    )
+}
+
 fn user_trades_complete_start(ts_init: UnixNanos, ts_now: UnixNanos) -> UnixNanos {
     let oldest_reference = ts_now.saturating_sub_ns(USER_TRADES_MAX_TS_INIT_AGE_NS);
     ts_init
@@ -3360,6 +3476,84 @@ mod tests {
             should_use_algo_cancel(is_algo, is_triggered, has_promoted_id),
             expected
         );
+    }
+
+    #[rstest]
+    #[case::not_close(BinanceSide::Sell, Some(BinancePositionSide::Long), false, None, None)]
+    #[case::positive_quantity(
+        BinanceSide::Sell,
+        Some(BinancePositionSide::Long),
+        true,
+        Some("0.001"),
+        None
+    )]
+    #[case::hedge_long(
+        BinanceSide::Sell,
+        Some(BinancePositionSide::Long),
+        true,
+        None,
+        Some(PositionSideSpecified::Long)
+    )]
+    #[case::hedge_long_zero(
+        BinanceSide::Sell,
+        Some(BinancePositionSide::Long),
+        true,
+        Some("0.0000"),
+        Some(PositionSideSpecified::Long)
+    )]
+    #[case::hedge_short(
+        BinanceSide::Buy,
+        Some(BinancePositionSide::Short),
+        true,
+        None,
+        Some(PositionSideSpecified::Short)
+    )]
+    #[case::invalid_hedge_long(BinanceSide::Buy, Some(BinancePositionSide::Long), true, None, None)]
+    #[case::invalid_hedge_short(
+        BinanceSide::Sell,
+        Some(BinancePositionSide::Short),
+        true,
+        None,
+        None
+    )]
+    #[case::one_way_long(
+        BinanceSide::Sell,
+        Some(BinancePositionSide::Both),
+        true,
+        None,
+        Some(PositionSideSpecified::Long)
+    )]
+    #[case::one_way_short(
+        BinanceSide::Buy,
+        Some(BinancePositionSide::Both),
+        true,
+        None,
+        Some(PositionSideSpecified::Short)
+    )]
+    #[case::missing_side(BinanceSide::Buy, None, true, None, Some(PositionSideSpecified::Short))]
+    #[case::unknown_side(
+        BinanceSide::Sell,
+        Some(BinancePositionSide::Unknown),
+        true,
+        None,
+        None
+    )]
+    fn test_quantity_free_close_position_side(
+        #[case] side: BinanceSide,
+        #[case] position_side: Option<BinancePositionSide>,
+        #[case] close_position: bool,
+        #[case] quantity: Option<&str>,
+        #[case] expected: Option<PositionSideSpecified>,
+    ) {
+        let json = load_fixture_string("futures/http_json/open_algo_orders.json");
+        let mut orders: Vec<BinanceFuturesAlgoOrder> = serde_json::from_str(&json).unwrap();
+        let mut order = orders.remove(0);
+        order.side = side;
+        order.position_side = position_side;
+        order.close_position = Some(close_position);
+        order.quantity = quantity.map(str::to_string);
+
+        assert_eq!(quantity_free_close_position_side(&order), expected);
     }
 
     #[rstest]
