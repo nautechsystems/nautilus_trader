@@ -5224,6 +5224,53 @@ fn test_create_incremental_inferred_fill_with_commission() {
 }
 
 #[rstest]
+fn test_create_incremental_inferred_fill_preserves_venue_position_id() {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let account_id = AccountId::from("TEST-001");
+    let venue_position_id = PositionId::from("ETHUSDT-HEDGE-LONG");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.00"))
+        .build();
+    let accepted_order = TestOrderStubs::make_accepted_order(&order);
+    let report = OrderStatusReport::new(
+        account_id,
+        instrument.id(),
+        Some(accepted_order.client_order_id()),
+        VenueOrderId::from("V-HEDGE-INCREMENTAL"),
+        OrderSide::Buy,
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("10.0"),
+        Quantity::from("10.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )
+    .with_avg_px(dec!(100.0))
+    .with_venue_position_id(venue_position_id);
+
+    let event = create_incremental_inferred_fill(
+        &accepted_order,
+        &report,
+        &account_id,
+        &instrument,
+        UnixNanos::from(2_000_000),
+        None,
+    )
+    .expect("incremental fill is emitted");
+    let OrderEventAny::Filled(filled) = event else {
+        panic!("expected Filled event");
+    };
+
+    assert_eq!(filled.position_id, Some(venue_position_id));
+}
+
+#[rstest]
 fn test_create_inferred_fill_with_commission() {
     let instrument = crypto_perpetual_ethusdt();
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -5329,6 +5376,42 @@ fn test_create_inferred_fill_for_qty_with_commission() {
     };
 
     assert_eq!(filled.commission, Some(Money::new(1.23, Currency::USDT())));
+}
+
+#[rstest]
+fn test_create_inferred_fill_for_qty_preserves_venue_position_id() {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let venue_position_id = PositionId::from("ETHUSDT-HEDGE-SHORT");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.00"))
+        .build();
+    let report = make_test_report(
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Filled,
+        "10.0",
+        false,
+    )
+    .with_venue_position_id(venue_position_id);
+
+    let event = create_inferred_fill_for_qty(
+        &order,
+        &report,
+        &AccountId::from("TEST-001"),
+        &instrument,
+        Quantity::from("5.0"),
+        UnixNanos::from(2_000_000),
+        None,
+    )
+    .expect("fill is emitted");
+    let OrderEventAny::Filled(filled) = event else {
+        panic!("expected Filled event");
+    };
+
+    assert_eq!(filled.position_id, Some(venue_position_id));
 }
 
 // Phase 1 edge-case tests (reconciliation_testing_strategy.md)

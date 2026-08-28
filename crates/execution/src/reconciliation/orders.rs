@@ -1178,7 +1178,7 @@ pub fn create_incremental_inferred_fill(
         report.ts_last,
         ts_now,
         true, // reconciliation
-        None, // venue_position_id
+        report.venue_position_id,
         commission,
         None,
     )))
@@ -1307,7 +1307,7 @@ pub fn create_inferred_fill_for_qty(
         report.ts_last,
         ts_now,
         true, // reconciliation
-        None, // venue_position_id
+        report.venue_position_id,
         commission,
         None,
     )))

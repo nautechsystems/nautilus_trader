@@ -12352,6 +12352,126 @@ async fn test_position_check_reconciles_venue_only_nonflat_report() {
     );
 }
 
+#[tokio::test]
+async fn test_position_check_updates_reported_hedge_position() {
+    let config = ExecutionManagerConfig {
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-CONTINUOUS-HEDGE-LONG");
+    let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("7.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(position_id),
+        Some(dec!(3100.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+    let client = MockPositionExecutionClient::new(vec![], vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    let fill = events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("reconciliation fill is emitted");
+    assert_eq!(fill.position_id, Some(position_id));
+
+    for event in &events {
+        ctx.exec_engine.borrow_mut().process(event);
+    }
+
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(
+        None,
+        Some(&instrument_id),
+        None,
+        Some(&test_account_id()),
+        None,
+    );
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].id, position_id);
+    assert_eq!(positions[0].signed_decimal_qty(), dec!(7.0));
+}
+
+#[tokio::test]
+async fn test_position_check_cross_zero_preserves_both_hedge_position_ids() {
+    let config = ExecutionManagerConfig {
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let close_position_id = PositionId::from("P-CONTINUOUS-HEDGE-LONG");
+    let open_position_id = PositionId::from("P-CONTINUOUS-HEDGE-SHORT");
+    let position = create_test_position(
+        &instrument,
+        close_position_id,
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(open_position_id),
+        Some(dec!(3100.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+    let client = MockPositionExecutionClient::new(vec![], vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    let fills = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(fills.len(), 2);
+    assert_eq!(fills[0].position_id, Some(close_position_id));
+    assert_eq!(fills[1].position_id, Some(open_position_id));
+
+    for event in &events {
+        ctx.exec_engine.borrow_mut().process(event);
+    }
+
+    let cache = ctx.cache.borrow();
+    assert!(
+        cache
+            .position(&close_position_id)
+            .is_some_and(|position| position.is_closed())
+    );
+    assert_eq!(
+        cache
+            .position(&open_position_id)
+            .expect("short hedge position is created")
+            .signed_decimal_qty(),
+        dec!(-3.0),
+    );
+}
+
 #[rstest]
 #[cfg_attr(
     not(all(feature = "simulation", madsim)),

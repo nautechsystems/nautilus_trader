@@ -36,7 +36,7 @@ use nautilus_common::{
         execution::{
             QueryOrder, TradingCommand,
             report::{
-                GenerateOrderStatusReport, GenerateOrderStatusReports,
+                GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
                 GeneratePositionStatusReports,
             },
         },
@@ -51,8 +51,9 @@ use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
         calculate_reconciliation_price, create_inferred_fill_for_qty,
-        create_position_reconciliation_venue_order_id, create_reconciliation_rejected,
-        create_reconciliation_triggered, generate_external_order_status_events_with_commission,
+        create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
+        create_reconciliation_rejected, create_reconciliation_triggered,
+        generate_external_order_status_events_with_commission,
         generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events_with_commission,
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
@@ -69,9 +70,9 @@ use nautilus_model::{
     },
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
-    position::Position,
+    position::{Position, PositionReplayEvent},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Money, Price, Quantity},
+    types::{Money, Price, Quantity, money::MoneyRaw, quantity::QuantityRaw},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -102,6 +103,7 @@ fn build_cross_zero_leg_report(
     order_side: OrderSide,
     quantity: Decimal,
     avg_px: Decimal,
+    venue_position_id: Option<PositionId>,
     tag: &str,
     ts_now: UnixNanos,
     venue_ts_last: UnixNanos,
@@ -115,12 +117,12 @@ fn build_cross_zero_leg_report(
         OrderType::Market,
         order_qty,
         fill_price,
-        None,
+        venue_position_id,
         Some(tag),
         venue_ts_last,
     );
 
-    let report = OrderStatusReport::new(
+    let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
         None,
@@ -137,6 +139,10 @@ fn build_cross_zero_leg_report(
         None,
     )
     .with_avg_px(avg_px);
+
+    if let Some(venue_position_id) = venue_position_id {
+        report = report.with_venue_position_id(venue_position_id);
+    }
 
     Some(report)
 }
@@ -226,6 +232,57 @@ pub(crate) struct PositionReportCheck {
     pub command: GeneratePositionStatusReports,
     pub client_coverage: IndexMap<InstrumentAccountKey, ReportClientCoverage>,
     pub activity_revisions: IndexMap<InstrumentAccountKey, u64>,
+}
+
+#[derive(Debug)]
+pub(crate) struct PositionFillReportQuery {
+    pub key: InstrumentAccountKey,
+    pub client_id: ClientId,
+    pub command: GenerateFillReports,
+}
+
+#[derive(Debug)]
+pub(crate) struct PositionFillReportPlan {
+    pub queries: Vec<PositionFillReportQuery>,
+    pub discrepancy_keys: IndexSet<InstrumentAccountKey>,
+}
+
+#[derive(Debug)]
+pub(crate) enum PositionFillReportPreparation {
+    Ready,
+    InferredOverlap,
+    Unattributed,
+}
+
+struct PositionQuantityComparison {
+    cached_positions: Vec<Position>,
+    cached_signed_qty: Decimal,
+    cached_long_qty: Decimal,
+    cached_short_qty: Decimal,
+    venue_signed_qty: Decimal,
+    venue_long_qty: Decimal,
+    venue_short_qty: Decimal,
+    nonflat_count: usize,
+    venue_report: Option<PositionStatusReport>,
+    venue_has_side_reports: bool,
+}
+
+impl PositionQuantityComparison {
+    fn quantities_match(&self, tolerance: Decimal) -> bool {
+        let net_qty_matches = (self.cached_signed_qty - self.venue_signed_qty).abs() <= tolerance;
+        let side_qty_matches = (self.cached_long_qty - self.venue_long_qty).abs() <= tolerance
+            && (self.cached_short_qty - self.venue_short_qty).abs() <= tolerance;
+
+        net_qty_matches && (!self.venue_has_side_reports || side_qty_matches)
+    }
+
+    fn report_shape(&self) -> PositionReportShape {
+        if self.nonflat_count > 1 || self.venue_has_side_reports {
+            PositionReportShape::MultiLeg
+        } else {
+            PositionReportShape::Unambiguous
+        }
+    }
 }
 
 struct RetainedFillState {
@@ -367,7 +424,7 @@ impl ExecutionManagerConfig {
     /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
     /// invalid) if any field fails validation.
     pub fn validate(&self) -> ConfigResult<()> {
-        let mut errors = ConfigErrorCollector::with_capacity(2);
+        let mut errors = ConfigErrorCollector::with_capacity(3);
 
         if let Some(mins) = self.lookback_mins {
             errors.check(
@@ -388,6 +445,17 @@ impl ExecutionManagerConfig {
                 ),
             );
         }
+
+        errors.check(
+            checked_mins_to_nanos(self.position_check_lookback_mins).is_some(),
+            ConfigError::range(
+                "ExecutionManagerConfig.position_check_lookback_mins",
+                format!(
+                    "{} minutes (must fit in `u64` nanoseconds)",
+                    self.position_check_lookback_mins
+                ),
+            ),
+        );
 
         errors.into_result()
     }
@@ -2363,10 +2431,12 @@ impl ExecutionManager {
                 )
             })
             .collect();
-        let activity_revisions = position_keys
-            .iter()
-            .map(|key| (*key, self.position_activity_revision(key)))
-            .collect();
+        let mut activity_revisions = self.position_local_activity_revisions.clone();
+        for key in &position_keys {
+            activity_revisions
+                .entry(*key)
+                .or_insert_with(|| self.position_activity_revision(key));
+        }
 
         log::debug!(
             "Found {} unique instrument/account combination{} with open positions",
@@ -2390,6 +2460,363 @@ impl ExecutionManager {
             client_coverage,
             activity_revisions,
         }
+    }
+
+    pub(crate) fn prepare_position_fill_report_plan(
+        &mut self,
+        check: &mut PositionReportCheck,
+        reports: &[PositionStatusReport],
+        queried_clients: &IndexSet<ClientId>,
+        failed_clients: &IndexSet<ClientId>,
+        clients: &[&dyn ExecutionClient],
+    ) -> PositionFillReportPlan {
+        let mut venue_positions: IndexMap<InstrumentAccountKey, Vec<PositionStatusReport>> =
+            IndexMap::new();
+
+        for report in reports {
+            if self.should_reconcile_instrument(&report.instrument_id) {
+                venue_positions
+                    .entry((report.instrument_id, report.account_id))
+                    .or_default()
+                    .push(report.clone());
+            }
+        }
+
+        let keys = check
+            .client_coverage
+            .keys()
+            .copied()
+            .chain(venue_positions.iter().filter_map(|(key, reports)| {
+                reports
+                    .iter()
+                    .any(|report| report.signed_decimal_qty != Decimal::ZERO)
+                    .then_some(*key)
+            }))
+            .collect::<IndexSet<_>>();
+        let active_keys = keys.clone();
+        let query_end = self.clock.borrow().timestamp_ns();
+        let lookback_ns = checked_mins_to_nanos(self.config.position_check_lookback_mins)
+            .expect("position lookback validated at construction");
+        let query_start = query_end.saturating_sub_ns(lookback_ns);
+        let mut discrepancy_keys = IndexSet::new();
+        let mut queries = Vec::new();
+
+        for key in keys {
+            let coverage = check
+                .client_coverage
+                .entry(key)
+                .or_insert_with(|| Self::resolve_position_report_client_coverage(key, clients));
+            let prepared_revision = *check.activity_revisions.entry(key).or_default();
+            let venue_reports = venue_positions
+                .get(&key)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let comparison = self.position_quantity_comparison(key, venue_reports);
+            let tolerance = self.position_reconciliation_tolerance(key.1);
+
+            if comparison.quantities_match(tolerance) {
+                self.position_reconciliation_states.shift_remove(&key);
+                continue;
+            }
+            discrepancy_keys.insert(key);
+
+            if self.position_activity_revision(&key) > prepared_revision
+                || self.position_local_activity.within(
+                    &key,
+                    Duration::from_nanos(self.config.position_check_threshold_ns),
+                )
+            {
+                continue;
+            }
+
+            let report_shape = comparison.report_shape();
+            let retries = self
+                .position_reconciliation_states
+                .get(&key)
+                .filter(|state| state.report_shape == report_shape)
+                .map_or(0, |state| state.retries);
+            if retries >= self.config.position_check_retries {
+                continue;
+            }
+
+            let ReportClientCoverage::Resolved(responsible_clients) = coverage else {
+                log::warn!(
+                    "Skipping fill report query for {}/{}: responsible execution client coverage is unavailable",
+                    key.0,
+                    key.1,
+                );
+                continue;
+            };
+
+            if responsible_clients.is_empty()
+                || !responsible_clients.is_subset(queried_clients)
+                || !responsible_clients.is_disjoint(failed_clients)
+            {
+                log::warn!(
+                    "Skipping fill report query for {}/{}: responsible position report coverage is incomplete",
+                    key.0,
+                    key.1,
+                );
+                continue;
+            }
+
+            for client_id in responsible_clients.iter() {
+                let mut command = GenerateFillReports::new(
+                    UUID4::new(),
+                    query_end,
+                    Some(key.0),
+                    None,
+                    Some(query_start),
+                    Some(query_end),
+                    None,
+                    Some(check.command.command_id),
+                );
+                command.log_receipt_level = LogLevel::Debug;
+                queries.push(PositionFillReportQuery {
+                    key,
+                    client_id: *client_id,
+                    command,
+                });
+            }
+        }
+
+        self.position_reconciliation_states
+            .retain(|key, _| active_keys.contains(key));
+
+        PositionFillReportPlan {
+            queries,
+            discrepancy_keys,
+        }
+    }
+
+    pub(crate) fn position_report_check_key_is_stable(
+        &self,
+        check: &PositionReportCheck,
+        key: &InstrumentAccountKey,
+    ) -> bool {
+        check
+            .activity_revisions
+            .get(key)
+            .is_some_and(|revision| self.position_activity_revision(key) == *revision)
+    }
+
+    pub(crate) fn prepare_position_fill_report(
+        &self,
+        report: &mut FillReport,
+        venue_reports: &[PositionStatusReport],
+    ) -> anyhow::Result<PositionFillReportPreparation> {
+        let cache = self.cache.borrow();
+        let venue_client_order_id = cache.client_order_id(&report.venue_order_id).copied();
+        if let (Some(report_client_order_id), Some(venue_client_order_id)) =
+            (report.client_order_id, venue_client_order_id)
+        {
+            anyhow::ensure!(
+                report_client_order_id == venue_client_order_id,
+                "fill {} client order ID {report_client_order_id} conflicts with venue order mapping {venue_client_order_id}",
+                report.trade_id,
+            );
+        }
+        let client_order_id = report.client_order_id.or(venue_client_order_id);
+        let order = client_order_id.and_then(|id| cache.order(&id));
+        if let Some(order) = &order {
+            anyhow::ensure!(
+                order.instrument_id() == report.instrument_id
+                    && order.order_side() == report.order_side
+                    && order
+                        .account_id()
+                        .is_none_or(|account_id| account_id == report.account_id)
+                    && order
+                        .venue_order_id()
+                        .is_none_or(|venue_order_id| venue_order_id == report.venue_order_id),
+                "fill {} conflicts with cached order {}",
+                report.trade_id,
+                order.client_order_id(),
+            );
+        }
+
+        let hedge_context = report.venue_position_id.is_some()
+            || venue_reports
+                .iter()
+                .any(|venue_report| venue_report.venue_position_id.is_some());
+        let mapped_position_id = client_order_id
+            .and_then(|client_order_id| cache.position_id(&client_order_id))
+            .copied();
+
+        if hedge_context
+            && let (Some(venue_position_id), Some(mapped_position_id)) =
+                (report.venue_position_id, mapped_position_id)
+        {
+            anyhow::ensure!(
+                venue_position_id == mapped_position_id,
+                "fill {} position ID {venue_position_id} conflicts with cached order position {mapped_position_id}",
+                report.trade_id,
+            );
+        }
+
+        if let Some(order) = order
+            && Self::has_active_inferred_fill(&order)?
+        {
+            return Ok(PositionFillReportPreparation::InferredOverlap);
+        }
+
+        if !hedge_context {
+            return Ok(PositionFillReportPreparation::Ready);
+        }
+
+        if report.venue_position_id.is_some() {
+            return Ok(PositionFillReportPreparation::Ready);
+        }
+
+        let Some(position_id) = mapped_position_id else {
+            return Ok(PositionFillReportPreparation::Unattributed);
+        };
+        let position = cache.position(&position_id).ok_or_else(|| {
+            anyhow::anyhow!(
+                "fill {} maps to position {position_id}, which is not cached",
+                report.trade_id,
+            )
+        })?;
+
+        anyhow::ensure!(
+            position.account_id == report.account_id
+                && position.instrument_id == report.instrument_id,
+            "fill {} maps to position {position_id} with a different account or instrument",
+            report.trade_id,
+        );
+        anyhow::ensure!(
+            position.is_open(),
+            "fill {} maps to non-open position {position_id}",
+            report.trade_id,
+        );
+        anyhow::ensure!(
+            !position.is_opposite_side(report.order_side) || report.last_qty <= position.quantity,
+            "fill {} without a venue position ID would cross position {position_id}",
+            report.trade_id,
+        );
+
+        report.venue_position_id = Some(position_id);
+        Ok(PositionFillReportPreparation::Ready)
+    }
+
+    fn has_active_inferred_fill(order: &OrderAny) -> anyhow::Result<bool> {
+        let events = order.events();
+        let trade_ids = order.trade_ids();
+        let Some((first, remaining)) = events.split_first() else {
+            return Ok(false);
+        };
+        let mut projected = OrderAny::from_events(vec![(*first).clone()]).map_err(|e| {
+            anyhow::anyhow!(
+                "cannot replay order {} for inferred fill detection: {e}",
+                order.client_order_id(),
+            )
+        })?;
+
+        for event in remaining {
+            projected.apply((*event).clone()).map_err(|e| {
+                anyhow::anyhow!(
+                    "cannot replay order {} for inferred fill detection: {e}",
+                    order.client_order_id(),
+                )
+            })?;
+            let OrderEventAny::Filled(fill) = event else {
+                continue;
+            };
+
+            if !fill.reconciliation || !trade_ids.contains(&&fill.trade_id) {
+                continue;
+            }
+
+            let external_position_id = PositionId::new(format!("{}-EXTERNAL", fill.instrument_id));
+            let position_ids = [fill.position_id, Some(external_position_id)];
+            let inferred = position_ids.into_iter().flatten().any(|position_id| {
+                create_inferred_reconciliation_trade_id(
+                    fill.account_id,
+                    fill.instrument_id,
+                    fill.client_order_id,
+                    Some(fill.venue_order_id),
+                    fill.order_side,
+                    fill.order_type,
+                    projected.filled_qty(),
+                    fill.last_qty,
+                    fill.last_px,
+                    position_id,
+                    fill.ts_event,
+                ) == fill.trade_id
+            });
+
+            if inferred {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    pub(crate) fn position_contains_fill_report(&self, report: &FillReport) -> bool {
+        let cache = self.cache.borrow();
+        let client_order_id = report
+            .client_order_id
+            .or_else(|| cache.client_order_id(&report.venue_order_id).copied());
+        let positions = cache.positions(
+            None,
+            Some(&report.instrument_id),
+            None,
+            Some(&report.account_id),
+            None,
+        );
+        let mut matched = false;
+        let mut quantity_raw: QuantityRaw = 0;
+        let mut commission_raw: MoneyRaw = 0;
+
+        for position in positions {
+            if report
+                .venue_position_id
+                .is_some_and(|position_id| position.id != position_id)
+            {
+                continue;
+            }
+
+            for replay_event in &position.replay_events {
+                let PositionReplayEvent::Filled(fill) = replay_event else {
+                    continue;
+                };
+
+                if fill.account_id != report.account_id
+                    || fill.instrument_id != report.instrument_id
+                    || fill.venue_order_id != report.venue_order_id
+                    || fill.trade_id != report.trade_id
+                    || fill.order_side != report.order_side
+                    || fill.last_px != report.last_px
+                    || fill.liquidity_side != report.liquidity_side
+                    || client_order_id.is_some_and(|id| fill.client_order_id != id)
+                    || report
+                        .venue_position_id
+                        .is_some_and(|id| fill.position_id != Some(id))
+                {
+                    continue;
+                }
+
+                let Some(fill_commission) = fill.commission else {
+                    return false;
+                };
+
+                if fill_commission.currency != report.commission.currency {
+                    return false;
+                }
+                let Some(next_quantity_raw) = quantity_raw.checked_add(fill.last_qty.raw) else {
+                    return false;
+                };
+                let Some(next_commission_raw) = commission_raw.checked_add(fill_commission.raw)
+                else {
+                    return false;
+                };
+                matched = true;
+                quantity_raw = next_quantity_raw;
+                commission_raw = next_commission_raw;
+            }
+        }
+
+        matched && quantity_raw == report.last_qty.raw && commission_raw == report.commission.raw
     }
 
     fn resolve_position_report_client_coverage(
@@ -2798,7 +3225,7 @@ impl ExecutionManager {
         *revision = revision.saturating_add(1);
     }
 
-    fn position_activity_revision(&self, key: &InstrumentAccountKey) -> u64 {
+    pub(crate) fn position_activity_revision(&self, key: &InstrumentAccountKey) -> u64 {
         self.position_local_activity_revisions
             .get(key)
             .copied()
@@ -3231,13 +3658,12 @@ impl ExecutionManager {
         events
     }
 
-    fn check_position_discrepancy(
-        &mut self,
+    fn position_quantity_comparison(
+        &self,
         key: InstrumentAccountKey,
         venue_reports: &[PositionStatusReport],
-    ) -> Option<Vec<OrderEventAny>> {
+    ) -> PositionQuantityComparison {
         let (instrument_id, account_id) = key;
-
         let cached_positions = {
             let cache = self.cache.borrow();
             cache
@@ -3259,16 +3685,48 @@ impl ExecutionManager {
         let venue_report = venue_reports
             .iter()
             .find(|report| report.signed_decimal_qty != Decimal::ZERO)
-            .or_else(|| venue_reports.last());
-
-        let tolerance = self.position_reconciliation_tolerance(account_id);
+            .or_else(|| venue_reports.last())
+            .cloned();
         let venue_has_side_reports = venue_reports.iter().any(PositionStatusReport::is_long)
             && venue_reports.iter().any(PositionStatusReport::is_short);
-        let net_qty_matches = (cached_signed_qty - venue_signed_qty).abs() <= tolerance;
-        let side_qty_matches = (cached_long_qty - venue_long_qty).abs() <= tolerance
-            && (cached_short_qty - venue_short_qty).abs() <= tolerance;
 
-        if net_qty_matches && (!venue_has_side_reports || side_qty_matches) {
+        PositionQuantityComparison {
+            cached_positions,
+            cached_signed_qty,
+            cached_long_qty,
+            cached_short_qty,
+            venue_signed_qty,
+            venue_long_qty,
+            venue_short_qty,
+            nonflat_count,
+            venue_report,
+            venue_has_side_reports,
+        }
+    }
+
+    fn check_position_discrepancy(
+        &mut self,
+        key: InstrumentAccountKey,
+        venue_reports: &[PositionStatusReport],
+    ) -> Option<Vec<OrderEventAny>> {
+        let (instrument_id, account_id) = key;
+        let comparison = self.position_quantity_comparison(key, venue_reports);
+        let tolerance = self.position_reconciliation_tolerance(account_id);
+        let quantities_match = comparison.quantities_match(tolerance);
+        let report_shape = comparison.report_shape();
+        let PositionQuantityComparison {
+            cached_positions,
+            cached_signed_qty,
+            cached_long_qty,
+            cached_short_qty,
+            venue_signed_qty,
+            venue_long_qty,
+            venue_short_qty,
+            venue_report,
+            ..
+        } = comparison;
+
+        if quantities_match {
             self.position_reconciliation_states.shift_remove(&key);
             return None;
         }
@@ -3286,11 +3744,6 @@ impl ExecutionManager {
             return None;
         }
 
-        let report_shape = if nonflat_count > 1 || venue_has_side_reports {
-            PositionReportShape::MultiLeg
-        } else {
-            PositionReportShape::Unambiguous
-        };
         let retries = self
             .position_reconciliation_states
             .get(&key)
@@ -3337,24 +3790,44 @@ impl ExecutionManager {
         };
 
         let cached_avg_px = Self::positions_avg_px(&cached_positions);
-        let venue_avg_px = venue_report.and_then(|r| r.avg_px_open);
+        let venue_avg_px = venue_report.as_ref().and_then(|r| r.avg_px_open);
 
         let crosses_zero = (cached_signed_qty > Decimal::ZERO && venue_signed_qty < Decimal::ZERO)
             || (cached_signed_qty < Decimal::ZERO && venue_signed_qty > Decimal::ZERO);
 
         let result = if crosses_zero {
-            let venue_ts_last = venue_report.map_or(ts_now, |r| r.ts_last);
-            self.reconcile_cross_zero_position(
-                &instrument,
-                account_id,
-                instrument_id,
-                cached_signed_qty,
-                cached_avg_px,
-                venue_signed_qty,
-                venue_avg_px,
-                ts_now,
-                venue_ts_last,
-            )
+            let venue_ts_last = venue_report.as_ref().map_or(ts_now, |r| r.ts_last);
+            let venue_position_id = venue_report
+                .as_ref()
+                .and_then(|report| report.venue_position_id);
+            let position_ids = match venue_position_id {
+                Some(open_position_id) => match cached_positions.as_slice() {
+                    [position] => Some((Some(position.id), Some(open_position_id))),
+                    _ => {
+                        log::warn!(
+                            "Deferring hedge cross-zero reconciliation for {instrument_id}/{account_id}: cached and venue position identities are ambiguous"
+                        );
+                        None
+                    }
+                },
+                None => Some((None, None)),
+            };
+
+            position_ids.and_then(|(close_position_id, open_position_id)| {
+                self.reconcile_cross_zero_position(
+                    &instrument,
+                    account_id,
+                    instrument_id,
+                    cached_signed_qty,
+                    cached_avg_px,
+                    venue_signed_qty,
+                    venue_avg_px,
+                    close_position_id,
+                    open_position_id,
+                    ts_now,
+                    venue_ts_last,
+                )
+            })
         } else {
             let qty_diff = venue_signed_qty - cached_signed_qty;
             let order_side = if qty_diff > Decimal::ZERO {
@@ -3373,9 +3846,10 @@ impl ExecutionManager {
             match reconciliation_px.or(venue_avg_px).or(cached_avg_px) {
                 Some(fill_px) => {
                     let fill_qty = qty_diff.abs();
-                    let venue_position_id = venue_report.and_then(|r| r.venue_position_id);
-                    let venue_ts_last = venue_report.map_or(ts_now, |r| r.ts_last);
-
+                    let venue_position_id = venue_report
+                        .as_ref()
+                        .and_then(|report| report.venue_position_id);
+                    let venue_ts_last = venue_report.as_ref().map_or(ts_now, |r| r.ts_last);
                     Quantity::from_decimal_dp(fill_qty, instrument.size_precision())
                         .ok()
                         .map(|order_qty| {
@@ -3393,7 +3867,7 @@ impl ExecutionManager {
                                 venue_ts_last,
                             );
 
-                            OrderStatusReport::new(
+                            let mut order_report = OrderStatusReport::new(
                                 account_id,
                                 instrument_id,
                                 None,
@@ -3409,7 +3883,14 @@ impl ExecutionManager {
                                 ts_now,
                                 None,
                             )
-                            .with_avg_px(fill_px)
+                            .with_avg_px(fill_px);
+
+                            if let Some(venue_position_id) = venue_position_id {
+                                order_report =
+                                    order_report.with_venue_position_id(venue_position_id);
+                            }
+
+                            order_report
                         })
                         .map(|order_report| {
                             log::info!(
@@ -3497,6 +3978,8 @@ impl ExecutionManager {
         cached_avg_px: Option<Decimal>,
         venue_signed_qty: Decimal,
         venue_avg_px: Option<Decimal>,
+        close_position_id: Option<PositionId>,
+        open_position_id: Option<PositionId>,
         ts_now: UnixNanos,
         venue_ts_last: UnixNanos,
     ) -> Option<Vec<OrderEventAny>> {
@@ -3532,6 +4015,7 @@ impl ExecutionManager {
                     open_side,
                     open_qty,
                     open_px,
+                    open_position_id,
                     "OPEN",
                     ts_now,
                     venue_ts_last,
@@ -3548,6 +4032,7 @@ impl ExecutionManager {
             close_side,
             close_qty,
             close_px,
+            close_position_id,
             "CLOSE",
             ts_now,
             venue_ts_last,
@@ -3947,6 +4432,8 @@ impl ExecutionManager {
                 cached_avg_px,
                 venue_signed_qty,
                 report.avg_px_open,
+                None,
+                None,
                 ts_now,
                 report.ts_last,
             );
@@ -4915,10 +5402,11 @@ mod tests {
             ExecutionManagerConfig {
                 lookback_mins: Some(307_445_734_561_825_861),
                 open_check_lookback_mins: Some(307_445_735),
+                position_check_lookback_mins: 307_445_735,
                 ..Default::default()
             },
         )
-        .expect_err("both lookback fields are out of range");
+        .expect_err("all lookback fields are out of range");
 
         let ConfigError::Multiple { errors } = error else {
             panic!("expected a `Multiple` error, was {error:?}");
@@ -4937,6 +5425,7 @@ mod tests {
             [
                 "ExecutionManagerConfig.lookback_mins",
                 "ExecutionManagerConfig.open_check_lookback_mins",
+                "ExecutionManagerConfig.position_check_lookback_mins",
             ]
         );
     }
@@ -6545,6 +7034,150 @@ mod tests {
             Some(&ReportClientCoverage::Unresolved)
         );
         assert_eq!(check.activity_revisions.get(&key), Some(&0));
+    }
+
+    #[rstest]
+    fn test_prepare_position_fill_report_plan_uses_configured_lookback() {
+        let lookback_mins = 7_u64;
+        let lookback_ns = lookback_mins * 60 * NANOSECONDS_IN_SECOND;
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager = ExecutionManager::new(
+            clock.clone(),
+            cache.clone(),
+            ExecutionManagerConfig {
+                position_check_lookback_mins: lookback_mins,
+                position_check_threshold_ns: 0,
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let position = insert_open_position(
+            &cache,
+            &instrument,
+            PositionId::from("P-FILL-LOOKBACK"),
+            OrderSide::Buy,
+            "1.0",
+            "3000.00",
+        );
+        clock
+            .borrow_mut()
+            .advance_time(UnixNanos::from(lookback_ns * 2), true);
+        let client = PositionCoverageStubClient;
+        let clients: [&dyn ExecutionClient; 1] = [&client];
+        let mut check = manager.prepare_position_report_check(UUID4::new(), &clients);
+        let query_end = clock.borrow().timestamp_ns();
+        let report = PositionStatusReport::new(
+            position.account_id,
+            position.instrument_id,
+            PositionSideSpecified::Long,
+            Quantity::from("2.0"),
+            query_end,
+            query_end,
+            None,
+            None,
+            Some(dec!(3000.00)),
+        );
+        let queried_clients = IndexSet::from([client.client_id()]);
+
+        let plan = manager.prepare_position_fill_report_plan(
+            &mut check,
+            &[report],
+            &queried_clients,
+            &IndexSet::new(),
+            &clients,
+        );
+
+        assert_eq!(
+            plan.discrepancy_keys,
+            IndexSet::from([(position.instrument_id, position.account_id)])
+        );
+        assert_eq!(plan.queries.len(), 1);
+        let query = &plan.queries[0];
+        assert_eq!(
+            (query.key, query.client_id),
+            (
+                (position.instrument_id, position.account_id),
+                client.client_id()
+            )
+        );
+        assert_eq!(query.command.instrument_id, Some(position.instrument_id));
+        assert_eq!(query.command.venue_order_id, None);
+        assert_eq!(
+            query.command.start,
+            Some(query_end.saturating_sub_ns(lookback_ns))
+        );
+        assert_eq!(query.command.end, Some(query_end));
+        assert_eq!(query.command.correlation_id, Some(check.command.command_id));
+        assert_eq!(query.command.log_receipt_level, LogLevel::Debug);
+    }
+
+    #[rstest]
+    fn test_prepare_position_fill_report_plan_defers_position_opened_during_request() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache.clone(),
+            ExecutionManagerConfig {
+                position_check_threshold_ns: 0,
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let client = PositionCoverageStubClient;
+        let clients: [&dyn ExecutionClient; 1] = [&client];
+        let mut check = manager.prepare_position_report_check(UUID4::new(), &clients);
+        let position = insert_open_position(
+            &cache,
+            &instrument,
+            PositionId::from("P-FILL-DURING-REQUEST"),
+            OrderSide::Buy,
+            "1.0",
+            "3000.00",
+        );
+        manager.record_position_activity(position.instrument_id, position.account_id);
+        let report = PositionStatusReport::new(
+            position.account_id,
+            position.instrument_id,
+            PositionSideSpecified::Long,
+            Quantity::from("2.0"),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+            None,
+            Some(dec!(3000.00)),
+        );
+
+        let plan = manager.prepare_position_fill_report_plan(
+            &mut check,
+            &[report],
+            &IndexSet::from([client.client_id()]),
+            &IndexSet::new(),
+            &clients,
+        );
+
+        assert_eq!(
+            plan.discrepancy_keys,
+            IndexSet::from([(position.instrument_id, position.account_id)])
+        );
+        assert!(plan.queries.is_empty());
+        assert_eq!(
+            check
+                .activity_revisions
+                .get(&(position.instrument_id, position.account_id)),
+            Some(&0)
+        );
     }
 
     #[rstest]
