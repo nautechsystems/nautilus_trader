@@ -60,6 +60,7 @@ use std::{
 
 use futures_util::{SinkExt, StreamExt};
 use http::HeaderName;
+use nautilus_core::string::secret::REDACTED;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 #[cfg(any(feature = "turmoil", feature = "transport-sockudo"))]
 use rustls::ClientConfig;
@@ -453,9 +454,10 @@ impl WebSocketClientInner {
                     break transport;
                 }
                 Err(e) if attempt < max_attempts && is_retryable_initial_connect_error(&e) => {
+                    // The URL is redacted for the same reason `WebSocketConfig::Debug` redacts it:
+                    // it can carry credentials, tokens, or signed query parameters.
                     log::warn!(
-                        "WebSocket connection attempt {attempt}/{max_attempts} to {} failed: {e}",
-                        config.url,
+                        "WebSocket connection attempt {attempt}/{max_attempts} to {REDACTED} failed: {e}"
                     );
                 }
                 Err(e) => return Err(e),
@@ -2630,6 +2632,15 @@ impl WebSocketClient {
     /// creates one from `default_quota` and `keyed_quotas`. `connection_rate_limiter` gates the
     /// initial connection and reconnects using `connection_rate_keys`.
     ///
+    /// Without `initial_connect_retry_policy` the builder makes exactly one connection attempt.
+    /// With one, failures classified as retryable are retried up to its `max_attempts`; see
+    /// [`InitialConnectRetryPolicy`] for which failures return before that bound is reached.
+    ///
+    /// `cancellation_token` aborts the initial connection only, and is observed during the
+    /// connection rate-limit wait, the dial itself, and each backoff delay. It has no effect once
+    /// this function returns a client: use [`Self::close`] to stop an established one, whose
+    /// reconnect loop the token does not govern.
+    ///
     /// The message handler is required:
     ///
     /// ```compile_fail
@@ -2682,7 +2693,7 @@ impl WebSocketClient {
     /// The initial connection has epoch `0`. Each replacement connection increments the epoch,
     /// and both its incoming messages and `RECONNECTED` notification carry that new value. Use
     /// [`Self::send_text_on_connection`] to bind an outgoing message to one of those epochs.
-    /// Rate-limit and state options match [`Self::builder`].
+    /// Rate-limit, state, initial-connect retry, and cancellation options match [`Self::builder`].
     /// Set either `ping_handler` or `epoch_ping_handler` when custom ping handling is required.
     ///
     /// The epoch handler is required:
@@ -3609,8 +3620,10 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_common::testing::wait_until_async;
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
     use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
         sync::{mpsc, oneshot},
         task::{self, JoinHandle},
@@ -3630,7 +3643,10 @@ mod tests {
         http::{HttpClient, Method},
         mode::ConnectionMode,
         ratelimiter::quota::Quota,
-        websocket::{TransportBackend, WebSocketClient, WebSocketConfig},
+        transport::TransportError,
+        websocket::{
+            InitialConnectRetryPolicy, TransportBackend, WebSocketClient, WebSocketConfig,
+        },
     };
 
     const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
@@ -3686,7 +3702,7 @@ mod tests {
 
     impl Log for NetworkLogCapture {
         fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-            metadata.level() == Level::Trace
+            matches!(metadata.level(), Level::Trace | Level::Warn)
                 && matches!(
                     metadata.target(),
                     "nautilus_network::http::client" | "nautilus_network::websocket::client"
@@ -3699,6 +3715,7 @@ mod tests {
                 if message.starts_with("Sending ")
                     || message.starts_with("Received ")
                     || message.starts_with("Replaced ")
+                    || message.starts_with("WebSocket connection attempt ")
                 {
                     self.messages.lock().unwrap().push(message);
                 }
@@ -3935,8 +3952,72 @@ mod tests {
             .await
             .unwrap();
 
+        // The initial-connect retry warning names the endpoint, which can carry credentials or
+        // signed query data, so it must report the redaction placeholder rather than the URL.
+        let rejecting = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let rejecting_port = rejecting.local_addr().unwrap().port();
+
+        let rejecting_server = task::spawn(async move {
+            loop {
+                let (mut stream, _) = rejecting.accept().await.unwrap();
+                let mut request = [0; 1024];
+                let _ = stream.read(&mut request).await.unwrap();
+                stream
+                    .write_all(b"HTTP/1.1 503 Service Unavailable\r\n\r\n")
+                    .await
+                    .unwrap();
+            }
+        });
+
+        let retry_config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{rejecting_port}/?token={SECRET_MARKER}"),
+            headers: vec![],
+            heartbeat_interval_secs: None,
+            heartbeat_payload: None,
+            connect_timeout_ms: Some(5_000),
+            reconnect_delay_initial_ms: None,
+            reconnect_backoff_factor: None,
+            reconnect_delay_max_ms: None,
+            reconnect_jitter_ms: None,
+            reconnect_max_attempts: None,
+            heartbeat_timeout_secs: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
+            proxy_url: None,
+        };
+        let retry_error = WebSocketClient::builder()
+            .config(retry_config)
+            .message_handler(Arc::new(|_| {}))
+            .initial_connect_retry_policy(InitialConnectRetryPolicy {
+                max_attempts: NonZeroU32::new(2).unwrap(),
+                delay_initial: Duration::from_millis(1),
+                delay_max: Duration::from_millis(1),
+                backoff_factor: 1.0,
+                jitter_ms: 0,
+            })
+            .connect()
+            .await
+            .expect_err("server always rejects the upgrade");
+        rejecting_server.abort();
+
+        assert!(
+            matches!(retry_error, TransportError::UpgradeRejected(503)),
+            "expected a 503 upgrade rejection, was: {retry_error:?}"
+        );
+
         let messages = NETWORK_LOG_CAPTURE.messages();
         let invalid_header_message = invalid_header_error.to_string();
+
+        // Asserted positively so the blanket secret assertion below cannot pass vacuously by
+        // capturing no warning at all.
+        let retry_warning = messages
+            .iter()
+            .find(|message| message.starts_with("WebSocket connection attempt 1/2 "))
+            .expect("initial-connect retry warning was not captured");
+        assert!(
+            retry_warning.contains(REDACTED),
+            "retry warning omitted the redaction placeholder: {retry_warning}"
+        );
 
         assert!(
             messages.iter().all(|message| {
@@ -4665,8 +4746,9 @@ mod rust_tests {
     #[cfg(feature = "transport-sockudo")]
     use sockudo_ws::handshake as sockudo_handshake;
     #[cfg(feature = "transport-sockudo")]
-    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncRead;
     use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
         task::{self, JoinHandle},
         time::{Duration, sleep},
