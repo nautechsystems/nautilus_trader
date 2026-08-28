@@ -15,7 +15,7 @@
 
 use std::sync::{
     Arc,
-    atomic::{AtomicU8, Ordering},
+    atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use nautilus_common::messages::{
@@ -122,6 +122,7 @@ pub(super) enum RunningTransition {
 #[derive(Clone, Debug)]
 pub struct LiveNodeHandle {
     control: Arc<AtomicU8>,
+    event_loop_servicing: Arc<AtomicBool>,
     pub(crate) metrics: Arc<RunnerMetrics>,
     system_cmd_tx: Option<tokio::sync::mpsc::UnboundedSender<SystemCommand>>,
 }
@@ -138,6 +139,7 @@ impl LiveNodeHandle {
     pub fn new() -> Self {
         Self {
             control: Arc::new(AtomicU8::new(NodeState::Idle.as_u8())),
+            event_loop_servicing: Arc::new(AtomicBool::new(false)),
             metrics: Arc::new(RunnerMetrics::default()),
             system_cmd_tx: None,
         }
@@ -211,12 +213,26 @@ impl LiveNodeHandle {
         self.metrics.snapshot()
     }
 
+    pub(super) fn begin_event_loop_servicing(&self) -> EventLoopServicingGuard {
+        self.event_loop_servicing.store(true, Ordering::Release);
+        EventLoopServicingGuard {
+            event_loop_servicing: self.event_loop_servicing.clone(),
+        }
+    }
+
     /// Registers external order claims on both execution tiers of a running node.
+    ///
+    /// Once enqueued, dropping or timing out this future does not cancel the command. The event
+    /// loop may still apply the mutation, so a timeout is not evidence that no state changed.
     ///
     /// # Errors
     ///
-    /// Returns an error if the handle is unattached, the node is not running, the command channel
-    /// is closed before enqueue, the event loop exits before responding, or claim preflight fails.
+    /// Returns an error if the handle is unattached, the node is not running, the node is running
+    /// without an active event loop servicing the runner channels (as after [`LiveNode::start`]),
+    /// the command channel is closed before enqueue, the event loop exits before responding, or
+    /// claim preflight fails.
+    ///
+    /// [`LiveNode::start`]: super::LiveNode::start
     pub async fn register_external_order_claims(
         &self,
         strategy_id: StrategyId,
@@ -228,6 +244,12 @@ impl LiveNodeHandle {
 
         if !self.is_running() {
             anyhow::bail!("Cannot register external order claims while node is not running");
+        }
+
+        if !self.event_loop_servicing.load(Ordering::Acquire) {
+            anyhow::bail!(
+                "Cannot register external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+            );
         }
 
         let (response, receiver) = tokio::sync::oneshot::channel();
@@ -252,10 +274,17 @@ impl LiveNodeHandle {
 
     /// Deregisters external order claims from both execution tiers of a running node.
     ///
+    /// Once enqueued, dropping or timing out this future does not cancel the command. The event
+    /// loop may still apply the mutation, so a timeout is not evidence that no state changed.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the handle is unattached, the node is not running, the command channel
-    /// is closed before enqueue, the event loop exits before responding, or claim preflight fails.
+    /// Returns an error if the handle is unattached, the node is not running, the node is running
+    /// without an active event loop servicing the runner channels (as after [`LiveNode::start`]),
+    /// the command channel is closed before enqueue, the event loop exits before responding, or
+    /// claim preflight fails.
+    ///
+    /// [`LiveNode::start`]: super::LiveNode::start
     pub async fn deregister_external_order_claims(
         &self,
         strategy_id: StrategyId,
@@ -266,6 +295,12 @@ impl LiveNodeHandle {
 
         if !self.is_running() {
             anyhow::bail!("Cannot deregister external order claims while node is not running");
+        }
+
+        if !self.event_loop_servicing.load(Ordering::Acquire) {
+            anyhow::bail!(
+                "Cannot deregister external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+            );
         }
 
         let (response, receiver) = tokio::sync::oneshot::channel();
@@ -290,6 +325,16 @@ impl LiveNodeHandle {
     /// Signals the node to stop.
     pub fn stop(&self) {
         self.control.fetch_or(STOP_REQUESTED, Ordering::AcqRel);
+    }
+}
+
+pub(super) struct EventLoopServicingGuard {
+    event_loop_servicing: Arc<AtomicBool>,
+}
+
+impl Drop for EventLoopServicingGuard {
+    fn drop(&mut self) {
+        self.event_loop_servicing.store(false, Ordering::Release);
     }
 }
 

@@ -1294,6 +1294,7 @@ impl LiveNode {
         self.process_system_events(startup_system_events);
         self.process_system_commands(startup_system_commands);
 
+        let _servicing_guard = self.handle.begin_event_loop_servicing();
         let finish_result = {
             let mut receivers = RunnerReceivers {
                 time_evt: &mut time_evt_rx,
@@ -5959,6 +5960,114 @@ mod tests {
                 .borrow()
                 .get_external_order_claim(&instrument_id),
             Some(strategy_id)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handle_register_external_order_claims_rejects_manual_start() {
+        // Full startup path: this fixture reaches `Running` through `finish_startup_trader`,
+        // which `start()` shares with `run_with_mode`. The replay-store fixture returns earlier
+        // and cannot observe a servicing flag set on that shared call.
+        let mut node = live_node_for_run_loop();
+        let handle = node.handle();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.start().await.unwrap();
+        assert_eq!(node.state(), NodeState::Running);
+
+        let error = tokio::time::timeout(
+            Duration::from_millis(100),
+            handle.register_external_order_claims(strategy_id, &[instrument_id]),
+        )
+        .await
+        .expect("manual-start registration should return before timeout")
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot register external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handle_deregister_external_order_claims_rejects_manual_start() {
+        let mut node = live_node_for_run_loop();
+        let handle = node.handle();
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.start().await.unwrap();
+        assert_eq!(node.state(), NodeState::Running);
+
+        let error = tokio::time::timeout(
+            Duration::from_millis(100),
+            handle.deregister_external_order_claims(strategy_id),
+        )
+        .await
+        .expect("manual-start deregistration should return before timeout")
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot deregister external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handle_register_external_order_claims_rejects_event_store_replay_start() {
+        // The replay branch reaches `Running` through `finish_startup_replay` and returns
+        // without entering the select loop, so it is unserviced for the same reason.
+        let mut node = live_node_with_replay_store(false);
+        let handle = node.handle();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.start().await.unwrap();
+        assert_eq!(node.state(), NodeState::Running);
+
+        let error = tokio::time::timeout(
+            Duration::from_millis(100),
+            handle.register_external_order_claims(strategy_id, &[instrument_id]),
+        )
+        .await
+        .expect("replay-start registration should return before timeout")
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot register external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_handle_register_external_order_claims_rejects_replay_run() {
+        // The replay branch inside `run_with_mode` takes the channels and then returns without
+        // entering the select loop. Reaching it through `run()` rather than `start()` is what
+        // detects a servicing flag set on the run path ahead of that branch: such a flag would
+        // let the call fall through to the send and report the channel-closed error instead.
+        let mut node = live_node_with_replay_store(false);
+        let handle = node.handle();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+
+        node.run().await.unwrap();
+        assert_eq!(node.state(), NodeState::Running);
+
+        let error = tokio::time::timeout(
+            Duration::from_millis(100),
+            handle.register_external_order_claims(strategy_id, &[instrument_id]),
+        )
+        .await
+        .expect("replay-run registration should return before timeout")
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cannot register external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
         );
     }
 

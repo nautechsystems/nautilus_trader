@@ -62,7 +62,9 @@ pub enum DataEvent {
 #[derive(Debug, Display)]
 pub enum SystemCommand {
     ReconnectSocket(system::ReconnectSocket),
+    #[cfg(feature = "live")]
     RegisterExternalOrderClaims(system::RegisterExternalOrderClaims),
+    #[cfg(feature = "live")]
     DeregisterExternalOrderClaims(system::DeregisterExternalOrderClaims),
 }
 
