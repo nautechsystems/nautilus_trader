@@ -5063,8 +5063,16 @@ async fn test_http_get_fills_returns_data() {
 
 #[rstest]
 #[tokio::test]
-async fn test_http_network_error_invalid_port() {
-    let base_url = "http://127.0.0.1:1".to_string();
+async fn test_http_network_error_connection_closed() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind test listener");
+    let addr = listener.local_addr().expect("test listener address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept test connection");
+        drop(stream);
+    });
+    let base_url = format!("http://{addr}");
 
     let client = OKXRawHttpClient::new(
         Some(base_url),
@@ -5083,6 +5091,8 @@ async fn test_http_network_error_invalid_port() {
         .unwrap();
 
     let result = client.get_instruments(params).await;
+
+    server.await.expect("test server task");
 
     assert!(result.is_err());
     match result {

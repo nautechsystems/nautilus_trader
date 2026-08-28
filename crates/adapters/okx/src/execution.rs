@@ -3262,10 +3262,11 @@ mod tests {
     use std::{cell::RefCell, rc::Rc, time::Duration};
 
     use axum::{Json, Router, routing::post};
-    use nautilus_common::{cache::Cache, testing::wait_until_async};
+    use nautilus_common::{cache::Cache, messages::ExecutionEvent, testing::wait_until_async};
     use nautilus_core::UUID4;
     use nautilus_model::{
         enums::OrderStatus,
+        events::OrderEventAny,
         instruments::Instrument,
         orders::OrderTestBuilder,
         types::{Price, Quantity},
@@ -3786,6 +3787,10 @@ mod tests {
     }
 
     fn build_test_exec_client() -> OKXExecutionClient {
+        build_test_exec_client_with_cache().0
+    }
+
+    fn build_test_exec_client_with_cache() -> (OKXExecutionClient, Rc<RefCell<Cache>>) {
         let config = OKXExecutionClientConfig {
             api_key: Some("test_key".to_string()),
             api_secret: Some("test_secret".to_string()),
@@ -3802,10 +3807,13 @@ mod tests {
             config.account_id,
             AccountType::Cash,
             None,
-            cache,
+            Rc::clone(&cache),
         );
 
-        OKXExecutionClient::new(core, config).expect("failed to build test client")
+        (
+            OKXExecutionClient::new(core, config).expect("failed to build test client"),
+            cache,
+        )
     }
 
     #[rstest]
@@ -3839,8 +3847,10 @@ mod tests {
             .await
             .expect("lifecycle boundary must drop the owned task")
             .expect("drop signal");
-        assert!(client.pending_tasks.all_finished());
-        client.pending_tasks.abort_all();
+        terminate_tasks(&client.pending_tasks, "test execution client")
+            .await
+            .expect("execution task terminated");
+        assert!(client.pending_tasks.is_empty());
     }
 
     #[rstest]
@@ -3865,15 +3875,20 @@ mod tests {
         let router = Router::new().route(
             "/api/v5/trade/order-algo",
             post(|Json(request): Json<Value>| async move {
-                let data = if request["algoClOrdId"] == "O-REST-BIND-001" {
-                    serde_json::json!([{
+                let data = match request["algoClOrdId"].as_str() {
+                    Some("ORESTBIND001") => serde_json::json!([{
                         "algoId": "3796251408639365120",
-                        "algoClOrdId": "O-REST-BIND-001",
+                        "algoClOrdId": "ORESTBIND001",
                         "sCode": "0",
                         "sMsg": "",
-                    }])
-                } else {
-                    serde_json::json!([])
+                    }]),
+                    Some("ORESTAMBIGUOUS002") => serde_json::json!([{
+                        "algoId": "",
+                        "algoClOrdId": "ORESTAMBIGUOUS002",
+                        "sCode": "51149",
+                        "sMsg": "Order timed out. Please try again.",
+                    }]),
+                    _ => serde_json::json!([]),
                 };
                 Json(serde_json::json!({
                     "code": "0",
@@ -3908,8 +3923,10 @@ mod tests {
             None,
             Rc::clone(&cache),
         );
-        let client = OKXExecutionClient::new(core, config).unwrap();
-        let client_order_id = ClientOrderId::from("O-REST-BIND-001");
+        let mut client = OKXExecutionClient::new(core, config).unwrap();
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+        let client_order_id = ClientOrderId::from("ORESTBIND001");
         let order = OrderTestBuilder::new(OrderType::StopLimit)
             .client_order_id(client_order_id)
             .strategy_id(StrategyId::from("S-REST-BIND-001"))
@@ -3932,7 +3949,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        client.submit_conditional_order(&command).unwrap();
+        client.submit_order(command).unwrap();
         wait_until_async(
             || async {
                 client
@@ -3955,7 +3972,7 @@ mod tests {
             })
         );
 
-        let ambiguous_client_order_id = ClientOrderId::from("O-REST-AMBIGUOUS-002");
+        let ambiguous_client_order_id = ClientOrderId::from("ORESTAMBIGUOUS002");
         let ambiguous_order = OrderTestBuilder::new(OrderType::StopLimit)
             .client_order_id(ambiguous_client_order_id)
             .strategy_id(StrategyId::from("S-REST-BIND-001"))
@@ -3978,7 +3995,7 @@ mod tests {
             UnixNanos::default(),
         );
 
-        client.submit_conditional_order(&ambiguous_command).unwrap();
+        client.submit_order(ambiguous_command).unwrap();
         wait_until_async(
             || async {
                 client
@@ -3995,6 +4012,98 @@ mod tests {
                 .ws_dispatch_state
                 .order_venue_binding(ambiguous_client_order_id),
             None
+        );
+
+        wait_until_async(
+            || async { client.pending_tasks.all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+        terminate_tasks(&client.pending_tasks, "test execution client")
+            .await
+            .expect("execution tasks terminated");
+
+        let mut events = Vec::new();
+        while let Ok(event) = event_rx.try_recv() {
+            events.push(event);
+        }
+
+        for expected_client_order_id in [client_order_id, ambiguous_client_order_id] {
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| matches!(
+                        event,
+                        ExecutionEvent::Order(OrderEventAny::Submitted(submitted))
+                            if submitted.client_order_id == expected_client_order_id
+                    ))
+                    .count(),
+                1,
+            );
+        }
+        assert!(
+            !events.iter().any(|event| matches!(
+                event,
+                ExecutionEvent::Order(OrderEventAny::Rejected(rejected))
+                    if rejected.client_order_id == ambiguous_client_order_id
+            )),
+            "ambiguous algo submit failure should not emit OrderRejected: {events:?}",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_local_cancel_validation_failure_does_not_emit_order_cancel_rejected() {
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+        let client_order_id = ClientOrderId::from("OLOCALCANCELINVALID001");
+        let strategy_id = StrategyId::from("S-LOCAL-CANCEL-INVALID-001");
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .price(Price::from("100000"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+            .expect("cache order");
+        let command = CancelOrder {
+            trader_id: TraderId::from("TESTER-001"),
+            client_id: Some(*OKX_CLIENT_ID),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id: Some(VenueOrderId::from("v-1")),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            params: None,
+            correlation_id: None,
+            causation_id: None,
+        };
+
+        client.cancel_order(command).expect("cancel order");
+        wait_until_async(
+            || async { client.pending_tasks.all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+        terminate_tasks(&client.pending_tasks, "test execution client")
+            .await
+            .expect("execution task terminated");
+
+        let events: Vec<_> = std::iter::from_fn(|| event_rx.try_recv().ok()).collect();
+        assert!(
+            !events.iter().any(|event| matches!(
+                event,
+                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected))
+                    if rejected.client_order_id == client_order_id
+            )),
+            "local cancel validation failure should not emit OrderCancelRejected: {events:?}",
         );
     }
 

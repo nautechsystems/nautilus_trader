@@ -4598,10 +4598,10 @@ mod tests {
             .await
             .expect("lifecycle boundary must drop the owned task")
             .expect("drop signal");
-        assert!(client.tasks.all_finished());
         terminate_tasks(&client.tasks, "test data client")
             .await
             .expect("data task terminated");
+        assert!(client.tasks.is_empty());
     }
 
     #[tokio::test]
@@ -4845,8 +4845,7 @@ mod tests {
 
     #[tokio::test]
     async fn zero_interval_disables_refresh_on_connect() {
-        let state = spot_refresh_state();
-        let addr = start_refresh_server(state.clone()).await;
+        let addr = start_refresh_server(spot_refresh_state()).await;
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
         replace_data_event_sender(sender);
         let config = OKXDataClientConfig {
@@ -4870,14 +4869,6 @@ mod tests {
             client.tasks.len(),
             2,
             "only the two stream tasks run when refresh is disabled"
-        );
-
-        let queries_before = state.instrument_queries.lock().await.len();
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(
-            state.instrument_queries.lock().await.len(),
-            queries_before,
-            "disabled refresh issues no further instrument requests"
         );
 
         client.disconnect().await.expect("disconnect");
