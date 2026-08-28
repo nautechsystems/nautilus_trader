@@ -80,6 +80,7 @@ Released on TBD (UTC).
 - Fixed Polymarket user WebSocket subscriptions to cover all account orders and trades
 - Fixed Polymarket `CancelAllOrders` handling for empty caches and cross-strategy, instrument, and side scopes
 - Fixed Polymarket market WebSocket heartbeats before initial subscription (#4864), thanks for reporting @mystic-io
+- Fixed Tardis incremental L2 batches ending on exchange timestamps (#4872), thanks for reporting @szpony
 
 ### Internal Improvements
 
