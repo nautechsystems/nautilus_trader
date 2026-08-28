@@ -1,0 +1,42 @@
+version = 1
+repository = "https://github.com/nautechsystems/nautilus_engineering"
+revision = "207f4a865e194b5917c6b1ce71ee039acd7653ba"
+manifest_sha256 = "8ffdbf5086f6dddee747f5c915d05c660fc861b72b16bab56e9cad34122fba45"
+marker_file = ".nautilus-engineering.syncing"
+profiles = ["sync"]
+
+[[file]]
+artifact = "markdownlint-config"
+path = ".markdownlint.jsonc"
+sha256 = "83a55eb166c92db1ad5657a03deab41bc0ee68fae22b23f91535811c3bb8943e"
+executable = false
+
+[[file]]
+artifact = "pre-commit-sync"
+path = ".nautilus-engineering/pre-commit/sync.yaml"
+sha256 = "ac186b23490bcc80b7bfe43cb4d09051521c9bcf9c7a6c0ad033659228be32d1"
+executable = false
+
+[[file]]
+artifact = "taplo-config"
+path = ".taplo.toml"
+sha256 = "2ebf46fbb3a9f63bc11c46154e7312cfec48cb99a3af6258c707bb0a318b15f9"
+executable = false
+
+[[file]]
+artifact = "yamllint-config"
+path = ".yamllint.yaml"
+sha256 = "56edcb6426e45ad4646493831bfa66e8c454a098114baf24e9be0b8e032970db"
+executable = false
+
+[[file]]
+artifact = "sync-check"
+path = "scripts/check-nautilus-engineering-sync.bash"
+sha256 = "4d9fd0173ef208e40d55c7aef2939143b564f0b135f35dbc969bcb710b2a4ce9"
+executable = true
+
+[[file]]
+artifact = "pre-commit-manager"
+path = "scripts/manage-nautilus-engineering-pre-commit.py"
+sha256 = "5c42e38e51c48751787742a5cdedc5a4ff524e4ddbfe3f45202416fdb028a8da"
+executable = true

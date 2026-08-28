@@ -83,6 +83,9 @@ build/
 dist/
 env/
 .tmp-pre-commit/
+.nautilus-engineering.syncing
+.nautilus-engineering.sync-lock
+.nautilus-engineering.tmp.*
 *.bak
 *.sh
 !**/fuzz/**/grind.sh
