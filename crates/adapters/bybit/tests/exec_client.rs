@@ -804,6 +804,7 @@ async fn test_exec_client_scoped_spot_position_reports_follow_config(
     config.use_spot_position_reports = use_spot_position_reports;
     let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     let reports = client
@@ -836,6 +837,7 @@ async fn test_exec_client_mixed_unscoped_position_reports_omit_spot() {
     config.use_spot_position_reports = true;
     let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     // Measure against a post-connect baseline, since connect issues requests of its own.
@@ -953,6 +955,7 @@ async fn test_exec_client_mass_status_omits_spot_and_preserves_derivative_positi
     config.use_spot_position_reports = true;
     let (mut client, _rx, cache) = create_test_execution_client_with_config(config);
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.start().unwrap();
     client.connect().await.unwrap();
     state.wallet_balance_requests.store(0, Ordering::Relaxed);
 
@@ -1098,6 +1101,7 @@ async fn test_exec_client_connect_disconnect() {
     let (mut client, _rx, cache) = registry.scope(|| create_test_execution_client(addr));
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
 
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -1239,6 +1243,7 @@ async fn test_exec_client_connect_applies_position_mode_for_derivative_symbols()
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
 
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -1306,6 +1311,7 @@ async fn test_exec_client_connect_applies_leverage_and_margin_mode() {
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
 
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     wait_until_async(
@@ -1391,6 +1397,7 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
     set_exec_event_sender(tx);
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
     client.connect().await.unwrap();
 
     // Wait for subscriptions to confirm connection phase is complete
@@ -1423,8 +1430,8 @@ async fn test_exec_client_query_order() {
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
 
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(10)).await;
 
@@ -1569,8 +1576,8 @@ async fn test_query_account_does_not_block_within_runtime() {
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
 
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(|| async { client.is_connected() }, Duration::from_secs(10)).await;
 
@@ -1661,8 +1668,8 @@ async fn test_exec_client_submit_order_list_demo() {
     set_exec_event_sender(tx);
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
@@ -1785,8 +1792,8 @@ async fn test_exec_client_demo_cancel_post_lookup_failure_does_not_reject() {
     let (mut client, mut rx, cache) = create_test_demo_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
 
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
@@ -1822,8 +1829,8 @@ async fn test_exec_client_demo_modify_whole_http_failure_does_not_reject() {
     let (mut client, mut rx, cache) = create_test_demo_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
 
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
@@ -1885,8 +1892,8 @@ async fn test_exec_client_demo_submit_post_lookup_failure_does_not_reject() {
     set_exec_event_sender(tx);
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
@@ -2012,8 +2019,8 @@ async fn test_exec_client_demo_submit_tp_trigger_price_emits_order_denied() {
     set_exec_event_sender(tx);
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
@@ -2126,8 +2133,8 @@ async fn test_exec_client_demo_submit_confirmed_rejection_emits_order_rejected()
     set_exec_event_sender(tx);
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
@@ -2278,8 +2285,8 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
     set_exec_event_sender(tx);
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
@@ -2458,8 +2465,8 @@ async fn test_exec_client_submit_order_unsupported_order_type_emits_order_denied
     set_exec_event_sender(tx);
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
@@ -2576,8 +2583,8 @@ async fn test_exec_client_submit_order_list_denies_incomplete_when_leg_missing()
     set_exec_event_sender(tx);
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
@@ -2719,8 +2726,8 @@ async fn test_exec_client_submit_order_list_denies_closed_leg() {
     set_exec_event_sender(tx);
 
     let mut client = BybitExecutionClient::new(core, config).unwrap();
-    client.connect().await.unwrap();
     client.start().unwrap();
+    client.connect().await.unwrap();
 
     wait_until_async(
         || async { state.subscriptions.lock().await.len() >= 4 },
