@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "207f4a865e194b5917c6b1ce71ee039acd7653ba"
+revision = "2b2364e2aeb24f8351da961228eaa9d27bc6eb04"
 manifest_sha256 = "8ffdbf5086f6dddee747f5c915d05c660fc861b72b16bab56e9cad34122fba45"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -12,9 +12,27 @@ sha256 = "83a55eb166c92db1ad5657a03deab41bc0ee68fae22b23f91535811c3bb8943e"
 executable = false
 
 [[file]]
+artifact = "pre-commit-shell"
+path = ".nautilus-engineering/pre-commit/shell.yaml"
+sha256 = "a8aefc574b99250a8f5fd7a80699f931b9b8406f4f124df82bf35a331c77fed3"
+executable = false
+
+[[file]]
 artifact = "pre-commit-sync"
 path = ".nautilus-engineering/pre-commit/sync.yaml"
 sha256 = "ac186b23490bcc80b7bfe43cb4d09051521c9bcf9c7a6c0ad033659228be32d1"
+executable = false
+
+[[file]]
+artifact = "pre-commit-toml"
+path = ".nautilus-engineering/pre-commit/toml.yaml"
+sha256 = "5cb5e9d442d2d5f286342de0df5c4ebe22309f696c3b6607217344ef344eb4d0"
+executable = false
+
+[[file]]
+artifact = "pre-commit-yaml"
+path = ".nautilus-engineering/pre-commit/yaml.yaml"
+sha256 = "f9d1883fdafe45d8b8e70f706f06360a342c106caddc679a3f53a9fe70e6bec0"
 executable = false
 
 [[file]]
@@ -38,5 +56,5 @@ executable = true
 [[file]]
 artifact = "pre-commit-manager"
 path = "scripts/manage-nautilus-engineering-pre-commit.py"
-sha256 = "5c42e38e51c48751787742a5cdedc5a4ff524e4ddbfe3f45202416fdb028a8da"
+sha256 = "0d80bffae5b7d6a2f86d558f9f92b445025bc04fd9374f472cbfbcfd6c9e8df9"
 executable = true

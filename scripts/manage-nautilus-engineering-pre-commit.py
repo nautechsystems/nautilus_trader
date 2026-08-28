@@ -28,6 +28,14 @@ from pathlib import Path
 
 BEGIN_MARKER = "  # nautilus-engineering: begin"
 END_MARKER = "  # nautilus-engineering: end"
+SYNC_BEGIN_MARKER = "  # nautilus-engineering: sync begin"
+SYNC_END_MARKER = "  # nautilus-engineering: sync end"
+HOOKS_BEGIN_MARKER = "  # nautilus-engineering: hooks begin"
+HOOKS_END_MARKER = "  # nautilus-engineering: hooks end"
+SECTION_DIFF_ERROR = (
+    "managed pre-commit section differs; run "
+    "python3 scripts/manage-nautilus-engineering-pre-commit.py render"
+)
 DEFAULT_CONFIG = ".pre-commit-config.yaml"
 DEFAULT_LOCK = ".nautilus-engineering.lock"
 FRAGMENT_DIRECTORY = ".nautilus-engineering/pre-commit"
@@ -159,24 +167,91 @@ def _indent_fragment(fragment: _Fragment) -> list[str]:
     return [f"  {line}" if line else "" for line in lines]
 
 
-def _render_section(fragments: list[_Fragment]) -> list[str]:
-    lines = [BEGIN_MARKER]
+def _render_section(
+    fragments: list[_Fragment],
+    begin_marker: str = BEGIN_MARKER,
+    end_marker: str = END_MARKER,
+) -> list[str]:
+    lines = [begin_marker]
     for index, fragment in enumerate(fragments):
         if index:
             lines.append("")
         lines.extend(_indent_fragment(fragment))
-    lines.append(END_MARKER)
+    lines.append(end_marker)
     return lines
 
 
-def _section_bounds(lines: list[str]) -> tuple[int, int] | None:
-    begins = [index for index, line in enumerate(lines) if line == BEGIN_MARKER]
-    ends = [index for index, line in enumerate(lines) if line == END_MARKER]
+def _section_bounds(
+    lines: list[str],
+    begin_marker: str,
+    end_marker: str,
+) -> tuple[int, int] | None:
+    begins = [index for index, line in enumerate(lines) if line == begin_marker]
+    ends = [index for index, line in enumerate(lines) if line == end_marker]
     if not begins and not ends:
         return None
     if len(begins) != 1 or len(ends) != 1 or begins[0] >= ends[0]:
         raise _ManagedSectionError("pre-commit config has invalid managed-section markers")
     return begins[0], ends[0]
+
+
+def _repos_bounds(lines: list[str]) -> tuple[int, int]:
+    repos = [index for index, line in enumerate(lines) if line == "repos:"]
+    if len(repos) != 1:
+        raise _ManagedSectionError("pre-commit config must contain one top-level repos key")
+
+    start = repos[0]
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(lines))
+            if lines[index] and not lines[index][0].isspace() and not lines[index].startswith("#")
+        ),
+        len(lines),
+    )
+    return start, end
+
+
+def _managed_sections(lines: list[str]) -> tuple[str, dict[str, tuple[int, int]]]:
+    legacy = _section_bounds(lines, BEGIN_MARKER, END_MARKER)
+    sync = _section_bounds(lines, SYNC_BEGIN_MARKER, SYNC_END_MARKER)
+    hooks = _section_bounds(lines, HOOKS_BEGIN_MARKER, HOOKS_END_MARKER)
+
+    if legacy is not None:
+        if sync is not None or hooks is not None:
+            raise _ManagedSectionError("pre-commit config mixes managed-section layouts")
+        return "legacy", {"legacy": legacy}
+
+    if (sync is None) != (hooks is None):
+        raise _ManagedSectionError(
+            "split managed sections require both sync and hooks marker pairs",
+        )
+    if sync is None or hooks is None:
+        return "none", {}
+
+    if sync[1] >= hooks[0]:
+        if sync[0] >= hooks[0]:
+            raise _ManagedSectionError(
+                "split managed sections require the sync region before the hooks region",
+            )
+        raise _ManagedSectionError("pre-commit config has overlapping managed sections")
+
+    repos_start, repos_end = _repos_bounds(lines)
+    if sync[0] <= repos_start or hooks[1] >= repos_end:
+        raise _ManagedSectionError(
+            "split managed sections must be inside the top-level repos list",
+        )
+    return "split", {"sync": sync, "hooks": hooks}
+
+
+def _split_fragments(fragments: list[_Fragment]) -> tuple[list[_Fragment], list[_Fragment]]:
+    sync = [fragment for fragment in fragments if fragment.artifact == "pre-commit-sync"]
+    if len(sync) != 1:
+        raise _ManagedSectionError(
+            "split managed sections require the pre-commit-sync artifact",
+        )
+    hooks = [fragment for fragment in fragments if fragment.artifact != "pre-commit-sync"]
+    return sync, hooks
 
 
 def _find_lines(lines: list[str], target: list[str]) -> int | None:
@@ -239,12 +314,35 @@ def _config_lines(content: str) -> list[str]:
     return content[:-1].split("\n")
 
 
+def _clear_section_contents(
+    lines: list[str],
+    sections: dict[str, tuple[int, int]],
+) -> None:
+    for start, end in sorted(sections.values(), reverse=True):
+        del lines[start + 1 : end]
+
+
+def _delete_section(lines: list[str], bounds: tuple[int, int]) -> None:
+    start, end = bounds
+    del lines[start : end + 1]
+    if 0 < start < len(lines) and not lines[start - 1] and not lines[start]:
+        del lines[start]
+
+
+def _outside_sections(
+    lines: list[str],
+    sections: dict[str, tuple[int, int]],
+) -> list[str]:
+    outside = list(lines)
+    for start, end in sorted(sections.values(), reverse=True):
+        del outside[start : end + 1]
+    return outside
+
+
 def _render_config(content: str, fragments: list[_Fragment]) -> str:
     lines = _config_lines(content)
-    bounds = _section_bounds(lines)
-    if bounds is not None:
-        start, end = bounds
-        del lines[start : end + 1]
+    layout, sections = _managed_sections(lines)
+    _clear_section_contents(lines, sections)
 
     lines = _remove_unmanaged_fragments(lines, fragments)
     conflicts = _unmanaged_conflicts(lines, fragments)
@@ -252,28 +350,53 @@ def _render_config(content: str, fragments: list[_Fragment]) -> str:
         raise _ManagedSectionError(
             f"pre-commit definitions conflict with the managed section: {', '.join(conflicts)}",
         )
-    repos = [index for index, line in enumerate(lines) if line == "repos:"]
-    if len(repos) != 1:
-        raise _ManagedSectionError("pre-commit config must contain one top-level repos key")
-    insertion = repos[0] + 1
-    section = _render_section(fragments)
-    if insertion < len(lines) and lines[insertion]:
-        section.append("")
-    lines[insertion:insertion] = section
+    repos_start = _repos_bounds(lines)[0]
+
+    if layout == "split":
+        split_sections = _managed_sections(lines)[1]
+        _delete_section(lines, split_sections["sync"])
+        insertion = repos_start + 1
+        sync, hooks = _split_fragments(fragments)
+        sync_section = _render_section(sync, SYNC_BEGIN_MARKER, SYNC_END_MARKER)
+        if insertion < len(lines) and lines[insertion]:
+            sync_section.append("")
+        lines[insertion:insertion] = sync_section
+
+        hooks_bounds = _managed_sections(lines)[1]["hooks"]
+        hooks_section = _render_section(hooks, HOOKS_BEGIN_MARKER, HOOKS_END_MARKER)
+        lines[hooks_bounds[0] : hooks_bounds[1] + 1] = hooks_section
+    else:
+        if layout == "legacy":
+            _delete_section(lines, _managed_sections(lines)[1]["legacy"])
+        insertion = repos_start + 1
+        section = _render_section(fragments)
+        if insertion < len(lines) and lines[insertion]:
+            section.append("")
+        lines[insertion:insertion] = section
     return "\n".join(lines) + "\n"
 
 
 def _check_config(content: str, fragments: list[_Fragment]) -> None:
     lines = _config_lines(content)
-    bounds = _section_bounds(lines)
-    expected = _render_section(fragments)
-    if bounds is None or lines[bounds[0] : bounds[1] + 1] != expected:
-        raise _ManagedSectionError(
-            "managed pre-commit section differs; run "
-            "python3 scripts/manage-nautilus-engineering-pre-commit.py render",
-        )
+    layout, sections = _managed_sections(lines)
+    if layout == "none":
+        raise _ManagedSectionError(SECTION_DIFF_ERROR)
 
-    outside = lines[: bounds[0]] + lines[bounds[1] + 1 :]
+    if layout == "legacy":
+        expected = {"legacy": _render_section(fragments)}
+    else:
+        sync, hooks = _split_fragments(fragments)
+        expected = {
+            "sync": _render_section(sync, SYNC_BEGIN_MARKER, SYNC_END_MARKER),
+            "hooks": _render_section(hooks, HOOKS_BEGIN_MARKER, HOOKS_END_MARKER),
+        }
+        if sections["sync"][0] != _repos_bounds(lines)[0] + 1:
+            raise _ManagedSectionError(SECTION_DIFF_ERROR)
+
+    if any(lines[start : end + 1] != expected[name] for name, (start, end) in sections.items()):
+        raise _ManagedSectionError(SECTION_DIFF_ERROR)
+
+    outside = _outside_sections(lines, sections)
     conflicts = _unmanaged_conflicts(outside, fragments)
     if conflicts:
         raise _ManagedSectionError(

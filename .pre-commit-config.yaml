@@ -3,7 +3,7 @@ default_install_hook_types: [pre-commit, commit-msg]
 default_stages: [pre-commit]
 
 repos:
-  # nautilus-engineering: begin
+  # nautilus-engineering: sync begin
   - repo: local
     hooks:
       - id: check-nautilus-engineering-sync
@@ -18,7 +18,7 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-  # nautilus-engineering: end
+  # nautilus-engineering: sync end
 
   ##############################################################################
   #  General checks
@@ -45,6 +45,7 @@ repos:
       - id: check-xml
       - id: check-yaml
 
+  # nautilus-engineering: hooks begin
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.13.1-1
     hooks:
@@ -56,21 +57,22 @@ repos:
     hooks:
       - id: shellcheck
 
-  - repo: https://github.com/google/yamlfmt
-    rev: v0.21.0
+  - repo: https://github.com/ComPWA/taplo-pre-commit
+    rev: v0.9.3
     hooks:
-      - id: yamlfmt
+      - id: taplo-format
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
     hooks:
       - id: yamllint
         args: [--strict]
+  # nautilus-engineering: hooks end
 
-  - repo: https://github.com/ComPWA/taplo-pre-commit
-    rev: v0.9.3
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.21.0
     hooks:
-      - id: taplo-format
+      - id: yamlfmt
 
   - repo: https://github.com/hadolint/hadolint
     rev: v2.15.1
