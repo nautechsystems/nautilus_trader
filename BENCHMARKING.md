@@ -149,8 +149,17 @@ The nightly workflow runs the registered Rust benches, and CodSpeed compares its
 Criterion subset. The workspace dependency aliases `codspeed-criterion-compat` as `criterion`, so
 the same source continues to run through standard `cargo bench` commands.
 
-Use a Python benchmark when the workload must include end-user PyO3 API cost. A future Python CI
-integration must prove that it exercises the `nautilus_trader` package built from
+Use a Python benchmark when the workload must include end-user PyO3 API cost. The
+[`benchmark-backtest-versions.py`](scripts/benchmark-backtest-versions.py) driver compares the
+released v1 Cython engine with the v2 PyO3 engine in isolated environments. It records the package,
+backend, source revision, wheel hash, loaded extension hash, Python version, and precision mode
+before timing. The loaded extension must byte-match the corresponding wheel member. After every
+timed sample, its worker repeats the complete wheel, extension, source, and runtime identity proof
+and checks its canonical digest against the coordinator's initial identity. Raw output stores each
+full identity once and binds every sample to it by digest. Source identity hashes staged diffs,
+unstaged diffs, and untracked file contents in addition to the revision. The driver also
+requires the v2 extension's embedded build revision to match the requested source revision. Any
+future Python CI integration must provide the same identity evidence for the package built from
 `python/pyproject.toml`.
 
 ---

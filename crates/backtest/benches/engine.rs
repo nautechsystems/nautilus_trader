@@ -27,7 +27,7 @@
 //!   `BacktestEngine::run`.
 //! - `market_data_replay`: interleaved quote and trade ticks with no strategy orders.
 //! - `market_data_replay_4_streams`: the same events split across four streams to exercise heap
-//!   merging.
+//!   merging, with a separate two-instrument case.
 //! - `alternating_market_orders`: quote-driven strategy submitting market orders through the full
 //!   strategy, risk, execution client, exchange, matching engine, cache, and portfolio path.
 //! - `accumulating_market_orders`: the same full-stack path with one growing netting position, so
@@ -73,7 +73,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, StrategyId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::Order,
-    types::{Money, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
@@ -131,6 +131,36 @@ fn bench_run(c: &mut Criterion) {
                     run_engine_iterations(iters, data_count, OrderCounts::default(), || {
                         build_market_data_replay(data.clone())
                     })
+                });
+            },
+        );
+
+        let multi_instrument_data = generate_market_data_multi_instrument(quote_count);
+        let multi_instrument_data_count = multi_instrument_data.len();
+        group.throughput(Throughput::Elements(multi_instrument_data_count as u64));
+        group.bench_with_input(
+            BenchmarkId::new(
+                format!("market_data_replay_{DATA_STREAM_COUNT}_streams_2_instruments"),
+                multi_instrument_data_count,
+            ),
+            &multi_instrument_data,
+            |b, data| {
+                b.iter_custom(|iters| {
+                    run_engine_iterations(
+                        iters,
+                        multi_instrument_data_count,
+                        OrderCounts::default(),
+                        || {
+                            build_engine_with_data_streams(
+                                split_data_streams(data.clone(), DATA_STREAM_COUNT),
+                                None,
+                                EngineBuildConfig {
+                                    instrument_count: 2,
+                                    ..Default::default()
+                                },
+                            )
+                        },
+                    )
                 });
             },
         );
@@ -572,6 +602,7 @@ fn build_gtd_limit_expiry(data: Vec<Data>, quote_count: usize) -> BacktestEngine
 #[derive(Clone, Copy)]
 struct EngineBuildConfig {
     book_type: BookType,
+    instrument_count: usize,
     reject_stop_orders: bool,
     max_order_submit: Option<RateLimit>,
 }
@@ -580,6 +611,7 @@ impl Default for EngineBuildConfig {
     fn default() -> Self {
         Self {
             book_type: BookType::L1_MBP,
+            instrument_count: 1,
             reject_stop_orders: true,
             max_order_submit: None,
         }
@@ -632,6 +664,12 @@ fn build_engine_with_data_streams(
     engine
         .add_instrument(&instrument)
         .expect("instrument should be added");
+
+    if build_config.instrument_count == 2 {
+        engine
+            .add_instrument(&second_instrument())
+            .expect("second instrument should be added");
+    }
 
     match strategy {
         Some(StrategyWorkload::Market(strategy)) => engine
@@ -695,6 +733,24 @@ fn generate_market_data(instrument_id: InstrumentId, quote_count: usize) -> Vec<
     }
 
     data
+}
+
+fn generate_market_data_multi_instrument(quote_count: usize) -> Vec<Data> {
+    let primary = crypto_perpetual_ethusdt().id();
+    let secondary = second_instrument().id();
+    let primary_count = quote_count.div_ceil(2);
+    let mut data = generate_market_data(primary, primary_count);
+    data.extend(generate_market_data(secondary, quote_count - primary_count));
+
+    data
+}
+
+fn second_instrument() -> InstrumentAny {
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    instrument.raw_symbol = "BTCUSDT".into();
+    instrument.base_currency = Currency::BTC();
+    InstrumentAny::CryptoPerpetual(instrument)
 }
 
 fn price_from_cents(cents: i64) -> String {
