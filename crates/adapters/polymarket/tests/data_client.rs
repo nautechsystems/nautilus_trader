@@ -24,7 +24,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -35,7 +35,8 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::{Json, Response},
+    http::StatusCode,
+    response::{IntoResponse, Json, Response},
     routing::get,
 };
 use futures_util::StreamExt;
@@ -132,6 +133,8 @@ struct TestServerState {
     gamma_request_count: Arc<AtomicUsize>,
     book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    trades_request_count: Arc<AtomicUsize>,
+    trades_error: Arc<AtomicBool>,
     market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
     rtds_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
@@ -162,14 +165,20 @@ async fn handle_book(State(state): State<TestServerState>) -> Json<Value> {
     Json(body)
 }
 
-async fn handle_trades(State(state): State<TestServerState>) -> Json<Value> {
+async fn handle_trades(State(state): State<TestServerState>) -> Response {
+    state.trades_request_count.fetch_add(1, Ordering::Relaxed);
+
+    if state.trades_error.load(Ordering::Relaxed) {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+
     let body = state
         .trades_response
         .lock()
         .await
         .clone()
         .unwrap_or_else(|| load_json("data_api_trades_response.json"));
-    Json(body)
+    Json(body).into_response()
 }
 
 async fn handle_market_upgrade(
@@ -994,25 +1003,72 @@ async fn test_request_trades_returns_trades_response() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_trades_returns_empty_response_at_offset_ceiling() {
-    let first_timestamp = (Timestamp::now() - SignedDuration::from_hours(24 * (100))).as_second();
-    let trades = (0..10_000)
-        .map(|index| {
-            serde_json::json!({
-                "asset": TEST_TOKEN_ID_YES,
-                "conditionId": TEST_CONDITION_ID,
-                "side": "BUY",
-                "price": 0.55,
-                "size": 1.0,
-                "timestamp": first_timestamp + index,
-                "transactionHash": format!("0x{index:064x}"),
-            })
-        })
-        .collect::<Vec<_>>();
-
+async fn test_request_trades_emits_no_response_on_data_api_error() {
     let state = TestServerState::default();
     *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
-    *state.trades_response.lock().await = Some(Value::Array(trades));
+    state.trades_error.store(true, Ordering::Relaxed);
+    let addr = start_mock_server(state.clone()).await;
+    let (client, mut rx) = create_test_data_client(addr);
+    let instrument_id = yes_instrument_id();
+
+    let request_id = UUID4::new();
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            None,
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("prime cache");
+    let _prime_events =
+        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
+
+    let trades_request_id = UUID4::new();
+    client
+        .request_trades(RequestTrades::new(
+            instrument_id,
+            None,
+            None,
+            None,
+            Some(*POLYMARKET_CLIENT_ID),
+            trades_request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("request_trades");
+
+    wait_until_async(
+        || async { state.trades_request_count.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_secs(1)).await;
+    let response_count = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                DataEvent::Response(response) if response.correlation_id() == &trades_request_id
+            )
+        })
+        .count();
+
+    assert_eq!(state.trades_request_count.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        response_count, 0,
+        "Data API errors must not emit a correlated success; events were: {events:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_emits_one_empty_response_for_empty_result() {
+    let state = TestServerState::default();
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
+    *state.trades_response.lock().await = Some(serde_json::json!([]));
     let addr = start_mock_server(state).await;
     let (client, mut rx) = create_test_data_client(addr);
     let instrument_id = yes_instrument_id();
@@ -1036,7 +1092,7 @@ async fn test_request_trades_returns_empty_response_at_offset_ceiling() {
     client
         .request_trades(RequestTrades::new(
             instrument_id,
-            Some(Timestamp::now() - SignedDuration::from_hours(24 * (365))),
+            None,
             None,
             None,
             Some(*POLYMARKET_CLIENT_ID),
@@ -1049,13 +1105,25 @@ async fn test_request_trades_returns_empty_response_at_offset_ceiling() {
     let events =
         collect_data_events_until_response(&mut rx, trades_request_id, Duration::from_secs(5))
             .await;
-    let trades_response = events.iter().find_map(|event| match event {
-        DataEvent::Response(DataResponse::Trades(response)) => Some(response),
-        _ => None,
-    });
+    let trades_responses = events
+        .iter()
+        .filter_map(|event| match event {
+            DataEvent::Response(DataResponse::Trades(response))
+                if response.correlation_id == trades_request_id =>
+            {
+                Some(response)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
 
-    assert!(trades_response.is_some());
-    assert!(trades_response.unwrap().data.is_empty());
+    assert_eq!(
+        trades_responses.len(),
+        1,
+        "an empty Data API result must emit exactly one correlated trades response; events were: {events:?}",
+    );
+    assert_eq!(trades_responses[0].instrument_id, instrument_id);
+    assert!(trades_responses[0].data.is_empty());
 }
 
 #[rstest]
