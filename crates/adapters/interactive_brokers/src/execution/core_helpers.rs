@@ -223,6 +223,52 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn cache_cancel_order_tracking(
+        ib_order_id: i32,
+        cmd: &CancelOrder,
+        target_order: &OrderAny,
+        order_id_map: &Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
+        venue_order_id_map: &Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
+        instrument_id_map: &Arc<Mutex<AHashMap<i32, InstrumentId>>>,
+        trader_id_map: &Arc<Mutex<AHashMap<i32, TraderId>>>,
+        strategy_id_map: &Arc<Mutex<AHashMap<i32, StrategyId>>>,
+    ) -> anyhow::Result<()> {
+        // Order-status callbacks first map the IB order ID to a client order ID, then read
+        // its instrument, trader, and strategy IDs. Hold this lock while updating all maps
+        // so a callback sees either the complete identity or no route at all.
+        let mut venue_map = venue_order_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock venue order ID map"))?;
+        if let Some(existing_client_order_id) = venue_map.get(&ib_order_id) {
+            anyhow::ensure!(
+                *existing_client_order_id == cmd.client_order_id,
+                "IB order ID {ib_order_id} is already mapped to client order {existing_client_order_id}"
+            );
+        }
+        venue_map.remove(&ib_order_id);
+
+        order_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock order ID map"))?
+            .insert(cmd.client_order_id, ib_order_id);
+        instrument_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock instrument ID map"))?
+            .insert(ib_order_id, target_order.instrument_id());
+        trader_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock trader ID map"))?
+            .insert(ib_order_id, target_order.trader_id());
+        strategy_id_map
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Failed to lock strategy ID map"))?
+            .insert(ib_order_id, target_order.strategy_id());
+        venue_map.insert(ib_order_id, cmd.client_order_id);
+
+        Ok(())
+    }
+
     pub(super) fn get_tracked_order_context(
         ib_order_id: i32,
         active_order_contexts: &Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,

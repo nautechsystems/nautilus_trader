@@ -627,6 +627,7 @@ impl InteractiveBrokersExecutionClient {
                 Self::emit_order_pending_cancel(
                     status.order_id,
                     client_order_id,
+                    venue_order_id,
                     instrument_id_map,
                     trader_id_map,
                     strategy_id_map,
