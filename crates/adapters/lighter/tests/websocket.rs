@@ -26,7 +26,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -37,7 +37,8 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    response::Response,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::get,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -61,7 +62,9 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
 };
-use nautilus_network::{SocketState, SocketStateSink, websocket::TransportBackend};
+use nautilus_network::{
+    SocketState, SocketStateSink, transport::TransportError, websocket::TransportBackend,
+};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
@@ -133,6 +136,9 @@ fn spot_instrument(
 #[derive(Clone, Default)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
+    upgrade_attempts: Arc<AtomicUsize>,
+    transient_upgrade_failures: Arc<AtomicUsize>,
+    reject_upgrade: Arc<AtomicBool>,
     subscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     send_txs: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -177,6 +183,22 @@ async fn handle_ws_upgrade(
     ws: WebSocketUpgrade,
     State(state): State<Arc<TestServerState>>,
 ) -> Response {
+    state.upgrade_attempts.fetch_add(1, Ordering::SeqCst);
+
+    if state.reject_upgrade.load(Ordering::SeqCst) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    if state
+        .transient_upgrade_failures
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -381,6 +403,14 @@ async fn await_send_tx_count(state: &TestServerState, target: usize) {
     .await;
 }
 
+async fn await_upgrade_attempts(state: &TestServerState, target: usize) {
+    wait_until_async(
+        || async { state.upgrade_attempts.load(Ordering::SeqCst) >= target },
+        Duration::from_secs(2),
+    )
+    .await;
+}
+
 async fn await_subscription_count(client: &LighterWebSocketClient, target: usize) {
     wait_until_async(
         || async { client.subscription_count() >= target },
@@ -473,6 +503,129 @@ async fn test_websocket_connection_lifecycle() {
         Duration::from_secs(2),
     )
     .await;
+}
+
+#[tokio::test]
+async fn test_initial_connect_retries_transient_upgrade_rejection() {
+    let state = Arc::new(TestServerState::default());
+    state.transient_upgrade_failures.store(1, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut client = LighterWebSocketClient::new(
+        Some(format!("ws://{addr}/stream")),
+        LighterEnvironment::Testnet,
+        Arc::new(MarketRegistry::new()),
+        TransportBackend::default(),
+        5,
+        None,
+    );
+
+    client.connect().await.expect("connect after retry");
+
+    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 2);
+    assert!(client.is_active());
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
+async fn test_initial_connect_does_not_retry_permanent_upgrade_rejection() {
+    let state = Arc::new(TestServerState::default());
+    state.reject_upgrade.store(true, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut client = LighterWebSocketClient::new(
+        Some(format!("ws://{addr}/stream")),
+        LighterEnvironment::Testnet,
+        Arc::new(MarketRegistry::new()),
+        TransportBackend::default(),
+        5,
+        None,
+    );
+
+    let error = client
+        .connect()
+        .await
+        .expect_err("permanent rejection must fail");
+
+    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        error.downcast_ref::<TransportError>(),
+        Some(TransportError::UpgradeRejected(401)),
+    ));
+}
+
+#[tokio::test]
+async fn test_initial_connect_retries_share_configured_timeout_budget() {
+    let state = Arc::new(TestServerState::default());
+    state.transient_upgrade_failures.store(10, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let mut client = LighterWebSocketClient::new(
+        Some(format!("ws://{addr}/stream")),
+        LighterEnvironment::Testnet,
+        Arc::new(MarketRegistry::new()),
+        TransportBackend::default(),
+        1,
+        None,
+    );
+
+    let error = tokio::time::timeout(Duration::from_secs(2), client.connect())
+        .await
+        .expect("initial connect exceeded configured timeout budget")
+        .expect_err("transient rejections must exhaust the timeout budget");
+
+    assert_eq!(
+        error.to_string(),
+        "Lighter WebSocket initial connection timeout after 1 seconds",
+    );
+    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn test_disconnect_cancels_initial_connect_and_allows_retry() {
+    let state = Arc::new(TestServerState::default());
+    state.transient_upgrade_failures.store(10, Ordering::SeqCst);
+    let addr = start_ws_server(state.clone()).await;
+    let client = LighterWebSocketClient::new(
+        Some(format!("ws://{addr}/stream")),
+        LighterEnvironment::Testnet,
+        Arc::new(MarketRegistry::new()),
+        TransportBackend::default(),
+        5,
+        None,
+    );
+    let mut connecting_client = client.clone();
+    let mut disconnecting_client = client;
+
+    let connect_task = tokio::spawn(async move {
+        let result = connecting_client.connect().await;
+        (connecting_client, result)
+    });
+    await_upgrade_attempts(&state, 1).await;
+
+    disconnecting_client
+        .disconnect()
+        .await
+        .expect("cancel initial connect");
+    let (mut reconnecting_client, result) =
+        tokio::time::timeout(Duration::from_secs(1), connect_task)
+            .await
+            .expect("initial connect cancellation timeout")
+            .expect("initial connect task");
+
+    let error = result.expect_err("initial connect must be cancelled");
+    let transport_error = error
+        .downcast_ref::<TransportError>()
+        .expect("transport cancellation error");
+    let TransportError::Io(io_error) = transport_error else {
+        panic!("expected I/O cancellation error, was {transport_error:?}");
+    };
+    assert_eq!(io_error.kind(), std::io::ErrorKind::Interrupted);
+
+    state.transient_upgrade_failures.store(0, Ordering::SeqCst);
+    reconnecting_client.connect().await.expect("reconnect");
+
+    assert!(reconnecting_client.is_active());
+
+    reconnecting_client.disconnect().await.expect("disconnect");
 }
 
 #[tokio::test]

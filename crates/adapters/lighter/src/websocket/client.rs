@@ -17,6 +17,7 @@
 
 use std::{
     fmt::Debug,
+    num::NonZeroU32,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
@@ -36,10 +37,11 @@ use nautilus_network::{
     SocketStateSink,
     mode::ConnectionMode,
     websocket::{
-        SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
-        channel_epoch_message_handler,
+        InitialConnectRetryPolicy, SubscriptionState, TransportBackend, WebSocketClient,
+        WebSocketConfig, channel_epoch_message_handler,
     },
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
@@ -86,6 +88,9 @@ pub struct LighterWebSocketClient {
     url: String,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     connection_epoch: Arc<ArcSwap<AtomicU64>>,
+    connection_lock: Arc<tokio::sync::Mutex<()>>,
+    connection_generation: Arc<AtomicU64>,
+    initial_connect_cancellation: Arc<ArcSwap<CancellationToken>>,
     signal: Arc<AtomicBool>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>,
@@ -143,6 +148,9 @@ impl Clone for LighterWebSocketClient {
             url: self.url.clone(),
             connection_mode: Arc::clone(&self.connection_mode),
             connection_epoch: Arc::clone(&self.connection_epoch),
+            connection_lock: Arc::clone(&self.connection_lock),
+            connection_generation: Arc::clone(&self.connection_generation),
+            initial_connect_cancellation: Arc::clone(&self.initial_connect_cancellation),
             signal: Arc::clone(&self.signal),
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None,
@@ -162,6 +170,16 @@ impl Clone for LighterWebSocketClient {
 }
 
 impl LighterWebSocketClient {
+    fn initial_connect_retry_policy() -> InitialConnectRetryPolicy {
+        InitialConnectRetryPolicy {
+            max_attempts: NonZeroU32::new(5).expect("initial connect attempts must be non-zero"),
+            delay_initial: Duration::from_millis(500),
+            delay_max: Duration::from_secs(5),
+            backoff_factor: 2.0,
+            jitter_ms: 250,
+        }
+    }
+
     /// Creates a new client without connecting.
     ///
     /// `url` overrides the resolved environment URL when supplied.
@@ -186,6 +204,9 @@ impl LighterWebSocketClient {
             url,
             connection_mode,
             connection_epoch,
+            connection_lock: Arc::new(tokio::sync::Mutex::new(())),
+            connection_generation: Arc::new(AtomicU64::new(0)),
+            initial_connect_cancellation: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
             signal: Arc::new(AtomicBool::new(false)),
             cmd_tx: Arc::new(tokio::sync::RwLock::new(placeholder_tx)),
             out_rx: None,
@@ -308,16 +329,37 @@ impl LighterWebSocketClient {
     }
 
     /// Establishes the WebSocket connection and spawns the feed-handler task.
+    /// Classified transient failures retry within the configured WebSocket timeout.
     ///
     /// # Errors
     ///
-    /// Returns an error if the underlying [`WebSocketClient::epoch_builder`] connection fails
+    /// Returns an error if the connection fails permanently, exhausts its timeout, is cancelled,
     /// or the handler cannot be initialized.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
+        self.connect_with_cancellation(CancellationToken::new())
+            .await
+    }
+
+    pub(crate) async fn connect_with_cancellation(
+        &mut self,
+        cancellation_token: CancellationToken,
+    ) -> anyhow::Result<()> {
+        let generation = self.connection_generation.load(Ordering::Acquire);
+        let _guard = self.connection_lock.lock().await;
+
+        anyhow::ensure!(
+            generation == self.connection_generation.load(Ordering::Acquire),
+            "Lighter WebSocket initial connection cancelled",
+        );
+
         if self.is_active() {
             log::warn!("Lighter WebSocket already connected");
             return Ok(());
         }
+
+        self.signal.store(false, Ordering::Release);
+        self.initial_connect_cancellation
+            .store(Arc::new(cancellation_token.clone()));
 
         let (message_handler, raw_rx) = channel_epoch_message_handler();
         let cfg = WebSocketConfig {
@@ -336,18 +378,35 @@ impl LighterWebSocketClient {
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
-        let client = WebSocketClient::epoch_builder()
+        let connect = WebSocketClient::epoch_builder()
             .config(cfg)
             .epoch_handler(message_handler)
             .rate_limiter(ws_message_rate_limiter(&self.url))
+            .initial_connect_retry_policy(Self::initial_connect_retry_policy())
+            .cancellation_token(cancellation_token.clone())
             .maybe_state_sink(
                 self.socket_control
                     .as_ref()
                     .map(SocketControl::sink)
                     .or_else(|| self.socket_sink.clone()),
             )
-            .connect()
-            .await?;
+            .connect();
+        let client =
+            match tokio::time::timeout(Duration::from_secs(self.ws_timeout_secs), connect).await {
+                Ok(result) => result?,
+                Err(_) => anyhow::bail!(
+                    "Lighter WebSocket initial connection timeout after {} seconds",
+                    self.ws_timeout_secs,
+                ),
+            };
+
+        if cancellation_token.is_cancelled()
+            || generation != self.connection_generation.load(Ordering::Acquire)
+        {
+            client.disconnect().await;
+
+            anyhow::bail!("Lighter WebSocket initial connection cancelled");
+        }
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
@@ -485,6 +544,12 @@ impl LighterWebSocketClient {
     ///
     /// This function currently completes best-effort shutdown and returns `Ok(())`.
     pub async fn disconnect(&mut self) -> Result<(), LighterWsError> {
+        self.connection_generation.fetch_add(1, Ordering::AcqRel);
+        self.initial_connect_cancellation.load().cancel();
+
+        let _guard = self.connection_lock.lock().await;
+        self.initial_connect_cancellation.load().cancel();
+
         log::debug!("Disconnecting Lighter WebSocket");
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
@@ -494,8 +559,10 @@ impl LighterWebSocketClient {
 
         if let Some(handle) = self.task_handle.take() {
             let abort_handle = handle.abort_handle();
+            let mut handle = Box::pin(handle);
+
             tokio::select! {
-                result = handle => match result {
+                result = &mut handle => match result {
                     Ok(()) => log::debug!("Lighter handler task completed"),
                     Err(e) if e.is_cancelled() => log::debug!("Lighter handler task cancelled"),
                     Err(e) => log::error!("Lighter handler task error: {e:?}"),
@@ -503,6 +570,7 @@ impl LighterWebSocketClient {
                 () = tokio::time::sleep(DISCONNECT_TIMEOUT) => {
                     log::warn!("Timeout waiting for Lighter handler task, aborting");
                     abort_handle.abort();
+                    let _ = handle.await;
                 }
             }
         }
@@ -1159,6 +1227,44 @@ mod tests {
             .expect_err("inactive client should time out");
 
         assert!(error.to_string().contains("timeout after 0 seconds"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn disconnect_awaits_handler_after_timeout_abort() {
+        struct NotifyOnDrop {
+            tx: Option<tokio::sync::oneshot::Sender<()>>,
+        }
+
+        impl Drop for NotifyOnDrop {
+            fn drop(&mut self) {
+                if let Some(tx) = self.tx.take() {
+                    let _ = tx.send(());
+                }
+            }
+        }
+
+        let mut client = LighterWebSocketClient::new(
+            Some("wss://example/test".to_string()),
+            LighterEnvironment::Testnet,
+            Arc::new(MarketRegistry::new()),
+            TransportBackend::default(),
+            30,
+            None,
+        );
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (drop_tx, mut drop_rx) = tokio::sync::oneshot::channel();
+        client.task_handle = Some(get_runtime().spawn(async move {
+            let _notify = NotifyOnDrop { tx: Some(drop_tx) };
+            let _ = started_tx.send(());
+            std::thread::sleep(DISCONNECT_TIMEOUT + Duration::from_millis(250));
+            std::future::pending::<()>().await;
+        }));
+        started_rx.await.expect("handler task started");
+
+        client.disconnect().await.expect("disconnect");
+
+        assert_eq!(drop_rx.try_recv(), Ok(()));
     }
 
     #[tokio::test]

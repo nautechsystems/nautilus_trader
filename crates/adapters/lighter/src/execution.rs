@@ -56,7 +56,8 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
-    ExecutionClientCore, ExecutionEventEmitter, SocketControl, execution::failure::CommandFailure,
+    ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory,
+    execution::failure::CommandFailure,
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -196,8 +197,11 @@ pub struct LighterExecutionClient {
     nonce_submission_gate: Arc<tokio::sync::RwLock<()>>,
     nonce_ready_connection_epoch: Arc<AtomicU64>,
     registry: Arc<MarketRegistry>,
+    socket_factory: SocketControlFactory,
     pending_tasks: Arc<TaskHandles>,
     ws_stream_handle: Option<JoinHandle<()>>,
+    ws_disconnect_handle: Option<JoinHandle<()>>,
+    auth_refresh_handle: Option<JoinHandle<()>>,
     cancellation_token: CancellationToken,
     /// WebSocket dispatch state: cloid translation tables, nonce manager,
     /// and the cached AccountState that backs `query_account`. Lives in
@@ -268,6 +272,7 @@ impl LighterExecutionClient {
             core.venue,
             config.settlement_currency(),
         ));
+        let socket_factory = SocketControlFactory::new(core.client_id, Some(core.venue));
 
         // One transaction limiter shared across the HTTP and WebSocket sendTx
         // paths so their combined rate honours the single per-account venue bucket.
@@ -286,20 +291,7 @@ impl LighterExecutionClient {
         let http_client =
             LighterHttpClient::from_raw_with_registry(raw_http, Arc::clone(&registry));
 
-        let ws_client = LighterWebSocketClient::new(
-            Some(config.ws_url()),
-            config.environment,
-            Arc::clone(&registry),
-            config.transport_backend,
-            config.ws_timeout_secs,
-            config.proxy_url.clone(),
-        );
-
-        let ws_client = ws_client.with_socket_control(SocketControl::new(
-            core.client_id,
-            Some(core.venue),
-            USER_STREAMS_ENDPOINT,
-        ));
+        let ws_client = Self::create_ws_client(&config, Arc::clone(&registry), &socket_factory);
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
@@ -322,8 +314,11 @@ impl LighterExecutionClient {
             nonce_submission_gate: Arc::new(tokio::sync::RwLock::new(())),
             nonce_ready_connection_epoch: Arc::new(AtomicU64::new(0)),
             registry,
+            socket_factory,
             pending_tasks: Arc::new(TaskHandles::default()),
             ws_stream_handle: None,
+            ws_disconnect_handle: None,
+            auth_refresh_handle: None,
             cancellation_token: CancellationToken::new(),
             dispatch: WsDispatchState::new(),
             nonce_recovery_inflight: Arc::new(AtomicBool::new(false)),
@@ -343,8 +338,8 @@ impl LighterExecutionClient {
         self.credential.is_some()
     }
 
-    /// Returns `true` when every background task spawned by this client has
-    /// completed. Useful in tests to wait for fire-and-forget HTTP work.
+    /// Returns `true` when every retained background task has completed.
+    /// Useful in tests to wait for fire-and-forget HTTP work.
     ///
     /// # Panics
     ///
@@ -353,6 +348,39 @@ impl LighterExecutionClient {
     #[must_use]
     pub fn pending_tasks_all_finished(&self) -> bool {
         self.pending_tasks.all_finished()
+    }
+
+    fn create_ws_client(
+        config: &LighterExecutionClientConfig,
+        registry: Arc<MarketRegistry>,
+        socket_factory: &SocketControlFactory,
+    ) -> LighterWebSocketClient {
+        let ws_client = LighterWebSocketClient::new(
+            Some(config.ws_url()),
+            config.environment,
+            registry,
+            config.transport_backend,
+            config.ws_timeout_secs,
+            config.proxy_url.clone(),
+        );
+
+        ws_client.with_socket_control(socket_factory.control(USER_STREAMS_ENDPOINT))
+    }
+
+    fn take_ws_client(&mut self) -> LighterWebSocketClient {
+        let cached_instruments = self.ws_client.instruments_cache();
+        let ws_cache = cached_instruments
+            .iter()
+            .map(|entry| (*entry.key(), entry.value().clone()))
+            .collect();
+        let replacement = Self::create_ws_client(
+            &self.config,
+            Arc::clone(&self.registry),
+            &self.socket_factory,
+        );
+        replacement.cache_instruments(ws_cache);
+
+        std::mem::replace(&mut self.ws_client, replacement)
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -368,8 +396,96 @@ impl LighterExecutionClient {
         self.pending_tasks.push(handle);
     }
 
-    fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+    fn begin_session_shutdown(&mut self) {
+        self.cancellation_token.cancel();
+
+        if let Some(handle) = &self.ws_stream_handle {
+            handle.abort();
+        }
+
+        if let Some(handle) = &self.auth_refresh_handle {
+            handle.abort();
+        }
+
+        self.pending_tasks.abort_all_retained();
+
+        if self.ws_disconnect_handle.is_none()
+            && (self.ws_client.is_active() || self.ws_stream_handle.is_some())
+        {
+            let mut ws_client = self.take_ws_client();
+            self.ws_disconnect_handle = Some(get_runtime().spawn(async move {
+                if let Err(e) = ws_client.disconnect().await {
+                    log::warn!("Error disconnecting Lighter WebSocket client: {e}");
+                }
+            }));
+        }
+    }
+
+    fn session_tasks_finished(&self) -> bool {
+        self.ws_stream_handle.is_none()
+            && self.ws_disconnect_handle.is_none()
+            && self.auth_refresh_handle.is_none()
+            && self.pending_tasks.is_empty()
+    }
+
+    async fn finish_task(handle: JoinHandle<()>, description: &str) {
+        let abort_handle = handle.abort_handle();
+        let mut handle = Box::pin(handle);
+
+        tokio::select! {
+            result = &mut handle => match result {
+                Ok(()) => log::debug!("Lighter {description} task completed"),
+                Err(e) if e.is_cancelled() => {
+                    log::debug!("Lighter {description} task cancelled");
+                }
+                Err(e) => log::error!("Lighter {description} task error: {e}"),
+            },
+            () = tokio::time::sleep(DISCONNECT_TIMEOUT) => {
+                log::warn!("Timeout waiting for Lighter {description} task, aborting");
+                abort_handle.abort();
+                let _ = handle.await;
+            }
+        }
+    }
+
+    async fn finish_session_shutdown(&mut self) {
+        if let Some(handle) = self.ws_disconnect_handle.take() {
+            match handle.await {
+                Ok(()) => log::debug!("Lighter WebSocket disconnect task completed"),
+                Err(e) if e.is_cancelled() => {
+                    log::debug!("Lighter WebSocket disconnect task cancelled");
+                }
+                Err(e) => log::error!("Lighter WebSocket disconnect task error: {e}"),
+            }
+        }
+
+        if let Some(handle) = self.ws_stream_handle.take() {
+            Self::finish_task(handle, "execution consumer").await;
+        }
+
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            Self::finish_task(handle, "auth-token refresh").await;
+        }
+
+        loop {
+            let handles = self.pending_tasks.take_all();
+            if handles.is_empty() {
+                break;
+            }
+
+            for handle in handles {
+                handle.abort();
+                match handle.await {
+                    Ok(()) => {}
+                    Err(e) if e.is_cancelled() => {}
+                    Err(e) => log::error!("Lighter client-owned task error: {e}"),
+                }
+            }
+        }
+
+        let stale = self.dispatch.take_pending_sendtx();
+        warn_pending_sendtx_unknown(&stale, "session shutdown");
+        self.nonce_recovery_inflight.store(false, Ordering::Release);
     }
 
     async fn ensure_instruments_initialized_async(&self) -> anyhow::Result<()> {
@@ -719,7 +835,7 @@ impl LighterExecutionClient {
         // to drain the task through the clone's `disconnect()`.
         let mut ws_client = self.ws_client.clone();
         ws_client
-            .connect()
+            .connect_with_cancellation(self.cancellation_token.clone())
             .await
             .context("failed to connect to Lighter WebSocket")?;
 
@@ -799,6 +915,7 @@ impl LighterExecutionClient {
         let auth_refresh_notify = Arc::clone(&self.auth_refresh_notify);
         let nonce_submission_gate = Arc::clone(&self.nonce_submission_gate);
         let nonce_ready_connection_epoch = Arc::clone(&self.nonce_ready_connection_epoch);
+        let pending_tasks_for_loop = Arc::clone(&self.pending_tasks);
         let account_id_for_loop = self.core.account_id;
         let clock_for_loop = self.clock;
         let nonce_refresh_retry = NonceRefreshRetry {
@@ -809,6 +926,7 @@ impl LighterExecutionClient {
             ready_connection_epoch: Arc::clone(&self.nonce_ready_connection_epoch),
             ws_client: ws_client.clone(),
             cancellation_token: self.cancellation_token.clone(),
+            pending_tasks: Arc::clone(&pending_tasks_for_loop),
         };
 
         let task = get_runtime().spawn(async move {
@@ -989,25 +1107,7 @@ impl LighterExecutionClient {
                                 let _refresh_guard = nonce_submission_gate.write().await;
                                 let disconnected_epoch = connection_epoch.saturating_sub(1);
                                 let stale = dispatch.drain_pending_sendtx(disconnected_epoch);
-                                if !stale.is_empty() {
-                                    log::warn!(
-                                        "Discarded {} pending sendTx entries on reconnect; \
-                                         order state recovers via reconciliation",
-                                        stale.len(),
-                                    );
-
-                                    for pending in &stale {
-                                        if let PendingSendTxKind::Create { order, .. } =
-                                            &pending.kind
-                                        {
-                                            log::warn!(
-                                                "Lighter sendTx outcome unknown after reconnect \
-                                                 for {}",
-                                                order.client_order_id(),
-                                            );
-                                        }
-                                    }
-                                }
+                                warn_pending_sendtx_unknown(&stale, "reconnect");
 
                                 if let Some(credential) = &credential_for_loop {
                                     match http_client_for_loop
@@ -1074,6 +1174,7 @@ impl LighterExecutionClient {
                                             emitter: emitter.clone(),
                                             connection_epoch: ws_client.connection_epoch_atomic(),
                                             cancellation_token: cancellation_token.clone(),
+                                            pending_tasks: Arc::clone(&pending_tasks_for_loop),
                                         },
                                     );
                                 }
@@ -1222,14 +1323,14 @@ impl LighterExecutionClient {
         Ok(())
     }
 
-    fn spawn_auth_token_refresh(&self, credential: Credential) {
+    fn spawn_auth_token_refresh(&mut self, credential: Credential) {
         let ws_client = self.ws_client.clone();
         let cancellation_token = self.cancellation_token.clone();
         let account_index = credential.account_index();
         let channels = auth_token_rotation_channels(account_index);
         let refresh_notify = Arc::clone(&self.auth_refresh_notify);
 
-        get_runtime().spawn(async move {
+        let handle = get_runtime().spawn(async move {
             log::debug!(
                 "Lighter auth-token refresh task started: interval={}s, account_index={account_index}",
                 AUTH_TOKEN_REFRESH_INTERVAL.as_secs(),
@@ -1279,6 +1380,7 @@ impl LighterExecutionClient {
                 }
             }
         });
+        self.auth_refresh_handle = Some(handle);
     }
 
     // Per-order `params["market_order_slippage_bps"]` overrides the config default.
@@ -2047,11 +2149,14 @@ struct NonceRefreshRetry {
     ready_connection_epoch: Arc<AtomicU64>,
     ws_client: LighterWebSocketClient,
     cancellation_token: CancellationToken,
+    pending_tasks: Arc<TaskHandles>,
 }
 
 impl NonceRefreshRetry {
     fn spawn(self, connection_epoch: u64) {
-        get_runtime().spawn(async move {
+        let pending_tasks = Arc::clone(&self.pending_tasks);
+
+        let handle = get_runtime().spawn(async move {
             let Some(credential) = self.credential else {
                 return;
             };
@@ -2121,6 +2226,7 @@ impl NonceRefreshRetry {
                     .min(NONCE_REFRESH_RETRY_MAX_DELAY);
             }
         });
+        pending_tasks.push(handle);
     }
 }
 
@@ -2957,7 +3063,9 @@ fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeCont
         return;
     };
 
-    get_runtime().spawn(async move {
+    let pending_tasks = Arc::clone(&context.pending_tasks);
+
+    let handle = get_runtime().spawn(async move {
         tokio::select! {
             () = context.cancellation_token.cancelled() => return,
             () = tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY) => {}
@@ -2967,6 +3075,7 @@ fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeCont
             log::warn!("Lighter acknowledged order probe failed: {e:?}");
         }
     });
+    pending_tasks.push(handle);
 }
 
 #[derive(Clone)]
@@ -2980,6 +3089,7 @@ struct AckedOrderProbeContext {
     emitter: ExecutionEventEmitter,
     connection_epoch: Arc<AtomicU64>,
     cancellation_token: CancellationToken,
+    pending_tasks: Arc<TaskHandles>,
 }
 
 async fn probe_acked_order(
@@ -3604,6 +3714,27 @@ fn command_failure_reason(failure: &CommandFailure) -> &str {
     }
 }
 
+fn warn_pending_sendtx_unknown(pending_sendtx: &[PendingSendTx], context: &str) {
+    if pending_sendtx.is_empty() {
+        return;
+    }
+
+    log::warn!(
+        "Discarded {} pending sendTx entries during {context}; order state recovers via \
+         reconciliation",
+        pending_sendtx.len(),
+    );
+
+    for pending in pending_sendtx {
+        if let PendingSendTxKind::Create { order, .. } = &pending.kind {
+            log::warn!(
+                "Lighter sendTx outcome unknown during {context} for {}",
+                order.client_order_id(),
+            );
+        }
+    }
+}
+
 fn classify_lighter_ws_command_failure(action: &str, error: &LighterWsError) -> CommandFailure {
     let fallback = format!("Lighter {action} dispatch failed");
     let reason = sanitize_strategy_reason(&format!("{fallback}: {error}"))
@@ -3792,25 +3923,32 @@ impl ExecutionClient for LighterExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        if self.core.is_stopped() {
+        if self.core.is_stopped() && self.core.is_disconnected() && self.session_tasks_finished() {
             return Ok(());
         }
 
         log::info!("Stopping Lighter execution client {}", self.core.client_id);
 
-        self.cancellation_token.cancel();
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-
-        self.abort_pending_tasks();
+        self.begin_session_shutdown();
 
         self.core.set_disconnected();
         self.core.set_stopped();
 
         log::info!("Lighter execution client stopped");
         Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        log::debug!("Resetting Lighter execution client {}", self.core.client_id);
+        self.begin_session_shutdown();
+        self.core.set_disconnected();
+        self.cancellation_token = CancellationToken::new();
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        log::debug!("Disposing Lighter execution client {}", self.core.client_id);
+        self.stop()
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
@@ -3834,11 +3972,16 @@ impl ExecutionClient for LighterExecutionClient {
             self.core.client_id
         );
 
+        // Synchronous stop/reset can only initiate teardown. Complete it before
+        // publishing a replacement socket or sharing its connection epoch.
+        self.finish_session_shutdown().await;
+
         // Rotate the cancellation token before reconnect so a previous stop()
         // does not signal the new consumer task to exit immediately.
         if self.cancellation_token.is_cancelled() {
             self.cancellation_token = CancellationToken::new();
         }
+        self.auth_refresh_notify = Arc::new(tokio::sync::Notify::new());
 
         // Reset the readiness gate and clear derived position/account caches
         // so a prior session's state cannot leak past the strict-await gate.
@@ -3918,47 +4061,9 @@ impl ExecutionClient for LighterExecutionClient {
 
         if let Err(e) = self.await_account_streams_ready(30.0).await {
             log::warn!("Connect failed after WS started, tearing down: {e}");
-            self.cancellation_token.cancel();
+            self.begin_session_shutdown();
+            self.finish_session_shutdown().await;
 
-            if let Err(disconnect_err) = self.ws_client.disconnect().await {
-                log::error!(
-                    "Error disconnecting Lighter WebSocket during connect teardown: {disconnect_err}"
-                );
-            }
-
-            // Await the consumer task to completion before returning so a
-            // queued marker from the failed session cannot call `mark_*`
-            // on the shared readiness handle after a caller's retry has
-            // reset it. On timeout we still abort and drain the handle to
-            // completion rather than detaching, so the task is provably
-            // dead before this function returns.
-            let taken_handle = self.ws_stream_handle.take();
-            if let Some(handle) = taken_handle {
-                let abort_handle = handle.abort_handle();
-                let mut handle = Box::pin(handle);
-                tokio::select! {
-                    join_res = &mut handle => match join_res {
-                        Ok(()) => log::debug!(
-                            "Lighter execution consumer task completed during connect teardown"
-                        ),
-                        Err(join_err) if join_err.is_cancelled() => log::debug!(
-                            "Lighter execution consumer task cancelled during connect teardown"
-                        ),
-                        Err(join_err) => log::error!(
-                            "Lighter execution consumer task error during connect teardown: {join_err}"
-                        ),
-                    },
-                    () = tokio::time::sleep(DISCONNECT_TIMEOUT) => {
-                        log::warn!(
-                            "Timeout waiting for Lighter execution consumer during connect teardown, aborting",
-                        );
-                        abort_handle.abort();
-                        let _ = handle.await;
-                    }
-                }
-            }
-
-            self.abort_pending_tasks();
             return Err(e);
         }
 
@@ -3969,7 +4074,7 @@ impl ExecutionClient for LighterExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
+        if self.core.is_disconnected() && self.session_tasks_finished() {
             return Ok(());
         }
 
@@ -3978,31 +4083,8 @@ impl ExecutionClient for LighterExecutionClient {
             self.core.client_id
         );
 
-        // Signal the consumption loop to drain.
-        self.cancellation_token.cancel();
-
-        if let Err(e) = self.ws_client.disconnect().await {
-            log::warn!("Error disconnecting Lighter WebSocket client: {e}");
-        }
-
-        let ws_stream_handle = self.ws_stream_handle.take();
-
-        if let Some(handle) = ws_stream_handle {
-            let abort_handle = handle.abort_handle();
-            match tokio::time::timeout(DISCONNECT_TIMEOUT, handle).await {
-                Ok(Ok(())) => log::debug!("Lighter execution consumer task completed"),
-                Ok(Err(e)) if e.is_cancelled() => {
-                    log::debug!("Lighter execution consumer task cancelled");
-                }
-                Ok(Err(e)) => log::error!("Lighter execution consumer task error: {e}"),
-                Err(_) => {
-                    log::warn!("Timeout waiting for Lighter execution consumer task, aborting");
-                    abort_handle.abort();
-                }
-            }
-        }
-
-        self.abort_pending_tasks();
+        self.begin_session_shutdown();
+        self.finish_session_shutdown().await;
 
         self.core.set_disconnected();
 
@@ -6787,6 +6869,136 @@ mod tests {
         #[case] expected: Duration,
     ) {
         assert_eq!(next_auth_token_refresh_retry_delay(current, max), expected);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn auth_token_refresh_is_retained_until_session_shutdown() {
+        let (mut client, _cache, _rx) = create_execution_client();
+
+        client.spawn_auth_token_refresh(test_credential());
+        client
+            .nonce_recovery_inflight
+            .store(true, Ordering::Release);
+
+        assert!(
+            client
+                .auth_refresh_handle
+                .as_ref()
+                .is_some_and(|handle| !handle.is_finished()),
+        );
+
+        client.begin_session_shutdown();
+        client.finish_session_shutdown().await;
+
+        assert!(client.auth_refresh_handle.is_none());
+        assert!(!client.nonce_recovery_inflight.load(Ordering::Acquire));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn session_shutdown_drains_tasks_registered_during_abort() {
+        struct SpawnOnDrop {
+            pending_tasks: Arc<TaskHandles>,
+        }
+
+        impl Drop for SpawnOnDrop {
+            fn drop(&mut self) {
+                let child = get_runtime().spawn(std::future::pending());
+                self.pending_tasks.push(child);
+            }
+        }
+
+        let (mut client, _cache, _rx) = create_execution_client();
+        let guard = SpawnOnDrop {
+            pending_tasks: Arc::clone(&client.pending_tasks),
+        };
+
+        let parent = get_runtime().spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
+        client.pending_tasks.push(parent);
+
+        client.finish_session_shutdown().await;
+
+        assert!(client.pending_tasks.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn session_shutdown_discards_pending_sendtx_before_epoch_reuse() {
+        struct EnqueueOnDrop {
+            dispatch: WsDispatchState,
+            pending: Option<PendingSendTx>,
+        }
+
+        impl Drop for EnqueueOnDrop {
+            fn drop(&mut self) {
+                self.dispatch
+                    .enqueue_pending_sendtx(self.pending.take().expect("pending sendTx"));
+            }
+        }
+
+        let (mut client, _cache, _rx) = create_execution_client();
+        let old_epoch = client.ws_client.connection_epoch();
+        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            connection_epoch: old_epoch,
+            kind: PendingSendTxKind::Other,
+            submitted_at: UnixNanos::default(),
+            nonce: TEST_NEXT_NONCE,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: "shutdown-pending".to_string(),
+        });
+        let guard = EnqueueOnDrop {
+            dispatch: client.dispatch.clone(),
+            pending: Some(PendingSendTx {
+                connection_epoch: old_epoch,
+                kind: PendingSendTxKind::Other,
+                submitted_at: UnixNanos::default(),
+                nonce: TEST_NEXT_NONCE + 1,
+                api_key_index: TEST_API_KEY_INDEX,
+                tx_hash: "shutdown-late".to_string(),
+            }),
+        };
+
+        let producer = get_runtime().spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
+        client.pending_tasks.push(producer);
+        client.ws_stream_handle = Some(get_runtime().spawn(std::future::pending()));
+
+        client.begin_session_shutdown();
+        client.finish_session_shutdown().await;
+
+        assert_eq!(client.ws_client.connection_epoch(), old_epoch);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+    }
+
+    #[rstest]
+    fn replacing_ws_client_preserves_cached_instruments() {
+        let (mut client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let instrument = cache
+            .borrow()
+            .instrument(&instrument_id)
+            .expect("instrument")
+            .clone();
+        client
+            .ws_client
+            .cache_instrument(TEST_MARKET_INDEX, instrument.clone());
+
+        let _old_ws_client = client.take_ws_client();
+
+        let cached_instruments = client.ws_client.instruments_cache();
+        assert_eq!(
+            cached_instruments
+                .get(&TEST_MARKET_INDEX)
+                .expect("cached instrument")
+                .value(),
+            &instrument,
+        );
     }
 
     #[tokio::test]
@@ -11245,6 +11457,47 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn acknowledged_order_probe_is_retained_until_session_shutdown() {
+        let (mut client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let pending = PendingSendTx {
+            connection_epoch: 0,
+            kind: PendingSendTxKind::Cancel {
+                strategy_id: strategy_id(),
+                instrument_id,
+                client_order_id: ClientOrderId::from("ACK-RETAINED"),
+                venue_order_id: Some(VenueOrderId::from("123")),
+            },
+            submitted_at: UnixNanos::from(1_000_000_000),
+            nonce: 12,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: "hash0c".to_string(),
+        };
+        let context = AckedOrderProbeContext {
+            http_client: client.http_client.clone(),
+            registry: Arc::clone(&client.registry),
+            credential: test_credential(),
+            dispatch: client.dispatch.clone(),
+            account_id: client.core.account_id,
+            clock: client.clock,
+            emitter: client.emitter.clone(),
+            connection_epoch: client.ws_client.connection_epoch_atomic(),
+            cancellation_token: client.cancellation_token.clone(),
+            pending_tasks: Arc::clone(&client.pending_tasks),
+        };
+
+        spawn_acked_order_probe(&pending, context);
+
+        assert_eq!(client.pending_tasks.len(), 1);
+
+        client.begin_session_shutdown();
+        client.finish_session_shutdown().await;
+
+        assert!(client.pending_tasks.is_empty());
+    }
+
     #[tokio::test]
     async fn handle_send_tx_ack_returns_modify_for_noop_probe() {
         let (client, cache, mut rx) = create_execution_client();
@@ -11651,8 +11904,11 @@ mod tests {
             ready_connection_epoch: Arc::clone(&client.nonce_ready_connection_epoch),
             ws_client: client.ws_client.clone(),
             cancellation_token: client.cancellation_token.clone(),
+            pending_tasks: Arc::clone(&client.pending_tasks),
         }
         .spawn(connection_epoch);
+
+        assert_eq!(client.pending_tasks.len(), 1);
 
         let err = client
             .build_tx_context(&credential)
@@ -11686,6 +11942,7 @@ mod tests {
                 .last_issued(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
             Some(100),
         );
+        assert!(client.pending_tasks.all_finished());
     }
 
     async fn spawn_integrator_approval_rejection_server() -> String {

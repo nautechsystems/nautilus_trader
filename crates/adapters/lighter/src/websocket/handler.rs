@@ -18,6 +18,8 @@
 use std::{
     collections::VecDeque,
     fmt::Debug,
+    future::Future,
+    pin::Pin,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -25,7 +27,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_common::live::get_runtime;
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use nautilus_core::{AtomicTime, nanos::UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{identifiers::AccountId, instruments::InstrumentAny, types::Currency};
 use nautilus_network::{
@@ -104,8 +106,6 @@ pub enum HandlerCommand {
         auth: Option<String>,
         response_tx: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
     },
-    /// Requeue one subscription generation after venue-level backoff.
-    RetrySubscribe { topic: Ustr, generation: u64 },
     /// Unsubscribe from a channel.
     Unsubscribe { channel: LighterWsChannel },
     /// Resubscribe to the venue `order_book` stream after a continuity gap.
@@ -157,11 +157,6 @@ impl Debug for HandlerCommand {
                 .debug_struct(stringify!(Subscribe))
                 .field("channel", channel)
                 .field("authed", &auth.is_some())
-                .finish(),
-            Self::RetrySubscribe { topic, generation } => f
-                .debug_struct(stringify!(RetrySubscribe))
-                .field("topic", topic)
-                .field("generation", generation)
                 .finish(),
             Self::Unsubscribe { channel } => f
                 .debug_struct(stringify!(Unsubscribe))
@@ -232,6 +227,7 @@ pub(super) struct FeedHandler {
     pending_subs: VecDeque<(Ustr, u64)>,
     inflight_subs: AHashMap<Ustr, u64>,
     subscription_attempts: AHashMap<Ustr, SubscriptionAttempt>,
+    subscription_retries: FuturesUnordered<SubscriptionRetry>,
     ignored_completions: AHashMap<Ustr, CompletionKind>,
     next_subscription_generation: u64,
     instruments: AHashMap<i16, InstrumentAny>,
@@ -243,6 +239,8 @@ pub(super) struct FeedHandler {
     exec_account: Option<(AccountId, i64)>,
     account_state_reconciler: LighterAccountStateReconciler,
 }
+
+type SubscriptionRetry = Pin<Box<dyn Future<Output = (Ustr, u64)> + Send + Sync + 'static>>;
 
 #[derive(Debug, Clone)]
 struct CachedOrderBook {
@@ -326,6 +324,7 @@ impl FeedHandler {
             pending_subs: VecDeque::new(),
             inflight_subs: AHashMap::new(),
             subscription_attempts: AHashMap::new(),
+            subscription_retries: FuturesUnordered::new(),
             ignored_completions: AHashMap::new(),
             next_subscription_generation: 1,
             instruments: AHashMap::new(),
@@ -525,9 +524,6 @@ impl FeedHandler {
                         } => {
                             self.queue_subscribe(channel, auth, response_tx);
                         }
-                        HandlerCommand::RetrySubscribe { topic, generation } => {
-                            self.queue_subscription_retry(topic, generation);
-                        }
                         HandlerCommand::Unsubscribe { channel } => {
                             // Drop a queued-but-unsent subscribe for this channel so a freed
                             // slot cannot resubscribe after the caller unsubscribed.
@@ -599,6 +595,11 @@ impl FeedHandler {
                             }
                         }
                     }
+                }
+                Some((topic, generation)) = self.subscription_retries.next(),
+                    if !self.subscription_retries.is_empty() =>
+                {
+                    self.queue_subscription_retry(topic, generation);
                 }
                 Some((connection_epoch, raw_msg)) = self.raw_rx.recv() => {
                     match raw_msg {
@@ -907,24 +908,11 @@ impl FeedHandler {
             .expect("subscription attempt disappeared before retry");
         attempt.generation = next_generation;
 
-        let Some(cmd_tx) = self.cmd_tx.clone() else {
-            self.fail_subscription_attempt(
-                topic,
-                &format!("{message}; subscription retry command channel unavailable"),
-            );
-            return;
-        };
         let delay = SUBSCRIBE_RETRY_BASE_BACKOFF.saturating_mul(1_u32 << (retry - 1));
-        get_runtime().spawn(async move {
+        self.subscription_retries.push(Box::pin(async move {
             tokio::time::sleep(delay).await;
-
-            if let Err(e) = cmd_tx.send(HandlerCommand::RetrySubscribe {
-                topic,
-                generation: next_generation,
-            }) {
-                log::debug!("Dropping stale Lighter subscription retry: {e}");
-            }
-        });
+            (topic, next_generation)
+        }));
     }
 
     fn fail_subscription_attempt(&mut self, topic: Ustr, message: &str) {
@@ -3851,8 +3839,9 @@ mod tests {
         );
     }
 
+    #[rstest]
     #[tokio::test]
-    async fn pump_releases_inflight_slot_on_send_failure() {
+    async fn pump_releases_inflight_slot_and_schedules_send_failure_retry() {
         let signal = Arc::new(AtomicBool::new(false));
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, Message)>();
@@ -3869,7 +3858,14 @@ mod tests {
 
         assert!(handler.pending_subs.is_empty());
         assert!(handler.inflight_subs.is_empty());
-        assert!(handler.subscription_attempts.is_empty());
+        assert_eq!(handler.subscription_attempts.len(), 3);
+        assert!(
+            handler
+                .subscription_attempts
+                .values()
+                .all(|attempt| attempt.retries == 1),
+        );
+        assert_eq!(handler.subscription_retries.len(), 3);
     }
 
     #[rstest]
@@ -4207,6 +4203,7 @@ mod tests {
         assert!(attempt.pending_response_txs.is_empty());
         assert!(handler.pending_subs.is_empty());
         assert!(handler.inflight_subs.is_empty());
+        assert_eq!(handler.subscription_retries.len(), 1);
         assert!(matches!(
             old_rx.try_recv(),
             Err(tokio::sync::oneshot::error::TryRecvError::Empty),
@@ -4425,6 +4422,7 @@ mod tests {
         assert_eq!(candle_retry.retries, 1);
         assert_ne!(trade_retry.generation, trade_generation);
         assert_ne!(candle_retry.generation, candle_generation);
+        assert_eq!(handler.subscription_retries.len(), 2);
         assert!(matches!(
             trade_rx.try_recv(),
             Err(tokio::sync::oneshot::error::TryRecvError::Empty),

@@ -933,6 +933,10 @@ impl WsDispatchState {
         drained.into()
     }
 
+    pub(crate) fn take_pending_sendtx(&self) -> Vec<PendingSendTx> {
+        std::mem::take(&mut *self.pending_sendtx.lock().expect(MUTEX_POISONED)).into()
+    }
+
     /// Returns the current pending-sendTx queue length. Test-only helper.
     #[cfg(test)]
     pub(crate) fn pending_sendtx_len(&self) -> usize {

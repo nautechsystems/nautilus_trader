@@ -1064,6 +1064,17 @@ async fn await_subscribe_count(state: &TestServerState, target: usize) {
     .await;
 }
 
+async fn await_connection_count(state: &TestServerState, target: usize) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.connection_count.lock().await == target }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+}
+
 async fn assert_local_order_denied_once(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     state: &TestServerState,
@@ -1469,6 +1480,93 @@ async fn test_connect_disconnect_lifecycle() {
         Duration::from_secs(2),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn stop_disconnects_tasks_and_allows_reconnect() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.start().expect("start");
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    client.stop().expect("stop");
+    client.stop().expect("repeated stop");
+    await_connection_count(&state, 0).await;
+
+    client.start().expect("restart");
+    client.connect().await.expect("reconnect");
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
+    client.disconnect().await.expect("repeated disconnect");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn reset_disconnects_tasks_and_allows_reconnect() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.start().expect("start");
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    client.reset().expect("reset");
+    client.reset().expect("repeated reset");
+    await_connection_count(&state, 0).await;
+
+    client.connect().await.expect("reconnect");
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn dispose_disconnects_tasks() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+
+    client.start().expect("start");
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    client.dispose().expect("dispose");
+    client.dispose().expect("repeated dispose");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_timeout_disconnects_tasks_and_allows_retry() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client(addr);
+    state
+        .auto_emit_account_subscribed_frames
+        .store(false, Ordering::Relaxed);
+
+    let error = client
+        .connect()
+        .await
+        .expect_err("connect without account frames should time out");
+
+    assert!(error.to_string().contains("Lighter account streams"));
+    assert!(!client.is_connected());
+    await_connection_count(&state, 0).await;
+
+    state
+        .auto_emit_account_subscribed_frames
+        .store(true, Ordering::Relaxed);
+    client.connect().await.expect("retry connect");
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
 }
 
 #[rstest]

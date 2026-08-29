@@ -342,7 +342,7 @@ impl LighterDataClient {
         // `self.ws_client` so disconnect() can await it.
         let mut ws_client = self.ws_client.clone();
         ws_client
-            .connect()
+            .connect_with_cancellation(self.cancellation_token.clone())
             .await
             .context("failed to connect to Lighter WebSocket")?;
 
