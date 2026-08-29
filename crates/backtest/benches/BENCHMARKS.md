@@ -1,8 +1,10 @@
 # Backtest Engine Benchmarks
 
-These numbers were measured on 2026-08-10. The tables report the median of three interleaved runs
-on the same host. Refresh them after a substantive backtest engine change or dependency upgrade.
-Absolute numbers vary by machine; treat a result inside the recorded noise band as equivalent.
+The canonical absolute baseline was measured on 2026-08-10. Its tables report the median of three
+interleaved runs on the same host. Refresh the full matrix after a substantive backtest engine
+change or dependency upgrade. Later sections can record focused comparisons without replacing the
+full matrix. Absolute numbers vary by machine; treat a result inside the recorded noise band as
+equivalent.
 
 ## Canonical workload
 
@@ -95,6 +97,9 @@ For policy and the general noise-reduction recipe, see
 
 Lower is better. Each case processes 20,000 data events.
 
+This historical full matrix predates the [L1 replacement follow-up](#l1-replacement-follow-up),
+which remeasures its replay-only preloaded case.
+
 | Scenario                | Preloaded `run()` median | Noise band, spread      | Full load/setup/run median | Noise band, spread      |
 | ----------------------- | -----------------------: | ----------------------- | -------------------------: | ----------------------- |
 | Replay only             |                23.285 ms | 22.398-23.641 ms, 5.3%  |                  30.141 ms | 30.136-30.289 ms, 0.5%  |
@@ -128,11 +133,39 @@ of the captured samples fell outside the timed region. Within the `run` stack, t
 descendant was `OrderMatchingEngine::process_trade_ticks_from_bar` at 1.858 seconds inclusive.
 `OrderBook::update_trade_tick` accounted for 1.244 seconds inclusive within that path.
 
-The profile identifies the bar-execution trade-tick path as the next candidate for investigation,
-starting with the order-book updates beneath `process_trade_ticks_from_bar`. Each fixture row also
-supplies a quote at the same recorded close, so this target applies to the mixed quote-and-bar
-workload rather than an isolated bar path. The profile alone does not justify a code change. This
-baseline includes no production optimization.
+The profile promoted the bar-execution trade-tick path for investigation, starting with the
+order-book updates beneath `process_trade_ticks_from_bar`. Each fixture row also supplies a quote
+at the same recorded close, so this target applies to the mixed quote-and-bar workload rather than
+an isolated bar path. The profile alone did not justify a code change. The 2026-08-10 baseline
+includes no production optimization.
+
+## L1 replacement follow-up
+
+A 2026-08-29 follow-up profiled all four canonical scenarios under both exact benchmark boundaries
+on the same host. As percentages of total captured CPU samples, inclusive time for
+`process_trade_ticks_from_bar` ranged from 13.67% to 47.12%, and inclusive time for
+`OrderBook::update_trade_tick` ranged from 7.78% to 29.75%. `OrderBook::update_book_bid` and
+`update_book_ask` removed the current top order immediately before `BookLadder::add(order, 0)`
+cleared the ladder and inserted the replacement.
+
+The candidate removed that redundant deletion. The baseline was the signed commit
+`Optimize BacktestEngine inactive service paths`. Three paired sessions alternated immutable
+baseline and candidate executables for the `run_preloaded` boundary and `replay_only` scenario.
+Each executable was built once from its source tree and reused unchanged. Both used `rustc 1.98.0`,
+Cargo 1.98.0, standard precision with default crate features, and the `bench-lto` profile. The
+governor remained `powersave`, no host control changed, and ASLR was disabled per benchmark process.
+Each run used a 3-second warm-up, a 5-second measurement target, and 50 samples.
+
+| Pair order         | Baseline median | Candidate median | Reduction |
+| ------------------ | --------------: | ---------------: | --------: |
+| Baseline/candidate |       23.548 ms |        18.823 ms |    20.07% |
+| Candidate/baseline |       23.053 ms |        17.790 ms |    22.83% |
+| Baseline/candidate |       23.219 ms |        18.501 ms |    20.32% |
+
+The median reduction was 20.32%. A fresh three-run pre-edit replay-only session established the
+0.6843% observed noise spread, which every comparison pair cleared. The canonical correctness test
+matched every exact result fingerprint for all four scenarios under both boundaries after the
+change. The remaining seven canonical cases were fingerprint-verified but not re-timed.
 
 ## v1.231.0 and v2 comparison
 

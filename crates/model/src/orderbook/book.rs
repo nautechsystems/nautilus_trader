@@ -1208,8 +1208,8 @@ impl OrderBook {
             OrderSide::Sell as u64,
         );
 
-        self.update_book_bid(bid, quote.ts_event);
-        self.update_book_ask(ask, quote.ts_event);
+        self.update_book_bid(bid);
+        self.update_book_ask(ask);
 
         self.increment(self.sequence.saturating_add(1), quote.ts_event, 0);
 
@@ -1264,29 +1264,19 @@ impl OrderBook {
             OrderSide::Sell as u64,
         );
 
-        self.update_book_bid(bid, trade.ts_event);
-        self.update_book_ask(ask, trade.ts_event);
+        self.update_book_bid(bid);
+        self.update_book_ask(ask);
 
         self.increment(self.sequence.saturating_add(1), trade.ts_event, 0);
 
         Ok(())
     }
 
-    fn update_book_bid(&mut self, order: BookOrder, ts_event: UnixNanos) {
-        if let Some(top_bids) = self.bids.top()
-            && let Some(top_bid) = top_bids.first()
-        {
-            self.bids.remove_order(top_bid.order_id, 0, ts_event);
-        }
+    fn update_book_bid(&mut self, order: BookOrder) {
         self.bids.add(order, 0); // Internal replacement, no F_MBP flags
     }
 
-    fn update_book_ask(&mut self, order: BookOrder, ts_event: UnixNanos) {
-        if let Some(top_asks) = self.asks.top()
-            && let Some(top_ask) = top_asks.first()
-        {
-            self.asks.remove_order(top_ask.order_id, 0, ts_event);
-        }
+    fn update_book_ask(&mut self, order: BookOrder) {
         self.asks.add(order, 0); // Internal replacement, no F_MBP flags
     }
 

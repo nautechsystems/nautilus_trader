@@ -1235,6 +1235,46 @@ fn test_book_update_quote_tick_l1() {
 }
 
 #[rstest]
+fn test_book_update_quote_tick_replaces_incomplete_l1_batch() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
+    let batch_flags = RecordFlag::F_MBP as u8;
+
+    for (side, price, size, id) in [
+        (OrderSide::Buy, "100.000", "10.00000000", 1),
+        (OrderSide::Sell, "110.000", "20.00000000", 2),
+    ] {
+        book.add(
+            BookOrder::new(side, Price::from(price), Quantity::from(size), id),
+            batch_flags,
+            id,
+            UnixNanos::from(id),
+        );
+    }
+
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from("90.000"),
+        Price::from("120.000"),
+        Quantity::from("30.00000000"),
+        Quantity::from("40.00000000"),
+        UnixNanos::from(3),
+        UnixNanos::from(4),
+    );
+    book.update_quote_tick(&quote).unwrap();
+
+    assert_eq!(book.bids(None).count(), 1);
+    assert_eq!(book.asks(None).count(), 1);
+    assert_eq!(book.best_bid_price().unwrap(), quote.bid_price);
+    assert_eq!(book.best_ask_price().unwrap(), quote.ask_price);
+    assert_eq!(book.best_bid_size().unwrap(), quote.bid_size);
+    assert_eq!(book.best_ask_size().unwrap(), quote.ask_size);
+    assert_eq!(book.sequence, 3);
+    assert_eq!(book.ts_last, UnixNanos::from(3));
+    assert_eq!(book.update_count, 3);
+}
+
+#[rstest]
 fn test_book_update_trade_tick_l1() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
