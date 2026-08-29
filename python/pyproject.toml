@@ -418,6 +418,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
 ".pre-commit-hooks/check_pyo3_names.py" = ["PLR0912", "PLR0915", "S603", "T201"]
 "scripts/check-example-imports.py" = ["T201"]
 "scripts/check-markdown-tables.py" = ["INP001"]
+"scripts/security-audit.py" = ["INP001"]
 "scripts/ci/check_commit_message.py" = ["S603", "T201"]
 "scripts/ci/test_*.py" = [
   "S101",

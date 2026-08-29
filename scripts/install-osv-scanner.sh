@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install the osv-scanner prebuilt binary from GitHub releases.
-#
-# Installs to $OSV_SCANNER_PREFIX (default: ~/.cargo/bin) which is already
-# on PATH for anyone who uses the cargo-install tools in install-tools.
+# Install the pinned OSV Scanner binary from its GitHub release and verify its checksum
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OSV_SCANNER_VERSION="$(bash "$SCRIPT_DIR/tool-version.sh" osv-scanner)"
+STABLE_VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+$'
+VERSION_PATTERN='[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
+VERSION_OUTPUT_PATTERN="(^|[^0-9A-Za-z.])(${VERSION_PATTERN})([^0-9A-Za-z.+-]|$)"
 
 INSTALL_DIR="${OSV_SCANNER_PREFIX:-$HOME/.cargo/bin}"
 INSTALL_ATTEMPTS="${INSTALL_ATTEMPTS:-5}"
@@ -15,13 +15,30 @@ CURL_RETRIES="${CURL_RETRIES:-5}"
 CURL_CONNECT_TIMEOUT="${CURL_CONNECT_TIMEOUT:-20}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-300}"
 
-if ! [[ "$INSTALL_ATTEMPTS" =~ ^[0-9]+$ ]] || [ "$INSTALL_ATTEMPTS" -lt 1 ]; then
-  echo "INSTALL_ATTEMPTS must be a positive integer" >&2
+if ! [[ "$OSV_SCANNER_VERSION" =~ $STABLE_VERSION_PATTERN ]]; then
+  echo "Error: osv-scanner version pin must be a stable X.Y.Z release: $OSV_SCANNER_VERSION" >&2
   exit 1
 fi
 
-get_installed_version() {
-  osv-scanner --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo ""
+for setting in INSTALL_ATTEMPTS CURL_RETRIES CURL_CONNECT_TIMEOUT CURL_MAX_TIME; do
+  value=${!setting}
+  if ! [[ "$value" =~ ^[0-9]+$ ]] || [ "$value" -lt 1 ]; then
+    echo "$setting must be a positive integer" >&2
+    exit 1
+  fi
+done
+if [ "$INSTALL_ATTEMPTS" -gt 10 ]; then
+  echo "INSTALL_ATTEMPTS must not exceed 10" >&2
+  exit 1
+fi
+
+get_version() {
+  local executable=$1 output=""
+
+  output=$("$executable" --version 2>&1) || true
+  if [[ "$output" =~ $VERSION_OUTPUT_PATTERN ]]; then
+    printf '%s' "${BASH_REMATCH[2]}"
+  fi
 }
 
 download_file() {
@@ -62,35 +79,30 @@ verify_checksum() {
   fi
 }
 
-# Skip if already at the required version
-if command -v osv-scanner > /dev/null 2>&1; then
-  INSTALLED_VER="$(get_installed_version)"
-  if [[ "$INSTALLED_VER" == "$OSV_SCANNER_VERSION" ]]; then
+if [[ -z "${OSV_SCANNER_PREFIX:-}" ]] && command -v osv-scanner > /dev/null 2>&1; then
+  INSTALLED_VERSION="$(get_version "$(command -v osv-scanner)")"
+  if [[ "$INSTALLED_VERSION" == "$OSV_SCANNER_VERSION" ]]; then
     echo "osv-scanner $OSV_SCANNER_VERSION is already installed."
     exit 0
   fi
-  echo "Installed version ($INSTALLED_VER) differs from required ($OSV_SCANNER_VERSION)"
+  echo "Installed version ($INSTALLED_VERSION) differs from required ($OSV_SCANNER_VERSION)"
 fi
 
-# Detect OS
-OS_RAW="$(uname -s)"
-case "$OS_RAW" in
+case "$(uname -s)" in
   Linux*) OS=linux ;;
   Darwin*) OS=darwin ;;
   MINGW* | MSYS* | CYGWIN*) OS=windows ;;
   *)
-    echo "Error: unsupported OS: $OS_RAW" >&2
+    echo "Error: unsupported OS: $(uname -s)" >&2
     exit 1
     ;;
 esac
 
-# Detect architecture
-ARCH_RAW="$(uname -m)"
-case "$ARCH_RAW" in
+case "$(uname -m)" in
   x86_64 | amd64) ARCH=amd64 ;;
   aarch64 | arm64) ARCH=arm64 ;;
   *)
-    echo "Error: unsupported architecture: $ARCH_RAW" >&2
+    echo "Error: unsupported architecture: $(uname -m)" >&2
     exit 1
     ;;
 esac
@@ -105,61 +117,93 @@ BASE_URL="https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER
 
 echo "Installing osv-scanner ${OSV_SCANNER_VERSION} for ${OS}/${ARCH}..."
 
-TMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TMP_DIR"' EXIT
-cd "$TMP_DIR"
+INSTALL_DIR_REQUESTED="$INSTALL_DIR"
+if ! mkdir -p "$INSTALL_DIR_REQUESTED" ||
+  ! INSTALL_DIR=$(cd "$INSTALL_DIR_REQUESTED" && pwd -P); then
+  echo "Error: could not create install directory: $INSTALL_DIR_REQUESTED" >&2
+  exit 1
+fi
+
+TARGET="${INSTALL_DIR}/osv-scanner${EXT}"
+if [[ -L "$TARGET" || (-e "$TARGET" && ! -f "$TARGET") ]]; then
+  echo "Error: install target is not a regular file: $TARGET" >&2
+  exit 1
+fi
+if [[ -n "${OSV_SCANNER_PREFIX:-}" && -f "$TARGET" ]]; then
+  TARGET_VERSION="$(get_version "$TARGET")"
+  if [[ "$TARGET_VERSION" == "$OSV_SCANNER_VERSION" ]]; then
+    echo "osv-scanner $OSV_SCANNER_VERSION is already installed at $TARGET."
+    exit 0
+  fi
+fi
+
+TEMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TEMP_DIR"' EXIT
+cd "$TEMP_DIR"
 
 verified=false
-for attempt in $(seq 1 "$INSTALL_ATTEMPTS"); do
+attempt=1
+while [ "$attempt" -le "$INSTALL_ATTEMPTS" ]; do
   rm -f "$ASSET" osv-scanner_SHA256SUMS
 
   echo "Downloading ${ASSET} (attempt ${attempt}/${INSTALL_ATTEMPTS})..."
   if ! download_file "$ASSET" "${BASE_URL}/${ASSET}"; then
     echo "Failed to download ${ASSET}"
+  elif ! download_file osv-scanner_SHA256SUMS "${BASE_URL}/osv-scanner_SHA256SUMS"; then
+    echo "Failed to download checksums"
+  elif verify_checksum; then
+    verified=true
+    break
+  elif [ "$?" -eq 2 ]; then
+    exit 1
   else
-    echo "Downloading checksums..."
-    if ! download_file osv-scanner_SHA256SUMS "${BASE_URL}/osv-scanner_SHA256SUMS"; then
-      echo "Failed to download checksums"
-    else
-      echo "Verifying checksum..."
-      if verify_checksum; then
-        verified=true
-        break
-      elif [ "$?" -eq 2 ]; then
-        exit 1
-      fi
-      echo "Checksum verification failed"
-    fi
+    echo "Checksum verification failed"
   fi
 
   if [ "$attempt" -lt "$INSTALL_ATTEMPTS" ]; then
     sleep $((2 ** attempt))
   fi
+  attempt=$((attempt + 1))
 done
 
 if [ "$verified" != "true" ]; then
-  echo "Error: failed to download and verify osv-scanner assets after ${INSTALL_ATTEMPTS} attempts" >&2
+  echo "Error: failed to download and verify OSV Scanner after ${INSTALL_ATTEMPTS} attempts" >&2
   exit 1
 fi
 
-mkdir -p "$INSTALL_DIR"
-TARGET="${INSTALL_DIR}/osv-scanner${EXT}"
-mv "$ASSET" "$TARGET"
-chmod +x "$TARGET"
+if ! chmod +x "$ASSET"; then
+  echo "Error: could not make downloaded asset executable: $ASSET" >&2
+  exit 1
+fi
+ASSET_VERSION="$(get_version "$TEMP_DIR/$ASSET")"
+if [[ "$ASSET_VERSION" != "$OSV_SCANNER_VERSION" ]]; then
+  echo "Error: downloaded asset version mismatch" >&2
+  echo "  Required: $OSV_SCANNER_VERSION" >&2
+  echo "  Found:    ${ASSET_VERSION:-no version output}" >&2
+  exit 1
+fi
 
-# Final verification. If another osv-scanner shadows $INSTALL_DIR on PATH,
-# surface it instead of silently pointing at the old one.
+TARGET_TEMP=$(mktemp "${INSTALL_DIR}/.osv-scanner.XXXXXX")
+if ! cp "$ASSET" "$TARGET_TEMP" || ! chmod +x "$TARGET_TEMP" || ! mv -f "$TARGET_TEMP" "$TARGET"; then
+  rm -f "$TARGET_TEMP"
+  echo "Error: could not install osv-scanner to $TARGET" >&2
+  exit 1
+fi
+
+# Drop any cached path to the previous binary before resolving it again
+hash -r
+
 if ! command -v osv-scanner > /dev/null 2>&1; then
   echo "osv-scanner installed to $TARGET"
   echo "Warning: $INSTALL_DIR is not on PATH. Add it to use osv-scanner directly."
   exit 0
 fi
 
-FINAL_VER="$(get_installed_version)"
-if [[ "$FINAL_VER" != "$OSV_SCANNER_VERSION" ]]; then
+FINAL_VERSION="$(get_version "$(command -v osv-scanner)")"
+if [[ "$FINAL_VERSION" != "$OSV_SCANNER_VERSION" ]]; then
   echo "Error: version mismatch after install" >&2
   echo "  Required: $OSV_SCANNER_VERSION" >&2
-  echo "  Found:    $FINAL_VER (at $(command -v osv-scanner))" >&2
+  echo "  Found:    $FINAL_VERSION (at $(command -v osv-scanner))" >&2
   echo "Another osv-scanner binary may be shadowing $TARGET on PATH." >&2
   exit 1
 fi

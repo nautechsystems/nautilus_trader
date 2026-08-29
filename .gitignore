@@ -96,6 +96,7 @@ env/
 !scripts/check-outdated.sh
 !scripts/fuzz-adapter.sh
 !scripts/check-no-build-packages.sh
+!scripts/install-security-tools.sh
 !scripts/ci/check-crates-io-trusted-publishing.sh
 !scripts/ci/check-workspace-test-coverage.sh
 !scripts/ci/check-github-action-shas.sh

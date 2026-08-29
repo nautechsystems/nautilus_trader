@@ -25,6 +25,7 @@
 /rust-toolchain.toml             @nautechsystems/core
 /deny.toml                       @nautechsystems/core
 /.cargo/deny-fuzz.toml           @nautechsystems/core
+/security-audit.toml             @nautechsystems/core
 
 # =============================================================================
 # Python Build & Dependencies - SUPPLY CHAIN RISK

@@ -550,7 +550,7 @@ update-uv:  #-- Install or upgrade uv to the version pinned in the shared tool c
 
 .PHONY: install-tools
 install-tools: check-binstall-installed update-uv  #-- Install required development tools at shared and local pinned versions
-	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
+	bash scripts/install-security-tools.sh \
 	&& cargo install cargo-codspeed --version $(CARGO_CODSPEED_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \
 	&& cargo install cargo-fuzz --version $(CARGO_FUZZ_VERSION) --locked \
@@ -558,38 +558,20 @@ install-tools: check-binstall-installed update-uv  #-- Install required developm
 	&& cargo install cargo-machete --version $(CARGO_MACHETE_VERSION) --locked \
 	&& cargo install cargo-nextest --version $(CARGO_NEXTEST_VERSION) --locked \
 	&& cargo install cargo-llvm-cov --version $(CARGO_LLVM_COV_VERSION) --locked \
-	&& cargo install cargo-audit --version $(CARGO_AUDIT_VERSION) --locked \
-	&& cargo install cargo-vet --version $(CARGO_VET_VERSION) --locked \
 	&& cargo install flamegraph --version $(FLAMEGRAPH_VERSION) --locked \
 	&& cargo install lychee --version $(LYCHEE_VERSION) --locked \
-	&& cargo binstall prek --version $(PREK_VERSION) --no-confirm --locked \
-	&& bash scripts/install-osv-scanner.sh
+	&& cargo binstall prek --version $(PREK_VERSION) --no-confirm --locked
 
 #== Security
 
-# Run an audit step: capture stdout+stderr, display on failure, or when $(3) is report.
-# Args: $(1) display name, $(2) command to run, $(3) optional output mode.
-define audit_step
-	printf "$(CYAN)Running $(1)...$(RESET) "; \
-	if _out=$$($(2) 2>&1); then \
-		printf "$(GREEN)ok$(RESET)\n"; \
-		if [ "$(3)" = "report" ] && [ -n "$$_out" ]; then printf "%s\n" "$$_out"; fi; \
-	else \
-		rc=$$?; printf "$(RED)failed$(RESET)\n%s\n" "$$_out"; exit $$rc; \
-	fi
-endef
+.PHONY: check-security-tools
+check-security-tools:  #-- Verify supply-chain tools match the shared catalog
+	VIRTUAL_ENV= uv run --project python --no-sync --no-build -- python scripts/security-audit.py check-tools
 
 .PHONY: security-audit
-security-audit: check-audit-installed check-deny-installed check-vet-installed check-osv-scanner-installed  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, pip-audit, osv-scanner)
+security-audit:  #-- Run comprehensive security audit (cargo-audit, cargo-deny, cargo-vet, pip-audit, osv-scanner)
 	$(info $(M) Running security audit...)
-	@$(call audit_step,cargo audit,cargo audit --color never)
-	@$(call audit_step,cargo audit lighter fuzz,cargo audit --color never --file crates/adapters/lighter/fuzz/pornin/Cargo.lock)
-	@$(call audit_step,cargo deny,cargo deny --all-features check advisories licenses sources bans)
-	@$(call audit_step,cargo deny lighter fuzz,cargo deny --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml --config .cargo/deny-fuzz.toml --locked --all-features check advisories licenses sources bans)
-	@$(call audit_step,cargo vet,cargo vet --locked)
-	@$(call audit_step,cargo vet lighter fuzz,cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml --store-path .supply-chain)
-	@$(call audit_step,pip-audit,uv export --project python --all-groups --all-extras --frozen | sed '/^-e /d' | uv run --no-project --with pip-audit -- pip-audit --disable-pip --require-hashes -r /dev/stdin)
-	@$(call audit_step,osv-scanner,osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock --lockfile=python/uv.lock,report)
+	VIRTUAL_ENV= uv run --project python --no-sync --no-build -- python scripts/security-audit.py run
 
 .PHONY: cargo-deny
 cargo-deny: check-deny-installed  #-- Run cargo-deny checks (advisories, sources, bans, licenses)
@@ -684,13 +666,6 @@ cargo-check:  #-- Check Rust code without building
 	cargo check --workspace --all-features
 
 # Security tool checks
-.PHONY: check-audit-installed
-check-audit-installed:  #-- Verify cargo-audit is installed
-	@if ! cargo audit --version >/dev/null 2>&1; then \
-		echo "cargo-audit is not installed. You can install it using 'cargo install cargo-audit'"; \
-		exit 1; \
-	fi
-
 .PHONY: check-deny-installed
 check-deny-installed:  #-- Verify the pinned cargo-deny version is installed
 	@if ! cargo deny --version >/dev/null 2>&1; then \
@@ -723,18 +698,6 @@ check-vet-installed:  #-- Verify cargo-vet is installed
 	@if ! cargo vet --version >/dev/null 2>&1; then \
 		echo "cargo-vet is not installed. You can install it using 'cargo install cargo-vet'"; \
 		exit 1; \
-	fi
-
-.PHONY: check-osv-scanner-installed
-check-osv-scanner-installed:  #-- Verify osv-scanner is installed and version matches the shared tool catalog
-	@if ! osv-scanner --version >/dev/null 2>&1; then \
-		echo "osv-scanner is not installed. See https://google.github.io/osv-scanner/installation/"; \
-		exit 1; \
-	fi
-	@EXPECTED=$$(bash scripts/tool-version.sh osv-scanner); \
-	INSTALLED=$$(osv-scanner --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
-	if [ "$$INSTALLED" != "$$EXPECTED" ]; then \
-		printf "$(YELLOW)osv-scanner version mismatch: installed %s, expected %s (from the shared tool catalog)$(RESET)\n" "$$INSTALLED" "$$EXPECTED"; \
 	fi
 
 # Testing tool checks

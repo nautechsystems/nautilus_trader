@@ -90,6 +90,18 @@ sha256 = "70967bb1f127845e195f18319fa814c95b64378c851f79f4179ca67f58aa3360"
 executable = true
 
 [[file]]
+artifact = "osv-scanner-install"
+path = "scripts/install-osv-scanner.sh"
+sha256 = "1045232d9fdfabc18c6170eb364ae3f0951b4c997353e778ada43f5ea8a5ac8a"
+executable = true
+
+[[file]]
+artifact = "security-tools-install"
+path = "scripts/install-security-tools.sh"
+sha256 = "a70e76e456a94c9ec06332f752cf6ebfcd06d9beac5f4dc2062794015bf22d43"
+executable = true
+
+[[file]]
 artifact = "pre-commit-manager"
 path = "scripts/manage-nautilus-engineering-pre-commit.py"
 sha256 = "0d80bffae5b7d6a2f86d558f9f92b445025bc04fd9374f472cbfbcfd6c9e8df9"
@@ -100,6 +112,12 @@ artifact = "rust-toolchain-version"
 path = "scripts/rust-toolchain.sh"
 sha256 = "059461aaf186a5771b2e7e4b9ff3031189535ccb52243dd643b6e2a1a4d6a3bd"
 executable = true
+
+[[file]]
+artifact = "security-audit"
+path = "scripts/security-audit.py"
+sha256 = "0d9f68b1f7c34c92ee2a9cf19fd28c0afd4af026cb7c6c0e9352e7f0e01504f4"
+executable = false
 
 [[file]]
 artifact = "tool-version"

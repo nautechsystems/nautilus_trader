@@ -31,7 +31,7 @@ require_completed_audits() {
       '
   )"
 
-  # Keep in sync with the six audit jobs and their "Run ..." steps in security-audit.yml.
+  # Keep in sync with the two audit jobs and their "Run ..." steps in security-audit.yml.
   while IFS='|' read -r job step; do
     conclusion="$(
       printf '%s\n' "$audit_steps" |
@@ -49,11 +49,7 @@ require_completed_audits() {
     esac
   done << 'AUDIT_STEPS'
 zizmor|Run zizmor
-cargo-audit|Run cargo-audit
-cargo-deny|Run cargo-deny (advisories, licenses, sources, bans)
-cargo-vet|Run cargo-vet
-pip-audit|Run pip-audit
-osv-scanner|Run osv-scanner
+supply-chain|Run supply-chain audits
 AUDIT_STEPS
 
   if [[ "$audit_failed" != "true" ]]; then

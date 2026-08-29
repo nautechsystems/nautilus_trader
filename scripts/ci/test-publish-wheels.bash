@@ -215,11 +215,7 @@ MOCK
   }
 
   local audit_steps_failure='zizmor|Run zizmor|failure
-cargo-audit|Run cargo-audit|success
-cargo-deny|Run cargo-deny (advisories, licenses, sources, bans)|success
-cargo-vet|Run cargo-vet|success
-pip-audit|Run pip-audit|success
-osv-scanner|Run osv-scanner|success'
+supply-chain|Run supply-chain audits|success'
   local audit_steps_success="${audit_steps_failure/failure/success}"
 
   run_audit_check '123|completed|success|https://example.invalid/run|2026-08-03T00:00:00Z'

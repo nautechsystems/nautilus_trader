@@ -28,7 +28,8 @@ set -euo pipefail
 #                               python/uv.lock
 #   - Manifests                 Cargo.toml, crates/(...)?Cargo.toml,
 #                               python/pyproject.toml
-#   - Audit policy              deny.toml, .cargo/deny-fuzz.toml, osv-scanner.toml,
+#   - Audit policy              security-audit.toml, deny.toml,
+#                               .cargo/deny-fuzz.toml, osv-scanner.toml,
 #                               .cargo/audit.toml, .supply-chain/*
 #   - Toolchain config          .cargo/config.toml, rust-toolchain.toml,
 #                               .nautilus-engineering/tools.toml, tools.toml
@@ -90,9 +91,11 @@ pattern+='|crates/(.*/)?Cargo\.toml'
 pattern+='|crates/.*/fuzz/Cargo\.lock'
 pattern+='|\.pre-commit-config\.yaml'
 pattern+='|python/(uv\.lock|pyproject\.toml)'
-pattern+='|deny\.toml|\.cargo/deny-fuzz\.toml|osv-scanner\.toml|\.supply-chain/.*'
+pattern+='|security-audit\.toml|deny\.toml|\.cargo/deny-fuzz\.toml|osv-scanner\.toml'
+pattern+='|\.supply-chain/.*'
 pattern+='|(\.nautilus-engineering/)?tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
-pattern+='|scripts/(cargo-tool-version|rust-toolchain|tool-version|uv-version)\.sh'
+pattern+='|scripts/(cargo-tool-version|install-osv-scanner|install-security-tools)\.sh'
+pattern+='|scripts/(rust-toolchain|tool-version|uv-version)\.sh|scripts/security-audit\.py'
 pattern+='|scripts/purge-orphan-dev-wheels\.sh'
 pattern+='|scripts/ci/('
 pattern+='check-security-audit-result|check-security-gate-result|configure-r2-aws'
