@@ -931,7 +931,6 @@ impl GreeksCalculator {
     /// # Errors
     ///
     /// Returns an error if any underlying greeks calculation fails.
-    ///
     #[expect(clippy::too_many_arguments)]
     pub fn portfolio_greeks(
         &self,

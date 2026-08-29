@@ -779,7 +779,6 @@ pub fn parse_trade_bin(
 /// Returns an error if:
 /// - Order is missing `ord_status` and status cannot be inferred from quantity fields.
 /// - Order is missing `order_qty` and cannot be reconstructed from `cum_qty` + `leaves_qty`.
-///
 pub fn parse_order_status_report(
     order: &BitmexOrder,
     instrument: &InstrumentAny,

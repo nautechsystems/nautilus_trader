@@ -148,7 +148,6 @@ pub fn parse_bar(
 /// # Errors
 ///
 /// Returns an error if the ticker is not in the format "BASE-QUOTE".
-///
 pub fn validate_ticker_format(ticker: &str) -> anyhow::Result<()> {
     let parts: Vec<&str> = ticker.split('-').collect();
     if parts.len() != 2 {
@@ -166,7 +165,6 @@ pub fn validate_ticker_format(ticker: &str) -> anyhow::Result<()> {
 /// # Errors
 ///
 /// Returns an error if the ticker format is invalid.
-///
 pub fn parse_ticker_currencies(ticker: &str) -> anyhow::Result<(&str, &str)> {
     validate_ticker_format(ticker)?;
     let parts: Vec<&str> = ticker.split('-').collect();

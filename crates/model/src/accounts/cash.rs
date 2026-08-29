@@ -158,7 +158,6 @@ impl CashAccount {
     ///
     /// Sums all per-instrument locked amounts for the currency and updates the balance.
     /// If the total locked exceeds the total balance, clamps to total (free = 0).
-    ///
     pub fn recalculate_balance(&mut self, currency: Currency) {
         base::recalculate_balance(&mut self.base.balances, &self.balances_locked, currency);
     }

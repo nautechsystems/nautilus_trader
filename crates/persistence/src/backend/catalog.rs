@@ -47,15 +47,16 @@
 //!
 //! ```rust,no_run
 //! use std::path::Path;
+//!
 //! use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 //!
 //! // Create a new catalog
 //! let catalog = ParquetDataCatalog::new(
 //!     Path::new("/path/to/data"),
-//!     None,        // storage_options
-//!     Some(5000),  // batch_size
-//!     None,        // compression (defaults to SNAPPY)
-//!     None,        // max_row_group_size (defaults to 5000)
+//!     None,       // storage_options
+//!     Some(5000), // batch_size
+//!     None,       // compression (defaults to SNAPPY)
+//!     None,       // max_row_group_size (defaults to 5000)
 //! );
 //!
 //! // Write data to the catalog
@@ -202,14 +203,15 @@ impl ParquetDataCatalog {
     ///
     /// ```rust,no_run
     /// use std::path::Path;
+    ///
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let catalog = ParquetDataCatalog::new(
     ///     Path::new("/tmp/nautilus_data"),
-    ///     None,        // no storage options
-    ///     Some(1000),  // smaller batch size
-    ///     None,        // default compression
-    ///     None,        // default row group size
+    ///     None,       // no storage options
+    ///     Some(1000), // smaller batch size
+    ///     None,       // default compression
+    ///     None,       // default row group size
     /// );
     /// ```
     #[must_use]
@@ -269,39 +271,35 @@ impl ParquetDataCatalog {
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// // Local filesystem
-    /// let local_catalog = ParquetDataCatalog::from_uri(
-    ///     "/tmp/nautilus_data",
-    ///     None, None, None, None
-    /// )?;
+    /// let local_catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // S3 bucket
-    /// let s3_catalog = ParquetDataCatalog::from_uri(
-    ///     "s3://my-bucket/nautilus-data",
-    ///     None, None, None, None
-    /// )?;
+    /// let s3_catalog =
+    ///     ParquetDataCatalog::from_uri("s3://my-bucket/nautilus-data", None, None, None, None)?;
     ///
     /// // Google Cloud Storage
-    /// let gcs_catalog = ParquetDataCatalog::from_uri(
-    ///     "gs://my-bucket/nautilus-data",
-    ///     None, None, None, None
-    /// )?;
+    /// let gcs_catalog =
+    ///     ParquetDataCatalog::from_uri("gs://my-bucket/nautilus-data", None, None, None, None)?;
     ///
     /// // Azure Blob Storage
-    /// let azure_catalog = ParquetDataCatalog::from_uri(
-    ///     "az://container/nautilus-data",
-    ///     None, None, None, None
-    /// )?;
+    /// let azure_catalog =
+    ///     ParquetDataCatalog::from_uri("az://container/nautilus-data", None, None, None, None)?;
     ///
     /// // S3 with custom endpoint and credentials
     /// let mut storage_options = AHashMap::new();
-    /// storage_options.insert("endpoint_url".to_string(), "https://my-s3-endpoint.com".to_string());
+    /// storage_options.insert(
+    ///     "endpoint_url".to_string(),
+    ///     "https://my-s3-endpoint.com".to_string(),
+    /// );
     /// storage_options.insert("access_key_id".to_string(), "my-key".to_string());
     /// storage_options.insert("secret_access_key".to_string(), "my-secret".to_string());
     ///
     /// let s3_catalog = ParquetDataCatalog::from_uri(
     ///     "s3://my-bucket/nautilus-data",
     ///     Some(storage_options),
-    ///     None, None, None,
+    ///     None,
+    ///     None,
+    ///     None,
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -1245,8 +1243,8 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
@@ -1255,7 +1253,7 @@ impl ParquetDataCatalog {
     ///     "quotes",
     ///     Some("BTC/USD.SIM"),
     ///     UnixNanos::from(1609459200000000000),
-    ///     UnixNanos::from(1609545600000000000)
+    ///     UnixNanos::from(1609545600000000000),
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -1618,9 +1616,9 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
+    /// use nautilus_core::UnixNanos;
     /// use nautilus_model::data::{Data, QuoteTick};
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
-    /// use nautilus_core::UnixNanos;
     ///
     /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
@@ -1635,7 +1633,7 @@ impl ParquetDataCatalog {
     ///     Some(UnixNanos::from(1609545600000000000)),
     ///     None,
     ///     None,
-    ///     true
+    ///     true,
     /// )?;
     ///
     /// // Query with custom WHERE clause and file-based registration
@@ -1645,7 +1643,7 @@ impl ParquetDataCatalog {
     ///     None,
     ///     Some("bid_price > 1.2000"),
     ///     None,
-    ///     false  // Use file-based registration for precise control
+    ///     false, // Use file-based registration for precise control
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -1775,9 +1773,9 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_model::data::{QuoteTick, TradeTick, Bar};
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_model::data::{Bar, QuoteTick, TradeTick};
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
@@ -1788,7 +1786,7 @@ impl ParquetDataCatalog {
     ///     None,
     ///     None,
     ///     None,
-    ///     true
+    ///     true,
     /// )?;
     ///
     /// // Query trades within a specific time range
@@ -1798,7 +1796,7 @@ impl ParquetDataCatalog {
     ///     Some(UnixNanos::from(1609545600000000000)),
     ///     None,
     ///     None,
-    ///     true
+    ///     true,
     /// )?;
     ///
     /// // Query bars with volume filter (using instrument_id - partial match for bar_type)
@@ -1808,7 +1806,7 @@ impl ParquetDataCatalog {
     ///     None,
     ///     Some("volume > 1000000"),
     ///     None,
-    ///     true
+    ///     true,
     /// )?;
     ///
     /// // Query bars with specific bar_type
@@ -1818,7 +1816,7 @@ impl ParquetDataCatalog {
     ///     None,
     ///     None,
     ///     None,
-    ///     true
+    ///     true,
     /// )?;
     ///
     /// // Query multiple instruments with price filter
@@ -1828,7 +1826,7 @@ impl ParquetDataCatalog {
     ///     None,
     ///     Some("bid_price > 1.2000 AND ask_price < 1.3000"),
     ///     None,
-    ///     true
+    ///     true,
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -2074,8 +2072,8 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
@@ -2087,7 +2085,7 @@ impl ParquetDataCatalog {
     ///     "trades",
     ///     Some(vec!["BTC/USD.SIM".to_string(), "ETH/USD.SIM".to_string()]),
     ///     Some(UnixNanos::from(1609459200000000000)),
-    ///     Some(UnixNanos::from(1609545600000000000))
+    ///     Some(UnixNanos::from(1609545600000000000)),
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -2402,8 +2400,8 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     /// let all_files = catalog.get_file_list_from_data_cls("quotes")?;
@@ -2413,7 +2411,7 @@ impl ParquetDataCatalog {
     ///     all_files,
     ///     Some(vec!["EUR/USD.SIM".to_string()]),
     ///     Some(UnixNanos::from(1609459200000000000)),
-    ///     Some(UnixNanos::from(1609545600000000000))
+    ///     Some(UnixNanos::from(1609545600000000000)),
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -2522,10 +2520,10 @@ impl ParquetDataCatalog {
     ///
     /// // Find missing intervals for quote data
     /// let missing = catalog.get_missing_intervals_for_request(
-    ///     1609459200000000000,  // start
-    ///     1609545600000000000,  // end
+    ///     1609459200000000000, // start
+    ///     1609545600000000000, // end
     ///     "quotes",
-    ///     Some("BTCUSD")
+    ///     Some("BTCUSD"),
     /// )?;
     ///
     /// for (start, end) in missing {
@@ -3277,7 +3275,6 @@ impl ParquetDataCatalog {
     /// }
     /// # Ok::<(), anyhow::Error>(())
     /// ```
-    ///
     pub fn list_data_types(&self) -> anyhow::Result<Vec<String>> {
         self.list_directory_stems("data")
     }
@@ -3714,13 +3711,7 @@ impl ParquetDataCatalog {
     /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Convert backtest stream data to parquet
-    /// catalog.convert_stream_to_data(
-    ///     "instance-123",
-    ///     "quotes",
-    ///     Some("backtest"),
-    ///     None,
-    ///     false
-    /// )?;
+    /// catalog.convert_stream_to_data("instance-123", "quotes", Some("backtest"), None, false)?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     /// Lists feather files for a specific data class in a subdirectory.
@@ -4264,8 +4255,8 @@ impl ParquetDataCatalog {
 /// # Examples
 ///
 /// ```rust
-/// use nautilus_persistence::backend::catalog::CatalogPathPrefix;
 /// use nautilus_model::data::QuoteTick;
+/// use nautilus_persistence::backend::catalog::CatalogPathPrefix;
 ///
 /// assert_eq!(QuoteTick::path_prefix(), "quotes");
 /// ```
@@ -4812,7 +4803,12 @@ fn query_intersects_filename(filename: &str, start: Option<u64>, end: Option<u64
 ///
 /// ```rust
 /// # use nautilus_persistence::backend::catalog::parse_filename_timestamps;
-/// assert!(parse_filename_timestamps("2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet").is_some());
+/// assert!(
+///     parse_filename_timestamps(
+///         "2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet"
+///     )
+///     .is_some()
+/// );
 /// assert_eq!(parse_filename_timestamps("invalid.parquet"), None);
 /// ```
 #[must_use]

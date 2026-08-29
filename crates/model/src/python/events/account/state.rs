@@ -155,7 +155,6 @@ impl AccountState {
     /// # Errors
     ///
     /// Returns a `PyErr` if any required field is missing or type conversion fails.
-    ///
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
         let account_id = get_required_string(values, "account_id")?;

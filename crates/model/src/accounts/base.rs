@@ -281,7 +281,6 @@ impl BaseAccount {
     /// # Errors
     ///
     /// Returns an error if the locked amount cannot be represented in the target currency.
-    ///
     pub fn base_calculate_balance_locked(
         &mut self,
         instrument: &InstrumentAny,
@@ -328,7 +327,6 @@ impl BaseAccount {
     /// # Errors
     ///
     /// Returns an error if a PnL amount cannot be represented in the target currency.
-    ///
     pub fn base_calculate_pnls(
         &self,
         instrument: &InstrumentAny,

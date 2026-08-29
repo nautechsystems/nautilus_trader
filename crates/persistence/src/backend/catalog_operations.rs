@@ -142,8 +142,8 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
@@ -155,7 +155,7 @@ impl ParquetDataCatalog {
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
     ///     Some(true),
-    ///     None
+    ///     None,
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -209,20 +209,13 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Consolidate all quote files for a specific instrument
-    /// catalog.consolidate_data(
-    ///     "quotes",
-    ///     Some("BTCUSD"),
-    ///     None,
-    ///     None,
-    ///     None,
-    ///     None
-    /// )?;
+    /// catalog.consolidate_data("quotes", Some("BTCUSD"), None, None, None, None)?;
     ///
     /// // Consolidate trade files within a time range
     /// catalog.consolidate_data(
@@ -231,7 +224,7 @@ impl ParquetDataCatalog {
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
     ///     Some(true),
-    ///     None
+    ///     None,
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -396,8 +389,8 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
@@ -406,7 +399,7 @@ impl ParquetDataCatalog {
     ///     Some(86400000000000), // 1 day in nanoseconds
     ///     None,
     ///     None,
-    ///     Some(true)
+    ///     Some(true),
     /// )?;
     ///
     /// // Consolidate only files within a specific time range by 1-hour periods
@@ -414,7 +407,7 @@ impl ParquetDataCatalog {
     ///     Some(3600000000000), // 1 hour in nanoseconds
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
-    ///     Some(false)
+    ///     Some(false),
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -635,8 +628,8 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
@@ -647,7 +640,7 @@ impl ParquetDataCatalog {
     ///     Some(86400000000000), // 1 day in nanoseconds
     ///     None,
     ///     None,
-    ///     Some(true)
+    ///     Some(true),
     /// )?;
     ///
     /// // Consolidate specific instrument by 1-hour periods
@@ -657,7 +650,7 @@ impl ParquetDataCatalog {
     ///     Some(3600000000000), // 1 hour in nanoseconds
     ///     Some(UnixNanos::from(1609459200000000000)),
     ///     Some(UnixNanos::from(1609545600000000000)),
-    ///     Some(false)
+    ///     Some(false),
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -1786,25 +1779,20 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Delete all quote data for a specific instrument
-    /// catalog.delete_data_range(
-    ///     "quotes",
-    ///     Some("BTCUSD"),
-    ///     None,
-    ///     None
-    /// )?;
+    /// catalog.delete_data_range("quotes", Some("BTCUSD"), None, None)?;
     ///
     /// // Delete trade data within a specific time range
     /// catalog.delete_data_range(
     ///     "trades",
     ///     None,
     ///     Some(UnixNanos::from(1609459200000000000)),
-    ///     Some(UnixNanos::from(1609545600000000000))
+    ///     Some(UnixNanos::from(1609545600000000000)),
     /// )?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -1872,28 +1860,22 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
+    /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Delete all data before a specific date across entire catalog
-    /// catalog.delete_catalog_range(
-    ///     None,
-    ///     Some(UnixNanos::from(1609459200000000000))
-    /// )?;
+    /// catalog.delete_catalog_range(None, Some(UnixNanos::from(1609459200000000000)))?;
     ///
     /// // Delete all data within a specific range across entire catalog
     /// catalog.delete_catalog_range(
     ///     Some(UnixNanos::from(1609459200000000000)),
-    ///     Some(UnixNanos::from(1609545600000000000))
+    ///     Some(UnixNanos::from(1609545600000000000)),
     /// )?;
     ///
     /// // Delete all data after a specific date across entire catalog
-    /// catalog.delete_catalog_range(
-    ///     Some(UnixNanos::from(1609459200000000000)),
-    ///     None
-    /// )?;
+    /// catalog.delete_catalog_range(Some(UnixNanos::from(1609459200000000000)), None)?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn delete_catalog_range(

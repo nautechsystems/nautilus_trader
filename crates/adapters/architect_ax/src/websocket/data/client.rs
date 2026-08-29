@@ -368,6 +368,8 @@ impl AxMdWebSocketClient {
     ///
     /// # Errors
     ///
+    /// Returns an error if the connection cannot be established or the initial handler command
+    /// cannot be sent.
     pub async fn connect(&mut self) -> AxWsResult<()> {
         self.signal.store(false, Ordering::Release);
         let cancellation_token = CancellationToken::new();

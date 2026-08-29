@@ -702,7 +702,6 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if assembling events or SQL operations fail.
-    ///
     pub async fn load_order(
         pool: &PgPool,
         client_order_id: &ClientOrderId,
@@ -728,7 +727,6 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if loading events or SQL operations fail.
-    ///
     pub async fn load_orders(pool: &PgPool) -> anyhow::Result<Vec<OrderAny>> {
         let mut orders: Vec<OrderAny> = Vec::new();
         let client_order_ids: Vec<ClientOrderId> = sqlx::query(
@@ -1086,7 +1084,6 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if assembling events or SQL operations fail.
-    ///
     pub async fn load_account(
         pool: &PgPool,
         account_id: &AccountId,
@@ -1111,7 +1108,6 @@ impl DatabaseQueries {
     /// # Errors
     ///
     /// Returns an error if loading events or SQL operations fail.
-    ///
     pub async fn load_accounts(pool: &PgPool) -> anyhow::Result<Vec<AccountAny>> {
         let mut accounts: Vec<AccountAny> = Vec::new();
         let account_ids: Vec<AccountId> = sqlx::query(

@@ -243,11 +243,9 @@ fn is_known_api_error_code(code: &str) -> bool {
 /// Retryable codes are transient server-side errors. Permanent errors
 /// (invalid input, insufficient funds, etc.) should not be retried.
 fn is_retryable_error_code(code: i64) -> bool {
-    matches!(
-        code,
-        -32099 // Unexpected internal server error
-        | -32700 // JSON parse error (may be transient corruption)
-    )
+    // -32099 is an unexpected internal server error,
+    // and -32700 is a potentially transient JSON parse error.
+    matches!(code, -32099 | -32700)
 }
 
 #[cfg(test)]

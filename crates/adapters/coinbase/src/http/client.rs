@@ -1568,7 +1568,6 @@ impl CoinbaseHttpClient {
 }
 
 /// Maps a Nautilus [`OrderSide`] to Coinbase's wire enum.
-///
 pub fn map_order_side(side: OrderSide) -> CoinbaseOrderSide {
     match side {
         OrderSide::Buy => CoinbaseOrderSide::Buy,

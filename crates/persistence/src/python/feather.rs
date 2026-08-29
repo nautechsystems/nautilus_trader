@@ -255,7 +255,6 @@ impl PyStreamingFeatherWriter {
     /// # Parameters
     ///
     /// - `data`: The data object to write (must be a Nautilus data type from pyo3).
-    ///
     #[expect(
         clippy::needless_pass_by_value,
         clippy::too_many_lines,

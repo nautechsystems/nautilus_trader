@@ -105,7 +105,6 @@ pub fn salvage_elements<T: DeserializeOwned>(values: Vec<Value>) -> Vec<T> {
 }
 
 /// Maps a Nautilus order side to the Derive direction string.
-///
 pub fn order_side_to_derive(side: OrderSide) -> DeriveOrderSide {
     match side {
         OrderSide::Buy => DeriveOrderSide::Buy,

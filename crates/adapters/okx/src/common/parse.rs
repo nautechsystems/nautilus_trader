@@ -2741,7 +2741,6 @@ pub fn parse_event_contract_instrument(
 }
 
 /// Parses an OKX account into a Nautilus account state.
-///
 fn parse_balance_field(value_str: &str, field_name: &str, ccy_str: &str) -> Option<Decimal> {
     match Decimal::from_str(value_str) {
         Ok(decimal) => Some(decimal),

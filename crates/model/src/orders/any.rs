@@ -77,7 +77,6 @@ impl OrderAny {
     /// - The initialization event violates an order invariant
     ///   (e.g. missing required price/trigger fields, invalid quantity, invalid TIF/expire combo).
     /// - Any subsequent event has an invalid state transition when applied to the order.
-    ///
     pub fn from_events(events: Vec<OrderEventAny>) -> Result<Self, OrderReplayError> {
         let Some(init_event) = events.first() else {
             return Err(OrderReplayError::EmptyInput);

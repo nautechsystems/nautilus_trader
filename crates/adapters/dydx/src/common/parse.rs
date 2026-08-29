@@ -96,7 +96,6 @@ pub fn time_in_force_to_proto_with_post_only(
 ///
 /// This function converts a dYdX ticker into a Nautilus `InstrumentId`
 /// by appending "-PERP" to the symbol and using the dYdX venue.
-///
 #[must_use]
 pub fn parse_instrument_id<S: AsRef<str>>(ticker: S) -> InstrumentId {
     let mut base = ticker.as_ref().trim().to_uppercase();

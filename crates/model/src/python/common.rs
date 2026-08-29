@@ -50,7 +50,6 @@ impl EnumIterator {
 
 impl EnumIterator {
     /// Creates a new Python iterator over the variants of an enum.
-    ///
     #[must_use]
     pub fn new<'py, E>(py: Python<'py>) -> Self
     where

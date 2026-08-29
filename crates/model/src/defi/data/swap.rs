@@ -166,7 +166,6 @@ impl PoolSwap {
     /// # Errors
     ///
     /// Returns an error if the trade info computation or price calculations fail.
-    ///
     pub fn calculate_trade_info(
         &mut self,
         token0: &Token,

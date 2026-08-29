@@ -178,7 +178,6 @@ pub fn process_mass_status_for_reconciliation(
 /// # Returns
 ///
 /// Returns `FillAdjustmentResult` indicating what adjustments (if any) are needed.
-///
 #[must_use]
 pub(super) fn adjust_fills_for_partial_window(
     fills: &[FillSnapshot],

@@ -846,7 +846,6 @@ impl HyperliquidRawHttpClient {
     }
 
     /// Submit a single order to the Hyperliquid exchange.
-    ///
     pub async fn rest_limiter_snapshot(&self) -> RateLimitSnapshot {
         self.rest_limiter.snapshot().await
     }

@@ -3100,7 +3100,6 @@ impl Debug for DataActorCore {
 
 impl DataActorCore {
     /// Adds a subscription handler for the `topic`.
-    ///
     //// Logs a warning if the actor is already subscribed to the topic.
     pub(crate) fn add_subscription_any(
         &mut self,

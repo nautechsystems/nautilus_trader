@@ -135,7 +135,6 @@ use crate::{
 ///
 /// This is an internal class intended to be used by the message bus to organize
 /// topics and their subscribers.
-///
 #[derive(Clone, Debug)]
 pub struct Subscription {
     /// The shareable message handler for the subscription.

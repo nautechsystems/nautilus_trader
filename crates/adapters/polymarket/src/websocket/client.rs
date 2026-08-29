@@ -237,9 +237,6 @@ impl PolymarketWebSocketClient {
     }
 
     /// Establishes the WebSocket connection and spawns the message handler.
-    ///
-    /// # Errors
-    ///
     pub async fn connect(&mut self) -> anyhow::Result<()> {
         let mode = ConnectionMode::from_atomic(&self.connection_mode);
         if mode.is_active() || mode.is_reconnect() {

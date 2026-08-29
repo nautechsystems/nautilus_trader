@@ -288,7 +288,6 @@ impl OrderEmulator {
     /// # Errors
     ///
     /// Returns an error if processing fails.
-    ///
     pub fn on_start(&mut self) -> anyhow::Result<()> {
         let emulated_orders: Vec<OrderAny> = self
             .cache

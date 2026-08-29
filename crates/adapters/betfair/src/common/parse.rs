@@ -71,7 +71,6 @@ pub fn make_instrument_id(market_id: &str, selection_id: u64, handicap: Decimal)
 /// # Errors
 ///
 /// Returns an error if the string is not a valid RFC 3339 datetime.
-///
 pub fn parse_betfair_timestamp(s: &str) -> anyhow::Result<UnixNanos> {
     let dt = s
         .parse::<Timestamp>()

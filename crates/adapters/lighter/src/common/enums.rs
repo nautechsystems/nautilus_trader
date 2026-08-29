@@ -800,7 +800,6 @@ impl Display for LighterAccountTier {
 ///
 /// Lighter's tx body encodes the side as `is_ask`: `false` for a bid (buy)
 /// and `true` for an ask (sell).
-///
 pub fn is_ask_from_order_side(side: OrderSide) -> bool {
     match side {
         OrderSide::Buy => false,
