@@ -46,9 +46,9 @@ use super::{
     },
     error::BetfairStreamError,
     messages::{
-        Authentication, CricketSubscription, MCM, MarketDataFilter, MarketSubscription, OCM,
-        OrderFilter, OrderSubscription, RaceSubscription, Status, StreamMarketFilter,
-        StreamMessage, stream_decode,
+        Authentication, CricketSubscription, MarketDataFilter, MarketSubscription, OrderFilter,
+        OrderSubscription, RaceSubscription, Status, StreamMarketFilter, StreamMessage,
+        stream_decode,
     },
 };
 use crate::common::{
@@ -209,7 +209,7 @@ impl ProtocolLifecycle {
         change_type: Option<ChangeType>,
         segment_type: Option<SegmentType>,
     ) {
-        let complete = segment_type.is_none() || segment_type == Some(SegmentType::SegEnd);
+        let complete = change_complete(segment_type);
         let initial = change_type == Some(ChangeType::SubImage)
             || (change_type == Some(ChangeType::ResubDelta)
                 && !requires_image.load(Ordering::Acquire));
@@ -493,8 +493,10 @@ impl BetfairStreamClient {
                         mcm.ct,
                         mcm.segment_type,
                     );
-                    update_market_stream_state(
-                        mcm,
+                    update_stream_state(
+                        &mcm.clk,
+                        &mcm.initial_clk,
+                        mcm.heartbeat_ms,
                         &market_clk_tx_h,
                         &market_initial_clk_tx_h,
                         timeout_override,
@@ -583,8 +585,10 @@ impl BetfairStreamClient {
                         ocm.ct,
                         ocm.segment_type,
                     );
-                    update_order_stream_state(
-                        ocm,
+                    update_stream_state(
+                        &ocm.clk,
+                        &ocm.initial_clk,
+                        ocm.heartbeat_ms,
                         &order_clk_tx_h,
                         &order_initial_clk_tx_h,
                         timeout_override,
@@ -1006,20 +1010,10 @@ impl BetfairStreamClient {
     /// Pushes refreshed auth bytes so the next reconnection or subscription uses
     /// the current session token instead of the one from initial connect.
     pub fn update_auth(&self, app_key: &str, session_token: String) {
-        let auth = Authentication::with_id(app_key.to_string(), session_token, AUTH_REQUEST_ID);
-        if let Ok(bytes) = serde_json::to_vec(&auth) {
-            let bytes = Bytes::from(bytes);
-            self.auth_tx.send_if_modified(|current| {
-                if current.bytes == bytes {
-                    return false;
-                }
-                *current = StreamAuth {
-                    generation: current.generation.wrapping_add(1),
-                    bytes,
-                };
-                true
-            });
-        }
+        update_auth_state(
+            &self.auth_tx,
+            &Authentication::with_id(app_key.to_string(), session_token, AUTH_REQUEST_ID),
+        );
     }
 
     /// Requests replacement of the active stream transport.
@@ -1315,20 +1309,10 @@ impl BetfairRaceStreamClient {
     /// Pushes refreshed auth bytes so the next reconnection uses
     /// the current session token instead of the one from initial connect.
     pub fn update_auth(&self, app_key: &str, session_token: String) {
-        let auth = Authentication::new(app_key.to_string(), session_token);
-        if let Ok(bytes) = serde_json::to_vec(&auth) {
-            let bytes = Bytes::from(bytes);
-            self.auth_tx.send_if_modified(|current| {
-                if current.bytes == bytes {
-                    return false;
-                }
-                *current = StreamAuth {
-                    generation: current.generation.wrapping_add(1),
-                    bytes,
-                };
-                true
-            });
-        }
+        update_auth_state(
+            &self.auth_tx,
+            &Authentication::new(app_key.to_string(), session_token),
+        );
     }
 
     /// Requests replacement of the active stream transport.
@@ -1354,6 +1338,23 @@ impl BetfairRaceStreamClient {
         self.closed.store(true, Ordering::SeqCst);
         self.socket.close().await;
     }
+}
+
+fn update_auth_state(auth_tx: &watch::Sender<StreamAuth>, auth: &Authentication) {
+    let Ok(bytes) = serde_json::to_vec(auth) else {
+        return;
+    };
+    let bytes = Bytes::from(bytes);
+    auth_tx.send_if_modified(|current| {
+        if current.bytes == bytes {
+            return false;
+        }
+        *current = StreamAuth {
+            generation: current.generation.wrapping_add(1),
+            bytes,
+        };
+        true
+    });
 }
 
 enum StreamHandler {
@@ -1384,7 +1385,7 @@ impl StreamHandler {
 }
 
 const fn change_complete(segment_type: Option<SegmentType>) -> bool {
-    segment_type.is_none() || matches!(segment_type, Some(SegmentType::SegEnd))
+    matches!(segment_type, None | Some(SegmentType::SegEnd))
 }
 
 fn reissue_market_subscription(
@@ -1487,38 +1488,23 @@ fn reissue_order_subscription(
     }
 }
 
-fn update_market_stream_state(
-    message: &MCM,
+fn update_stream_state(
+    clk: &Option<String>,
+    initial_clk: &Option<String>,
+    heartbeat_ms: Option<u64>,
     clk_tx: &watch::Sender<Option<String>>,
     initial_clk_tx: &watch::Sender<Option<String>>,
     timeout_override: bool,
     dead_peer_timeout_ms: &AtomicU64,
 ) {
-    if message.clk.is_some() {
-        let _ = clk_tx.send(message.clk.clone());
+    if clk.is_some() {
+        let _ = clk_tx.send(clk.clone());
     }
 
-    if message.initial_clk.is_some() {
-        let _ = initial_clk_tx.send(message.initial_clk.clone());
+    if initial_clk.is_some() {
+        let _ = initial_clk_tx.send(initial_clk.clone());
     }
-    update_negotiated_heartbeat(message.heartbeat_ms, timeout_override, dead_peer_timeout_ms);
-}
-
-fn update_order_stream_state(
-    message: &OCM,
-    clk_tx: &watch::Sender<Option<String>>,
-    initial_clk_tx: &watch::Sender<Option<String>>,
-    timeout_override: bool,
-    dead_peer_timeout_ms: &AtomicU64,
-) {
-    if message.clk.is_some() {
-        let _ = clk_tx.send(message.clk.clone());
-    }
-
-    if message.initial_clk.is_some() {
-        let _ = initial_clk_tx.send(message.initial_clk.clone());
-    }
-    update_negotiated_heartbeat(message.heartbeat_ms, timeout_override, dead_peer_timeout_ms);
+    update_negotiated_heartbeat(heartbeat_ms, timeout_override, dead_peer_timeout_ms);
 }
 
 fn update_negotiated_heartbeat(
@@ -1620,11 +1606,7 @@ impl ReconnectAuthState {
         let _ = self
             .pending_generation
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |pending| {
-                if pending != 0 && pending <= generation {
-                    Some(0)
-                } else {
-                    None
-                }
+                (pending != 0 && pending <= generation).then_some(0)
             });
     }
 
@@ -1801,6 +1783,42 @@ mod tests {
         assert!(json.contains("\"op\":\"authentication\""));
         assert!(json.contains("\"appKey\":\"my-app-key\""));
         assert!(json.contains("\"session\":\"my-session\""));
+    }
+
+    #[rstest]
+    #[case::exchange(true)]
+    #[case::auxiliary(false)]
+    fn test_update_auth_state_changes_once_per_distinct_payload(#[case] with_id: bool) {
+        let make_auth = |session: &str| {
+            if with_id {
+                Authentication::with_id(
+                    "test-app-key".to_string(),
+                    session.to_string(),
+                    AUTH_REQUEST_ID,
+                )
+            } else {
+                Authentication::new("test-app-key".to_string(), session.to_string())
+            }
+        };
+        let initial = make_auth("initial");
+        let initial_bytes = Bytes::from(serde_json::to_vec(&initial).unwrap());
+        let (auth_tx, auth_rx) = watch::channel(StreamAuth {
+            generation: 7,
+            bytes: initial_bytes.clone(),
+        });
+
+        update_auth_state(&auth_tx, &initial);
+        assert_eq!(auth_rx.borrow().generation, 7);
+        assert_eq!(auth_rx.borrow().bytes, initial_bytes);
+
+        let replacement = make_auth("replacement");
+        let replacement_bytes = Bytes::from(serde_json::to_vec(&replacement).unwrap());
+        update_auth_state(&auth_tx, &replacement);
+        assert_eq!(auth_rx.borrow().generation, 8);
+        assert_eq!(auth_rx.borrow().bytes, replacement_bytes);
+
+        update_auth_state(&auth_tx, &replacement);
+        assert_eq!(auth_rx.borrow().generation, 8);
     }
 
     #[rstest]

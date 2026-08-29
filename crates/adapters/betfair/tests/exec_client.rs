@@ -52,7 +52,9 @@ use nautilus_common::{
             cancel::{BatchCancelOrders, CancelAllOrders, CancelOrder},
             modify::ModifyOrder,
             query::QueryOrder,
-            report::{GenerateFillReportsBuilder, GenerateOrderStatusReportsBuilder},
+            report::{
+                GenerateFillReports, GenerateFillReportsBuilder, GenerateOrderStatusReportsBuilder,
+            },
             submit::{SubmitOrder, SubmitOrderList},
         },
         system::SocketState,
@@ -2474,6 +2476,87 @@ async fn test_generate_fill_reports() {
     assert!(
         replayed.is_empty(),
         "unchanged cumulative order state must not replay fill reports",
+    );
+
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+}
+
+#[rstest]
+#[case::start_only(
+    Some(1_000_000_000_000_000_000),
+    None,
+    Some("2001-09-09T01:46:40+00:00"),
+    None
+)]
+#[case::end_only(
+    None,
+    Some(1_500_000_000_000_000_000),
+    None,
+    Some("2017-07-14T02:40:00+00:00")
+)]
+#[case::both(
+    Some(1_000_000_000_000_000_000),
+    Some(1_500_000_000_000_000_000),
+    Some("2001-09-09T01:46:40+00:00"),
+    Some("2017-07-14T02:40:00+00:00")
+)]
+#[tokio::test]
+async fn test_generate_fill_reports_preserves_partial_date_range(
+    #[case] start_ns: Option<u64>,
+    #[case] end_ns: Option<u64>,
+    #[case] expected_from: Option<&str>,
+    #[case] expected_to: Option<&str>,
+) {
+    let (addr, state) = start_mock_http().await;
+    let empty = load_json_fixture("rest/list_current_orders_empty.json");
+    state.betting_overrides.lock().unwrap().insert(
+        METHOD_LIST_CURRENT_ORDERS.to_string(),
+        empty["result"].clone(),
+    );
+
+    let (stream_port, listener) = start_mock_stream().await;
+    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (_reader, write_half) = accept_and_activate(&listener).await;
+        let _ = server_done_rx.await;
+        drop(write_half);
+    });
+
+    connect_execution_ready(&mut client).await;
+
+    let cmd = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        start_ns.map(UnixNanos::from),
+        end_ns.map(UnixNanos::from),
+        None,
+        None,
+    );
+    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let params = state
+        .betting_request_params
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(method, _)| method == METHOD_LIST_CURRENT_ORDERS)
+        .map(|(_, params)| params.clone())
+        .collect::<Vec<_>>();
+
+    assert!(reports.is_empty());
+    assert_eq!(params.len(), 1);
+    assert_eq!(
+        params[0]["dateRange"].get("from").and_then(Value::as_str),
+        expected_from
+    );
+    assert_eq!(
+        params[0]["dateRange"].get("to").and_then(Value::as_str),
+        expected_to
     );
 
     client.disconnect().await.unwrap();

@@ -1480,11 +1480,12 @@ impl ExecutionClient for BetfairExecutionClient {
             let reconnect_stream = Arc::clone(&stream_client);
             control.register(move || reconnect_stream.request_reconnect_outcome());
         }
-        self.stream_client = Some(stream_client);
+
+        self.stream_client = Some(Arc::clone(&stream_client));
 
         // Spawn periodic keep-alive to prevent session expiry
         let keep_alive_client = Arc::clone(&self.http_client);
-        let keep_alive_stream = Arc::clone(self.stream_client.as_ref().unwrap());
+        let keep_alive_stream = Arc::clone(&stream_client);
         let keep_alive_app_key = self.credential.app_key().to_string();
 
         self.keep_alive_handle = Some(get_runtime().spawn(async move {
@@ -1573,7 +1574,7 @@ impl ExecutionClient for BetfairExecutionClient {
         }));
 
         let reconnect_http = Arc::clone(&self.http_client);
-        let reconnect_stream = Arc::clone(self.stream_client.as_ref().unwrap());
+        let reconnect_stream = stream_client;
         let reconnect_emitter = self.emitter.clone();
         let reconnect_app_key = self.credential.app_key().to_string();
         let reconnect_clock = self.clock;
@@ -1966,21 +1967,10 @@ impl ExecutionClient for BetfairExecutionClient {
     ) -> anyhow::Result<Vec<FillReport>> {
         self.process_pending_resync();
 
-        let date_range = match (cmd.start, cmd.end) {
-            (Some(start), Some(end)) => Some(TimeRange {
-                from: Some(start.to_rfc3339()),
-                to: Some(end.to_rfc3339()),
-            }),
-            (Some(start), None) => Some(TimeRange {
-                from: Some(start.to_rfc3339()),
-                to: None,
-            }),
-            (None, Some(end)) => Some(TimeRange {
-                from: None,
-                to: Some(end.to_rfc3339()),
-            }),
-            (None, None) => None,
-        };
+        let date_range = (cmd.start.is_some() || cmd.end.is_some()).then(|| TimeRange {
+            from: cmd.start.map(|start| start.to_rfc3339()),
+            to: cmd.end.map(|end| end.to_rfc3339()),
+        });
 
         let mut session_refresh = SessionRefresh::default();
         let stream_session = StreamSession {
@@ -3626,11 +3616,7 @@ async fn fetch_order_status_reports_snapshot_http(
                 date_range: None,
                 order_by: None,
                 sort_dir: None,
-                from_record: if from_record > 0 {
-                    Some(from_record)
-                } else {
-                    None
-                },
+                from_record: (from_record > 0).then_some(from_record),
                 record_count: None,
             };
 
@@ -3987,11 +3973,7 @@ async fn fetch_fill_orders_http(
                 date_range: date_range.clone(),
                 order_by: Some(OrderBy::ByMatchTime),
                 sort_dir: Some(SortDir::EarliestToLatest),
-                from_record: if from_record > 0 {
-                    Some(from_record)
-                } else {
-                    None
-                },
+                from_record: (from_record > 0).then_some(from_record),
                 record_count: None,
             };
 
@@ -4095,17 +4077,18 @@ fn build_incremental_fill_reports(
             )
         };
 
-        if !has_applied_fill_lots && incremental_fill.is_some() {
-            fill_tracker.sync_order(
-                &order.bet_id,
-                gross_matched,
-                order.average_price_matched.unwrap_or(Decimal::ZERO),
-            );
-        }
-
         if !has_applied_fill_lots {
+            if incremental_fill.is_some() {
+                fill_tracker.sync_order(
+                    &order.bet_id,
+                    gross_matched,
+                    order.average_price_matched.unwrap_or(Decimal::ZERO),
+                );
+            }
+
             fill_tracker.sync_voided_qty(&order.bet_id, size_voided);
         }
+
         let Some((trade_id, last_qty, last_px)) = incremental_fill else {
             continue;
         };

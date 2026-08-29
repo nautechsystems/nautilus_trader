@@ -21,6 +21,9 @@ use crate::common::consts::{
 
 pub const BETFAIR_STREAM_HEARTBEAT_MIN_MS: u64 = 500;
 pub const BETFAIR_STREAM_HEARTBEAT_MAX_MS: u64 = 5_000;
+const DEAD_PEER_TIMEOUT_MIN_SECS: u64 = BETFAIR_STREAM_SERVER_HEARTBEAT_MS
+    .saturating_mul(2)
+    .div_ceil(1_000);
 
 /// Configuration for the Betfair Exchange Stream API client.
 #[derive(Debug, Clone)]
@@ -61,11 +64,8 @@ impl Default for BetfairStreamConfig {
 impl BetfairStreamConfig {
     #[must_use]
     pub fn dead_peer_timeout_secs(&self) -> u64 {
-        self.heartbeat_timeout_secs.unwrap_or(
-            BETFAIR_STREAM_SERVER_HEARTBEAT_MS
-                .saturating_mul(2)
-                .div_ceil(1_000),
-        )
+        self.heartbeat_timeout_secs
+            .unwrap_or(DEAD_PEER_TIMEOUT_MIN_SECS)
     }
 
     /// Validates heartbeat settings.
@@ -79,16 +79,12 @@ impl BetfairStreamConfig {
             anyhow::bail!("heartbeat_secs must be positive when set");
         }
 
-        let minimum_timeout = BETFAIR_STREAM_SERVER_HEARTBEAT_MS
-            .saturating_mul(2)
-            .div_ceil(1_000);
-
         if let Some(timeout_secs) = self.heartbeat_timeout_secs
-            && timeout_secs < minimum_timeout
+            && timeout_secs < DEAD_PEER_TIMEOUT_MIN_SECS
         {
             anyhow::bail!(
                 "heartbeat_timeout_secs must cover at least two server heartbeat intervals \
-                 ({minimum_timeout}s), was {timeout_secs}s",
+                 ({DEAD_PEER_TIMEOUT_MIN_SECS}s), was {timeout_secs}s",
             );
         }
 

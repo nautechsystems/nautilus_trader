@@ -106,64 +106,38 @@ pub fn parse_runner_book_deltas(
         deltas.push(clear);
     }
 
-    // Buy side (bid): atb (available to back) is price-keyed
-    for pv in rc.atb.as_deref().unwrap_or(&[]) {
-        if is_snapshot && pv.volume == Decimal::ZERO {
-            continue;
+    for (levels, side) in [
+        (rc.atb.as_deref().unwrap_or(&[]), OrderSide::Buy),
+        (rc.atl.as_deref().unwrap_or(&[]), OrderSide::Sell),
+    ] {
+        for pv in levels {
+            if is_snapshot && pv.volume == Decimal::ZERO {
+                continue;
+            }
+
+            let action = if is_snapshot {
+                BookAction::Add
+            } else if pv.volume == Decimal::ZERO {
+                BookAction::Delete
+            } else {
+                BookAction::Update
+            };
+
+            deltas.push(OrderBookDelta::new(
+                instrument_id,
+                action,
+                BookOrder::new(
+                    side,
+                    parse_betfair_price(pv.price)?,
+                    parse_betfair_quantity(pv.volume)?,
+                    0,
+                ),
+                snapshot_flags,
+                sequence,
+                ts_event,
+                ts_init,
+            ));
         }
-
-        let action = if is_snapshot {
-            BookAction::Add
-        } else if pv.volume == Decimal::ZERO {
-            BookAction::Delete
-        } else {
-            BookAction::Update
-        };
-
-        deltas.push(OrderBookDelta::new(
-            instrument_id,
-            action,
-            BookOrder::new(
-                OrderSide::Buy,
-                parse_betfair_price(pv.price)?,
-                parse_betfair_quantity(pv.volume)?,
-                0,
-            ),
-            snapshot_flags,
-            sequence,
-            ts_event,
-            ts_init,
-        ));
-    }
-
-    // Sell side (ask): atl (available to lay) is price-keyed
-    for pv in rc.atl.as_deref().unwrap_or(&[]) {
-        if is_snapshot && pv.volume == Decimal::ZERO {
-            continue;
-        }
-
-        let action = if is_snapshot {
-            BookAction::Add
-        } else if pv.volume == Decimal::ZERO {
-            BookAction::Delete
-        } else {
-            BookAction::Update
-        };
-
-        deltas.push(OrderBookDelta::new(
-            instrument_id,
-            action,
-            BookOrder::new(
-                OrderSide::Sell,
-                parse_betfair_price(pv.price)?,
-                parse_betfair_quantity(pv.volume)?,
-                0,
-            ),
-            snapshot_flags,
-            sequence,
-            ts_event,
-            ts_init,
-        ));
     }
 
     // Set F_LAST on the final delta
@@ -249,12 +223,7 @@ pub fn parse_instrument_statuses(
                     (MarketStatus::Unknown, _) => MarketStatusAction::None,
                 },
             };
-            let is_trading = matches!(status, MarketStatus::Open)
-                && in_play
-                && !matches!(
-                    rd.status,
-                    Some(RunnerStatus::Removed | RunnerStatus::RemovedVacant)
-                );
+            let is_trading = action == MarketStatusAction::Trading;
             Some(InstrumentStatus::new(
                 instrument_id,
                 action,
@@ -1073,42 +1042,27 @@ pub fn parse_bsp_book_deltas(
 
     let mut result = Vec::with_capacity(spb_len + spl_len);
 
-    // spb (starting price back) -> Sell side (Betfair convention)
-    for pv in rc.spb.as_deref().unwrap_or(&[]) {
-        let action = if pv.volume == Decimal::ZERO {
-            BookAction::Delete as u32
-        } else {
-            BookAction::Update as u32
-        };
+    for (levels, side) in [
+        (rc.spb.as_deref().unwrap_or(&[]), OrderSide::Sell),
+        (rc.spl.as_deref().unwrap_or(&[]), OrderSide::Buy),
+    ] {
+        for pv in levels {
+            let action = if pv.volume == Decimal::ZERO {
+                BookAction::Delete as u32
+            } else {
+                BookAction::Update as u32
+            };
 
-        result.push(BetfairBspBookDelta::new(
-            instrument_id,
-            action,
-            OrderSide::Sell as u32,
-            pv.price,
-            pv.volume,
-            ts_event,
-            ts_init,
-        ));
-    }
-
-    // spl (starting price lay) -> Buy side (Betfair convention)
-    for pv in rc.spl.as_deref().unwrap_or(&[]) {
-        let action = if pv.volume == Decimal::ZERO {
-            BookAction::Delete as u32
-        } else {
-            BookAction::Update as u32
-        };
-
-        result.push(BetfairBspBookDelta::new(
-            instrument_id,
-            action,
-            OrderSide::Buy as u32,
-            pv.price,
-            pv.volume,
-            ts_event,
-            ts_init,
-        ));
+            result.push(BetfairBspBookDelta::new(
+                instrument_id,
+                action,
+                side as u32,
+                pv.price,
+                pv.volume,
+                ts_event,
+                ts_init,
+            ));
+        }
     }
 
     result
