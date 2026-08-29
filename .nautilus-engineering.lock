@@ -1,7 +1,7 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "4fe30d2e0cb60058a4a9aeab342b24c8d3b2f120"
-manifest_sha256 = "8ffdbf5086f6dddee747f5c915d05c660fc861b72b16bab56e9cad34122fba45"
+revision = "4663eb21bec9cf4e3f2fefdd621edd66f4daae9e"
+manifest_sha256 = "fe08940305484b380503cd66b26c654b45898f45b1b0398710b5639cdd4903ab"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
 
@@ -60,6 +60,12 @@ sha256 = "b08f946b87cad7bf75b4dad8f3f5afffd80ab8a461d9bdbf4092176bd6dfcbd5"
 executable = false
 
 [[file]]
+artifact = "rustfmt-config"
+path = "rustfmt.toml"
+sha256 = "a8d6b13a334b7ed058811f355e4d6601dfe5f0f32280c0a055a5c36f5a7b1076"
+executable = false
+
+[[file]]
 artifact = "cargo-tool-version"
 path = "scripts/cargo-tool-version.sh"
 sha256 = "7b2d3d66fc45f7c5f2dcfc47aee944f2aa125ddc33e87dfae4890285202adf3a"
@@ -74,7 +80,7 @@ executable = true
 [[file]]
 artifact = "markdown-table-check"
 path = "scripts/check-markdown-tables.py"
-sha256 = "b192e4bba9b5fa2e52a39582ba048f9ab3638a1299548d8d856803d259aa6d18"
+sha256 = "7fff7ae1ad25b752badb749ad6e238b438ed61b1011c81a78821f3cf16ff0b0a"
 executable = false
 
 [[file]]
@@ -110,7 +116,7 @@ executable = true
 [[file]]
 artifact = "pre-commit-manager"
 path = "scripts/manage-nautilus-engineering-pre-commit.py"
-sha256 = "0d80bffae5b7d6a2f86d558f9f92b445025bc04fd9374f472cbfbcfd6c9e8df9"
+sha256 = "52148d1f8b329181bb6ae4de9db933e521b7b8f1f7697d78bc7871eec8641276"
 executable = true
 
 [[file]]
@@ -122,7 +128,7 @@ executable = true
 [[file]]
 artifact = "security-audit"
 path = "scripts/security-audit.py"
-sha256 = "0eeeaa8298fa9b0f0843ecb97bff2ecc70871863f623e878e64f61d23c6375b9"
+sha256 = "19e3739aed79265c576125f73c72a3a171947193cae8b99f70d56745d306f2fb"
 executable = false
 
 [[file]]
