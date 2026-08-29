@@ -22,7 +22,7 @@
 use std::{
     fmt::Debug,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, PoisonError, RwLock, RwLockReadGuard,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -78,6 +78,8 @@ use crate::common::{
 /// Authentication timeout in seconds.
 const AUTHENTICATION_TIMEOUT_SECS: u64 = 30;
 
+type CommandSender = tokio::sync::mpsc::UnboundedSender<HandlerCommand>;
+
 /// WebSocket client for connecting to Deribit.
 #[derive(Clone)]
 #[cfg_attr(
@@ -98,7 +100,7 @@ pub struct DeribitWebSocketClient {
     signal: Arc<AtomicBool>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     auth_tracker: AuthTracker,
-    cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
+    cmd_tx: Arc<RwLock<CommandSender>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
     task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
     subscriptions_state: SubscriptionState,
@@ -208,7 +210,7 @@ impl DeribitWebSocketClient {
             auth_tracker: AuthTracker::new(),
             cmd_tx: {
                 let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-                Arc::new(tokio::sync::RwLock::new(tx))
+                Arc::new(RwLock::new(tx))
             },
             out_rx: None,
             task_handle: None,
@@ -424,6 +426,8 @@ impl DeribitWebSocketClient {
 
     /// Caches instruments for use during message parsing.
     pub fn cache_instruments(&self, instruments: &[InstrumentAny]) {
+        let tx = self.command_sender();
+
         self.instruments_cache.rcu(|m| {
             for inst in instruments {
                 m.insert(inst.raw_symbol().inner(), inst.clone());
@@ -435,35 +439,23 @@ impl DeribitWebSocketClient {
         // a full snapshot, avoiding out-of-order snapshot races.
         if self.is_active() {
             for inst in instruments {
-                let tx = self.cmd_tx.clone();
-                let boxed = Box::new(inst.clone());
-
-                get_runtime().spawn(async move {
-                    let _ = tx
-                        .read()
-                        .await
-                        .send(HandlerCommand::UpdateInstrument(boxed));
-                });
+                let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst.clone())));
             }
         }
     }
 
     /// Caches a single instrument.
     pub fn cache_instrument(&self, instrument: InstrumentAny) {
+        let tx = self.command_sender();
         let symbol = instrument.raw_symbol().inner();
         self.instruments_cache.insert(symbol, instrument);
 
         // If connected, send update to handler
         if self.is_active() {
-            let tx = self.cmd_tx.clone();
             let inst = self.instruments_cache.get_cloned(&symbol);
+
             if let Some(inst) = inst {
-                get_runtime().spawn(async move {
-                    let _ = tx
-                        .read()
-                        .await
-                        .send(HandlerCommand::UpdateInstrument(Box::new(inst)));
-                });
+                let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst)));
             }
         }
     }
@@ -587,8 +579,6 @@ impl DeribitWebSocketClient {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
 
-        // Store command sender and output receiver
-        *self.cmd_tx.write().await = cmd_tx.clone();
         self.out_rx = Some(Arc::new(out_rx));
 
         if let Ok(mut errors) = self.subscribe_errors.lock() {
@@ -611,14 +601,15 @@ impl DeribitWebSocketClient {
             self.subscribe_errors.clone(),
         );
 
-        // Send client to handler
-        let _ = cmd_tx.send(HandlerCommand::SetClient(ws_client));
-
         if let Some(control) = &self.socket_control {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        // Replay cached instruments
+        // Cache updates hold a read guard while mutating the central cache. Publishing the new
+        // sender under the write guard ensures later subscriptions follow this cache snapshot.
+        let mut command_sender = self.cmd_tx.write().unwrap_or_else(PoisonError::into_inner);
+        let _ = cmd_tx.send(HandlerCommand::SetClient(ws_client));
+
         let instruments: Vec<InstrumentAny> =
             self.instruments_cache.load().values().cloned().collect();
 
@@ -634,6 +625,9 @@ impl DeribitWebSocketClient {
         if let Some(interval) = self.heartbeat_interval {
             let _ = cmd_tx.send(HandlerCommand::SetHeartbeat { interval });
         }
+
+        *command_sender = cmd_tx.clone();
+        drop(command_sender);
 
         // Spawn handler task
         let subscriptions_state = self.subscriptions_state.clone();
@@ -822,7 +816,7 @@ impl DeribitWebSocketClient {
         log::debug!("Closing WebSocket connection");
         self.signal.store(true, Ordering::Relaxed);
 
-        let _ = self.cmd_tx.read().await.send(HandlerCommand::Disconnect);
+        let _ = self.command_sender().send(HandlerCommand::Disconnect);
 
         // Poll for graceful handler shutdown, abort after 2s deadline
         if let Some(handle) = &self.task_handle {
@@ -911,9 +905,8 @@ impl DeribitWebSocketClient {
         let rx = self.auth_tracker.begin();
 
         // Send authentication request
-        let cmd_tx = self.cmd_tx.read().await;
+        let cmd_tx = self.command_sender().clone();
         send_auth_request(credential, scope, &cmd_tx);
-        drop(cmd_tx);
 
         // Wait for authentication result with timeout
         match self
@@ -988,7 +981,7 @@ impl DeribitWebSocketClient {
             return Ok(());
         }
 
-        if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Subscribe {
+        if let Err(e) = self.command_sender().send(HandlerCommand::Subscribe {
             channels: channels_to_subscribe.clone(),
         }) {
             // Roll back: remove reference and clear pending_subscribe
@@ -1023,7 +1016,7 @@ impl DeribitWebSocketClient {
             return Ok(());
         }
 
-        if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Unsubscribe {
+        if let Err(e) = self.command_sender().send(HandlerCommand::Unsubscribe {
             channels: channels_to_unsubscribe.clone(),
         }) {
             // Send only fails when the handler task is dead, meaning the
@@ -1578,9 +1571,7 @@ impl DeribitWebSocketClient {
             },
         };
 
-        self.cmd_tx
-            .read()
-            .await
+        self.command_sender()
             .send(cmd)
             .map_err(|e| DeribitWsError::Send(e.to_string()))?;
 
@@ -1629,9 +1620,7 @@ impl DeribitWebSocketClient {
             "Sending modify order: order_id={order_id}, quantity={quantity}, price={price}, client_order_id={client_order_id}"
         );
 
-        self.cmd_tx
-            .read()
-            .await
+        self.command_sender()
             .send(HandlerCommand::Edit {
                 params,
                 client_order_id,
@@ -1675,9 +1664,7 @@ impl DeribitWebSocketClient {
 
         log::debug!("Sending cancel order: order_id={order_id}, client_order_id={client_order_id}");
 
-        self.cmd_tx
-            .read()
-            .await
+        self.command_sender()
             .send(HandlerCommand::Cancel {
                 params,
                 client_order_id,
@@ -1720,9 +1707,7 @@ impl DeribitWebSocketClient {
 
         log::debug!("Sending cancel_all_orders: instrument={instrument_name}");
 
-        self.cmd_tx
-            .read()
-            .await
+        self.command_sender()
             .send(HandlerCommand::CancelAllByInstrument {
                 params,
                 instrument_id,
@@ -1759,9 +1744,7 @@ impl DeribitWebSocketClient {
 
         log::debug!("Sending query_order: order_id={order_id}, client_order_id={client_order_id}");
 
-        self.cmd_tx
-            .read()
-            .await
+        self.command_sender()
             .send(HandlerCommand::GetOrderState {
                 order_id: order_id.to_string(),
                 client_order_id,
@@ -1772,6 +1755,10 @@ impl DeribitWebSocketClient {
             .map_err(|e| DeribitWsError::Send(e.to_string()))?;
 
         Ok(())
+    }
+
+    fn command_sender(&self) -> RwLockReadGuard<'_, CommandSender> {
+        self.cmd_tx.read().unwrap_or_else(PoisonError::into_inner)
     }
 }
 

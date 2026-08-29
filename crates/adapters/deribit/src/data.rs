@@ -897,6 +897,7 @@ impl DataClient for DeribitDataClient {
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
+        let command_id = cmd.command_id;
         let needs_load = self.prepare_subscribe(instrument_id)?;
 
         let ws = self
@@ -912,7 +913,9 @@ impl DataClient for DeribitDataClient {
                 && let Err(e) =
                     Self::lazy_load_instrument(&http_client, &ws, &instruments, instrument_id).await
             {
-                log::error!("Lazy-load failed for {instrument_id} (quotes): {e}");
+                log::error!(
+                    "Lazy-load failed for {instrument_id} (quotes, command_id={command_id}): {e}"
+                );
                 return;
             }
 
@@ -926,6 +929,7 @@ impl DataClient for DeribitDataClient {
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
+        let command_id = cmd.command_id;
         let needs_load = self.prepare_subscribe(instrument_id)?;
         let subscribe_combo_legs = Self::subscribe_combo_legs(&cmd.params);
 
@@ -987,6 +991,7 @@ impl DataClient for DeribitDataClient {
                 }
             }
 
+            let subscription_count = subscription_ids.len();
             let mut opened_leg_ids = Vec::new();
 
             for subscription_id in subscription_ids {
@@ -1004,6 +1009,10 @@ impl DataClient for DeribitDataClient {
                 &combo_leg_trade_subs,
                 instrument_id,
                 &opened_leg_ids,
+            );
+
+            log::debug!(
+                "Processed trade subscription batch: command_id={command_id}, requests={subscription_count}, instrument={instrument_id}"
             );
         });
 
@@ -1120,6 +1129,7 @@ impl DataClient for DeribitDataClient {
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
+        let command_id = cmd.command_id;
         let needs_load = self.prepare_subscribe(instrument_id)?;
 
         let ws = self
@@ -1154,7 +1164,7 @@ impl DataClient for DeribitDataClient {
 
             if !is_perpetual {
                 log::warn!(
-                    "Funding rates subscription rejected for {instrument_id}: only available for perpetual instruments"
+                    "Funding rates subscription rejected for {instrument_id} (command_id={command_id}): only available for perpetual instruments"
                 );
                 return;
             }
@@ -1467,12 +1477,14 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
+        let command_id = cmd.command_id;
         let interval = self.get_interval(&cmd.params);
         let mut subscription_ids = vec![instrument_id];
         subscription_ids.extend(Self::combo_leg_trade_unsubs(
             &self.combo_leg_trade_subs,
             instrument_id,
         ));
+        let subscription_count = subscription_ids.len();
 
         log::debug!(
             "Unsubscribing from trades for {} instruments from {} (interval: {})",
@@ -1487,6 +1499,10 @@ impl DataClient for DeribitDataClient {
                     log::error!("Failed to unsubscribe from trades for {subscription_id}: {e}");
                 }
             }
+
+            log::debug!(
+                "Processed trade unsubscription batch: command_id={command_id}, requests={subscription_count}, instrument={instrument_id}"
+            );
         });
 
         Ok(())

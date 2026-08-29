@@ -891,6 +891,20 @@ mod tests {
         Ok(addr)
     }
 
+    async fn spawn_connection_dropper() -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let task = tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                drop(stream);
+            }
+        });
+
+        (addr, task)
+    }
+
     async fn spawn_rejecting_connect_proxy() -> (SocketAddr, oneshot::Receiver<String>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -1442,9 +1456,7 @@ mod tests {
         const USERINFO_SECRET: &str = "transport-userinfo-secret";
         const PATH_SECRET: &str = "transport-path-secret";
         const QUERY_SECRET: &str = "transport-query-secret";
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        drop(listener);
+        let (addr, drop_task) = spawn_connection_dropper().await;
         let url = format!(
             "http://rpc-user:{USERINFO_SECRET}@{addr}/{PATH_SECRET}?api_key={QUERY_SECRET}"
         );
@@ -1454,7 +1466,12 @@ mod tests {
             .request_with_url_redacted(Method::GET, url.clone(), None, None, None, None, None)
             .await
             .expect_err("an unreachable endpoint should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
 
+        assert!(task_error.is_cancelled());
         for rendered in [error.to_string(), format!("{error:?}")] {
             assert!(!rendered.contains(USERINFO_SECRET));
             assert!(!rendered.contains(PATH_SECRET));
@@ -1545,9 +1562,7 @@ mod tests {
     async fn test_http_client_unreachable_proxy_error_redacts_credentials() {
         const USERNAME: &str = "proxy-user";
         const SECRET: &str = "unreachable-proxy-secret";
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let proxy_addr = listener.local_addr().unwrap();
-        drop(listener);
+        let (proxy_addr, drop_task) = spawn_connection_dropper().await;
         let client = HttpClient::builder()
             .timeout_secs(1)
             .proxy_url(format!("http://{USERNAME}:{SECRET}@{proxy_addr}"))
@@ -1565,7 +1580,12 @@ mod tests {
             )
             .await
             .expect_err("unreachable proxy should fail");
+        drop_task.abort();
+        let task_error = drop_task
+            .await
+            .expect_err("connection dropper should be cancelled");
 
+        assert!(task_error.is_cancelled());
         assert!(!error.to_string().contains(SECRET));
         assert!(!error.to_string().contains(&BASE64.encode(SECRET)));
         assert!(
