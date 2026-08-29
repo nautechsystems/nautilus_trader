@@ -674,14 +674,9 @@ fn intern_component_value(value: &log::kv::Value<'_>) -> Ustr {
     }
 }
 
+#[derive(Default)]
 struct ComponentProbe {
     component: Option<Ustr>,
-}
-
-impl ComponentProbe {
-    const fn new() -> Self {
-        Self { component: None }
-    }
 }
 
 impl<'kvs> log::kv::VisitSource<'kvs> for ComponentProbe {
@@ -697,18 +692,10 @@ impl<'kvs> log::kv::VisitSource<'kvs> for ComponentProbe {
     }
 }
 
+#[derive(Default)]
 struct PayloadCollector {
     color: Option<LogColor>,
     fields: LogFields,
-}
-
-impl PayloadCollector {
-    fn new() -> Self {
-        Self {
-            color: None,
-            fields: SmallVec::new(),
-        }
-    }
 }
 
 impl<'kvs> log::kv::VisitSource<'kvs> for PayloadCollector {
@@ -731,20 +718,11 @@ impl<'kvs> log::kv::VisitSource<'kvs> for PayloadCollector {
     }
 }
 
+#[derive(Default)]
 struct FieldCollector {
     color: Option<LogColor>,
     component: Option<Ustr>,
     fields: LogFields,
-}
-
-impl FieldCollector {
-    fn new() -> Self {
-        Self {
-            color: None,
-            component: None,
-            fields: SmallVec::new(),
-        }
-    }
 }
 
 impl<'kvs> log::kv::VisitSource<'kvs> for FieldCollector {
@@ -785,7 +763,7 @@ impl Log for Logger {
 
         if LOGGING_BYPASSED.load(Ordering::Relaxed) {
             if level == Level::Error {
-                record_shutdown_on_error(record, level);
+                record_shutdown_on_error(record);
             }
             return;
         }
@@ -794,7 +772,7 @@ impl Log for Logger {
             if let Some(filter_policy) = &self.filter_policy {
                 // Probe only the component before filtering. Filtered error logs still need
                 // enough payload to trigger shutdown-on-error.
-                let mut probe = ComponentProbe::new();
+                let mut probe = ComponentProbe::default();
                 let _ = record.key_values().visit(&mut probe);
                 let component = probe
                     .component
@@ -813,7 +791,7 @@ impl Log for Logger {
                 }
 
                 let timestamp = current_log_timestamp();
-                let mut collector = PayloadCollector::new();
+                let mut collector = PayloadCollector::default();
                 let _ = record.key_values().visit(&mut collector);
                 let color = collector.color.unwrap_or_else(|| level.into());
 
@@ -838,7 +816,7 @@ impl Log for Logger {
 
             // With no component/module filters configured, keep the producer path to one KV visit.
             let timestamp = current_log_timestamp();
-            let mut collector = FieldCollector::new();
+            let mut collector = FieldCollector::default();
             let _ = record.key_values().visit(&mut collector);
             let color = collector.color.unwrap_or_else(|| level.into());
             let component = collector
@@ -876,16 +854,19 @@ impl Log for Logger {
     }
 }
 
-fn record_shutdown_on_error(record: &log::Record, level: Level) {
-    let mut probe = ComponentProbe::new();
+fn record_shutdown_on_error(record: &log::Record) {
+    let mut probe = ComponentProbe::default();
     let _ = record.key_values().visit(&mut probe);
     let component = probe
         .component
         .unwrap_or_else(|| intern_repeated(record.metadata().target()));
 
-    shutdown_on_error().maybe_record_trigger(level, current_log_timestamp(), component, || {
-        format!("{}", record.args())
-    });
+    shutdown_on_error().maybe_record_trigger(
+        record.level(),
+        current_log_timestamp(),
+        component,
+        || format!("{}", record.args()),
+    );
 }
 
 impl Logger {
@@ -978,11 +959,10 @@ impl Logger {
                 }
             })?;
 
-        let logger_tx = tx.clone();
         let logger = Self {
             config: config.clone(),
             filter_policy,
-            tx: logger_tx,
+            tx: tx.clone(),
         };
 
         if let Err(e) = set_boxed_logger(Box::new(logger)) {
@@ -1268,13 +1248,9 @@ fn should_filter_log_inner(
     }
 
     // Module filter takes precedence over component filter
-    if let Some(filter_level) = module_filter.or(component_filter)
-        && line_level > filter_level
-    {
-        return true;
-    }
-
-    false
+    module_filter
+        .or(component_filter)
+        .is_some_and(|filter_level| line_level > filter_level)
 }
 
 /// Gracefully shuts down the logging subsystem.

@@ -222,13 +222,11 @@ fn event_store_version() -> String {
 }
 
 fn build_versions() -> Vec<(&'static str, String)> {
-    let versions = BUILD_VERSIONS
+    let mut versions = BUILD_VERSIONS
         .iter()
         .filter(|(_, version)| !version.is_empty())
         .map(|(name, version)| (*name, display_version(name, version)))
         .collect::<Vec<_>>();
-
-    let mut versions = versions;
 
     let precision_index = versions
         .iter()
