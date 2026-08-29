@@ -1280,11 +1280,11 @@ impl OrderBook {
     }
 
     fn update_book_bid(&mut self, order: BookOrder) {
-        self.bids.add(order, 0); // Internal replacement, no F_MBP flags
+        self.bids.replace_l1(order);
     }
 
     fn update_book_ask(&mut self, order: BookOrder) {
-        self.asks.add(order, 0); // Internal replacement, no F_MBP flags
+        self.asks.replace_l1(order);
     }
 
     /// Replays `deltas` through a fresh book of the given type and returns

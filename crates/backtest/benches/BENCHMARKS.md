@@ -167,6 +167,65 @@ The median reduction was 20.32%. A fresh three-run pre-edit replay-only session 
 matched every exact result fingerprint for all four scenarios under both boundaries after the
 change. The remaining seven canonical cases were fingerprint-verified but not re-timed.
 
+## L1 level reuse follow-up
+
+A second 2026-08-29 follow-up used the signed `Optimize OrderBook L1 replacement` commit as its
+baseline. This section supersedes the [L1 replacement follow-up](#l1-replacement-follow-up) as the
+current replay-only preloaded reference. Fresh one-millisecond `gprofng` profiles covered all four
+scenarios under both benchmark boundaries. As percentages of total captured CPU samples, inclusive
+samples for `BookLadder::add` remained material in every case:
+
+| Scenario                | Full load/setup/run | Preloaded `run()` |
+| ----------------------- | ------------------: | ----------------: |
+| Replay only             |              31.49% |            38.19% |
+| Scheduled market orders |              23.09% |            26.41% |
+| Passive limit orders    |              19.97% |            22.47% |
+| Bar EMA cross           |              10.14% |             9.81% |
+
+In replay only, sampled ladder work came from `OrderBook::update_trade_tick` under
+`process_trade_ticks_from_bar` and from `OrderBook::update_quote_tick`. Both called
+`BookLadder::add`. The same profile ranked allocation and `IndexMap` insertion among its largest
+entries. Profile mode included setup and fingerprint work, so these percentages selected the
+target but do not support the elapsed-time claim.
+
+The candidate reuses the existing L1 `BookLevel` and its order-map allocation for internal quote
+and trade tick replacement. It still clears every other level, the order cache, and incomplete
+batch state before inserting the replacement. Zero-size updates still clear the side, and the
+replacement remains available to later cache-backed updates and deletes.
+
+| Item                 | Baseline                                                           | Candidate                                                          |
+| -------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Repository revision  | `ca823f818faa7535c1d147c5ce93e6031e2a997c`                         | Baseline revision plus the measured patch                          |
+| Measured source tree | `3a5e146fb179836395b46cbb92944415d8bbc811`                         | `df8a9729980e701905293515ed992521662b2ea7`                         |
+| Executable SHA-256   | `8c26d4b18dfe6743f095714f30b4a826f1de29c7bb8a7983ffc1ceb72bd9706d` | `22fc1721f71e6bf8b6c4b823ad8722b7b4e89c3b7350d86a2c109ac738a7abbb` |
+| ELF build ID         | `0b1066eccb0b8ff5a287c200527a097e13783b7f`                         | `af4947418d7bbde1c1ef9535ab68f9e4e8be6a84`                         |
+
+Later test and documentation additions do not alter the library source compiled into the measured candidate executable.
+
+Both executables were built once with the build command in [How to reproduce](#how-to-reproduce)
+under the `bench-lto` profile and reused unchanged. Both used `rustc 1.98.0` with LLVM 22.1.8,
+Cargo 1.98.0, standard precision, and the default empty `nautilus-backtest` feature set. The host was
+the Threadripper 9980X system described above with Linux 7.0.0-28-generic. All 128 governors remained
+`powersave`; no host control changed. ASLR was disabled per process, and the benchmark thread was not
+pinned. The paired run found no concurrent Rust build and recorded 95% to 99% CPU idle in its host samples.
+
+Three sessions alternated the immutable executables for canonical replay-only `run_preloaded`.
+Each run used a 3-second warm-up, a 5-second measurement target, and 50 samples.
+
+| Pair order         | Baseline median | Candidate median | Reduction |
+| ------------------ | --------------: | ---------------: | --------: |
+| Baseline/candidate |       19.784 ms |        18.162 ms |     8.20% |
+| Candidate/baseline |       19.214 ms |        17.804 ms |     7.34% |
+| Baseline/candidate |       19.333 ms |        17.897 ms |     7.42% |
+
+The median reduction was 7.42%. Three pre-edit baseline sessions measured 19.533, 19.552, and
+19.838 ms, for a 1.56% spread; every comparison pair cleared that threshold. This spread describes
+repeatability within this session, so absolute medians are not comparable with earlier follow-ups.
+The canonical correctness test matched every exact result fingerprint for all four scenarios under
+both boundaries before and after the production change. Focused quote-tick tests cover positive
+replacement, incomplete-batch reset, zero-size clearing, and deletion after replacement. The other
+seven canonical cases were fingerprint-verified but not re-timed.
+
 ## v1.231.0 and v2 comparison
 
 The 2026-08-27 comparison uses the Python

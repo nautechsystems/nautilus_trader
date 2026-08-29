@@ -157,6 +157,31 @@ impl BookLadder {
         self.batch_state = L1BatchState::None;
     }
 
+    pub(crate) fn replace_l1(&mut self, order: BookOrder) {
+        debug_assert_eq!(self.book_type, BookType::L1_MBP);
+
+        let reusable_level = self.levels.pop_first().map(|(_, level)| level);
+        self.clear();
+
+        if !order.size.is_positive() {
+            let side = self.side;
+            log::debug!("L1 zero-size add cleared ladder: side={side:?}");
+            return;
+        }
+
+        let book_price = order.to_book_price();
+        self.cache.insert(order.order_id, book_price);
+
+        if let Some(mut level) = reusable_level {
+            level.price = book_price;
+            level.orders.clear();
+            level.add(order);
+            self.levels.insert(book_price, level);
+        } else {
+            self.levels.insert(book_price, BookLevel::from_order(order));
+        }
+    }
+
     /// Adds an order to the ladder at its price level.
     ///
     /// For `L2_MBP` and `L3_MBO` books, an order ID lives at exactly one price
