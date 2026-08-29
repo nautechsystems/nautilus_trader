@@ -40,7 +40,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, WeakCell};
 use nautilus_model::{
     data::{OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{ContingencyType, OrderSide, OrderSideSpecified, OrderStatus, OrderType, TriggerType},
+    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TriggerType},
     events::{OrderCanceled, OrderEmulated, OrderEventAny, OrderReleased, OrderUpdated},
     identifiers::{ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId},
     instruments::Instrument,
@@ -652,7 +652,7 @@ impl OrderEmulator {
         let is_activated = is_order_activated(&order);
         let match_info = RestingOrder::new(
             order.client_order_id(),
-            order.order_side().as_specified(),
+            order.order_side(),
             order.order_type(),
             if is_activated {
                 order.trigger_price()
@@ -847,7 +847,7 @@ impl OrderEmulator {
                 let is_activated = is_order_activated(&order);
                 let match_info = RestingOrder::new(
                     order.client_order_id(),
-                    order.order_side().as_specified(),
+                    order.order_side(),
                     order.order_type(),
                     if is_activated {
                         order.trigger_price()
@@ -933,8 +933,9 @@ impl OrderEmulator {
                 };
 
                 order.instrument_id() == command.instrument_id
-                    && (command.order_side == OrderSide::NoOrderSide
-                        || order.order_side() == command.order_side)
+                    && command
+                        .order_side
+                        .is_none_or(|side| order.order_side() == side)
                     && command.client_id.is_none_or(|client_id| {
                         cache
                             .client_id(client_order_id)
@@ -1207,9 +1208,9 @@ impl OrderEmulator {
         matching_core: &OrderMatchingCore,
         trigger_instrument_id: InstrumentId,
     ) -> Option<Price> {
-        let released_price = match order.order_side_specified() {
-            OrderSideSpecified::Buy => matching_core.ask,
-            OrderSideSpecified::Sell => matching_core.bid,
+        let released_price = match order.order_side() {
+            OrderSide::Buy => matching_core.ask,
+            OrderSide::Sell => matching_core.bid,
         };
 
         if released_price.is_none() {
@@ -1665,7 +1666,7 @@ impl OrderEmulator {
 
             matching_core.add_order(RestingOrder::new(
                 order.client_order_id(),
-                order.order_side().as_specified(),
+                order.order_side(),
                 order.order_type(),
                 trigger_price,
                 limit_price,
@@ -1710,7 +1711,6 @@ impl OrderEmulator {
             let hit = match order_side {
                 OrderSide::Buy => ask.is_some_and(|a| a <= activation_price),
                 OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
-                _ => false,
             };
 
             if hit {
@@ -1725,7 +1725,6 @@ impl OrderEmulator {
             _ => match order_side {
                 OrderSide::Buy => ask,
                 OrderSide::Sell => bid,
-                _ => None,
             },
         };
 
@@ -2243,7 +2242,7 @@ mod tests {
                 Some(selected_client),
                 StrategyId::from("CALLER-001"),
                 trigger_instrument_id,
-                OrderSide::NoOrderSide,
+                None,
                 UUID4::new(),
                 0.into(),
                 None,
@@ -2266,7 +2265,7 @@ mod tests {
                 Some(selected_client),
                 StrategyId::from("CALLER-001"),
                 instrument.id(),
-                OrderSide::NoOrderSide,
+                None,
                 UUID4::new(),
                 0.into(),
                 None,

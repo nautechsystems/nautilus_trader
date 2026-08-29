@@ -38,7 +38,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
-    enums::{MarketStatusAction, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{MarketStatusAction, OrderSide, OrderType, PositionSide, TimeInForce},
     events::account::state::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
@@ -2464,11 +2464,11 @@ impl BybitHttpClient {
             let wallet_balance = wallet_by_coin.get(&coin).copied().unwrap_or(Decimal::ZERO);
 
             let side = if wallet_balance > Decimal::ZERO {
-                PositionSideSpecified::Long
+                PositionSide::Long
             } else if wallet_balance < Decimal::ZERO {
-                PositionSideSpecified::Short
+                PositionSide::Short
             } else {
-                PositionSideSpecified::Flat
+                PositionSide::Flat
             };
 
             let abs_balance = wallet_balance.abs();
@@ -2530,7 +2530,6 @@ impl BybitHttpClient {
         let bybit_side = match order_side {
             OrderSide::Buy => BybitOrderSide::Buy,
             OrderSide::Sell => BybitOrderSide::Sell,
-            _ => anyhow::bail!("Invalid order side: {order_side:?}"),
         };
 
         // For stop/conditional orders, Bybit uses Market/Limit with trigger parameters

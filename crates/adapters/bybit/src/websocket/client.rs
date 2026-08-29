@@ -1849,11 +1849,6 @@ impl BybitWebSocketClient {
         let bybit_side = match order_side {
             OrderSide::Buy => BybitOrderSide::Buy,
             OrderSide::Sell => BybitOrderSide::Sell,
-            _ => {
-                return Err(BybitWsError::ClientError(format!(
-                    "Invalid order side: {order_side:?}"
-                )));
-            }
         };
 
         let (bybit_order_type, is_stop_order) = match order_type {

@@ -518,10 +518,6 @@ impl AccountsManager {
                     OrderSide::Sell => instrument
                         .base_currency()
                         .unwrap_or_else(|| instrument.quote_currency()),
-                    OrderSide::NoOrderSide => {
-                        log::error!("Cannot calculate wallet balance locked: invalid order side");
-                        return None;
-                    }
                 };
                 let Some(total) = account.balance_total(Some(source_currency)) else {
                     log::error!(
@@ -605,10 +601,6 @@ impl AccountsManager {
                             return None;
                         }
                     }
-                }
-                OrderSide::NoOrderSide => {
-                    log::error!("Cannot calculate wallet balance locked: invalid order side");
-                    return None;
                 }
             };
 

@@ -452,7 +452,7 @@ async fn test_cancel_all_orders_uses_http_endpoint() {
         client_id: Some(*AX_CLIENT_ID),
         strategy_id: StrategyId::from("S-001"),
         instrument_id,
-        order_side: OrderSide::NoOrderSide,
+        order_side: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,
@@ -587,7 +587,7 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
     assert_eq!(canceled.quantity, Quantity::from("200"));
     assert_eq!(canceled.filled_qty, Quantity::from("50"));
     assert_eq!(canceled.price, Some(Price::from("1.08390")));
-    assert_eq!(canceled.order_side, OrderSide::Sell);
+    assert_eq!(canceled.order_side, Some(OrderSide::Sell));
     assert_eq!(fill_reports.len(), 1);
     assert_eq!(
         fill_reports
@@ -1978,7 +1978,7 @@ async fn test_cancel_all_orders_http_failure_emits_no_cancel_rejected() {
         client_id: Some(*AX_CLIENT_ID),
         strategy_id: StrategyId::from("S-001"),
         instrument_id,
-        order_side: OrderSide::NoOrderSide,
+        order_side: None,
         command_id: UUID4::new(),
         ts_init: UnixNanos::default(),
         params: None,

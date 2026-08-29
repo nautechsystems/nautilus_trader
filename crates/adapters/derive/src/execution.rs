@@ -55,7 +55,7 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
     data::QuoteTick,
-    enums::{OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified},
+    enums::{OmsType, OrderSide, OrderStatus, OrderType, PositionSide},
     events::{
         OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected,
     },
@@ -1467,7 +1467,7 @@ impl ExecutionClient for DeriveExecutionClient {
 
         self.spawn_task("cancel_all_orders", async move {
             // Preserve the requested side because Derive bulk cancellation has no side filter
-            if matches!(side_filter, OrderSide::Buy | OrderSide::Sell) {
+            if let Some(side_filter) = side_filter {
                 let open_params = DeriveGetOpenOrdersParams::new(subaccount_id);
                 let mut orders = match http_client.get_open_orders(&open_params).await {
                     Ok(v) => v,
@@ -2417,7 +2417,7 @@ fn add_missing_flat_position_reports(
         flat_reports.push(PositionStatusReport::new(
             account_id,
             instrument_id,
-            PositionSideSpecified::Flat,
+            PositionSide::Flat,
             Quantity::from("0"),
             ts_init,
             ts_init,
@@ -2901,8 +2901,6 @@ fn market_order_limit_price(
     let raw = match side {
         OrderSide::Buy => quote.ask_price.as_decimal() * (one + bps / scale),
         OrderSide::Sell => quote.bid_price.as_decimal() * (one - bps / scale),
-        // NoOrderSide is rejected upstream by `order_side_to_derive`.
-        OrderSide::NoOrderSide => return None,
     };
     let rounded = round_to_tick(raw, tick_size, side);
     if rounded <= Decimal::ZERO {
@@ -2923,7 +2921,6 @@ fn trigger_market_limit_price(
     let raw = match side {
         OrderSide::Buy => trigger_price * (one + bps / scale),
         OrderSide::Sell => trigger_price * (one - bps / scale),
-        OrderSide::NoOrderSide => return None,
     };
     let rounded = round_to_tick(raw, tick_size, side);
     if rounded <= Decimal::ZERO {
@@ -3055,7 +3052,6 @@ fn round_to_tick(value: Decimal, tick_size: Decimal, side: OrderSide) -> Decimal
     let ticks = match side {
         OrderSide::Buy => ratio.ceil(),
         OrderSide::Sell => ratio.floor(),
-        OrderSide::NoOrderSide => ratio.round(),
     };
     ticks * tick_size
 }
@@ -3537,7 +3533,7 @@ mod tests {
             instrument_id,
             Some(cid),
             stale_voi,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Canceled,

@@ -281,7 +281,7 @@ impl MarketSbeMessage for OrderBookDepth10 {
 fn encode_book_order(writer: &mut SbeWriter<'_>, order: &BookOrder) {
     encode_price(writer, &order.price);
     encode_quantity(writer, &order.size);
-    writer.write_u8(order.side as u8);
+    writer.write_u8(order.side.map_or(0, |side| side as u8));
     writer.write_u64_le(order.order_id);
 }
 

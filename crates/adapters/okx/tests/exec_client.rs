@@ -59,8 +59,8 @@ use nautilus_live::{
 };
 use nautilus_model::{
     enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, TimeInForce, TriggerType,
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TriggerType,
     },
     events::{
         OrderEventAny, OrderInitialized,
@@ -169,7 +169,7 @@ fn make_order_status_report(cid: &str, status: OrderStatus) -> OrderStatusReport
         InstrumentId::from("ETH-USDT-SWAP.OKX"),
         Some(ClientOrderId::new(cid)),
         VenueOrderId::new("v-1"),
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::StopMarket,
         TimeInForce::Gtc,
         status,
@@ -1787,7 +1787,7 @@ fn test_dispatch_positions_channel_emits_position_report() {
         ExecutionEvent::Report(CommonExecutionReport::Position(report)) => {
             assert_eq!(report.account_id, AccountId::from("OKX-001"));
             assert_eq!(report.instrument_id, instrument_id);
-            assert_eq!(report.position_side, PositionSideSpecified::Long);
+            assert_eq!(report.position_side, PositionSide::Long);
             assert_eq!(report.quantity, Quantity::from("0.500"));
             assert_eq!(
                 report.venue_position_id,
@@ -1932,7 +1932,7 @@ fn test_dispatch_tracked_post_only_cancel_from_fixture(
             assert_eq!(report.instrument_id, instrument_id);
             assert_eq!(report.client_order_id, Some(client_order_id));
             assert_eq!(report.venue_order_id, VenueOrderId::new(venue_order_id));
-            assert_eq!(report.order_side, OrderSide::Buy);
+            assert_eq!(report.order_side, Some(OrderSide::Buy));
             assert_eq!(report.order_type, OrderType::Limit);
             assert_eq!(report.time_in_force, TimeInForce::Gtc);
             assert_eq!(report.order_status, OrderStatus::Canceled);
@@ -4685,7 +4685,7 @@ async fn test_generate_mass_status_recovers_historical_triggered_child_status() 
     assert_eq!(report.quantity, Quantity::from("1"));
     assert_eq!(report.filled_qty, Quantity::from("1"));
     assert_eq!(position_reports.len(), 1);
-    assert_eq!(position_report.position_side, PositionSideSpecified::Flat);
+    assert_eq!(position_report.position_side, PositionSide::Flat);
     assert_eq!(position_report.quantity, Quantity::from("0"));
 }
 

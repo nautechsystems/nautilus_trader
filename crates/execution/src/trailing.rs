@@ -15,7 +15,7 @@
 
 // TODO: We'll use anyhow for now, but would be best to implement some specific Error(s)
 use nautilus_model::{
-    enums::{OrderSideSpecified, OrderType, TrailingOffsetType, TriggerType},
+    enums::{OrderSide, OrderType, TrailingOffsetType, TriggerType},
     orders::{Order, OrderAny, OrderError},
     types::Price,
 };
@@ -44,7 +44,7 @@ pub fn trailing_stop_calculate(
     ask: Option<Price>,
     last: Option<Price>,
 ) -> anyhow::Result<(Option<Price>, Option<Price>)> {
-    let order_side = order.order_side_specified();
+    let order_side = order.order_side();
     let order_type = order.order_type();
 
     if !matches!(
@@ -104,8 +104,8 @@ pub fn trailing_stop_calculate(
     };
 
     let better_trigger: fn(Price, Price) -> bool = match order_side {
-        OrderSideSpecified::Buy => |c, p| c < p,
-        OrderSideSpecified::Sell => |c, p| c > p,
+        OrderSide::Buy => |c, p| c < p,
+        OrderSide::Sell => |c, p| c > p,
     };
     let better_limit = better_trigger;
 
@@ -120,8 +120,8 @@ pub fn trailing_stop_calculate(
             }
         };
         let value = match order_side {
-            OrderSideSpecified::Buy => basis + offset,
-            OrderSideSpecified::Sell => basis - offset,
+            OrderSide::Buy => basis + offset,
+            OrderSide::Sell => basis - offset,
         };
         Price::from_decimal_dp(value, price_increment.precision).map_err(Into::into)
     };
@@ -146,8 +146,8 @@ pub fn trailing_stop_calculate(
                 ask.ok_or_else(|| anyhow::anyhow!("Ask required"))?,
             );
             let basis = match order_side {
-                OrderSideSpecified::Buy => ask,
-                OrderSideSpecified::Sell => bid,
+                OrderSide::Buy => ask,
+                OrderSide::Sell => bid,
             };
             let cand_trigger = compute(trailing_offset, basis)?;
             new_trigger_price = maybe_move(&mut trigger_price, cand_trigger, better_trigger);
@@ -197,7 +197,7 @@ pub fn trailing_stop_calculate(
 pub fn trailing_stop_calculate_with_last(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
-    side: OrderSideSpecified,
+    side: OrderSide,
     offset: Decimal,
     last: Price,
 ) -> anyhow::Result<Price> {
@@ -210,8 +210,8 @@ pub fn trailing_stop_calculate_with_last(
     };
 
     let price = match side {
-        OrderSideSpecified::Buy => last + offset,
-        OrderSideSpecified::Sell => last - offset,
+        OrderSide::Buy => last + offset,
+        OrderSide::Sell => last - offset,
     };
 
     Price::from_decimal_dp(price, price_increment.precision).map_err(Into::into)
@@ -226,7 +226,7 @@ pub fn trailing_stop_calculate_with_last(
 pub fn trailing_stop_calculate_with_bid_ask(
     price_increment: Price,
     trailing_offset_type: TrailingOffsetType,
-    side: OrderSideSpecified,
+    side: OrderSide,
     offset: Decimal,
     bid: Price,
     ask: Price,
@@ -237,16 +237,16 @@ pub fn trailing_stop_calculate_with_bid_ask(
     let offset = match trailing_offset_type {
         TrailingOffsetType::Price => offset,
         TrailingOffsetType::BasisPoints => match side {
-            OrderSideSpecified::Buy => ask * offset / Decimal::from(10_000),
-            OrderSideSpecified::Sell => bid * offset / Decimal::from(10_000),
+            OrderSide::Buy => ask * offset / Decimal::from(10_000),
+            OrderSide::Sell => bid * offset / Decimal::from(10_000),
         },
         TrailingOffsetType::Ticks => offset * price_increment.as_decimal(),
         _ => anyhow::bail!("`TrailingOffsetType` {trailing_offset_type} not currently supported"),
     };
 
     let price = match side {
-        OrderSideSpecified::Buy => ask + offset,
-        OrderSideSpecified::Sell => bid - offset,
+        OrderSide::Buy => ask + offset,
+        OrderSide::Sell => bid - offset,
     };
 
     Price::from_decimal_dp(price, price_increment.precision).map_err(Into::into)
@@ -704,28 +704,28 @@ mod tests {
     #[rstest]
     #[case(
         TrailingOffsetType::Price,
-        OrderSideSpecified::Buy,
+        OrderSide::Buy,
         dec!(1.25),
         Price::from("98.00"),
         Price::from("99.25")
     )]
     #[case(
         TrailingOffsetType::BasisPoints,
-        OrderSideSpecified::Buy,
+        OrderSide::Buy,
         dec!(50),
         Price::from("98.00"),
         Price::from("98.49")
     )]
     #[case(
         TrailingOffsetType::Ticks,
-        OrderSideSpecified::Sell,
+        OrderSide::Sell,
         dec!(5),
         Price::from("102.00"),
         Price::from("101.95")
     )]
     fn test_calculate_with_last_uses_decimal_math(
         #[case] trailing_offset_type: TrailingOffsetType,
-        #[case] side: OrderSideSpecified,
+        #[case] side: OrderSide,
         #[case] offset: Decimal,
         #[case] last: Price,
         #[case] expected: Price,
@@ -745,7 +745,7 @@ mod tests {
     #[rstest]
     #[case(
         TrailingOffsetType::Price,
-        OrderSideSpecified::Sell,
+        OrderSide::Sell,
         dec!(1.25),
         Price::from("102.00"),
         Price::from("103.00"),
@@ -753,7 +753,7 @@ mod tests {
     )]
     #[case(
         TrailingOffsetType::BasisPoints,
-        OrderSideSpecified::Sell,
+        OrderSide::Sell,
         dec!(50),
         Price::from("102.00"),
         Price::from("103.00"),
@@ -761,7 +761,7 @@ mod tests {
     )]
     #[case(
         TrailingOffsetType::Ticks,
-        OrderSideSpecified::Buy,
+        OrderSide::Buy,
         dec!(5),
         Price::from("102.00"),
         Price::from("103.00"),
@@ -769,7 +769,7 @@ mod tests {
     )]
     fn test_calculate_with_bid_ask_uses_decimal_math(
         #[case] trailing_offset_type: TrailingOffsetType,
-        #[case] side: OrderSideSpecified,
+        #[case] side: OrderSide,
         #[case] offset: Decimal,
         #[case] bid: Price,
         #[case] ask: Price,

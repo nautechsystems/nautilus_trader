@@ -1033,10 +1033,10 @@ mod tests {
 
         assert_eq!(deltas.deltas.len(), 3);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas.deltas[1].order.price, Price::from("2352.71"));
         assert_eq!(deltas.deltas[1].order.size, Quantity::from("0.2125"));
-        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell.into());
         assert_eq!(deltas.deltas[2].order.price, Price::from("2352.74"));
         assert_eq!(deltas.deltas[2].order.size, Quantity::from("0.0050"));
         assert_eq!(deltas.deltas[0].sequence, 0);

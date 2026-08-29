@@ -405,6 +405,7 @@ cargo-codspeed = "5.0.1"
 cargo-fuzz = "0.13.2"
 cargo-hawk = "0.1.13"
 cargo-machete = "0.9.2"
+cbindgen = "0.29.4"
 flamegraph = "0.6.14"
 lychee = "0.24.2"
 

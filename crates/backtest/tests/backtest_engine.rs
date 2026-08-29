@@ -5057,7 +5057,6 @@ impl CancelAllSeeder {
         let price = match side {
             OrderSide::Buy => Price::from("900.00"),
             OrderSide::Sell => Price::from("1100.00"),
-            OrderSide::NoOrderSide => anyhow::bail!("order side must be specified"),
         };
         let order = self.order().limit(
             instrument_id,
@@ -5164,7 +5163,6 @@ impl CancelAllCaller {
         let price = match side {
             OrderSide::Buy => Price::from("900.00"),
             OrderSide::Sell => Price::from("1100.00"),
-            OrderSide::NoOrderSide => anyhow::bail!("order side must be specified"),
         };
         let order = self.order().limit(
             self.instrument_id,
@@ -5227,14 +5225,14 @@ impl DataActor for CancelAllCaller {
 }
 
 #[rstest]
-#[case(true, OrderSide::NoOrderSide, true)]
-#[case(true, OrderSide::Buy, false)]
-#[case(false, OrderSide::NoOrderSide, false)]
-#[case(false, OrderSide::Buy, true)]
-#[case(false, OrderSide::Sell, false)]
+#[case(true, None, true)]
+#[case(true, Some(OrderSide::Buy), false)]
+#[case(false, None, false)]
+#[case(false, Some(OrderSide::Buy), true)]
+#[case(false, Some(OrderSide::Sell), false)]
 fn test_cancel_all_orders_scope_matrix(
     #[case] strategy_only: bool,
-    #[case] cancel_side: OrderSide,
+    #[case] cancel_side: Option<OrderSide>,
     #[case] caller_present: bool,
     crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {
@@ -5268,7 +5266,7 @@ fn test_cancel_all_orders_scope_matrix(
                 .then_some(OrderSide::Buy)
                 .into_iter()
                 .collect(),
-            (cancel_side != OrderSide::NoOrderSide).then_some(cancel_side),
+            cancel_side,
             strategy_only,
             Rc::clone(&caller_ids),
         ))
@@ -5293,8 +5291,7 @@ fn test_cancel_all_orders_scope_matrix(
     assert_eq!(sibling_ids.len(), 3);
     assert_eq!(caller_ids.len(), usize::from(caller_present));
     let cache = engine.kernel().cache.borrow();
-    let side_matches =
-        |order_side| cancel_side == OrderSide::NoOrderSide || order_side == cancel_side;
+    let side_matches = |order_side| cancel_side.is_none_or(|side| order_side == side);
     let mut expected_canceled: Vec<ClientOrderId> = if strategy_only {
         caller_ids
             .iter()

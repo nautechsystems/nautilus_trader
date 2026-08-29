@@ -1533,7 +1533,7 @@ pub fn parse_algo_order_status_report(
         VenueOrderId::new(msg.ord_id.as_str())
     };
 
-    let order_side: OrderSide = msg.side.into();
+    let order_side = OrderSide::from(msg.side);
 
     let algo_fields = parse_algo_order_fields(msg)?;
 
@@ -1578,7 +1578,7 @@ pub fn parse_algo_order_status_report(
         instrument.id(),
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         algo_fields.order_type,
         TimeInForce::Gtc,
         status,
@@ -1728,7 +1728,7 @@ pub fn parse_order_status_report(
     let client_order_id =
         parse_parent_client_order_id(msg.algo_cl_ord_id.as_deref(), &msg.cl_ord_id);
     let venue_order_id = VenueOrderId::new(msg.ord_id);
-    let order_side: OrderSide = msg.side.into();
+    let order_side = OrderSide::from(msg.side);
 
     let okx_order_type = msg.ord_type;
 
@@ -1875,7 +1875,7 @@ pub fn parse_order_status_report(
         instrument.id(),
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -2078,7 +2078,7 @@ pub fn parse_fill_report(
         TradeId::new(&msg.trade_id)
     };
 
-    let order_side: OrderSide = msg.side.into();
+    let order_side = OrderSide::from(msg.side);
 
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
@@ -2652,14 +2652,17 @@ mod tests {
         assert!(!deltas.deltas.is_empty());
         // Snapshot should have both bid and ask deltas
         assert!(
-            deltas.deltas.iter().any(|d| d.order.side == OrderSide::Buy),
+            deltas
+                .deltas
+                .iter()
+                .any(|d| d.order.side == OrderSide::Buy.into()),
             "Should have bid deltas"
         );
         assert!(
             deltas
                 .deltas
                 .iter()
-                .any(|d| d.order.side == OrderSide::Sell),
+                .any(|d| d.order.side == OrderSide::Sell.into()),
             "Should have ask deltas"
         );
     }
@@ -2695,14 +2698,17 @@ mod tests {
         assert!(!deltas.deltas.is_empty());
         // Update should also have both bid and ask deltas
         assert!(
-            deltas.deltas.iter().any(|d| d.order.side == OrderSide::Buy),
+            deltas
+                .deltas
+                .iter()
+                .any(|d| d.order.side == OrderSide::Buy.into()),
             "Should have bid deltas"
         );
         assert!(
             deltas
                 .deltas
                 .iter()
-                .any(|d| d.order.side == OrderSide::Sell),
+                .any(|d| d.order.side == OrderSide::Sell.into()),
             "Should have ask deltas"
         );
     }
@@ -2728,11 +2734,11 @@ mod tests {
         assert_eq!(deltas.ts_event, UnixNanos::from(1_785_406_443_903_000_000));
         assert_eq!(deltas.ts_init, UnixNanos::from(123));
         assert_eq!(deltas.deltas[0].action, BookAction::Delete);
-        assert_eq!(deltas.deltas[0].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Sell.into());
         assert_eq!(deltas.deltas[0].order.price, Price::from("0.0001617"));
         assert_eq!(deltas.deltas[0].order.size, Quantity::from("0"));
         assert_eq!(deltas.deltas[1].action, BookAction::Update);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell.into());
         assert_eq!(deltas.deltas[1].order.price, Price::from("0.0001625"));
         assert_eq!(deltas.deltas[1].order.size, Quantity::from("12324367.786"));
     }
@@ -3180,7 +3186,7 @@ mod tests {
             order_status_report.venue_order_id,
             VenueOrderId::new("2497956918703120384")
         );
-        assert_eq!(order_status_report.order_side, OrderSide::Buy);
+        assert_eq!(order_status_report.order_side, OrderSide::Buy.into());
         assert_eq!(order_status_report.order_status, OrderStatus::Filled);
         assert_eq!(order_status_report.quantity, Quantity::from("0.03000000"));
         assert_eq!(order_status_report.filled_qty, Quantity::from("0.03000000"));
@@ -3282,7 +3288,7 @@ mod tests {
         // Check bid levels (available in test data: 8 levels)
         assert_eq!(depth10.bids[0].price, Price::from("8476.97"));
         assert_eq!(depth10.bids[0].size, Quantity::from("256"));
-        assert_eq!(depth10.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth10.bids[0].side, OrderSide::Buy.into());
         assert_eq!(depth10.bid_counts[0], 12);
 
         assert_eq!(depth10.bids[1].price, Price::from("8475.55"));
@@ -3297,7 +3303,7 @@ mod tests {
         // Check ask levels (available in test data: 8 levels)
         assert_eq!(depth10.asks[0].price, Price::from("8476.98"));
         assert_eq!(depth10.asks[0].size, Quantity::from("415"));
-        assert_eq!(depth10.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
         assert_eq!(depth10.ask_counts[0], 13);
 
         assert_eq!(depth10.asks[1].price, Price::from("8477.00"));
@@ -4424,7 +4430,7 @@ mod tests {
 
         if let ExecutionReport::Order(status_report) = report {
             assert_eq!(status_report.order_type, OrderType::StopMarket);
-            assert_eq!(status_report.order_side, OrderSide::Sell);
+            assert_eq!(status_report.order_side, OrderSide::Sell.into());
             assert_eq!(status_report.quantity, Quantity::from("0.01000000"));
             assert_eq!(status_report.trigger_price, Some(Price::from("95000.00")));
             assert_eq!(status_report.trigger_type, Some(TriggerType::LastPrice));
@@ -4477,7 +4483,7 @@ mod tests {
 
         if let ExecutionReport::Order(status_report) = report {
             assert_eq!(status_report.order_type, OrderType::StopLimit);
-            assert_eq!(status_report.order_side, OrderSide::Buy);
+            assert_eq!(status_report.order_side, OrderSide::Buy.into());
             assert_eq!(status_report.quantity, Quantity::from("0.02000000"));
             assert_eq!(status_report.trigger_price, Some(Price::from("105000.00")));
             assert_eq!(status_report.trigger_type, Some(TriggerType::MarkPrice));
@@ -7866,12 +7872,12 @@ mod tests {
         let bid = deltas
             .deltas
             .iter()
-            .find(|d| d.order.side == OrderSide::Buy)
+            .find(|d| d.order.side == OrderSide::Buy.into())
             .expect("should have a bid delta");
         let ask = deltas
             .deltas
             .iter()
-            .find(|d| d.order.side == OrderSide::Sell)
+            .find(|d| d.order.side == OrderSide::Sell.into())
             .expect("should have an ask delta");
         assert_eq!(bid.order.price.as_decimal(), dec!(16.65));
         assert_eq!(ask.order.price.as_decimal(), dec!(16.7));

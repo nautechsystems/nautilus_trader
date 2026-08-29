@@ -2025,7 +2025,7 @@ async fn test_futures_domain_request_order_status_reports_uses_position_size_for
     assert_eq!(report.account_id, account_id);
     assert_eq!(report.instrument_id, InstrumentId::from("PI_XBTUSD.KRAKEN"));
     assert_eq!(report.client_order_id, None);
-    assert_eq!(report.order_side, ModelOrderSide::Buy);
+    assert_eq!(report.order_side, Some(ModelOrderSide::Buy));
     assert_eq!(report.order_type, ModelOrderType::MarketIfTouched);
     assert_eq!(report.time_in_force, TimeInForce::Gtc);
     assert_eq!(report.order_status, OrderStatus::Accepted);
@@ -2085,7 +2085,7 @@ async fn test_futures_domain_submit_order_uses_submitted_size_for_attached_trigg
         report.venue_order_id,
         VenueOrderId::from("c8135f52-2a86-4e26-b629-43cc37da9dbf")
     );
-    assert_eq!(report.order_side, ModelOrderSide::Buy);
+    assert_eq!(report.order_side, Some(ModelOrderSide::Buy));
     assert_eq!(report.order_type, ModelOrderType::MarketIfTouched);
     assert_eq!(report.order_status, OrderStatus::Accepted);
     assert_eq!(report.quantity, Quantity::from("1234"));
@@ -3676,7 +3676,7 @@ async fn test_spot_margin_position_flat_when_fully_closed() {
     // request_position_status_reports must emit a FLAT report for the requested instrument.
     // Otherwise stale positions in the engine cannot be reconciled.
     use nautilus_model::{
-        enums::{AccountType, PositionSideSpecified},
+        enums::{AccountType, PositionSide},
         identifiers::AccountId,
     };
 
@@ -3750,7 +3750,7 @@ async fn test_spot_margin_position_flat_when_fully_closed() {
     );
     assert_eq!(
         report.position_side,
-        PositionSideSpecified::Flat,
+        PositionSide::Flat,
         "FLAT report side must be Flat, received {:?}",
         report.position_side
     );
@@ -3806,7 +3806,7 @@ async fn setup_margin_position_test(json: String) -> (KrakenSpotHttpClient, Inst
 #[tokio::test]
 async fn test_spot_margin_position_opposing_lots_net_to_long() {
     use nautilus_model::{
-        enums::{AccountType, PositionSideSpecified},
+        enums::{AccountType, PositionSide},
         identifiers::AccountId,
     };
 
@@ -3830,7 +3830,7 @@ async fn test_spot_margin_position_opposing_lots_net_to_long() {
     assert_eq!(reports.len(), 1);
     let r = &reports[0];
     assert_eq!(r.instrument_id, instrument_id);
-    assert_eq!(r.position_side, PositionSideSpecified::Long);
+    assert_eq!(r.position_side, PositionSide::Long);
     assert_eq!(r.quantity, Quantity::from("0.6"));
 }
 
@@ -3838,7 +3838,7 @@ async fn test_spot_margin_position_opposing_lots_net_to_long() {
 #[tokio::test]
 async fn test_spot_margin_position_opposing_lots_net_to_short() {
     use nautilus_model::{
-        enums::{AccountType, PositionSideSpecified},
+        enums::{AccountType, PositionSide},
         identifiers::AccountId,
     };
 
@@ -3862,7 +3862,7 @@ async fn test_spot_margin_position_opposing_lots_net_to_short() {
     assert_eq!(reports.len(), 1);
     let r = &reports[0];
     assert_eq!(r.instrument_id, instrument_id);
-    assert_eq!(r.position_side, PositionSideSpecified::Short);
+    assert_eq!(r.position_side, PositionSide::Short);
     assert_eq!(r.quantity, Quantity::from("0.5"));
 }
 
@@ -3870,7 +3870,7 @@ async fn test_spot_margin_position_opposing_lots_net_to_short() {
 #[tokio::test]
 async fn test_spot_margin_position_opposing_lots_net_to_flat() {
     use nautilus_model::{
-        enums::{AccountType, PositionSideSpecified},
+        enums::{AccountType, PositionSide},
         identifiers::AccountId,
     };
 
@@ -3894,7 +3894,7 @@ async fn test_spot_margin_position_opposing_lots_net_to_flat() {
     assert_eq!(reports.len(), 1);
     let r = &reports[0];
     assert_eq!(r.instrument_id, instrument_id);
-    assert_eq!(r.position_side, PositionSideSpecified::Flat);
+    assert_eq!(r.position_side, PositionSide::Flat);
     assert!(
         r.quantity.is_zero(),
         "expected zero qty, received {}",

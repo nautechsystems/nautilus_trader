@@ -51,7 +51,7 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControlFac
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, ContingencyType, OmsType, OrderType, PositionSideSpecified, TimeInForce,
+        AccountType, ContingencyType, OmsType, OrderType, PositionSide, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
     events::{
@@ -935,9 +935,9 @@ impl BinanceFuturesExecutionClient {
             .context("invalid entry_price")?;
 
         let position_side = if position_amount > Decimal::ZERO {
-            PositionSideSpecified::Long
+            PositionSide::Long
         } else {
-            PositionSideSpecified::Short
+            PositionSide::Short
         };
 
         let ts_now = self.clock.get_time_ns();
@@ -1113,9 +1113,7 @@ impl BinanceFuturesExecutionClient {
     }
 }
 
-fn quantity_free_close_position_side(
-    order: &BinanceFuturesAlgoOrder,
-) -> Option<PositionSideSpecified> {
+fn quantity_free_close_position_side(order: &BinanceFuturesAlgoOrder) -> Option<PositionSide> {
     let quantity_free = match order.quantity.as_deref() {
         None => true,
         Some(quantity) => quantity
@@ -1129,10 +1127,10 @@ fn quantity_free_close_position_side(
 
     match (order.side, order.position_side) {
         (BinanceSide::Sell, Some(BinancePositionSide::Long | BinancePositionSide::Both) | None) => {
-            Some(PositionSideSpecified::Long)
+            Some(PositionSide::Long)
         }
         (BinanceSide::Buy, Some(BinancePositionSide::Short | BinancePositionSide::Both) | None) => {
-            Some(PositionSideSpecified::Short)
+            Some(PositionSide::Short)
         }
         _ => None,
     }
@@ -3294,7 +3292,7 @@ struct FuturesOrderLifetime {
 
 struct OpenOrderStatusReport {
     report: OrderStatusReport,
-    quantity_free_close_position_side: Option<PositionSideSpecified>,
+    quantity_free_close_position_side: Option<PositionSide>,
 }
 
 fn create_algo_order_status_report(
@@ -3492,21 +3490,21 @@ mod tests {
         Some(BinancePositionSide::Long),
         true,
         None,
-        Some(PositionSideSpecified::Long)
+        Some(PositionSide::Long)
     )]
     #[case::hedge_long_zero(
         BinanceSide::Sell,
         Some(BinancePositionSide::Long),
         true,
         Some("0.0000"),
-        Some(PositionSideSpecified::Long)
+        Some(PositionSide::Long)
     )]
     #[case::hedge_short(
         BinanceSide::Buy,
         Some(BinancePositionSide::Short),
         true,
         None,
-        Some(PositionSideSpecified::Short)
+        Some(PositionSide::Short)
     )]
     #[case::invalid_hedge_long(BinanceSide::Buy, Some(BinancePositionSide::Long), true, None, None)]
     #[case::invalid_hedge_short(
@@ -3521,16 +3519,16 @@ mod tests {
         Some(BinancePositionSide::Both),
         true,
         None,
-        Some(PositionSideSpecified::Long)
+        Some(PositionSide::Long)
     )]
     #[case::one_way_short(
         BinanceSide::Buy,
         Some(BinancePositionSide::Both),
         true,
         None,
-        Some(PositionSideSpecified::Short)
+        Some(PositionSide::Short)
     )]
-    #[case::missing_side(BinanceSide::Buy, None, true, None, Some(PositionSideSpecified::Short))]
+    #[case::missing_side(BinanceSide::Buy, None, true, None, Some(PositionSide::Short))]
     #[case::unknown_side(
         BinanceSide::Sell,
         Some(BinancePositionSide::Unknown),
@@ -3543,7 +3541,7 @@ mod tests {
         #[case] position_side: Option<BinancePositionSide>,
         #[case] close_position: bool,
         #[case] quantity: Option<&str>,
-        #[case] expected: Option<PositionSideSpecified>,
+        #[case] expected: Option<PositionSide>,
     ) {
         let json = load_fixture_string("futures/http_json/open_algo_orders.json");
         let mut orders: Vec<BinanceFuturesAlgoOrder> = serde_json::from_str(&json).unwrap();

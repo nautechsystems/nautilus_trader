@@ -22,7 +22,7 @@ use nautilus_core::{
     datetime::NANOSECONDS_IN_SECOND, time::AtomicTime,
 };
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, PositionSideSpecified, TimeInForce},
+    enums::{LiquiditySide, OrderSide, OrderStatus, PositionSide, TimeInForce},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -1346,7 +1346,7 @@ fn build_position_report_from_reportable_position(
     Some(PositionStatusReport::new(
         account_id,
         instrument_id,
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         quantity,
         ts,
         ts,
@@ -1986,7 +1986,7 @@ mod tests {
             instrument_id,
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::PartiallyFilled,
@@ -2034,7 +2034,7 @@ mod tests {
             instrument_id,
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Filled,

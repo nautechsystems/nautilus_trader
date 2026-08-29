@@ -2075,11 +2075,11 @@ async fn test_subscribe_book_deltas() {
     assert_eq!(snapshot.deltas.len(), 5);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
     assert_eq!(snapshot.deltas[1].action, BookAction::Add);
-    assert_eq!(snapshot.deltas[1].order.side, OrderSide::Buy);
+    assert_eq!(snapshot.deltas[1].order.side, Some(OrderSide::Buy));
     assert_eq!(snapshot.deltas[1].order.price.as_decimal(), dec!(50000.00));
     assert_eq!(snapshot.deltas[1].order.size.as_decimal(), dec!(1.000));
     assert_eq!(snapshot.deltas[4].action, BookAction::Add);
-    assert_eq!(snapshot.deltas[4].order.side, OrderSide::Sell);
+    assert_eq!(snapshot.deltas[4].order.side, Some(OrderSide::Sell));
     assert_eq!(snapshot.deltas[4].order.price.as_decimal(), dec!(50002.00));
     assert_eq!(snapshot.deltas[4].order.size.as_decimal(), dec!(1.500));
     assert_eq!(snapshot.deltas[4].flags, RecordFlag::F_LAST as u8);
@@ -2087,11 +2087,11 @@ async fn test_subscribe_book_deltas() {
     assert_eq!(replayed.sequence, 1027025);
     assert_eq!(replayed.deltas.len(), 4);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
-    assert_eq!(replayed.deltas[0].order.side, OrderSide::Buy);
+    assert_eq!(replayed.deltas[0].order.side, Some(OrderSide::Buy));
     assert_eq!(replayed.deltas[0].order.price.as_decimal(), dec!(50000.00));
     assert_eq!(replayed.deltas[0].order.size.as_decimal(), dec!(1.000));
     assert_eq!(replayed.deltas[3].action, BookAction::Update);
-    assert_eq!(replayed.deltas[3].order.side, OrderSide::Sell);
+    assert_eq!(replayed.deltas[3].order.side, Some(OrderSide::Sell));
     assert_eq!(replayed.deltas[3].order.price.as_decimal(), dec!(50002.00));
     assert_eq!(replayed.deltas[3].order.size.as_decimal(), dec!(1.500));
     assert_eq!(replayed.deltas[3].flags, RecordFlag::F_LAST as u8);

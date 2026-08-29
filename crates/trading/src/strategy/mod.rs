@@ -983,7 +983,7 @@ pub trait Strategy: DataActor {
                 client_id,
                 strategy_id,
                 instrument_id,
-                order_side.unwrap_or(OrderSide::NoOrderSide),
+                order_side,
                 command_id,
                 ts_init,
                 params,
@@ -1160,7 +1160,10 @@ pub trait Strategy: DataActor {
             return Ok(());
         }
 
-        let closing_side = OrderCore::closing_side(position.side);
+        let Some(closing_side) = OrderCore::closing_side(position.side) else {
+            log::warn!("Cannot close flat position: {}", position.id);
+            return Ok(());
+        };
 
         let order = core.order_factory().market(
             position.instrument_id,
@@ -1237,7 +1240,9 @@ pub trait Strategy: DataActor {
             }
 
             let core = StrategyNative::strategy_core_mut(self);
-            let closing_side = OrderCore::closing_side(pos_side);
+            let Some(closing_side) = OrderCore::closing_side(pos_side) else {
+                continue;
+            };
             let order = core.order_factory().market(
                 pos_instrument_id,
                 closing_side,
@@ -1910,7 +1915,9 @@ pub trait Strategy: DataActor {
                 let time_in_force = core.config.market_exit_time_in_force;
                 let reduce_only = core.config.market_exit_reduce_only;
                 let market_exit_tag = core.market_exit_tag;
-                let closing_side = OrderCore::closing_side(side);
+                let Some(closing_side) = OrderCore::closing_side(side) else {
+                    continue;
+                };
                 let order = core.order_factory().market(
                     instrument_id,
                     closing_side,
@@ -4489,7 +4496,7 @@ mod tests {
         assert_eq!(command.strategy_id, StrategyId::from("TEST-001"));
         assert_eq!(command.instrument_id, instrument_id);
         assert_eq!(command.client_id, None);
-        assert_eq!(command.order_side, OrderSide::NoOrderSide);
+        assert_eq!(command.order_side, None);
         assert_eq!(command.correlation_id, Some(command.command_id));
         assert_eq!(command.causation_id, None);
     }
@@ -4599,7 +4606,7 @@ mod tests {
         assert_eq!(exec_command.client_id, Some(selected_client));
         assert_eq!(exec_command.strategy_id, StrategyId::from("TEST-001"));
         assert_eq!(exec_command.instrument_id, instrument_id);
-        assert_eq!(exec_command.order_side, OrderSide::Buy);
+        assert_eq!(exec_command.order_side, Some(OrderSide::Buy));
         assert_eq!(exec_command.params.as_ref(), Some(&params));
         assert_eq!(exec_command.correlation_id, Some(exec_command.command_id));
         assert_eq!(exec_command.causation_id, None);

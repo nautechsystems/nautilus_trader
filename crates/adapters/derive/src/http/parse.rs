@@ -18,7 +18,7 @@
 use anyhow::Context;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
-    enums::{LiquiditySide, OrderType, PositionSideSpecified},
+    enums::{LiquiditySide, OrderType, PositionSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -88,7 +88,7 @@ pub(crate) fn parse_derive_order_to_report_with_precision(
         instrument_id,
         None,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -294,11 +294,11 @@ pub(crate) fn parse_derive_position_to_report_with_precision(
     );
     let signed_amount = position.amount;
     let side = if signed_amount > Decimal::ZERO {
-        PositionSideSpecified::Long
+        PositionSide::Long
     } else if signed_amount < Decimal::ZERO {
-        PositionSideSpecified::Short
+        PositionSide::Short
     } else {
-        PositionSideSpecified::Flat
+        PositionSide::Flat
     };
     let abs_amount = signed_amount.abs();
     let quantity = quantity_from_decimal(abs_amount, size_precision, "position.amount")?;
@@ -511,15 +511,8 @@ mod tests {
 
     #[rstest]
     fn test_order_side_round_trip() {
-        assert_eq!(
-            order_side_to_derive(OrderSide::Buy).unwrap(),
-            DeriveOrderSide::Buy,
-        );
-        assert_eq!(
-            order_side_to_derive(OrderSide::Sell).unwrap(),
-            DeriveOrderSide::Sell,
-        );
-        assert!(order_side_to_derive(OrderSide::NoOrderSide).is_err());
+        assert_eq!(order_side_to_derive(OrderSide::Buy), DeriveOrderSide::Buy,);
+        assert_eq!(order_side_to_derive(OrderSide::Sell), DeriveOrderSide::Sell,);
     }
 
     #[rstest]
@@ -918,21 +911,21 @@ mod tests {
         long_pos.amount = dec!(3);
         let report =
             parse_derive_position_to_report(&long_pos, account_id, UnixNanos::from(3)).unwrap();
-        assert_eq!(report.position_side, PositionSideSpecified::Long);
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from("3"));
 
         let mut short_pos = sample_position();
         short_pos.amount = dec!(-2);
         let report =
             parse_derive_position_to_report(&short_pos, account_id, UnixNanos::from(3)).unwrap();
-        assert_eq!(report.position_side, PositionSideSpecified::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from("2"));
 
         let mut flat_pos = sample_position();
         flat_pos.amount = dec!(0);
         let report =
             parse_derive_position_to_report(&flat_pos, account_id, UnixNanos::from(3)).unwrap();
-        assert_eq!(report.position_side, PositionSideSpecified::Flat);
+        assert_eq!(report.position_side, PositionSide::Flat);
     }
 
     #[rstest]

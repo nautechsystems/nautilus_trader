@@ -28,6 +28,7 @@ from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PoolLiquidityUpdateType
+from nautilus_trader.model import PositionSide
 from nautilus_trader.model import TradingState
 
 
@@ -38,6 +39,65 @@ def test_model_enum_variants_are_iterable() -> None:
     variants = list(AccountType.variants())
     assert AccountType.CASH in variants
     assert AccountType.MARGIN in variants
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "expected"),
+    [
+        (OrderSide, [OrderSide.BUY, OrderSide.SELL]),
+        (PositionSide, [PositionSide.FLAT, PositionSide.LONG, PositionSide.SHORT]),
+    ],
+)
+def test_side_enums_expose_only_domain_states(enum_type: object, expected: object) -> None:
+    """
+    Test side enums expose only valid domain states.
+    """
+    assert list(enum_type.variants()) == expected
+
+
+def test_side_enums_retain_none_compatibility_aliases() -> None:
+    """
+    Test side enums retain transitional aliases for optional values.
+    """
+    assert OrderSide.NO_ORDER_SIDE is None
+    assert PositionSide.NO_POSITION_SIDE is None
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "token"),
+    [
+        (OrderSide, "NO_ORDER_SIDE"),
+        (PositionSide, "NO_POSITION_SIDE"),
+    ],
+)
+def test_side_enums_accept_legacy_none_tokens(enum_type: object, token: str) -> None:
+    """
+    Test side enums retain transitional parsing for optional values.
+    """
+    assert enum_type(token) is None
+    assert enum_type.from_str(token) is None
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "token", "expected"),
+    [
+        (OrderSide, "BUY", OrderSide.BUY),
+        (OrderSide, "SELL", OrderSide.SELL),
+        (PositionSide, "FLAT", PositionSide.FLAT),
+        (PositionSide, "LONG", PositionSide.LONG),
+        (PositionSide, "SHORT", PositionSide.SHORT),
+    ],
+)
+def test_side_enums_accept_domain_tokens(
+    enum_type: object,
+    token: str,
+    expected: object,
+) -> None:
+    """
+    Test side enums retain normal parsing for valid domain states.
+    """
+    assert enum_type(token) == expected
+    assert enum_type.from_str(token) == expected
 
 
 @pytest.mark.parametrize(

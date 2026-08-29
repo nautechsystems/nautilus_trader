@@ -32,7 +32,7 @@ use nautilus_common::{
 };
 use nautilus_core::{Params, time::get_atomic_clock_realtime};
 use nautilus_model::{
-    enums::PositionSideSpecified,
+    enums::PositionSide,
     identifiers::AccountId,
     instruments::Instrument,
     reports::PositionStatusReport,
@@ -423,11 +423,11 @@ pub async fn subscribe_positions(
                             Ok(Some(instrument)) => {
                                 let instrument_id = instrument.id();
                                 let position_side = if new_quantity.is_zero() {
-                                    PositionSideSpecified::Flat
+                                    PositionSide::Flat
                                 } else if new_quantity > Decimal::ZERO {
-                                    PositionSideSpecified::Long
+                                    PositionSide::Long
                                 } else {
-                                    PositionSideSpecified::Short
+                                    PositionSide::Short
                                 };
 
                                 let quantity = Quantity::new(

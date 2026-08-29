@@ -18,8 +18,8 @@
 use std::borrow::Cow;
 
 use nautilus_model::enums::{
-    ContingencyType, LiquiditySide, MarketStatusAction, OrderSide, OrderSideSpecified, OrderStatus,
-    OrderType, PositionSide, TimeInForce,
+    ContingencyType, LiquiditySide, MarketStatusAction, OrderSide, OrderStatus, OrderType,
+    PositionSide, TimeInForce,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
@@ -81,11 +81,11 @@ pub enum BitmexSide {
     Sell,
 }
 
-impl From<OrderSideSpecified> for BitmexSide {
-    fn from(value: OrderSideSpecified) -> Self {
+impl From<OrderSide> for BitmexSide {
+    fn from(value: OrderSide) -> Self {
         match value {
-            OrderSideSpecified::Buy => Self::Buy,
-            OrderSideSpecified::Sell => Self::Sell,
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
         }
     }
 }
@@ -144,7 +144,7 @@ impl From<PositionSide> for BitmexPositionSide {
         match side {
             PositionSide::Long => Self::Long,
             PositionSide::Short => Self::Short,
-            PositionSide::Flat | PositionSide::NoPositionSide => Self::Flat,
+            PositionSide::Flat => Self::Flat,
         }
     }
 }
@@ -1219,8 +1219,8 @@ mod tests {
 
     #[rstest]
     fn test_order_side_from_specified() {
-        assert_eq!(BitmexSide::from(OrderSideSpecified::Buy), BitmexSide::Buy);
-        assert_eq!(BitmexSide::from(OrderSideSpecified::Sell), BitmexSide::Sell);
+        assert_eq!(BitmexSide::from(OrderSide::Buy), BitmexSide::Buy);
+        assert_eq!(BitmexSide::from(OrderSide::Sell), BitmexSide::Sell);
     }
 
     #[rstest]

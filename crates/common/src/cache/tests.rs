@@ -3316,51 +3316,6 @@ fn test_update_position_from_fill_duplicate_leaves_canonical_state_unchanged(
     assert!(!cache.is_position_closed(&position_id));
 }
 
-#[rstest]
-fn test_update_position_from_fill_invalid_side_leaves_canonical_state_unchanged(
-    mut cache: Cache,
-    audusd_sim: CurrencyPair,
-) {
-    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
-    let position_id = PositionId::new("P-IN-PLACE-INVALID-SIDE");
-    let client_order_id = ClientOrderId::new("O-IN-PLACE-INVALID-SIDE");
-    let fill = OrderFilledSpec::builder()
-        .instrument_id(instrument.id())
-        .client_order_id(client_order_id)
-        .trade_id(TradeId::new("T-IN-PLACE-VALID-SIDE"))
-        .last_px(Price::from("1.0"))
-        .liquidity_side(LiquiditySide::Maker)
-        .position_id(position_id)
-        .commission(Money::from("2 USD"))
-        .build();
-    let position = Position::new(&instrument, fill);
-    cache.add_position(&position, OmsType::Netting).unwrap();
-
-    let invalid_fill = OrderFilledSpec::builder()
-        .instrument_id(instrument.id())
-        .client_order_id(client_order_id)
-        .trade_id(TradeId::new("T-IN-PLACE-INVALID-SIDE"))
-        .order_side(OrderSide::NoOrderSide)
-        .last_px(Price::from("1.0"))
-        .liquidity_side(LiquiditySide::Maker)
-        .position_id(position_id)
-        .commission(Money::from("2 USD"))
-        .build();
-
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        cache.update_position_from_fill(position_id, &invalid_fill)
-    }));
-
-    assert!(result.is_err());
-    let cached = cache.position(&position_id).unwrap();
-    assert_eq!(
-        serde_json::to_value(&*cached).unwrap(),
-        serde_json::to_value(&position).unwrap(),
-    );
-    assert!(cache.is_position_open(&position_id));
-    assert!(!cache.is_position_closed(&position_id));
-}
-
 // -- DATA ------------------------------------------------------------------------------------
 
 #[rstest]
@@ -10762,9 +10717,8 @@ fn test_has_orders_with_side_filter(mut cache: Cache) {
     promote_to_open(&mut cache, &mut buy, account_id, VenueOrderId::from("V-1"));
     promote_to_open(&mut cache, &mut sell, account_id, VenueOrderId::from("V-2"));
 
-    let cases: [(Option<&Venue>, Option<OrderSide>, bool); 6] = [
+    let cases: [(Option<&Venue>, Option<OrderSide>, bool); 5] = [
         (None, None, true),
-        (None, Some(OrderSide::NoOrderSide), true),
         (None, Some(OrderSide::Buy), true),
         (None, Some(OrderSide::Sell), true),
         (Some(&venue_a), Some(OrderSide::Buy), true),

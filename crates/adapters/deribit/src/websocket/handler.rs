@@ -1158,28 +1158,35 @@ impl DeribitWsFeedHandler {
                                                         venue_order_id,
                                                         Some(client_order_id),
                                                     )
-                                                    .unwrap_or(OrderContext {
-                                                        client_order_id,
-                                                        trader_id,
-                                                        strategy_id,
-                                                        instrument_id,
-                                                        order_side: match order_msg
-                                                            .direction
-                                                            .as_str()
-                                                        {
-                                                            "buy" => OrderSide::Buy,
-                                                            "sell" => OrderSide::Sell,
-                                                            _ => OrderSide::NoOrderSide,
-                                                        },
-                                                        order_type: parse_deribit_order_type(
-                                                            &order_msg.order_type,
-                                                        ),
-                                                        accepted: true,
-                                                        last_order_signature: Some(
-                                                            Self::order_signature(&order_msg),
-                                                        ),
+                                                    .or_else(|| {
+                                                        let order_side =
+                                                            match order_msg.direction.as_str() {
+                                                                "buy" => OrderSide::Buy,
+                                                                "sell" => OrderSide::Sell,
+                                                                _ => return None,
+                                                            };
+                                                        Some(OrderContext {
+                                                            client_order_id,
+                                                            trader_id,
+                                                            strategy_id,
+                                                            instrument_id,
+                                                            order_side,
+                                                            order_type: parse_deribit_order_type(
+                                                                &order_msg.order_type,
+                                                            ),
+                                                            accepted: true,
+                                                            last_order_signature: Some(
+                                                                Self::order_signature(&order_msg),
+                                                            ),
+                                                        })
                                                     });
-                                                self.finish_order_context(venue_order_id, &context);
+
+                                                if let Some(context) = context {
+                                                    self.finish_order_context(
+                                                        venue_order_id,
+                                                        &context,
+                                                    );
+                                                }
                                                 return Some(NautilusWsMessage::OrderCanceled(
                                                     event,
                                                 ));

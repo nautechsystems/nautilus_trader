@@ -706,12 +706,11 @@ impl Account for WalletAccount {
         let source_currency = if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false)
         {
             base_currency
-        } else if side == OrderSide::Buy {
-            instrument.quote_currency()
-        } else if side == OrderSide::Sell {
-            base_currency
         } else {
-            anyhow::bail!("Invalid `OrderSide` in `calculate_balance_locked`: {side}")
+            match side {
+                OrderSide::Buy => instrument.quote_currency(),
+                OrderSide::Sell => base_currency,
+            }
         };
         let current_balance = self
             .base

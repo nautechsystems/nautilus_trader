@@ -51,8 +51,7 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-        TimeInForce, TrailingOffsetType,
+        AccountType, OmsType, OrderStatus, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
     },
     events::OrderDeniedReason,
     identifiers::{
@@ -1129,26 +1128,22 @@ impl OKXExecutionClient {
             return;
         }
 
-        self.ws_dispatch_state
-            .order_identities
-            .entry(client_order_id)
-            .or_insert_with(|| {
-                let cache = self.core.cache();
-                let (order_side, order_type) = cache
-                    .order(&client_order_id)
-                    .map_or((OrderSide::NoOrderSide, OrderType::Market), |o| {
-                        (o.order_side(), o.order_type())
-                    });
-                drop(cache);
+        let cache = self.core.cache();
+        let order_identity = cache.order(&client_order_id).map(|order| OrderIdentity {
+            client_order_id,
+            instrument_id,
+            strategy_id,
+            order_side: order.order_side(),
+            order_type: order.order_type(),
+        });
+        drop(cache);
 
-                OrderIdentity {
-                    client_order_id,
-                    instrument_id,
-                    strategy_id,
-                    order_side,
-                    order_type,
-                }
-            });
+        if let Some(order_identity) = order_identity {
+            self.ws_dispatch_state
+                .order_identities
+                .entry(client_order_id)
+                .or_insert(order_identity);
+        }
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -2784,7 +2779,7 @@ impl OKXExecutionClient {
             position_reports.push(PositionStatusReport::new(
                 self.core.account_id,
                 instrument_id,
-                PositionSideSpecified::Flat,
+                PositionSide::Flat,
                 Quantity::zero(0),
                 ts_init,
                 ts_init,
@@ -3265,7 +3260,7 @@ mod tests {
     use nautilus_common::{cache::Cache, messages::ExecutionEvent, testing::wait_until_async};
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::OrderStatus,
+        enums::{OrderSide, OrderStatus},
         events::OrderEventAny,
         instruments::Instrument,
         orders::OrderTestBuilder,
@@ -3574,7 +3569,7 @@ mod tests {
             InstrumentId::from("BTC-USDT.OKX"),
             cid.map(ClientOrderId::from),
             VenueOrderId::from(vid),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -4108,7 +4103,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_ensure_order_identity_restores_available_fields_without_cached_order() {
+    fn test_ensure_order_identity_skips_order_without_cached_side() {
         let client = build_test_exec_client();
         let client_order_id = ClientOrderId::from("O-RESTORED-001");
         let strategy_id = StrategyId::from("S-RESTORED-002");
@@ -4116,19 +4111,12 @@ mod tests {
 
         client.ensure_order_identity(client_order_id, strategy_id, instrument_id);
 
-        assert_eq!(
+        assert!(
             client
                 .ws_dispatch_state
                 .order_identities
                 .get(&client_order_id)
-                .map(|entry| *entry),
-            Some(OrderIdentity {
-                client_order_id,
-                strategy_id,
-                instrument_id,
-                order_side: OrderSide::NoOrderSide,
-                order_type: OrderType::Market,
-            })
+                .is_none()
         );
     }
 

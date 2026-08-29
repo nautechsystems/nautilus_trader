@@ -2,6 +2,12 @@
 
 Released on TBD (UTC).
 
+> [!NOTE]
+> The `OrderSide` and `PositionSide` changes are broad because their zero-valued `NO_*` variants
+> came from constraints in the former Cython and FFI design. With Cython removed, the compatibility
+> representation can remain at the FFI boundary instead of shaping the Rust and Python domain enums,
+> while preserving the existing C API.
+
 ### Enhancements
 
 - Added custom Python fee model support to simulation configs (#4806), thanks for reporting @gtalknitin
@@ -32,6 +38,8 @@ Released on TBD (UTC).
 - Renamed `*ExecClientConfig` types to `*ExecutionClientConfig`
 - Renamed `BetfairDataConfig` to `BetfairDataClientConfig`
 - Renamed `BetfairExecConfig` to `BetfairExecutionClientConfig`
+- Changed Rust `OrderSide` to `BUY` or `SELL`; removed `OrderSideSpecified`; use `Option` if needed
+- Changed Rust `PositionSide` to `FLAT`, `LONG`, or `SHORT`; removed `PositionSideSpecified`; use `Option` if needed
 - Changed Rust backtest margin parameters to `MarginModelHandle`
 - Changed Rust backtest latency parameters to `LatencyModelHandle`
 - Changed contract expiry to use `InstrumentClose.close_price` for futures, binary contracts, and option close legs

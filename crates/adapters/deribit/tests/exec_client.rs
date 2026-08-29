@@ -1482,7 +1482,7 @@ fn cancel_all_orders_command() -> CancelAllOrders {
         Some(*DERIBIT_CLIENT_ID),
         test_strategy_id(),
         test_instrument_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,

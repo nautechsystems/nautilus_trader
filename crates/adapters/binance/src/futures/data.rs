@@ -3259,10 +3259,10 @@ mod tests {
             parse_order_book_snapshot(&order_book, instrument_id, 2, 3, UnixNanos::from(1));
 
         assert_eq!(deltas.deltas.len(), 3);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas.deltas[1].order.price.as_decimal(), dec!(100.00));
         assert_eq!(deltas.deltas[1].order.size.as_decimal(), dec!(0.500));
-        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell.into());
         assert_eq!(deltas.deltas[2].order.price.as_decimal(), dec!(102.00));
         assert_eq!(deltas.deltas[2].order.size.as_decimal(), dec!(0.700));
         assert_eq!(deltas.deltas[2].flags, RecordFlag::F_LAST as u8);

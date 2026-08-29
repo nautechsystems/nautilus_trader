@@ -1917,7 +1917,7 @@ impl AxHttpClient {
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
-        order_side: OrderSide,
+        order_side: Option<OrderSide>,
         order_type: OrderType,
         time_in_force: TimeInForce,
     ) -> anyhow::Result<OrderStatusReport> {

@@ -405,7 +405,6 @@ fn append_depth_prune_deltas(
             OrderSide::Buy => {
                 bid_levels.insert(order.price);
             }
-            OrderSide::NoOrderSide => {}
         }
     }
 
@@ -430,7 +429,6 @@ fn append_depth_prune_deltas(
         .filter(|(_, order)| match order.side {
             OrderSide::Sell => !ask_keep.contains(&order.price),
             OrderSide::Buy => !bid_keep.contains(&order.price),
-            OrderSide::NoOrderSide => true,
         })
         .map(|(order_id, order)| (*order_id, order.clone()))
         .collect();
@@ -478,7 +476,6 @@ fn retained_price_levels(
     match side {
         OrderSide::Sell => levels.sort(),
         OrderSide::Buy => levels.sort_by(|a, b| b.cmp(a)),
-        OrderSide::NoOrderSide => {}
     }
 
     levels.dedup();
@@ -494,7 +491,6 @@ fn compare_l3_orders(a: &CachedL3Order, b: &CachedL3Order) -> Ordering {
     let price_order = match a.side {
         OrderSide::Sell => a.price.cmp(&b.price),
         OrderSide::Buy => b.price.cmp(&a.price),
-        OrderSide::NoOrderSide => Ordering::Equal,
     };
 
     price_order.then(a.seq.cmp(&b.seq))
@@ -504,7 +500,6 @@ fn side_rank(side: OrderSide) -> u8 {
     match side {
         OrderSide::Sell => 0,
         OrderSide::Buy => 1,
-        OrderSide::NoOrderSide => 2,
     }
 }
 

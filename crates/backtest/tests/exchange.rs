@@ -1331,7 +1331,6 @@ fn matching_option_trade_through_quote(instrument: &InstrumentAny, side: OrderSi
         OrderSide::Sell => {
             matching_option_quote(instrument, "102.00", "103.00", UnixNanos::from(3))
         }
-        _ => panic!("Expected buy or sell option order side"),
     }
 }
 

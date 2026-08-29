@@ -426,16 +426,10 @@ impl BetSide {
 }
 
 impl From<OrderSide> for BetSide {
-    /// Returns the equivalent [`BetSide`] for a given [`OrderSide`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if `side` is [`OrderSide::NoOrderSide`].
     fn from(side: OrderSide) -> Self {
         match side {
             OrderSide::Buy => Self::Back,
             OrderSide::Sell => Self::Lay,
-            OrderSide::NoOrderSide => panic!("Invalid `OrderSide` for `BetSide`, was {side}"),
         }
     }
 }
@@ -1246,13 +1240,15 @@ pub enum OtoTriggerMode {
     Full = 1,
 }
 
-/// The order side for a specific order, or action related to orders.
+/// The order side (BUY or SELL).
+///
+/// Python retains `NO_ORDER_SIDE` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1282,9 +1278,6 @@ pub enum OtoTriggerMode {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum OrderSide {
-    /// No order side is specified.
-    #[default]
-    NoOrderSide = 0,
     /// The order is a BUY.
     Buy = 1,
     /// The order is a SELL.
@@ -1292,75 +1285,12 @@ pub enum OrderSide {
 }
 
 impl OrderSide {
-    /// Returns the specified [`OrderSideSpecified`] (BUY or SELL) for this side.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `self` is [`OrderSide::NoOrderSide`].
-    #[must_use]
-    pub fn as_specified(&self) -> OrderSideSpecified {
-        match &self {
-            Self::Buy => OrderSideSpecified::Buy,
-            Self::Sell => OrderSideSpecified::Sell,
-            Self::NoOrderSide => panic!("Order invariant failed: side must be `Buy` or `Sell`"),
-        }
-    }
-}
-
-/// Convert the given `value` to an [`OrderSide`].
-impl FromU8 for OrderSide {
-    fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(Self::NoOrderSide),
-            1 => Some(Self::Buy),
-            2 => Some(Self::Sell),
-            _ => None,
-        }
-    }
-}
-
-/// The specified order side (BUY or SELL).
-#[repr(C)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    Hash,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    AsRefStr,
-    FromRepr,
-    EnumIter,
-    EnumString,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum OrderSideSpecified {
-    /// The order is a BUY.
-    Buy = 1,
-    /// The order is a SELL.
-    Sell = 2,
-}
-
-impl OrderSideSpecified {
     /// Returns the opposite order side.
     #[must_use]
     pub fn opposite(&self) -> Self {
         match &self {
             Self::Buy => Self::Sell,
             Self::Sell => Self::Buy,
-        }
-    }
-
-    /// Converts this specified side into an [`OrderSide`].
-    #[must_use]
-    pub fn as_order_side(&self) -> OrderSide {
-        match &self {
-            Self::Buy => OrderSide::Buy,
-            Self::Sell => OrderSide::Sell,
         }
     }
 }
@@ -1597,13 +1527,15 @@ impl FromU8 for PositionAdjustmentType {
     }
 }
 
-/// The market side for a specific position, or action related to positions.
+/// The position side (FLAT, LONG, or SHORT).
+///
+/// Python retains `NO_POSITION_SIDE` as a compatibility alias for `None`. The alias is not an enum
+/// variant and may be removed in a future version.
 #[repr(C)]
 #[derive(
     Copy,
     Clone,
     Debug,
-    Default,
     Display,
     Hash,
     PartialEq,
@@ -1633,10 +1565,7 @@ impl FromU8 for PositionAdjustmentType {
     pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.model")
 )]
 pub enum PositionSide {
-    /// No position side is specified (only valid in the context of a filter for actions involving positions).
-    #[default]
-    NoPositionSide = 0,
-    /// A neural/flat position, where no position is currently held in the market.
+    /// A neutral/flat position, where no position is currently held in the market.
     Flat = 1,
     /// A long position in the market, typically acquired through one or many BUY orders.
     Long = 2,
@@ -1644,62 +1573,133 @@ pub enum PositionSide {
     Short = 3,
 }
 
-impl PositionSide {
-    /// Returns the specified [`PositionSideSpecified`] (`Long`, `Short`, or `Flat`) for this side.
+/// Serde compatibility for an optional order side previously encoded with `NO_ORDER_SIDE`.
+pub mod serde_option_order_side {
+    use std::{borrow::Cow, str::FromStr};
+
+    use serde::{Deserialize, Deserializer, Serializer, de::Visitor};
+
+    use super::OrderSide;
+
+    /// Serializes an optional order side using the legacy no-side token.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if `self` is [`PositionSide::NoPositionSide`].
-    #[must_use]
-    pub fn as_specified(&self) -> PositionSideSpecified {
-        match &self {
-            Self::Long => PositionSideSpecified::Long,
-            Self::Short => PositionSideSpecified::Short,
-            Self::Flat => PositionSideSpecified::Flat,
-            Self::NoPositionSide => {
-                panic!("Position invariant failed: side must be `Long`, `Short`, or `Flat`")
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<OrderSide>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(value.as_ref().map_or("NO_ORDER_SIDE", AsRef::as_ref))
+    }
+
+    /// Deserializes an optional order side from a side token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid order side.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<OrderSide>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct OptionalOrderSideVisitor;
+
+        impl<'de> Visitor<'de> for OptionalOrderSideVisitor {
+            type Value = Option<OrderSide>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("BUY, SELL, NO_ORDER_SIDE, or null")
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let value = Cow::<'de, str>::deserialize(deserializer)?;
+                if value.eq_ignore_ascii_case("NO_ORDER_SIDE") {
+                    Ok(None)
+                } else {
+                    OrderSide::from_str(&value)
+                        .map(Some)
+                        .map_err(serde::de::Error::custom)
+                }
             }
         }
+
+        deserializer.deserialize_option(OptionalOrderSideVisitor)
     }
 }
 
-/// The specified position side (FLAT, LONG, or SHORT).
-#[repr(C)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    Hash,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    AsRefStr,
-    FromRepr,
-    EnumIter,
-    EnumString,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-pub enum PositionSideSpecified {
-    /// A neural/flat position, where no position is currently held in the market.
-    Flat = 1,
-    /// A long position in the market, typically acquired through one or many BUY orders.
-    Long = 2,
-    /// A short position in the market, typically acquired through one or many SELL orders.
-    Short = 3,
-}
+/// Serde compatibility for an optional position side previously encoded with `NO_POSITION_SIDE`.
+pub mod serde_option_position_side {
+    use std::{borrow::Cow, str::FromStr};
 
-impl PositionSideSpecified {
-    /// Converts this specified side into a [`PositionSide`].
-    #[must_use]
-    pub fn as_position_side(&self) -> PositionSide {
-        match &self {
-            Self::Long => PositionSide::Long,
-            Self::Short => PositionSide::Short,
-            Self::Flat => PositionSide::Flat,
+    use serde::{Deserialize, Deserializer, Serializer, de::Visitor};
+
+    use super::PositionSide;
+
+    /// Serializes an optional position side using the legacy no-side token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the serializer cannot encode the value.
+    pub fn serialize<S>(value: &Option<PositionSide>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(value.as_ref().map_or("NO_POSITION_SIDE", AsRef::as_ref))
+    }
+
+    /// Deserializes an optional position side from a side token or null.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is not a valid position side.
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<PositionSide>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct OptionalPositionSideVisitor;
+
+        impl<'de> Visitor<'de> for OptionalPositionSideVisitor {
+            type Value = Option<PositionSide>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("FLAT, LONG, SHORT, NO_POSITION_SIDE, or null")
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E> {
+                Ok(None)
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let value = Cow::<'de, str>::deserialize(deserializer)?;
+                if value.eq_ignore_ascii_case("NO_POSITION_SIDE") {
+                    Ok(None)
+                } else {
+                    PositionSide::from_str(&value)
+                        .map(Some)
+                        .map_err(serde::de::Error::custom)
+                }
+            }
         }
+
+        deserializer.deserialize_option(OptionalPositionSideVisitor)
     }
 }
 
@@ -2036,12 +2036,10 @@ enum_strum_serde!(MarketStatusAction);
 enum_strum_serde!(OmsType);
 enum_strum_serde!(OptionKind);
 enum_strum_serde!(OrderSide);
-enum_strum_serde!(OrderSideSpecified);
 enum_strum_serde!(OrderStatus);
 enum_strum_serde!(OrderType);
 enum_strum_serde!(PositionAdjustmentType);
 enum_strum_serde!(PositionSide);
-enum_strum_serde!(PositionSideSpecified);
 enum_strum_serde!(PriceType);
 enum_strum_serde!(RecordFlag);
 enum_strum_serde!(TimeInForce);
@@ -2054,6 +2052,45 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    struct OptionalSides {
+        #[serde(with = "serde_option_order_side")]
+        order: Option<OrderSide>,
+        #[serde(with = "serde_option_position_side")]
+        position: Option<PositionSide>,
+    }
+
+    #[rstest]
+    fn test_optional_sides_serde_preserves_legacy_none_tokens() {
+        let value = OptionalSides {
+            order: None,
+            position: None,
+        };
+
+        let json = serde_json::to_string(&value).unwrap();
+        let decoded: OptionalSides = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(
+            json,
+            r#"{"order":"NO_ORDER_SIDE","position":"NO_POSITION_SIDE"}"#
+        );
+        assert_eq!(decoded, value);
+    }
+
+    #[rstest]
+    fn test_optional_sides_serde_accepts_null_and_valid_sides() {
+        let json = r#"{"order":null,"position":"LONG"}"#;
+        let decoded: OptionalSides = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            decoded,
+            OptionalSides {
+                order: None,
+                position: Some(PositionSide::Long),
+            }
+        );
+    }
 
     #[rstest]
     #[case::no_aggressor(0, Some(AggressorSide::NoAggressor))]

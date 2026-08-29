@@ -43,7 +43,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
+    enums::{AccountType, LiquiditySide, OmsType, OrderStatus, OrderType, TriggerType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, Venue,
         VenueOrderId,
@@ -1332,7 +1332,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                             | OrderStatus::PartiallyFilled
                     )
                 })
-                .filter(|r| side_filter == OrderSide::NoOrderSide || r.order_side == side_filter)
+                .filter(|r| side_filter.is_none_or(|side| r.order_side == side.into()))
                 .map(|r| (r.client_order_id, r.venue_order_id))
                 .collect();
 
@@ -1870,7 +1870,7 @@ fn process_user_order_update(
                 if is_new {
                     let commission_currency = instrument.quote_currency();
                     match Money::from_decimal(delta_fees, commission_currency) {
-                        Ok(commission) => Some(parse_ws_user_event_to_fill_report(
+                        Ok(commission) => match parse_ws_user_event_to_fill_report(
                             &update,
                             delta_qty,
                             last_px,
@@ -1881,7 +1881,16 @@ fn process_user_order_update(
                             fill_liquidity_side,
                             ts_event,
                             ts_init,
-                        )),
+                        ) {
+                            Ok(report) => Some(report),
+                            Err(e) => {
+                                log::warn!(
+                                    "Failed to parse fill for order {}: {e}",
+                                    update.order_id
+                                );
+                                None
+                            }
+                        },
                         Err(e) => {
                             log::warn!(
                                 "Failed to build commission Money for order {}: {e}",

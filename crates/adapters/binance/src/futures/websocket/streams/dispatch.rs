@@ -1582,7 +1582,7 @@ mod tests {
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             Some(ClientOrderId::from("O-PARSER-001")),
             VenueOrderId::from("V-PARSER-001"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Ioc,
             OrderStatus::Filled,

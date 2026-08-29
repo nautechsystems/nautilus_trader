@@ -2853,7 +2853,7 @@ impl Cache {
 
         // Use exit price for mark-to-market: longs exit at bid, shorts exit at ask
         let last = match position.side {
-            PositionSide::Flat | PositionSide::NoPositionSide => {
+            PositionSide::Flat => {
                 return Some(Money::zero(position.settlement_currency));
             }
             PositionSide::Long => quote.bid_price,
@@ -5318,8 +5318,6 @@ impl Cache {
             anyhow::bail!("Cannot update position {position_id}: not found in cache");
         };
 
-        let _specified_side = fill.specified_side();
-
         let position = {
             let mut position = position_cell.borrow_mut();
             position.apply(fill);
@@ -5603,20 +5601,17 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> usize {
-        let side = side.unwrap_or(OrderSide::NoOrderSide);
-
         match self.collect_order_filter_sources(venue, instrument_id, strategy_id, account_id) {
             FilterSources::Empty => 0,
-            FilterSources::Unfiltered => {
-                if side == OrderSide::NoOrderSide {
-                    bucket.len()
-                } else {
+            FilterSources::Unfiltered => side.map_or_else(
+                || bucket.len(),
+                |side| {
                     bucket
                         .iter()
                         .filter(|id| self.order_side_matches(id, side))
                         .count()
-                }
-            }
+                },
+            ),
             FilterSources::Sets(mut sources) => {
                 sources.push(bucket);
                 sources.sort_unstable_by_key(|s| s.len());
@@ -5626,9 +5621,7 @@ impl Cache {
                 driver
                     .iter()
                     .filter(|id| rest.iter().all(|s| s.contains(id)))
-                    .filter(|id| {
-                        side == OrderSide::NoOrderSide || self.order_side_matches(id, side)
-                    })
+                    .filter(|id| side.is_none_or(|side| self.order_side_matches(id, side)))
                     .count()
             }
         }
@@ -5643,20 +5636,17 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
     ) -> usize {
-        let side = side.unwrap_or(PositionSide::NoPositionSide);
-
         match self.collect_position_filter_sources(venue, instrument_id, strategy_id, account_id) {
             FilterSources::Empty => 0,
-            FilterSources::Unfiltered => {
-                if side == PositionSide::NoPositionSide {
-                    bucket.len()
-                } else {
+            FilterSources::Unfiltered => side.map_or_else(
+                || bucket.len(),
+                |side| {
                     bucket
                         .iter()
                         .filter(|id| self.position_side_matches(id, side))
                         .count()
-                }
-            }
+                },
+            ),
             FilterSources::Sets(mut sources) => {
                 sources.push(bucket);
                 sources.sort_unstable_by_key(|s| s.len());
@@ -5666,9 +5656,7 @@ impl Cache {
                 driver
                     .iter()
                     .filter(|id| rest.iter().all(|s| s.contains(id)))
-                    .filter(|id| {
-                        side == PositionSide::NoPositionSide || self.position_side_matches(id, side)
-                    })
+                    .filter(|id| side.is_none_or(|side| self.position_side_matches(id, side)))
                     .count()
             }
         }
@@ -5688,17 +5676,12 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<OrderSide>,
     ) -> bool {
-        let side = side.unwrap_or(OrderSide::NoOrderSide);
-
         match self.collect_order_filter_sources(venue, instrument_id, strategy_id, account_id) {
             FilterSources::Empty => false,
-            FilterSources::Unfiltered => {
-                if side == OrderSide::NoOrderSide {
-                    !bucket.is_empty()
-                } else {
-                    bucket.iter().any(|id| self.order_side_matches(id, side))
-                }
-            }
+            FilterSources::Unfiltered => side.map_or_else(
+                || !bucket.is_empty(),
+                |side| bucket.iter().any(|id| self.order_side_matches(id, side)),
+            ),
             FilterSources::Sets(mut sources) => {
                 sources.push(bucket);
                 sources.sort_unstable_by_key(|s| s.len());
@@ -5708,7 +5691,7 @@ impl Cache {
                 driver
                     .iter()
                     .filter(|id| rest.iter().all(|s| s.contains(id)))
-                    .any(|id| side == OrderSide::NoOrderSide || self.order_side_matches(id, side))
+                    .any(|id| side.is_none_or(|side| self.order_side_matches(id, side)))
             }
         }
     }
@@ -5722,17 +5705,12 @@ impl Cache {
         account_id: Option<&AccountId>,
         side: Option<PositionSide>,
     ) -> bool {
-        let side = side.unwrap_or(PositionSide::NoPositionSide);
-
         match self.collect_position_filter_sources(venue, instrument_id, strategy_id, account_id) {
             FilterSources::Empty => false,
-            FilterSources::Unfiltered => {
-                if side == PositionSide::NoPositionSide {
-                    !bucket.is_empty()
-                } else {
-                    bucket.iter().any(|id| self.position_side_matches(id, side))
-                }
-            }
+            FilterSources::Unfiltered => side.map_or_else(
+                || !bucket.is_empty(),
+                |side| bucket.iter().any(|id| self.position_side_matches(id, side)),
+            ),
             FilterSources::Sets(mut sources) => {
                 sources.push(bucket);
                 sources.sort_unstable_by_key(|s| s.len());
@@ -5742,9 +5720,7 @@ impl Cache {
                 driver
                     .iter()
                     .filter(|id| rest.iter().all(|s| s.contains(id)))
-                    .any(|id| {
-                        side == PositionSide::NoPositionSide || self.position_side_matches(id, side)
-                    })
+                    .any(|id| side.is_none_or(|side| self.position_side_matches(id, side)))
             }
         }
     }
@@ -5771,7 +5747,6 @@ impl Cache {
         client_order_ids: &AHashSet<ClientOrderId>,
         side: Option<OrderSide>,
     ) -> Vec<OrderRef<'_>> {
-        let side = side.unwrap_or(OrderSide::NoOrderSide);
         let mut orders = Vec::new();
 
         for client_order_id in client_order_ids {
@@ -5781,7 +5756,7 @@ impl Cache {
                 .unwrap_or_else(|| panic!("Order {client_order_id} not found"));
             let order = OrderRef::new(order_cell.borrow());
 
-            if side == OrderSide::NoOrderSide || side == order.order_side() {
+            if side.is_none_or(|side| side == order.order_side()) {
                 orders.push(order);
             }
         }
@@ -5806,7 +5781,6 @@ impl Cache {
         position_ids: &AHashSet<PositionId>,
         side: Option<PositionSide>,
     ) -> Vec<PositionRef<'_>> {
-        let side = side.unwrap_or(PositionSide::NoPositionSide);
         let mut positions = Vec::new();
 
         for position_id in position_ids {
@@ -5816,7 +5790,7 @@ impl Cache {
                 .unwrap_or_else(|| panic!("Position {position_id} not found"));
             let position = PositionRef::new(position_cell.borrow());
 
-            if side == PositionSide::NoPositionSide || side == position.side {
+            if side.is_none_or(|side| side == position.side) {
                 positions.push(position);
             }
         }

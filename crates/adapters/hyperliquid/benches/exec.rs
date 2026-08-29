@@ -366,7 +366,7 @@ fn build_status_report(
         btc_perp().id(),
         Some(cid),
         voi,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         status,

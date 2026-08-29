@@ -636,7 +636,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{OrderSide, TimeInForce, TriggerType},
+        enums::{OrderSide, PositionSide, TimeInForce, TriggerType},
         events::order::spec::OrderInitializedSpec,
         identifiers::InstrumentId,
         instruments::{CurrencyPair, stubs::*},

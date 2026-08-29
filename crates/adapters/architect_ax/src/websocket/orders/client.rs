@@ -547,7 +547,7 @@ impl AxOrdersWebSocketClient {
             )
         })?;
 
-        let ax_side = AxOrderSide::try_from(order_side)?;
+        let ax_side = AxOrderSide::from(order_side);
 
         let qty_contracts = quantity_to_contracts(quantity)
             .map_err(|e| AxOrdersWsClientError::ClientError(e.to_string()))?;

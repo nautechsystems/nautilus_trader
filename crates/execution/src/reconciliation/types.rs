@@ -17,7 +17,7 @@
 
 use indexmap::IndexMap;
 use nautilus_model::{
-    enums::{OrderSide, PositionSideSpecified},
+    enums::{OrderSide, PositionSide},
     identifiers::VenueOrderId,
     reports::{FillReport, OrderStatusReport},
 };
@@ -42,7 +42,7 @@ pub(super) struct FillSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct VenuePositionSnapshot {
     /// The position side (Long, Short, or Flat).
-    pub side: PositionSideSpecified,
+    pub side: PositionSide,
     /// The position quantity (always positive, even for Short).
     pub qty: Decimal,
     /// The average entry price (can be zero for Flat positions).
@@ -102,7 +102,6 @@ impl FillSnapshot {
         match self.side {
             OrderSide::Buy => 1,
             OrderSide::Sell => -1,
-            _ => 0,
         }
     }
 }

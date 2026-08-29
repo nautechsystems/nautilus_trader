@@ -72,7 +72,6 @@ pub fn parse_trade_tick(
     let aggressor_side = match trade.side {
         OrderSide::Buy => AggressorSide::Buy,
         OrderSide::Sell => AggressorSide::Sell,
-        OrderSide::NoOrderSide => AggressorSide::NoAggressor,
     };
 
     let price = Price::from_decimal_dp(trade.price, price_precision)
@@ -1211,7 +1210,7 @@ pub fn parse_order_status_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -1388,7 +1387,7 @@ pub fn parse_position_status_report(
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
-        position_side.as_specified(),
+        position_side,
         quantity,
         ts_last,
         ts_init,
@@ -1691,7 +1690,7 @@ pub fn parse_account_state_from_http(
 mod reconciliation_tests {
     use jiff::Timestamp;
     use nautilus_model::{
-        enums::{OrderSide, OrderStatus, TimeInForce},
+        enums::{OrderSide, OrderStatus, PositionSide, TimeInForce},
         identifiers::{AccountId, InstrumentId, Symbol},
         instruments::{CryptoPerpetual, Instrument},
         types::Currency,
@@ -1805,7 +1804,7 @@ mod reconciliation_tests {
         let report = result.unwrap();
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument.id());
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
     }
@@ -2161,7 +2160,7 @@ mod reconciliation_tests {
 
         let report = result.unwrap();
         assert_eq!(report.account_id, account_id);
-        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity.as_f64(), 2.5);
         assert_eq!(report.avg_px_open.unwrap().to_f64().unwrap(), 49500.0);
     }
@@ -2194,7 +2193,7 @@ mod reconciliation_tests {
         assert!(result.is_ok());
 
         let report = result.unwrap();
-        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity.as_f64(), 1.5);
     }
 
@@ -2226,7 +2225,7 @@ mod reconciliation_tests {
         assert!(result.is_ok());
 
         let report = result.unwrap();
-        assert_eq!(report.position_side, PositionSide::Flat.as_specified());
+        assert_eq!(report.position_side, PositionSide::Flat);
         assert_eq!(report.quantity.as_f64(), 0.0);
     }
 
@@ -2354,7 +2353,7 @@ mod reconciliation_tests {
             parse_position_status_report(&long_position, &instrument, account_id, ts_init);
         assert!(result1.is_ok());
         let report1 = result1.unwrap();
-        assert_eq!(report1.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report1.position_side, PositionSide::Long);
 
         // Position 2: Short position (should be handled separately if from different market)
         let short_position = PerpetualPosition {
@@ -2379,7 +2378,7 @@ mod reconciliation_tests {
             parse_position_status_report(&short_position, &instrument, account_id, ts_init);
         assert!(result2.is_ok());
         let report2 = result2.unwrap();
-        assert_eq!(report2.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report2.position_side, PositionSide::Short);
     }
 
     /// Test fill reconciliation with zero fee

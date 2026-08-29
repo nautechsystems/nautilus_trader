@@ -33,7 +33,7 @@ pub type OrderId = u64;
 
 /// Represents a NULL book order (used with the `Clear` action or where an order is not specified).
 pub const NULL_ORDER: BookOrder = BookOrder {
-    side: OrderSide::NoOrderSide,
+    side: None,
     price: Price {
         raw: 0,
         precision: 0,
@@ -46,7 +46,6 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 };
 
 /// Represents an order in a book.
-#[repr(C)]
 #[derive(Clone, Copy, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
@@ -58,7 +57,8 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 )]
 pub struct BookOrder {
     /// The order side.
-    pub side: OrderSide,
+    #[serde(with = "crate::enums::serde_option_order_side")]
+    pub side: Option<OrderSide>,
     /// The order price.
     pub price: Price,
     /// The order size.
@@ -70,9 +70,14 @@ pub struct BookOrder {
 impl BookOrder {
     /// Creates a new [`BookOrder`] instance.
     #[must_use]
-    pub fn new(side: OrderSide, price: Price, size: Quantity, order_id: OrderId) -> Self {
+    pub fn new(
+        side: impl Into<Option<OrderSide>>,
+        price: Price,
+        size: Quantity,
+        order_id: OrderId,
+    ) -> Self {
         Self {
-            side,
+            side: side.into(),
             price,
             size,
             order_id,
@@ -80,9 +85,16 @@ impl BookOrder {
     }
 
     /// Returns a [`BookPrice`] from this order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.side` is `None`.
     #[must_use]
     pub fn to_book_price(&self) -> BookPrice {
-        BookPrice::new(self.price, self.side.as_specified())
+        BookPrice::new(
+            self.price,
+            self.side.expect("BookOrder side must be Buy or Sell"),
+        )
     }
 
     /// Returns the order exposure as an `f64`.
@@ -95,13 +107,13 @@ impl BookOrder {
     ///
     /// # Panics
     ///
-    /// Panics if `self.side` is `NoOrderSide`.
+    /// Panics if `self.side` is `None`.
     #[must_use]
     pub fn signed_size(&self) -> f64 {
         match self.side {
-            OrderSide::Buy => self.size.as_f64(),
-            OrderSide::Sell => -(self.size.as_f64()),
-            OrderSide::NoOrderSide => panic!("{}", BookIntegrityError::NoOrderSide),
+            Some(OrderSide::Buy) => self.size.as_f64(),
+            Some(OrderSide::Sell) => -(self.size.as_f64()),
+            None => panic!("{}", BookIntegrityError::NoOrderSide),
         }
     }
 }
@@ -127,11 +139,12 @@ impl Hash for BookOrder {
 
 impl Debug for BookOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let side = self.side.as_ref().map_or("NO_ORDER_SIDE", AsRef::as_ref);
         write!(
             f,
             "{}(side={}, price={}, size={}, order_id={})",
             stringify!(BookOrder),
-            self.side,
+            side,
             self.price,
             self.size,
             self.order_id,
@@ -141,11 +154,8 @@ impl Debug for BookOrder {
 
 impl Display for BookOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{},{},{},{}",
-            self.side, self.price, self.size, self.order_id,
-        )
+        let side = self.side.as_ref().map_or("NO_ORDER_SIDE", AsRef::as_ref);
+        write!(f, "{},{},{},{}", side, self.price, self.size, self.order_id)
     }
 }
 
@@ -156,6 +166,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::enums::OrderSide;
 
     #[rstest]
     fn test_new() {
@@ -168,7 +179,7 @@ mod tests {
 
         assert_eq!(order.price, price);
         assert_eq!(order.size, size);
-        assert_eq!(order.side, side);
+        assert_eq!(order.side, side.into());
         assert_eq!(order.order_id, order_id);
     }
 
@@ -183,7 +194,7 @@ mod tests {
         let book_price = order.to_book_price();
 
         assert_eq!(book_price.value, price);
-        assert_eq!(book_price.side, side.as_specified());
+        assert_eq!(book_price.side, side);
     }
 
     #[rstest]

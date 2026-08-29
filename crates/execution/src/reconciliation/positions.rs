@@ -23,7 +23,7 @@
 use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     identifiers::{AccountId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -200,9 +200,9 @@ pub(super) fn adjust_fills_for_partial_window(
 
     // Convert venue position to signed quantity
     let venue_qty_signed = match venue_position.side {
-        PositionSideSpecified::Long => venue_position.qty,
-        PositionSideSpecified::Short => -venue_position.qty,
-        PositionSideSpecified::Flat => Decimal::ZERO,
+        PositionSide::Long => venue_position.qty,
+        PositionSide::Short => -venue_position.qty,
+        PositionSide::Flat => Decimal::ZERO,
     };
 
     // Case 1: Has zero-crossings - focus on current lifecycle after last zero-crossing
@@ -495,7 +495,7 @@ pub(super) fn create_synthetic_order_report(
         instrument_id,
         None, // client_order_id
         venue_order_id,
-        fill.side,
+        fill.side.into(),
         OrderType::Market,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -561,11 +561,11 @@ fn position_report_to_snapshot(report: &PositionStatusReport) -> VenuePositionSn
 /// Callers must guard `Flat` upstream; reaching it here means a flat venue
 /// position slipped past the qty==0 early returns in
 /// [`adjust_fills_for_partial_window`].
-fn position_to_order_side(side: PositionSideSpecified) -> OrderSide {
+fn position_to_order_side(side: PositionSide) -> OrderSide {
     match side {
-        PositionSideSpecified::Long => OrderSide::Buy,
-        PositionSideSpecified::Short => OrderSide::Sell,
-        PositionSideSpecified::Flat => {
+        PositionSide::Long => OrderSide::Buy,
+        PositionSide::Short => OrderSide::Sell,
+        PositionSide::Flat => {
             unreachable!("flat venue position must be guarded by an earlier check")
         }
     }
@@ -630,7 +630,8 @@ fn extract_fills_for_instrument(
                 let side = mass_status
                     .order_reports()
                     .get(&venue_order_id)
-                    .map_or(fill.order_side, |o| o.order_side);
+                    .and_then(|order| order.order_side)
+                    .unwrap_or(fill.order_side);
 
                 snapshots.push(FillSnapshot::new(
                     venue_order_id,

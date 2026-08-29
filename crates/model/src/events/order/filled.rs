@@ -23,8 +23,8 @@ use ustr::Ustr;
 
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
     events::OrderEvent,
     identifiers::{
@@ -139,11 +139,6 @@ impl OrderFilled {
             info,
             causation_id: None,
         }
-    }
-
-    #[must_use]
-    pub fn specified_side(&self) -> OrderSideSpecified {
-        self.order_side.as_specified()
     }
 
     #[must_use]
@@ -477,7 +472,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{OrderSide, OrderSideSpecified},
+        enums::OrderSide,
         events::order::stubs::*,
         identifiers::PositionId,
         types::{Currency, Money, Price, Quantity},
@@ -579,16 +574,6 @@ mod tests {
         assert_eq!(opening.event_id, opening_event_id);
         assert_eq!(opening.causation_id, Some(source_event_id));
         assert_eq!(opening.commission, Some(Money::new(1.5, Currency::USD())));
-    }
-
-    #[rstest]
-    fn test_order_filled_specified_side() {
-        let buy_order = create_test_order_filled();
-        assert_eq!(buy_order.specified_side(), OrderSideSpecified::Buy);
-
-        let mut sell_order = create_test_order_filled();
-        sell_order.order_side = OrderSide::Sell;
-        assert_eq!(sell_order.specified_side(), OrderSideSpecified::Sell);
     }
 
     #[rstest]

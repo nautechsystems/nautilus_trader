@@ -50,7 +50,8 @@ pub struct OrderStatusReport {
     /// The venue assigned order ID.
     pub venue_order_id: VenueOrderId,
     /// The order side.
-    pub order_side: OrderSide,
+    #[serde(with = "crate::enums::serde_option_order_side")]
+    pub order_side: Option<OrderSide>,
     /// The order type.
     pub order_type: OrderType,
     /// The order time in force.
@@ -118,7 +119,7 @@ impl OrderStatusReport {
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: VenueOrderId,
-        order_side: OrderSide,
+        order_side: Option<OrderSide>,
         order_type: OrderType,
         time_in_force: TimeInForce,
         order_status: OrderStatus,
@@ -381,7 +382,9 @@ impl Display for OrderStatusReport {
             self.account_id,
             self.instrument_id,
             self.venue_order_id,
-            self.order_side,
+            self.order_side
+                .as_ref()
+                .map_or("NO_ORDER_SIDE", AsRef::as_ref),
             self.order_type,
             self.time_in_force,
             self.order_status,
@@ -440,7 +443,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -464,7 +467,7 @@ mod tests {
             Some(ClientOrderId::from("O-19700101-000000-001-001-1"))
         );
         assert_eq!(report.venue_order_id, VenueOrderId::from("1"));
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.order_status, OrderStatus::Accepted);
@@ -502,7 +505,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Ioc,
             OrderStatus::Filled,
@@ -609,7 +612,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Ioc,
             OrderStatus::Filled,
@@ -626,7 +629,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("2"),
-            OrderSide::Sell,
+            OrderSide::Sell.into(),
             OrderType::StopMarket,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -652,7 +655,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Filled,
@@ -699,7 +702,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             Some(ClientOrderId::from("O-19700101-000000-001-001-1")),
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::PartiallyFilled,
@@ -726,7 +729,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::StopLimit,
             TimeInForce::Gtc,
             OrderStatus::Triggered,
@@ -758,7 +761,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -787,7 +790,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::StopMarket,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -816,7 +819,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -845,7 +848,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -874,7 +877,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Ioc,
             OrderStatus::Accepted,
@@ -905,7 +908,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::StopLimit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -927,7 +930,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::StopLimit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -949,7 +952,7 @@ mod tests {
             InstrumentId::from("AUDUSD.SIM"),
             None,
             VenueOrderId::from("1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::StopLimit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,

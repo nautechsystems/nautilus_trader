@@ -793,7 +793,7 @@ mod tests {
         // First bid delta
         assert_eq!(bid_delta.instrument_id, instrument_id);
         assert_eq!(bid_delta.action, BookAction::Add);
-        assert_eq!(bid_delta.order.side, OrderSide::Buy);
+        assert_eq!(bid_delta.order.side, OrderSide::Buy.into());
         assert_eq!(bid_delta.order.price, Price::from("7633.5"));
         assert_eq!(bid_delta.order.size, Quantity::from(1906067));
         assert_eq!(bid_delta.order.order_id, 0);
@@ -805,7 +805,7 @@ mod tests {
         // First ask delta
         assert_eq!(ask_delta.instrument_id, instrument_id);
         assert_eq!(ask_delta.action, BookAction::Add);
-        assert_eq!(ask_delta.order.side, OrderSide::Sell);
+        assert_eq!(ask_delta.order.side, OrderSide::Sell.into());
         assert_eq!(ask_delta.order.price, Price::from("7634.0"));
         assert_eq!(ask_delta.order.size, Quantity::from(1467849));
         assert_eq!(ask_delta.order.order_id, 0);
@@ -839,27 +839,27 @@ mod tests {
         assert_eq!(depth10.ts_init, UnixNanos::from(1572010786961000000));
 
         // Check first bid level
-        assert_eq!(depth10.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth10.bids[0].side, OrderSide::Buy.into());
         assert_eq!(depth10.bids[0].price, Price::from("7633.5"));
         assert_eq!(depth10.bids[0].size, Quantity::from(1906067));
         assert_eq!(depth10.bids[0].order_id, 0);
         assert_eq!(depth10.bid_counts[0], 1);
 
         // Check second bid level
-        assert_eq!(depth10.bids[1].side, OrderSide::Buy);
+        assert_eq!(depth10.bids[1].side, OrderSide::Buy.into());
         assert_eq!(depth10.bids[1].price, Price::from("7633.0"));
         assert_eq!(depth10.bids[1].size, Quantity::from(65319));
         assert_eq!(depth10.bid_counts[1], 1);
 
         // Check first ask level
-        assert_eq!(depth10.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
         assert_eq!(depth10.asks[0].price, Price::from("7634.0"));
         assert_eq!(depth10.asks[0].size, Quantity::from(1467849));
         assert_eq!(depth10.asks[0].order_id, 0);
         assert_eq!(depth10.ask_counts[0], 1);
 
         // Check second ask level
-        assert_eq!(depth10.asks[1].side, OrderSide::Sell);
+        assert_eq!(depth10.asks[1].side, OrderSide::Sell.into());
         assert_eq!(depth10.asks[1].price, Price::from("7634.5"));
         assert_eq!(depth10.asks[1].size, Quantity::from(67939));
         assert_eq!(depth10.ask_counts[1], 1);

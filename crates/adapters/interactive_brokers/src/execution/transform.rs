@@ -59,7 +59,6 @@ pub fn nautilus_order_to_ib_order(
     let action = match order.order_side() {
         OrderSide::Buy => Action::Buy,
         OrderSide::Sell => Action::Sell,
-        _ => anyhow::bail!("Unsupported order side: {:?}", order.order_side()),
     };
 
     let quantity = order.quantity().as_f64();

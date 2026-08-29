@@ -1575,7 +1575,6 @@ impl BlockchainExecutionClient {
                     (Some(plan), TransactionPurpose::Swap) => match plan.order.order_side() {
                         OrderSide::Sell => "swap_sell",
                         OrderSide::Buy => "swap_buy",
-                        side => anyhow::bail!("Unsupported restored swap side {side}"),
                     },
                     (None, TransactionPurpose::Wrap) => "wrap",
                     (None, TransactionPurpose::Approve) => "approve",
@@ -1644,7 +1643,6 @@ impl BlockchainExecutionClient {
                     (Some(plan), TransactionPurpose::Swap) => match plan.order.order_side() {
                         OrderSide::Sell => "swap_sell",
                         OrderSide::Buy => "swap_buy",
-                        side => anyhow::bail!("Unsupported restored swap side {side}"),
                     },
                     (None, TransactionPurpose::Wrap) => "wrap",
                     (None, TransactionPurpose::Approve) => "approve",
@@ -1904,7 +1902,6 @@ impl BlockchainExecutionClient {
                 }
                 (amount_in, base_amount)
             }
-            _ => unreachable!("order side already validated"),
         };
         let min_amount_out = derive_min_amount_out(quoted_amount_out, slippage_bps)?;
 
@@ -3903,7 +3900,6 @@ async fn execute_swap(
     let trace_purpose = match plan.order.order_side() {
         OrderSide::Sell => "swap_sell",
         OrderSide::Buy => "swap_buy",
-        side => anyhow::bail!("Unsupported finalized swap side {side}"),
     };
 
     match executor.await_finality(&prepared).await? {
@@ -4061,7 +4057,6 @@ async fn validate_swap_quote(
             plan.order.quantity(),
             plan.pool.get_base_token().decimals,
         )?),
-        side => anyhow::bail!("Unsupported order side {side}"),
     };
     let quote = verified_value(
         verify_swap_quote(verification, quote_contract, plan, quote_kind, head.number).await,
@@ -4150,7 +4145,6 @@ fn verified_swap_amounts(plan: &SwapPlan, quote: UniswapV3Quote) -> anyhow::Resu
                 derive_min_amount_out(base_amount, slippage_bps)?,
             ))
         }
-        side => anyhow::bail!("Unsupported order side {side}"),
     }
 }
 
@@ -4839,7 +4833,6 @@ fn validate_finalized_swap_fill(
                 plan.pool.get_base_token().decimals,
             )?
         }
-        side => anyhow::bail!("Finalized Swap has unsupported order side {side}"),
     };
 
     let block = &included.finality.inclusion_header;
@@ -5282,7 +5275,6 @@ fn swap_token_pair(
     match side {
         OrderSide::Sell => Ok((base, quote)),
         OrderSide::Buy => Ok((quote, base)),
-        _ => anyhow::bail!("Unsupported order side {side}; only Buy and Sell are supported"),
     }
 }
 
@@ -5590,7 +5582,6 @@ impl BlockchainExecutionClient {
                     match self.restore_swap_plan(intent)?.order.order_side() {
                         OrderSide::Sell => "swap_sell",
                         OrderSide::Buy => "swap_buy",
-                        side => anyhow::bail!("Retained swap has unsupported order side {side}"),
                     }
                 }
             };
@@ -18186,7 +18177,7 @@ mod tests {
             Some(ClientId::from("BLOCKCHAIN-001")),
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::Sell,
+            Some(OrderSide::Sell),
             UUID4::new(),
             UnixNanos::default(),
             None,

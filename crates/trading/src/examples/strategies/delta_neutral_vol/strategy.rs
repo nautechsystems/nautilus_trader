@@ -491,7 +491,6 @@ nautilus_strategy!(DeltaNeutralVol, {
         let signed_qty = match event.order_side {
             OrderSide::Buy => qty,
             OrderSide::Sell => -qty,
-            _ => 0.0,
         };
 
         if event.instrument_id == self.config.hedge_instrument_id {

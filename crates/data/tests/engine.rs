@@ -1279,7 +1279,7 @@ fn test_emit_quotes_from_book_depths_skips_no_order_side_padding(
 
     assert!(
         saver.get_messages().is_empty(),
-        "fully-padded NoOrderSide depth must not publish a synthetic quote",
+        "fully padded no-side depth must not publish a synthetic quote",
     );
     assert!(
         cache.borrow().quote(&instrument_id).is_none(),

@@ -23,6 +23,8 @@ use std::collections::HashSet;
 use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr, sync::LazyLock, time::Duration};
 
 use indexmap::{IndexMap, IndexSet};
+#[cfg(feature = "node")]
+use nautilus_common::messages::execution::report::GenerateFillReports;
 use nautilus_common::{
     cache::Cache,
     clients::{DEFAULT_POSITION_RECONCILIATION_TOLERANCE, ExecutionClient},
@@ -36,7 +38,7 @@ use nautilus_common::{
         execution::{
             QueryOrder, TradingCommand,
             report::{
-                GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
+                GenerateOrderStatusReport, GenerateOrderStatusReports,
                 GeneratePositionStatusReports,
             },
         },
@@ -47,13 +49,14 @@ use nautilus_core::{
     UUID4, UnixNanos,
     datetime::{checked_mins_to_nanos, checked_mins_to_secs, mins_to_nanos, mins_to_secs},
 };
+#[cfg(feature = "node")]
+use nautilus_execution::reconciliation::create_inferred_reconciliation_trade_id;
 use nautilus_execution::{
     engine::ExecutionEngine,
     reconciliation::{
         calculate_reconciliation_price, create_inferred_fill_for_qty,
-        create_inferred_reconciliation_trade_id, create_position_reconciliation_venue_order_id,
-        create_reconciliation_rejected, create_reconciliation_triggered,
-        generate_external_order_status_events_with_commission,
+        create_position_reconciliation_venue_order_id, create_reconciliation_rejected,
+        create_reconciliation_triggered, generate_external_order_status_events_with_commission,
         generate_reconciliation_order_pre_fill_events,
         generate_reconciliation_order_snapshot_events_with_commission,
         incremental_inferred_fill_price_and_liquidity, inferred_fill_price_and_liquidity,
@@ -61,6 +64,10 @@ use nautilus_execution::{
         should_reconciliation_update,
     },
 };
+#[cfg(feature = "node")]
+use nautilus_model::position::PositionReplayEvent;
+#[cfg(feature = "node")]
+use nautilus_model::types::{money::MoneyRaw, quantity::QuantityRaw};
 use nautilus_model::{
     enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderCanceled, OrderEventAny, OrderFilled, OrderInitialized},
@@ -70,9 +77,9 @@ use nautilus_model::{
     },
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
-    position::{Position, PositionReplayEvent},
+    position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Money, Price, Quantity, money::MoneyRaw, quantity::QuantityRaw},
+    types::{Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -127,7 +134,7 @@ fn build_cross_zero_leg_report(
         instrument_id,
         None,
         venue_order_id,
-        order_side,
+        order_side.into(),
         OrderType::Market,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -234,6 +241,7 @@ pub(crate) struct PositionReportCheck {
     pub activity_revisions: IndexMap<InstrumentAccountKey, u64>,
 }
 
+#[cfg(feature = "node")]
 #[derive(Debug)]
 pub(crate) struct PositionFillReportQuery {
     pub key: InstrumentAccountKey,
@@ -241,12 +249,14 @@ pub(crate) struct PositionFillReportQuery {
     pub command: GenerateFillReports,
 }
 
+#[cfg(feature = "node")]
 #[derive(Debug)]
 pub(crate) struct PositionFillReportPlan {
     pub queries: Vec<PositionFillReportQuery>,
     pub discrepancy_keys: IndexSet<InstrumentAccountKey>,
 }
 
+#[cfg(feature = "node")]
 #[derive(Debug)]
 pub(crate) enum PositionFillReportPreparation {
     Ready,
@@ -1341,7 +1351,7 @@ impl ExecutionManager {
                 .map(|report| report.instrument_id)
                 .or_else(|| fills.and_then(|fills| fills.first().map(|fill| fill.instrument_id)));
             let order_side = report
-                .map(|report| report.order_side)
+                .and_then(|report| report.order_side)
                 .or_else(|| fills.and_then(|fills| fills.first().map(|fill| fill.order_side)));
             let (Some(account_id), Some(instrument_id), Some(order_side)) =
                 (account_id, instrument_id, order_side)
@@ -1513,10 +1523,6 @@ impl ExecutionManager {
             let signed_fill_qty = match group.order_side {
                 OrderSide::Buy => group.quantity,
                 OrderSide::Sell => -group.quantity,
-                OrderSide::NoOrderSide => {
-                    order_only.insert(group.venue_order_id);
-                    continue;
-                }
             };
             let reduces = !current_qty.is_zero()
                 && current_qty.is_sign_negative() != signed_fill_qty.is_sign_negative()
@@ -2462,6 +2468,7 @@ impl ExecutionManager {
         }
     }
 
+    #[cfg(feature = "node")]
     pub(crate) fn prepare_position_fill_report_plan(
         &mut self,
         check: &mut PositionReportCheck,
@@ -2589,6 +2596,7 @@ impl ExecutionManager {
         }
     }
 
+    #[cfg(feature = "node")]
     pub(crate) fn position_report_check_key_is_stable(
         &self,
         check: &PositionReportCheck,
@@ -2600,6 +2608,7 @@ impl ExecutionManager {
             .is_some_and(|revision| self.position_activity_revision(key) == *revision)
     }
 
+    #[cfg(feature = "node")]
     pub(crate) fn prepare_position_fill_report(
         &self,
         report: &mut FillReport,
@@ -2698,6 +2707,7 @@ impl ExecutionManager {
         Ok(PositionFillReportPreparation::Ready)
     }
 
+    #[cfg(feature = "node")]
     fn has_active_inferred_fill(order: &OrderAny) -> anyhow::Result<bool> {
         let events = order.events();
         let trade_ids = order.trade_ids();
@@ -2752,6 +2762,7 @@ impl ExecutionManager {
         Ok(false)
     }
 
+    #[cfg(feature = "node")]
     pub(crate) fn position_contains_fill_report(&self, report: &FillReport) -> bool {
         let cache = self.cache.borrow();
         let client_order_id = report
@@ -3872,7 +3883,7 @@ impl ExecutionManager {
                                 instrument_id,
                                 None,
                                 venue_order_id,
-                                order_side,
+                                order_side.into(),
                                 OrderType::Market,
                                 TimeInForce::Gtc,
                                 OrderStatus::Filled,
@@ -4123,7 +4134,7 @@ impl ExecutionManager {
             instrument_id,
             None,
             venue_order_id,
-            order_side,
+            order_side.into(),
             OrderType::Market,
             TimeInForce::Gtc,
             OrderStatus::Filled,
@@ -4501,7 +4512,7 @@ impl ExecutionManager {
             instrument_id,
             None,
             venue_order_id,
-            order_side,
+            order_side.into(),
             OrderType::Market,
             TimeInForce::Gtc,
             OrderStatus::Filled,
@@ -4761,13 +4772,22 @@ impl ExecutionManager {
         }
 
         let ts_now = self.clock.borrow().timestamp_ns();
+        let Some(order_side) = report.order_side else {
+            log::error!(
+                "Skipping external order {} ({}) for {}: order side is not specified",
+                client_order_id,
+                report.venue_order_id,
+                report.instrument_id,
+            );
+            return (Vec::new(), None);
+        };
 
         let initialized = match OrderInitialized::new_checked(
             self.config.trader_id,
             strategy_id,
             report.instrument_id,
             client_order_id,
-            report.order_side,
+            order_side,
             report.order_type,
             report.quantity,
             report.time_in_force,
@@ -5218,6 +5238,16 @@ impl ExecutionManager {
             return None;
         }
 
+        let order_side = order.order_side();
+        if fill.order_side != order_side {
+            log::warn!(
+                "Fill side mismatch for {}: cached={:?}, venue={:?}",
+                order.client_order_id(),
+                order_side,
+                fill.order_side,
+            );
+        }
+
         let event = OrderEventAny::Filled(OrderFilled::new(
             order.trader_id(),
             order.strategy_id(),
@@ -5336,7 +5366,7 @@ mod tests {
     use nautilus_execution::reconciliation::generate_reconciliation_order_events;
     use nautilus_model::{
         accounts::AccountAny,
-        enums::{LiquiditySide, OmsType, PositionSideSpecified},
+        enums::{LiquiditySide, OmsType, PositionSide},
         events::order::spec::{OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderUpdatedSpec},
         identifiers::{Symbol, Venue},
         instruments::{
@@ -5350,6 +5380,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+    #[cfg(feature = "node")]
     use crate::execution::client::LiveExecutionClient;
 
     #[rstest]
@@ -5580,7 +5611,7 @@ mod tests {
             instrument.id(),
             Some(order.client_order_id()),
             VenueOrderId::from("V-1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Filled,
@@ -5628,7 +5659,7 @@ mod tests {
             instrument.id(),
             Some(client_order_id),
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Filled,
@@ -5678,7 +5709,7 @@ mod tests {
             instrument.id(),
             Some(order.client_order_id()),
             VenueOrderId::from("V-1"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Gtc,
             OrderStatus::Filled,
@@ -5771,7 +5802,7 @@ mod tests {
             instrument.id(),
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Filled,
@@ -6075,6 +6106,49 @@ mod tests {
             )),
             "commission must use the exact price and liquidity carried by the residual fill"
         );
+    }
+
+    #[rstest]
+    fn test_cached_reconciliation_preserves_explicit_fill_side() {
+        let (mut manager, _cache, order, mut report, instrument) = cached_commission_fixtures();
+        report.order_status = OrderStatus::PartiallyFilled;
+        report.filled_qty = Quantity::from("4.0");
+        let trade_id = TradeId::from("T-CONFLICTING-SIDE");
+        let explicit_fill = FillReport::new(
+            report.account_id,
+            report.instrument_id,
+            report.venue_order_id,
+            trade_id,
+            OrderSide::Sell,
+            Quantity::from("4.0"),
+            Price::from("100.0"),
+            Money::new(0.25, Currency::USDT()),
+            LiquiditySide::Taker,
+            report.client_order_id,
+            None,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+        );
+        let mut fill_queue = ReconciliationFillQueue::default();
+
+        let events = manager.reconcile_order_with_fills(
+            &order,
+            &report,
+            &[&explicit_fill],
+            Some(&instrument),
+            &mut fill_queue,
+            None,
+        );
+
+        assert_eq!(events.len(), 1);
+        let OrderEventAny::Filled(fill) = &events[0] else {
+            panic!("expected the explicit fill");
+        };
+        assert_eq!(fill.trade_id, trade_id);
+        assert_eq!(fill.order_side, OrderSide::Sell);
+        assert_eq!(fill.last_qty, Quantity::from("4.0"));
+        assert_eq!(fill.last_px, Price::from("100.0"));
     }
 
     #[rstest]
@@ -6382,7 +6456,7 @@ mod tests {
             instrument_id,
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -6459,7 +6533,7 @@ mod tests {
             instrument_id,
             Some(client_order_id),
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -6634,7 +6708,7 @@ mod tests {
             crypto_perpetual_ethusdt().id(),
             Some(client_order_id),
             VenueOrderId::from("V-STATUS-MATRIX"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             status,
@@ -6747,7 +6821,7 @@ mod tests {
             instrument_id,
             Some(client_order_id),
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -6847,7 +6921,7 @@ mod tests {
             instrument_id,
             Some(client_order_id),
             old_venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Canceled,
@@ -7037,6 +7111,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "node")]
     fn test_prepare_position_fill_report_plan_uses_configured_lookback() {
         let lookback_mins = 7_u64;
         let lookback_ns = lookback_mins * 60 * NANOSECONDS_IN_SECOND;
@@ -7075,7 +7150,7 @@ mod tests {
         let report = PositionStatusReport::new(
             position.account_id,
             position.instrument_id,
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("2.0"),
             query_end,
             query_end,
@@ -7118,6 +7193,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "node")]
     fn test_prepare_position_fill_report_plan_defers_position_opened_during_request() {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -7150,7 +7226,7 @@ mod tests {
         let report = PositionStatusReport::new(
             position.account_id,
             position.instrument_id,
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("2.0"),
             UnixNanos::from(1_000_000),
             UnixNanos::from(1_000_000),
@@ -7181,6 +7257,7 @@ mod tests {
     }
 
     #[rstest]
+    #[cfg(feature = "node")]
     fn test_prepare_position_report_check_uses_live_client_bulk_coverage() {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -7367,7 +7444,7 @@ mod tests {
         let report = PositionStatusReport::new(
             account_id,
             instrument_id,
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("5.0"),
             UnixNanos::from(1_000_000),
             UnixNanos::from(1_000_000),
@@ -7440,7 +7517,7 @@ mod tests {
         let report = PositionStatusReport::new(
             account_id,
             instrument_id,
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("10.0"),
             UnixNanos::from(1_000_000),
             UnixNanos::from(1_000_000),
@@ -7512,7 +7589,7 @@ mod tests {
             instrument.id(),
             Some(client_order_id),
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Canceled,

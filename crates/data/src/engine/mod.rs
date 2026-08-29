@@ -106,7 +106,7 @@ use nautilus_model::{
     },
     enums::{
         AggregationSource, BarAggregation, BookType, InstrumentClass, MarketStatusAction,
-        OrderSide, PriceType, RecordFlag,
+        PriceType, RecordFlag,
     },
     identifiers::{
         ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Symbol, Venue,
@@ -5372,16 +5372,12 @@ fn datetime_to_unix_nanos(datetime: jiff::Timestamp) -> anyhow::Result<UnixNanos
 }
 
 // Top-of-book `QuoteTick` from an `OrderBookDepth10`. Returns `None` for
-// `NoOrderSide` padding or zero size.
+// missing-side padding or zero size.
 fn derive_quote_from_depth(depth: &OrderBookDepth10) -> Option<QuoteTick> {
     let bid = depth.bids.first()?;
     let ask = depth.asks.first()?;
 
-    if bid.side == OrderSide::NoOrderSide
-        || ask.side == OrderSide::NoOrderSide
-        || bid.size.raw == 0
-        || ask.size.raw == 0
-    {
+    if bid.side.is_none() || ask.side.is_none() || bid.size.raw == 0 || ask.size.raw == 0 {
         return None;
     }
 

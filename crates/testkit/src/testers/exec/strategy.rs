@@ -611,7 +611,6 @@ impl ExecTester {
         let cid = match side {
             OrderSide::Buy => self.buy_order.as_ref().map(OrderAny::client_order_id),
             OrderSide::Sell => self.sell_order.as_ref().map(OrderAny::client_order_id),
-            OrderSide::NoOrderSide => None,
         };
         let Some(cid) = cid else {
             return;
@@ -621,7 +620,6 @@ impl ExecTester {
             match side {
                 OrderSide::Buy => self.buy_order = Some(latest),
                 OrderSide::Sell => self.sell_order = Some(latest),
-                OrderSide::NoOrderSide => {}
             }
         }
     }
@@ -630,7 +628,6 @@ impl ExecTester {
         let cid = match side {
             OrderSide::Buy => self.buy_stop_order.as_ref().map(OrderAny::client_order_id),
             OrderSide::Sell => self.sell_stop_order.as_ref().map(OrderAny::client_order_id),
-            OrderSide::NoOrderSide => None,
         };
         let Some(cid) = cid else {
             return;
@@ -640,7 +637,6 @@ impl ExecTester {
             match side {
                 OrderSide::Buy => self.buy_stop_order = Some(latest),
                 OrderSide::Sell => self.sell_stop_order = Some(latest),
-                OrderSide::NoOrderSide => {}
             }
         }
     }
@@ -1070,7 +1066,6 @@ impl ExecTester {
         let passive = match side {
             OrderSide::Buy => sub_price_ticks(order_price, increment, 1, precision),
             OrderSide::Sell => add_price_ticks(order_price, increment, 1, precision),
-            OrderSide::NoOrderSide => return None,
         };
         let passive = clamp_price_to_range(passive, instrument, true);
         if passive != order_price {
@@ -1080,7 +1075,6 @@ impl ExecTester {
         let aggressive = match side {
             OrderSide::Buy => add_price_ticks(order_price, increment, 1, precision),
             OrderSide::Sell => sub_price_ticks(order_price, increment, 1, precision),
-            OrderSide::NoOrderSide => return None,
         };
         let aggressive = clamp_price_to_range(aggressive, instrument, true);
         (aggressive != order_price).then_some(aggressive)
@@ -1110,7 +1104,6 @@ impl ExecTester {
         match side {
             OrderSide::Buy => self.buy_limit_maintenance_state,
             OrderSide::Sell => self.sell_limit_maintenance_state,
-            OrderSide::NoOrderSide => LimitOrderMaintenanceState::Disabled,
         }
     }
 
@@ -1122,7 +1115,6 @@ impl ExecTester {
         match side {
             OrderSide::Buy => self.buy_limit_maintenance_state = state,
             OrderSide::Sell => self.sell_limit_maintenance_state = state,
-            OrderSide::NoOrderSide => {}
         }
     }
 
@@ -1130,7 +1122,6 @@ impl ExecTester {
         match side {
             OrderSide::Buy => self.buy_order.as_ref(),
             OrderSide::Sell => self.sell_order.as_ref(),
-            OrderSide::NoOrderSide => None,
         }
     }
 
@@ -1793,9 +1784,6 @@ impl ExecTester {
                 let sl = add_price_ticks(entry_price, increment, bracket_offset_ticks, precision);
                 (tp, sl)
             }
-            OrderSide::NoOrderSide => {
-                anyhow::bail!("Invalid order side for bracket: {order_side:?}")
-            }
         };
         let clamp = self.config.clamp_to_instrument_price_range;
         let tp_price = clamp_price_to_range(unclamped_tp_price, instrument, clamp);
@@ -1897,7 +1885,9 @@ impl ExecTester {
                 );
             }
 
-            let closing_side = OrderCore::closing_side(position.side);
+            let Some(closing_side) = OrderCore::closing_side(position.side) else {
+                continue;
+            };
             let order = self.order_factory().market(
                 position.instrument_id,
                 closing_side,

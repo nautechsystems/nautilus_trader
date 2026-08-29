@@ -46,7 +46,6 @@ pub fn order_side_to_proto(side: OrderSide) -> ProtoOrderSide {
     match side {
         OrderSide::Buy => ProtoOrderSide::Buy,
         OrderSide::Sell => ProtoOrderSide::Sell,
-        _ => ProtoOrderSide::Unspecified,
     }
 }
 
@@ -186,7 +185,6 @@ mod tests {
     #[rstest]
     #[case(OrderSide::Buy, ProtoOrderSide::Buy)]
     #[case(OrderSide::Sell, ProtoOrderSide::Sell)]
-    #[case(OrderSide::NoOrderSide, ProtoOrderSide::Unspecified)]
     fn test_order_side_to_proto(#[case] side: OrderSide, #[case] expected: ProtoOrderSide) {
         assert_eq!(order_side_to_proto(side), expected);
     }

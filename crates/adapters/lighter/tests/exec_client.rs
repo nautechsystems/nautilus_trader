@@ -87,8 +87,8 @@ use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnec
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-        TimeInForce, TriggerType,
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TriggerType,
     },
     events::{AccountState, OrderAccepted, OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
     identifiers::{
@@ -3389,7 +3389,7 @@ async fn test_cancel_all_orders_iterates_open_orders_and_dispatches_cancel_per_o
         Some(client_id()),
         strategy_id(),
         eth_perp_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3455,7 +3455,7 @@ async fn test_cancel_all_orders_venue_rejection_suppresses_cancel_rejected_for_o
         Some(client_id()),
         strategy_id(),
         eth_perp_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3993,7 +3993,7 @@ async fn test_generate_mass_status_restores_filled_orders_from_trade_market() {
     assert_eq!(state.trades_calls.load(Ordering::Relaxed), 1);
     assert_eq!(order_report.client_order_id, Some(client_order_id));
     assert_eq!(order_report.venue_order_id, venue_order_id);
-    assert_eq!(order_report.order_side, OrderSide::Buy);
+    assert_eq!(order_report.order_side, Some(OrderSide::Buy));
     assert_eq!(order_report.order_type, OrderType::Limit);
     assert_eq!(order_report.order_status, OrderStatus::Filled);
     assert_eq!(order_report.quantity, Quantity::from("0.1336"));
@@ -4113,12 +4113,12 @@ async fn test_generate_bounded_mass_status_reports_snapshot_contract(
             .get(&venue_order_id)
             .expect("closing order report");
         assert_eq!(order_report.order_status, OrderStatus::Filled);
-        assert_eq!(order_report.order_side, OrderSide::Sell);
+        assert_eq!(order_report.order_side, Some(OrderSide::Sell));
         assert!(order_report.reduce_only);
     }
     assert_eq!(fill_report.trade_id, trade_id);
     assert_eq!(fill_report.order_side, OrderSide::Sell);
-    assert_eq!(position_report.position_side, PositionSideSpecified::Flat);
+    assert_eq!(position_report.position_side, PositionSide::Flat);
     assert_eq!(position_report.quantity, Quantity::zero(4));
     assert_eq!(position_report.signed_decimal_qty, Decimal::ZERO);
     assert_eq!(position_report.venue_position_id, None);
@@ -4881,7 +4881,7 @@ async fn test_generate_reports_fixed_lifecycle_cutoff(
         .find(|report| report.venue_order_id == VenueOrderId::from(CLOSE_ORDER_ID))
     {
         assert_eq!(close_report.order_status, OrderStatus::Filled);
-        assert_eq!(close_report.order_side, OrderSide::Sell);
+        assert_eq!(close_report.order_side, Some(OrderSide::Sell));
         assert!(close_report.reduce_only);
     }
 
@@ -5662,12 +5662,12 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor() {
 }
 
 #[rstest]
-#[case::long(1, PositionSideSpecified::Long)]
-#[case::short(-1, PositionSideSpecified::Short)]
+#[case::long(1, PositionSide::Long)]
+#[case::short(-1, PositionSide::Short)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_account_all_positions_empty_update_retains_cached_position(
     #[case] sign: i8,
-    #[case] expected_side: PositionSideSpecified,
+    #[case] expected_side: PositionSide,
 ) {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, _cache) = build_client(addr);
@@ -5705,7 +5705,7 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         ) || matches!(e, ExecutionEvent::Order(OrderEventAny::Filled(_)))
     })
@@ -5805,7 +5805,7 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         )
     })
@@ -5817,7 +5817,7 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
     };
     assert_eq!(flat_report.account_id, account_id());
     assert_eq!(flat_report.instrument_id, eth_perp_id());
-    assert_eq!(flat_report.position_side, PositionSideSpecified::Flat);
+    assert_eq!(flat_report.position_side, PositionSide::Flat);
     assert_eq!(flat_report.quantity, Quantity::zero(0));
     assert!(flat_report.signed_decimal_qty.is_zero());
     assert_eq!(flat_report.ts_last, flat_report.ts_init);
@@ -5830,7 +5830,7 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         )
     })
@@ -5890,7 +5890,7 @@ async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         )
     })
@@ -6041,7 +6041,7 @@ async fn test_bounded_mass_status_rejects_stale_position_coverage_after_reconnec
     assert_eq!(order_reports.len(), 1);
     assert_eq!(order_report.order_status, OrderStatus::Accepted);
     assert_eq!(position_reports.len(), 1);
-    assert_eq!(position_report.position_side, PositionSideSpecified::Long);
+    assert_eq!(position_report.position_side, PositionSide::Long);
     assert_eq!(position_report.quantity, Quantity::from("1.5000"));
 
     client.disconnect().await.expect("disconnect");
@@ -6125,7 +6125,7 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
             e,
             ExecutionEvent::Report(ExecutionReport::Position(report))
                 if report.instrument_id == eth_perp_id()
-                    && report.position_side == PositionSideSpecified::Flat
+                    && report.position_side == PositionSide::Flat
                     && report.quantity.is_zero()
         )
     })
@@ -6136,7 +6136,7 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
         unreachable!("predicate only accepts position reports");
     };
     assert_eq!(flat_report.instrument_id, eth_perp_id());
-    assert_eq!(flat_report.position_side, PositionSideSpecified::Flat);
+    assert_eq!(flat_report.position_side, PositionSide::Flat);
     assert!(flat_report.quantity.is_zero());
 
     let positions = client

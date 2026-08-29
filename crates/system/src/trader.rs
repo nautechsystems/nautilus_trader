@@ -2666,8 +2666,8 @@ mod tests {
                 .strategy_id(strategy_id)
                 .instrument_id(instrument_id)
                 .client_order_id(child_order_id)
-                .side(OrderSide::NoOrderSide)
-                .quantity(Quantity::from("100"))
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("100000000"))
                 .exec_algorithm_id(exec_algorithm_id)
                 .exec_spawn_id(child_order_id)
                 .build();
@@ -2770,7 +2770,7 @@ mod tests {
                 assert_eq!(child.event_count(), 2);
                 assert_eq!(
                     child.last_event().message(),
-                    Some("INVALID_ORDER_SIDE: NO_ORDER_SIDE".into())
+                    Some("QUANTITY_EXCEEDS_MAXIMUM: effective=100000000, max=1000000".into())
                 );
                 assert_eq!(exec_algorithm.accepted_events, 1);
                 assert_eq!(exec_algorithm.denied_events, 1);

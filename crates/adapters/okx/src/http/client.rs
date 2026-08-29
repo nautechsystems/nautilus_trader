@@ -6189,7 +6189,7 @@ impl OKXHttpClient {
             ));
         }
 
-        let side = OKXSide::from(order_side.as_specified());
+        let side = OKXSide::from(order_side);
         let pos_side = position_side.map(Into::into).or({
             if matches!(
                 instrument_type,
@@ -6371,7 +6371,7 @@ impl OKXHttpClient {
             sprd_id: instrument_id.symbol.as_str().to_string(),
             cl_ord_id: Some(client_order_id.as_str().to_string()),
             tag: Some(OKX_NAUTILUS_BROKER_ID.to_string()),
-            side: OKXSide::from(order_side.as_specified()),
+            side: OKXSide::from(order_side),
             ord_type,
             sz: quantity.to_string(),
             px: Some(price.to_string()),
@@ -6412,7 +6412,7 @@ impl OKXHttpClient {
             ));
         }
 
-        let okx_side = OKXSide::from(order_side.as_specified());
+        let okx_side = OKXSide::from(order_side);
 
         // Map trigger type to OKX format
         let trigger_px_type_enum = trigger_type.map_or(OKXTriggerType::Last, Into::into);

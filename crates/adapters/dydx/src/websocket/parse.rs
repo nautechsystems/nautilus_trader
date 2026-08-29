@@ -758,7 +758,6 @@ pub fn parse_trade_ticks(
         let aggressor_side = match trade.side {
             OrderSide::Buy => AggressorSide::Buy,
             OrderSide::Sell => AggressorSide::Sell,
-            _ => continue,
         };
 
         let price = Decimal::from_str(&trade.price)
@@ -873,7 +872,7 @@ mod tests {
         data::{BarType, Data},
         enums::{
             AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
-            PositionSideSpecified,
+            PositionSide,
         },
         identifiers::{AccountId, InstrumentId, Symbol},
         instruments::{CryptoPerpetual, InstrumentAny},
@@ -1052,7 +1051,7 @@ mod tests {
         assert!(result.is_ok());
         let report = result.unwrap();
         assert_eq!(report.account_id, account_id);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, Some(OrderSide::Sell));
     }
 
     #[rstest]
@@ -1319,7 +1318,7 @@ mod tests {
     /// silently overrode the venue side for the mismatched case below.
     #[rstest]
     fn test_ws_position_report_emits_venue_side_for_mismatched_size() {
-        use nautilus_model::enums::PositionSideSpecified;
+        use nautilus_model::enums::PositionSide;
 
         let instrument_cache = create_test_instrument_cache();
         // Venue reports a Short position but the `size` field would round to
@@ -1348,7 +1347,7 @@ mod tests {
             UnixNanos::default(),
         )
         .expect("parse should succeed");
-        assert_eq!(report.position_side, PositionSideSpecified::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
     }
 
     #[rstest]
@@ -1381,7 +1380,7 @@ mod tests {
 
         let position_report = result.unwrap();
         assert_eq!(position_report.instrument_id, instrument_id);
-        assert_eq!(position_report.position_side, PositionSideSpecified::Long);
+        assert_eq!(position_report.position_side, PositionSide::Long);
         assert_eq!(position_report.quantity.as_f64(), 0.5);
         // avg_px_open should be entry_price
         assert!(position_report.avg_px_open.is_some());
@@ -1417,7 +1416,7 @@ mod tests {
 
         let position_report = result.unwrap();
         assert_eq!(position_report.instrument_id, instrument_id);
-        assert_eq!(position_report.position_side, PositionSideSpecified::Short);
+        assert_eq!(position_report.position_side, PositionSide::Short);
         assert_eq!(position_report.quantity.as_f64(), 0.25); // Quantity is always positive
     }
 
@@ -1811,12 +1810,12 @@ mod tests {
 
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
         assert_eq!(deltas.deltas[1].action, BookAction::Add);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, Some(OrderSide::Buy));
         assert_eq!(deltas.deltas[1].order.price.to_string(), "43240.00");
         assert_eq!(deltas.deltas[1].order.size.to_string(), "1.50000000");
 
         assert_eq!(deltas.deltas[4].action, BookAction::Add);
-        assert_eq!(deltas.deltas[4].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[4].order.side, Some(OrderSide::Sell));
         assert_eq!(deltas.deltas[4].order.price.to_string(), "43250.00");
         assert_eq!(deltas.deltas[4].order.size.to_string(), "1.20000000");
 
@@ -1917,16 +1916,16 @@ mod tests {
         assert_eq!(deltas.deltas.len(), 4);
 
         assert_eq!(deltas.deltas[0].action, BookAction::Update);
-        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[0].order.side, Some(OrderSide::Buy));
         assert_eq!(deltas.deltas[0].order.price.to_string(), "43240.00");
 
         // First ask with size 0.0 should be a Delete
         assert_eq!(deltas.deltas[2].action, BookAction::Delete);
-        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].order.side, Some(OrderSide::Sell));
         assert_eq!(deltas.deltas[2].order.price.to_string(), "43250.00");
 
         assert_eq!(deltas.deltas[3].action, BookAction::Update);
-        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[3].order.side, Some(OrderSide::Sell));
     }
 
     #[rstest]

@@ -242,126 +242,6 @@ fn test_deny_order_exceeding_max_notional(
     matches!(saved_events[0], OrderEventAny::Denied(_));
 }
 
-#[rstest]
-fn test_submit_market_order_with_no_order_side_then_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    instrument_audusd: InstrumentAny,
-    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
-    cash_account_state_million_usd: AccountState,
-    mut simple_cache: Cache,
-) {
-    simple_cache
-        .add_instrument(instrument_audusd.clone())
-        .unwrap();
-    simple_cache
-        .add_account(AccountAny::Cash(cash_account(
-            cash_account_state_million_usd,
-        )))
-        .unwrap();
-    simple_cache.add_quote(quote_audusd()).unwrap();
-
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::NoOrderSide)
-        .quantity(Quantity::from("100"))
-        .build();
-
-    risk_engine
-        .cache()
-        .borrow_mut()
-        .add_order(order.clone(), None, Some(client_id_binance), false)
-        .unwrap();
-
-    let submit_order = SubmitOrder::new(
-        trader_id,
-        Some(client_id_binance),
-        strategy_id_ema_cross,
-        instrument_audusd.id(),
-        order.client_order_id(),
-        order.init_event().clone(),
-        None,
-        None,
-        None,
-        UUID4::new(),
-        risk_engine.clock().borrow().timestamp_ns(),
-        None,
-    );
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
-
-    let saved = get_process_order_event_handler_messages(&process_order_event_handler);
-    assert_eq!(saved.len(), 1);
-    assert_eq!(saved[0].event_type(), OrderEventType::Denied);
-    assert_eq!(
-        saved[0].message().unwrap(),
-        Ustr::from("INVALID_ORDER_SIDE: NO_ORDER_SIDE")
-    );
-}
-
-#[rstest]
-fn test_submit_limit_order_with_no_order_side_then_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    instrument_audusd: InstrumentAny,
-    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
-    cash_account_state_million_usd: AccountState,
-    mut simple_cache: Cache,
-) {
-    simple_cache
-        .add_instrument(instrument_audusd.clone())
-        .unwrap();
-    simple_cache
-        .add_account(AccountAny::Cash(cash_account(
-            cash_account_state_million_usd,
-        )))
-        .unwrap();
-
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let order = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument_audusd.id())
-        .side(OrderSide::NoOrderSide)
-        .price(Price::from("1.00000"))
-        .quantity(Quantity::from("100"))
-        .build();
-
-    risk_engine
-        .cache()
-        .borrow_mut()
-        .add_order(order.clone(), None, Some(client_id_binance), false)
-        .unwrap();
-
-    let submit_order = SubmitOrder::new(
-        trader_id,
-        Some(client_id_binance),
-        strategy_id_ema_cross,
-        instrument_audusd.id(),
-        order.client_order_id(),
-        order.init_event().clone(),
-        None,
-        None,
-        None,
-        UUID4::new(),
-        risk_engine.clock().borrow().timestamp_ns(),
-        None,
-    );
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
-
-    let saved = get_process_order_event_handler_messages(&process_order_event_handler);
-    assert_eq!(saved.len(), 1);
-    assert_eq!(saved[0].event_type(), OrderEventType::Denied);
-    assert_eq!(
-        saved[0].message().unwrap(),
-        Ustr::from("INVALID_ORDER_SIDE: NO_ORDER_SIDE")
-    );
-}
-
 use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
 
 #[fixture]
@@ -698,9 +578,9 @@ fn test_deferred_risk_command_is_checked_before_execution(
 
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_audusd.id())
-            .side(OrderSide::NoOrderSide)
+            .side(OrderSide::Buy)
             .price(Price::from("1.00000"))
-            .quantity(Quantity::from("100"))
+            .quantity(Quantity::from("2000000"))
             .build();
         risk_engine
             .borrow()
@@ -737,7 +617,7 @@ fn test_deferred_risk_command_is_checked_before_execution(
         assert_eq!(denied[0].event_type(), OrderEventType::Denied);
         assert_eq!(
             denied[0].message().unwrap(),
-            Ustr::from("INVALID_ORDER_SIDE: NO_ORDER_SIDE")
+            Ustr::from("QUANTITY_EXCEEDS_MAXIMUM: effective=2000000, max=1000000")
         );
         assert_eq!(exec_saving_handler.get_messages(), Vec::new());
     })
@@ -785,9 +665,9 @@ fn test_deferred_risk_denial_does_not_reenter_engine(
 
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_audusd.id())
-            .side(OrderSide::NoOrderSide)
+            .side(OrderSide::Buy)
             .price(Price::from("1.00000"))
-            .quantity(Quantity::from("100"))
+            .quantity(Quantity::from("2000000"))
             .build();
         cache
             .borrow_mut()
@@ -6460,84 +6340,6 @@ fn test_submit_order_when_betting_back_order_liability_exceeds_free_balance_then
             .unwrap()
             .as_str()
             .contains("NOTIONAL_EXCEEDS_FREE_BALANCE")
-    );
-}
-
-#[rstest]
-fn test_submit_order_when_betting_balance_locked_calculation_fails_then_denies(
-    strategy_id_ema_cross: StrategyId,
-    client_id_binance: ClientId,
-    trader_id: TraderId,
-    process_order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
-    mut simple_cache: Cache,
-) {
-    let gbp = Currency::GBP();
-    let instrument = InstrumentAny::Betting(betting());
-    let account_state = AccountState::new(
-        AccountId::new("BETFAIR-003"),
-        AccountType::Betting,
-        vec![AccountBalance::new(
-            Money::new(1_000.0, gbp),
-            Money::zero(gbp),
-            Money::new(1_000.0, gbp),
-        )],
-        vec![],
-        true,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        Some(gbp),
-    );
-
-    simple_cache.add_instrument(instrument.clone()).unwrap();
-    simple_cache
-        .add_account(AccountAny::Betting(BettingAccount::new(
-            account_state,
-            true,
-        )))
-        .unwrap();
-
-    let mut risk_engine =
-        get_risk_engine(Some(Rc::new(RefCell::new(simple_cache))), None, None, false);
-    let order = OrderTestBuilder::new(OrderType::Limit)
-        .instrument_id(instrument.id())
-        .side(OrderSide::NoOrderSide)
-        .price(Price::from("2.00"))
-        .quantity(Quantity::from("100"))
-        .build();
-
-    risk_engine
-        .cache()
-        .borrow_mut()
-        .add_order(order.clone(), None, Some(client_id_binance), false)
-        .unwrap();
-
-    let submit_order = SubmitOrder::new(
-        trader_id,
-        Some(client_id_binance),
-        strategy_id_ema_cross,
-        instrument.id(),
-        order.client_order_id(),
-        order.init_event().clone(),
-        None,
-        None,
-        None,
-        UUID4::new(),
-        risk_engine.clock().borrow().timestamp_ns(),
-        None,
-    );
-
-    risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
-
-    let saved = get_process_order_event_handler_messages(&process_order_event_handler);
-    assert_eq!(saved.len(), 1);
-    assert_eq!(saved[0].event_type(), OrderEventType::Denied);
-    assert!(
-        saved[0]
-            .message()
-            .unwrap()
-            .as_str()
-            .starts_with("BETTING_BALANCE_LOCKED_CALCULATION_FAILED: ")
     );
 }
 

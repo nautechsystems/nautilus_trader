@@ -73,8 +73,8 @@ use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnec
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, TimeInForce, TrailingOffsetType, TriggerType,
+        AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{AccountState, OrderAccepted, OrderEventAny, OrderUpdated},
     identifiers::{
@@ -2282,7 +2282,7 @@ async fn test_cancel_all_orders_completes() {
         Some(*BINANCE_CLIENT_ID),
         StrategyId::from("TEST-STRATEGY"),
         instrument_id,
-        OrderSide::NoOrderSide,
+        None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,
@@ -4195,7 +4195,7 @@ async fn test_generate_mass_status_uses_execution_instruments_without_shared_cac
     assert_eq!(order_reports.len(), 2);
     assert_eq!(regular.account_id, account_id);
     assert_eq!(regular.instrument_id, instrument_id);
-    assert_eq!(regular.order_side, OrderSide::Buy);
+    assert_eq!(regular.order_side, Some(OrderSide::Buy));
     assert_eq!(regular.order_type, OrderType::Limit);
     assert_eq!(regular.order_status, OrderStatus::Accepted);
     assert_eq!(regular.quantity, Quantity::from("0.001"));
@@ -4206,7 +4206,7 @@ async fn test_generate_mass_status_uses_execution_instruments_without_shared_cac
     assert_eq!(regular.price.unwrap().precision, 2);
     assert_eq!(algo.account_id, account_id);
     assert_eq!(algo.instrument_id, instrument_id);
-    assert_eq!(algo.order_side, OrderSide::Buy);
+    assert_eq!(algo.order_side, Some(OrderSide::Buy));
     assert_eq!(algo.order_type, OrderType::StopMarket);
     assert_eq!(algo.order_status, OrderStatus::Accepted);
     assert_eq!(algo.quantity, Quantity::from("0.001"));
@@ -4216,7 +4216,7 @@ async fn test_generate_mass_status_uses_execution_instruments_without_shared_cac
     assert_eq!(position_reports.len(), 1);
     assert_eq!(position.account_id, account_id);
     assert_eq!(position.instrument_id, instrument_id);
-    assert_eq!(position.position_side, PositionSideSpecified::Long);
+    assert_eq!(position.position_side, PositionSide::Long);
     assert_eq!(position.quantity, Quantity::from("0.001"));
     assert_eq!(position.quantity.precision, 3);
     assert_eq!(
@@ -4267,11 +4267,11 @@ async fn test_generate_mass_status_restores_close_position_quantities() {
     let invalid_side = reports.get(&VenueOrderId::from("123456794")).unwrap();
 
     assert_eq!(reports.len(), 5);
-    assert_eq!(close_long.order_side, OrderSide::Sell);
+    assert_eq!(close_long.order_side, Some(OrderSide::Sell));
     assert_eq!(close_long.order_type, OrderType::StopMarket);
     assert_eq!(close_long.quantity, Quantity::from("0.005"));
     assert!(close_long.reduce_only);
-    assert_eq!(close_short.order_side, OrderSide::Buy);
+    assert_eq!(close_short.order_side, Some(OrderSide::Buy));
     assert_eq!(close_short.order_type, OrderType::StopMarket);
     assert_eq!(close_short.quantity, Quantity::from("0.002"));
     assert!(close_short.reduce_only);
@@ -4918,7 +4918,7 @@ async fn test_position_report_generation_preserves_hedge_legs() {
     assert_eq!(reports.len(), 2);
     assert_eq!(reports[0].account_id, account_id);
     assert_eq!(reports[0].instrument_id, instrument_id);
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].position_side, PositionSide::Long);
     assert_eq!(reports[0].quantity, Quantity::from("0.005"));
     assert_eq!(
         reports[0].signed_decimal_qty,
@@ -4933,7 +4933,7 @@ async fn test_position_report_generation_preserves_hedge_legs() {
 
     assert_eq!(reports[1].account_id, account_id);
     assert_eq!(reports[1].instrument_id, instrument_id);
-    assert_eq!(reports[1].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[1].position_side, PositionSide::Short);
     assert_eq!(reports[1].quantity, Quantity::from("0.002"));
     assert_eq!(
         reports[1].signed_decimal_qty,

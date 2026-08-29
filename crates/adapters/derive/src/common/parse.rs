@@ -106,15 +106,10 @@ pub fn salvage_elements<T: DeserializeOwned>(values: Vec<Value>) -> Vec<T> {
 
 /// Maps a Nautilus order side to the Derive direction string.
 ///
-/// # Errors
-///
-/// Returns an error for ambiguous Nautilus order sides
-/// ([`OrderSide::NoOrderSide`]).
-pub fn order_side_to_derive(side: OrderSide) -> anyhow::Result<DeriveOrderSide> {
+pub fn order_side_to_derive(side: OrderSide) -> DeriveOrderSide {
     match side {
-        OrderSide::Buy => Ok(DeriveOrderSide::Buy),
-        OrderSide::Sell => Ok(DeriveOrderSide::Sell),
-        OrderSide::NoOrderSide => anyhow::bail!("unsupported order side for Derive: {side:?}"),
+        OrderSide::Buy => DeriveOrderSide::Buy,
+        OrderSide::Sell => DeriveOrderSide::Sell,
     }
 }
 

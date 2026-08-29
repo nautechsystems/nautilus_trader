@@ -826,7 +826,7 @@ pub fn parse_position_status_report(
     Ok(PositionStatusReport::new(
         account_id,
         instrument_id,
-        position_side.as_specified(),
+        position_side,
         quantity,
         ts_last,
         ts_init,
@@ -839,6 +839,7 @@ pub fn parse_position_status_report(
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
+    use nautilus_model::enums::OrderSide;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -875,7 +876,7 @@ mod tests {
         let clear_delta = &deltas.deltas[0];
         assert_eq!(clear_delta.instrument_id, instrument_id);
         assert_eq!(clear_delta.action, BookAction::Clear);
-        assert_eq!(clear_delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(clear_delta.order.side, None);
         assert_eq!(clear_delta.order.price.raw, 0);
         assert_eq!(clear_delta.order.price.precision, 0);
         assert_eq!(clear_delta.order.size.raw, 0);
@@ -893,7 +894,7 @@ mod tests {
         let first_bid_delta = &deltas.deltas[1];
         assert_eq!(first_bid_delta.instrument_id, instrument_id);
         assert_eq!(first_bid_delta.action, BookAction::Add);
-        assert_eq!(first_bid_delta.order.side, OrderSide::Buy);
+        assert_eq!(first_bid_delta.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid_delta.order.price, Price::from("98450.50"));
         assert_eq!(first_bid_delta.order.price.precision, 2);
         assert_eq!(first_bid_delta.order.size, Quantity::from("2.5"));
@@ -932,7 +933,7 @@ mod tests {
         let clear_delta = &deltas.deltas[0];
         assert_eq!(clear_delta.instrument_id, instrument_id);
         assert_eq!(clear_delta.action, BookAction::Clear);
-        assert_eq!(clear_delta.order.side, OrderSide::NoOrderSide);
+        assert_eq!(clear_delta.order.side, None);
         assert_eq!(clear_delta.order.price.raw, 0);
         assert_eq!(clear_delta.order.price.precision, 0);
         assert_eq!(clear_delta.order.size.raw, 0);
@@ -950,7 +951,7 @@ mod tests {
         let first_bid_delta = &deltas.deltas[1];
         assert_eq!(first_bid_delta.instrument_id, instrument_id);
         assert_eq!(first_bid_delta.action, BookAction::Add);
-        assert_eq!(first_bid_delta.order.side, OrderSide::Buy);
+        assert_eq!(first_bid_delta.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid_delta.order.price, Price::from("98450.50"));
         assert_eq!(first_bid_delta.order.price.precision, 2);
         assert_eq!(first_bid_delta.order.size, Quantity::from("2.5"));
@@ -999,7 +1000,7 @@ mod tests {
         let first_delta = &deltas.deltas[0];
         assert_eq!(first_delta.instrument_id, instrument_id);
         assert_eq!(first_delta.action, BookAction::Delete);
-        assert_eq!(first_delta.order.side, OrderSide::Buy);
+        assert_eq!(first_delta.order.side, OrderSide::Buy.into());
         assert_eq!(first_delta.order.price, Price::from("98449.00"));
         assert_eq!(first_delta.order.price.precision, 2);
         assert_eq!(first_delta.order.size, Quantity::from("0.00000"));

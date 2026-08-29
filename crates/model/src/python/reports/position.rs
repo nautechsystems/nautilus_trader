@@ -48,7 +48,7 @@ impl PositionStatusReport {
         Self::new(
             account_id,
             instrument_id,
-            position_side.as_specified(),
+            position_side,
             quantity,
             ts_last.into(),
             ts_init.into(),
@@ -101,7 +101,7 @@ impl PositionStatusReport {
     #[getter]
     #[pyo3(name = "position_side")]
     fn py_position_side(&self) -> PositionSide {
-        self.position_side.as_position_side()
+        self.position_side
     }
 
     #[getter]

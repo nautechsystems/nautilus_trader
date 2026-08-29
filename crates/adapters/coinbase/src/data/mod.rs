@@ -51,7 +51,7 @@ use nautilus_core::{
 use nautilus_live::SocketControl;
 use nautilus_model::{
     data::Data,
-    enums::{BarAggregation, BookType, OrderSide},
+    enums::{BarAggregation, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -873,7 +873,7 @@ impl DataClient for CoinbaseDataClient {
                             let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
                             for delta in &deltas.deltas {
-                                if delta.order.side != OrderSide::NoOrderSide {
+                                if delta.order.side.is_some() {
                                     book.add(
                                         delta.order,
                                         delta.flags,

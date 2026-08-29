@@ -80,10 +80,10 @@ fn test_parse_optional_bool(#[case] input: c_char, #[case] expected: Option<bool
 }
 
 #[rstest]
-#[case('A' as c_char, OrderSide::Sell)]
-#[case('B' as c_char, OrderSide::Buy)]
-#[case('X' as c_char, OrderSide::NoOrderSide)]
-fn test_parse_order_side(#[case] input: c_char, #[case] expected: OrderSide) {
+#[case('A' as c_char, Some(OrderSide::Sell))]
+#[case('B' as c_char, Some(OrderSide::Buy))]
+#[case('X' as c_char, None)]
+fn test_parse_order_side(#[case] input: c_char, #[case] expected: Option<OrderSide>) {
     assert_eq!(parse_order_side(input), expected);
 }
 
@@ -517,7 +517,7 @@ fn test_decode_mbo_msg() {
 
     assert_eq!(delta.instrument_id, instrument_id);
     assert_eq!(delta.action, BookAction::Delete);
-    assert_eq!(delta.order.side, OrderSide::Sell);
+    assert_eq!(delta.order.side, Some(OrderSide::Sell));
     assert_eq!(delta.order.price, Price::from("3722.75"));
     assert_eq!(delta.order.size, quantity_from_str("1"));
     assert_eq!(delta.order.order_id, 647_784_973_705);
@@ -555,7 +555,7 @@ fn test_decode_mbo_msg_clear_action() {
 
     assert_eq!(delta.instrument_id, instrument_id);
     assert_eq!(delta.action, BookAction::Clear);
-    assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+    assert_eq!(delta.order.side, None);
     assert_eq!(delta.order.size, quantity_from_str("0"));
     assert_eq!(delta.order.order_id, 0);
     assert_eq!(delta.sequence, 1_000_000);
@@ -814,7 +814,7 @@ fn test_decode_mbo_msg_trade_event_sequence_book_records_only() {
 
 #[rstest]
 fn test_decode_mbo_msg_no_order_side_update() {
-    // MBO messages with NoOrderSide are now passed through to the book
+    // MBO messages without a side are passed through to the book
     // The book will resolve the side from its cache using the order_id
     let ts_recv = 1_609_160_400_000_000_000;
     let msg = dbn::MboMsg {
@@ -834,11 +834,11 @@ fn test_decode_mbo_msg_no_order_side_update() {
     let instrument_id = InstrumentId::from("ESM4.GLBX");
     let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), false).unwrap();
 
-    // Delta should be created with NoOrderSide (book will resolve it)
+    // The book resolves the missing side
     assert!(delta.is_some());
     assert!(trade.is_none());
     let delta = delta.unwrap();
-    assert_eq!(delta.order.side, OrderSide::NoOrderSide);
+    assert_eq!(delta.order.side, None);
     assert_eq!(delta.order.order_id, 123_456_789);
     assert_eq!(delta.action, BookAction::Update);
 }
@@ -1440,7 +1440,7 @@ fn test_decode_imbalance_msg() {
     assert_eq!(imbalance.total_imbalance_qty, quantity_from_str("2000"));
     assert_eq!(imbalance.paired_qty.precision, 0);
     assert_eq!(imbalance.total_imbalance_qty.precision, 0);
-    assert_eq!(imbalance.side, OrderSide::Buy);
+    assert_eq!(imbalance.side, Some(OrderSide::Buy));
     assert_eq!(imbalance.significant_imbalance, 126);
     assert_eq!(imbalance.ts_event, msg.hd.ts_event);
     assert_eq!(imbalance.ts_recv, msg.ts_recv);
@@ -1726,19 +1726,19 @@ fn test_decode_mbp10_msg_with_undefined_levels() {
     let instrument_id = InstrumentId::from("TEST.VENUE");
     let depth = decode_mbp10_msg(&msg, instrument_id, 2, None).unwrap();
 
-    assert_eq!(depth.bids[5].side, OrderSide::NoOrderSide);
+    assert_eq!(depth.bids[5].side, None);
     assert_eq!(depth.bids[5].price.raw, 0);
     assert_eq!(depth.bids[5].price.precision, 0);
     assert_eq!(depth.bids[5].size.raw, 0);
-    assert_eq!(depth.asks[7].side, OrderSide::NoOrderSide);
+    assert_eq!(depth.asks[7].side, None);
     assert_eq!(depth.asks[7].price.raw, 0);
     assert_eq!(depth.asks[7].price.precision, 0);
     assert_eq!(depth.asks[7].size.raw, 0);
 
     // Defined neighbours keep their normal side and instrument precision
-    assert_eq!(depth.bids[0].side, OrderSide::Buy);
+    assert_eq!(depth.bids[0].side, Some(OrderSide::Buy));
     assert_eq!(depth.bids[0].price.precision, 2);
-    assert_eq!(depth.asks[0].side, OrderSide::Sell);
+    assert_eq!(depth.asks[0].side, Some(OrderSide::Sell));
     assert_eq!(depth.asks[0].price.precision, 2);
 }
 

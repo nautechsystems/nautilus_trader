@@ -39,7 +39,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce},
+    enums::{AccountType, OmsType, OrderType, TimeInForce},
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, Venue},
     orders::{Order, OrderAny},
@@ -887,10 +887,10 @@ impl ExecutionClient for DeribitExecutionClient {
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        // If NoOrderSide, use efficient bulk cancel via Deribit API
-        if cmd.order_side == OrderSide::NoOrderSide {
+        // Without a side filter, use efficient bulk cancel via Deribit API
+        let Some(order_side) = cmd.order_side else {
             log::debug!(
-                "Cancelling all orders: instrument={instrument_id}, order_side=NoOrderSide (bulk)"
+                "Cancelling all orders: instrument={instrument_id}, order_side=None (bulk)"
             );
 
             let ws_client = self.ws_client.clone();
@@ -903,14 +903,12 @@ impl ExecutionClient for DeribitExecutionClient {
             });
 
             return Ok(());
-        }
+        };
 
         // For specific side (Buy/Sell), filter from cache and cancel individually
         // Deribit API doesn't support side filtering, so we implement it locally
         log::debug!(
-            "Cancelling orders by side: instrument={}, order_side={}",
-            instrument_id,
-            cmd.order_side
+            "Cancelling orders by side: instrument={instrument_id}, order_side={order_side}"
         );
 
         let orders_to_cancel: Vec<_> = {
@@ -919,7 +917,7 @@ impl ExecutionClient for DeribitExecutionClient {
 
             open_orders
                 .into_iter()
-                .filter(|order| order.order_side() == cmd.order_side)
+                .filter(|order| order.order_side() == order_side)
                 .filter_map(|order| {
                     let venue_order_id = order.venue_order_id()?;
                     Some((
@@ -933,19 +931,13 @@ impl ExecutionClient for DeribitExecutionClient {
         };
 
         if orders_to_cancel.is_empty() {
-            log::debug!(
-                "No open {} orders to cancel for {}",
-                cmd.order_side,
-                instrument_id
-            );
+            log::debug!("No open {order_side} orders to cancel for {instrument_id}");
             return Ok(());
         }
 
         log::debug!(
-            "Cancelling {} {} orders for {}",
+            "Cancelling {} {order_side} orders for {instrument_id}",
             orders_to_cancel.len(),
-            cmd.order_side,
-            instrument_id
         );
 
         // Cancel each matching order individually
@@ -1124,7 +1116,7 @@ mod tests {
     use nautilus_common::messages::{ExecutionEvent, execution::ExecutionReport};
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::LiquiditySide,
+        enums::{LiquiditySide, OrderSide},
         events::OrderFilled,
         identifiers::{ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId},
         types::{Currency, Money, Price, Quantity},

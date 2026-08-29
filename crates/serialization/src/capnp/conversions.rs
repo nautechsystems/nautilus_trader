@@ -668,21 +668,28 @@ pub fn greeks_convention_from_capnp(value: enums_capnp::GreeksConvention) -> Gre
 }
 
 #[must_use]
-pub fn order_side_to_capnp(value: OrderSide) -> enums_capnp::OrderSide {
+pub fn order_side_to_capnp(value: Option<OrderSide>) -> enums_capnp::OrderSide {
     match value {
-        OrderSide::NoOrderSide => enums_capnp::OrderSide::NoOrderSide,
-        OrderSide::Buy => enums_capnp::OrderSide::Buy,
-        OrderSide::Sell => enums_capnp::OrderSide::Sell,
+        None => enums_capnp::OrderSide::NoOrderSide,
+        Some(OrderSide::Buy) => enums_capnp::OrderSide::Buy,
+        Some(OrderSide::Sell) => enums_capnp::OrderSide::Sell,
     }
 }
 
 #[must_use]
-pub fn order_side_from_capnp(value: enums_capnp::OrderSide) -> OrderSide {
+pub fn order_side_from_capnp(value: enums_capnp::OrderSide) -> Option<OrderSide> {
     match value {
-        enums_capnp::OrderSide::NoOrderSide => OrderSide::NoOrderSide,
-        enums_capnp::OrderSide::Buy => OrderSide::Buy,
-        enums_capnp::OrderSide::Sell => OrderSide::Sell,
+        enums_capnp::OrderSide::NoOrderSide => None,
+        enums_capnp::OrderSide::Buy => Some(OrderSide::Buy),
+        enums_capnp::OrderSide::Sell => Some(OrderSide::Sell),
     }
+}
+
+fn order_side_required_from_capnp(
+    value: enums_capnp::OrderSide,
+) -> Result<OrderSide, Box<dyn Error>> {
+    order_side_from_capnp(value)
+        .ok_or_else(|| "Cap'n Proto required order side was NO_ORDER_SIDE".into())
 }
 
 #[must_use]
@@ -836,23 +843,30 @@ pub fn contingency_type_from_capnp(value: enums_capnp::ContingencyType) -> Conti
 }
 
 #[must_use]
-pub fn position_side_to_capnp(value: PositionSide) -> enums_capnp::PositionSide {
+pub fn position_side_to_capnp(value: Option<PositionSide>) -> enums_capnp::PositionSide {
     match value {
-        PositionSide::NoPositionSide => enums_capnp::PositionSide::NoPositionSide,
-        PositionSide::Flat => enums_capnp::PositionSide::Flat,
-        PositionSide::Long => enums_capnp::PositionSide::Long,
-        PositionSide::Short => enums_capnp::PositionSide::Short,
+        None => enums_capnp::PositionSide::NoPositionSide,
+        Some(PositionSide::Flat) => enums_capnp::PositionSide::Flat,
+        Some(PositionSide::Long) => enums_capnp::PositionSide::Long,
+        Some(PositionSide::Short) => enums_capnp::PositionSide::Short,
     }
 }
 
 #[must_use]
-pub fn position_side_from_capnp(value: enums_capnp::PositionSide) -> PositionSide {
+pub fn position_side_from_capnp(value: enums_capnp::PositionSide) -> Option<PositionSide> {
     match value {
-        enums_capnp::PositionSide::NoPositionSide => PositionSide::NoPositionSide,
-        enums_capnp::PositionSide::Flat => PositionSide::Flat,
-        enums_capnp::PositionSide::Long => PositionSide::Long,
-        enums_capnp::PositionSide::Short => PositionSide::Short,
+        enums_capnp::PositionSide::NoPositionSide => None,
+        enums_capnp::PositionSide::Flat => Some(PositionSide::Flat),
+        enums_capnp::PositionSide::Long => Some(PositionSide::Long),
+        enums_capnp::PositionSide::Short => Some(PositionSide::Short),
     }
+}
+
+fn position_side_required_from_capnp(
+    value: enums_capnp::PositionSide,
+) -> Result<PositionSide, Box<dyn Error>> {
+    position_side_from_capnp(value)
+        .ok_or_else(|| "Cap'n Proto required position side was NO_POSITION_SIDE".into())
 }
 
 #[must_use]
@@ -3645,7 +3659,7 @@ impl<'a> ToCapnp<'a> for OrderFilled {
         let trade_id_builder = builder.reborrow().init_trade_id();
         self.trade_id.to_capnp(trade_id_builder);
 
-        builder.set_order_side(order_side_to_capnp(self.order_side));
+        builder.set_order_side(order_side_to_capnp(self.order_side.into()));
         builder.set_order_type(order_type_to_capnp(self.order_type));
 
         let last_qty_builder = builder.reborrow().init_last_qty();
@@ -3717,7 +3731,7 @@ impl<'a> FromCapnp<'a> for OrderFilled {
         let trade_id_reader = reader.get_trade_id()?;
         let trade_id = TradeId::from_capnp(trade_id_reader)?;
 
-        let order_side = order_side_from_capnp(reader.get_order_side()?);
+        let order_side = order_side_required_from_capnp(reader.get_order_side()?)?;
         let order_type = order_type_from_capnp(reader.get_order_type()?);
 
         let last_qty_reader = reader.get_last_qty()?;
@@ -3818,7 +3832,7 @@ impl<'a> ToCapnp<'a> for OrderFillVoided {
         if let Some(commission) = self.commission_voided {
             commission.to_capnp(builder.reborrow().init_commission_voided());
         }
-        builder.set_order_side(order_side_to_capnp(self.order_side));
+        builder.set_order_side(order_side_to_capnp(self.order_side.into()));
         builder.set_order_type(order_type_to_capnp(self.order_type));
         self.last_px.to_capnp(builder.reborrow().init_last_px());
         self.currency.to_capnp(builder.reborrow().init_currency());
@@ -3870,7 +3884,7 @@ impl<'a> FromCapnp<'a> for OrderFillVoided {
         } else {
             None
         };
-        let order_side = order_side_from_capnp(reader.get_order_side()?);
+        let order_side = order_side_required_from_capnp(reader.get_order_side()?)?;
         let order_type = order_type_from_capnp(reader.get_order_type()?);
         let last_px = Price::from_capnp(reader.get_last_px()?)?;
         let currency = Currency::from_capnp(reader.get_currency()?)?;
@@ -3955,7 +3969,7 @@ impl<'a> ToCapnp<'a> for OrderInitialized {
         let client_order_id_builder = builder.reborrow().init_client_order_id();
         self.client_order_id.to_capnp(client_order_id_builder);
 
-        builder.set_order_side(order_side_to_capnp(self.order_side));
+        builder.set_order_side(order_side_to_capnp(self.order_side.into()));
         builder.set_order_type(order_type_to_capnp(self.order_type));
 
         let quantity_builder = builder.reborrow().init_quantity();
@@ -4100,7 +4114,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
         let client_order_id_reader = reader.get_client_order_id()?;
         let client_order_id = ClientOrderId::from_capnp(client_order_id_reader)?;
 
-        let order_side = order_side_from_capnp(reader.get_order_side()?);
+        let order_side = order_side_required_from_capnp(reader.get_order_side()?)?;
         let order_type = order_type_from_capnp(reader.get_order_type()?);
 
         let quantity_reader = reader.get_quantity()?;
@@ -4326,8 +4340,8 @@ impl<'a> ToCapnp<'a> for PositionOpened {
         let opening_order_id_builder = builder.reborrow().init_opening_order_id();
         self.opening_order_id.to_capnp(opening_order_id_builder);
 
-        builder.set_entry(order_side_to_capnp(self.entry));
-        builder.set_side(position_side_to_capnp(self.side));
+        builder.set_entry(order_side_to_capnp(self.entry.into()));
+        builder.set_side(position_side_to_capnp(self.side.into()));
         builder.set_signed_qty(self.signed_qty);
 
         let quantity_builder = builder.reborrow().init_quantity();
@@ -4380,8 +4394,8 @@ impl<'a> FromCapnp<'a> for PositionOpened {
         let opening_order_id_reader = reader.get_opening_order_id()?;
         let opening_order_id = ClientOrderId::from_capnp(opening_order_id_reader)?;
 
-        let entry = order_side_from_capnp(reader.get_entry()?);
-        let side = position_side_from_capnp(reader.get_side()?);
+        let entry = order_side_required_from_capnp(reader.get_entry()?)?;
+        let side = position_side_required_from_capnp(reader.get_side()?)?;
         let signed_qty = reader.get_signed_qty();
 
         let quantity_reader = reader.get_quantity()?;
@@ -4460,8 +4474,8 @@ impl<'a> ToCapnp<'a> for PositionChanged {
         let opening_order_id_builder = builder.reborrow().init_opening_order_id();
         self.opening_order_id.to_capnp(opening_order_id_builder);
 
-        builder.set_entry(order_side_to_capnp(self.entry));
-        builder.set_side(position_side_to_capnp(self.side));
+        builder.set_entry(order_side_to_capnp(self.entry.into()));
+        builder.set_side(position_side_to_capnp(self.side.into()));
         builder.set_signed_qty(self.signed_qty);
 
         let quantity_builder = builder.reborrow().init_quantity();
@@ -4525,8 +4539,8 @@ impl<'a> FromCapnp<'a> for PositionChanged {
         let opening_order_id_reader = reader.get_opening_order_id()?;
         let opening_order_id = ClientOrderId::from_capnp(opening_order_id_reader)?;
 
-        let entry = order_side_from_capnp(reader.get_entry()?);
-        let side = position_side_from_capnp(reader.get_side()?);
+        let entry = order_side_required_from_capnp(reader.get_entry()?)?;
+        let side = position_side_required_from_capnp(reader.get_side()?)?;
         let signed_qty = reader.get_signed_qty();
 
         let quantity_reader = reader.get_quantity()?;
@@ -4627,8 +4641,8 @@ impl<'a> ToCapnp<'a> for PositionClosed {
         self.closing_order_id
             .write_capnp(|| builder.reborrow().init_closing_order_id());
 
-        builder.set_entry(order_side_to_capnp(self.entry));
-        builder.set_side(position_side_to_capnp(self.side));
+        builder.set_entry(order_side_to_capnp(self.entry.into()));
+        builder.set_side(position_side_to_capnp(self.side.into()));
         builder.set_signed_qty(self.signed_qty);
 
         let quantity_builder = builder.reborrow().init_quantity();
@@ -4704,8 +4718,8 @@ impl<'a> FromCapnp<'a> for PositionClosed {
             || reader.get_closing_order_id(),
         )?;
 
-        let entry = order_side_from_capnp(reader.get_entry()?);
-        let side = position_side_from_capnp(reader.get_side()?);
+        let entry = order_side_required_from_capnp(reader.get_entry()?)?;
+        let side = position_side_required_from_capnp(reader.get_side()?)?;
         let signed_qty = reader.get_signed_qty();
 
         let quantity_reader = reader.get_quantity()?;

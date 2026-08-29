@@ -1462,7 +1462,6 @@ impl OrderFactory {
         let sl_tp_side = match order_side {
             OrderSide::Buy => OrderSide::Sell,
             OrderSide::Sell => OrderSide::Buy,
-            OrderSide::NoOrderSide => OrderSide::NoOrderSide,
         };
 
         let tp_contingency_type = Some(contingency_type);

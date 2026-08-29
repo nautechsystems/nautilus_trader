@@ -68,8 +68,8 @@ use nautilus_core::{
 use nautilus_model::{
     accounts::Account,
     enums::{
-        AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TrailingOffsetType, TriggerType,
+        AccountType, ContingencyType, OmsType, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
     events::{
         OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
@@ -1195,13 +1195,22 @@ impl ExecutionEngine {
 
         let trader_id = get_message_bus().borrow().trader_id;
         let ts_now = self.clock.borrow().timestamp_ns();
+        let Some(order_side) = report.order_side else {
+            log::error!(
+                "Skipping external order {} ({}) for {}: order side is not specified",
+                client_order_id,
+                report.venue_order_id,
+                report.instrument_id,
+            );
+            return None;
+        };
 
         let initialized = match OrderInitialized::new_checked(
             trader_id,
             strategy_id,
             report.instrument_id,
             client_order_id,
-            report.order_side,
+            order_side,
             report.order_type,
             report.quantity,
             report.time_in_force,
@@ -2441,10 +2450,9 @@ impl ExecutionEngine {
         let algorithm_commands = self.plan_cancel_all_orders(command, client_id, account_id);
         let venue_command = Self::create_cancel_all_child(command, client_id);
         let emulator_command = Self::create_cancel_all_child(command, client_id);
-        let side_str = match command.order_side {
-            OrderSide::NoOrderSide => " ".to_string(),
-            order_side => format!(" {order_side} "),
-        };
+        let side_str = command
+            .order_side
+            .map_or_else(|| " ".to_string(), |order_side| format!(" {order_side} "));
 
         log_info!("Cancel all{side_str}orders", color = LogColor::Blue);
 
@@ -2472,10 +2480,7 @@ impl ExecutionEngine {
         client_id: ClientId,
         account_id: AccountId,
     ) -> Vec<(ExecAlgorithmId, CancelOrder)> {
-        let order_side = match command.order_side {
-            OrderSide::NoOrderSide => None,
-            order_side => Some(order_side),
-        };
+        let order_side = command.order_side;
         let candidates: Vec<(OrderAny, bool)> = {
             let cache = self.cache.borrow();
             cache
@@ -4415,7 +4420,7 @@ impl ExecutionEngine {
 mod tests {
     use nautilus_common::clock::TestClock;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderType, PositionSideSpecified},
+        enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
         events::order::spec::OrderFilledSpec,
         identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
         instruments::{InstrumentAny, stubs::audusd_sim},
@@ -4454,7 +4459,7 @@ mod tests {
         let report = PositionStatusReport::new(
             account1_id,
             instrument.id(),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from(1_000),
             UnixNanos::from(1_000_000),
             UnixNanos::from(1_000_000),
@@ -4505,7 +4510,7 @@ mod tests {
         let report = PositionStatusReport::new(
             account_id,
             instrument.id(),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from(1_500),
             UnixNanos::from(1_000_000),
             UnixNanos::from(1_000_000),

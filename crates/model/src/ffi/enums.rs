@@ -19,6 +19,7 @@ use nautilus_core::ffi::{
     abort_on_panic,
     string::{cstr_as_str, str_to_cstr},
 };
+use strum::{AsRefStr, Display, EnumString};
 
 use crate::enums::{
     AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
@@ -27,6 +28,90 @@ use crate::enums::{
     OtoTriggerMode, PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce,
     TradingState, TrailingOffsetType, TriggerType,
 };
+
+/// The stable zero-inclusive order-side representation required by the existing C ABI.
+///
+/// Use [`Option<OrderSide>`] for ordinary Rust optionality.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Display, Hash, PartialEq, Eq, AsRefStr, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum OrderSideOptional {
+    /// Compatibility value for no specified order side.
+    ///
+    /// This value may be removed in a future version.
+    #[default]
+    NoOrderSide = 0,
+    /// The order is a BUY.
+    Buy = 1,
+    /// The order is a SELL.
+    Sell = 2,
+}
+
+impl OrderSideOptional {
+    #[must_use]
+    pub const fn as_option(self) -> Option<OrderSide> {
+        match self {
+            Self::NoOrderSide => None,
+            Self::Buy => Some(OrderSide::Buy),
+            Self::Sell => Some(OrderSide::Sell),
+        }
+    }
+}
+
+impl From<Option<OrderSide>> for OrderSideOptional {
+    fn from(value: Option<OrderSide>) -> Self {
+        match value {
+            None => Self::NoOrderSide,
+            Some(OrderSide::Buy) => Self::Buy,
+            Some(OrderSide::Sell) => Self::Sell,
+        }
+    }
+}
+
+/// The stable zero-inclusive position-side representation required by the existing C ABI.
+///
+/// Use [`Option<PositionSide>`] for ordinary Rust optionality.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Display, Hash, PartialEq, Eq, AsRefStr, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum PositionSideOptional {
+    /// Compatibility value for no specified position side.
+    ///
+    /// This value may be removed in a future version.
+    #[default]
+    NoPositionSide = 0,
+    /// A neutral/flat position.
+    Flat = 1,
+    /// A long position.
+    Long = 2,
+    /// A short position.
+    Short = 3,
+}
+
+impl PositionSideOptional {
+    #[must_use]
+    pub const fn as_option(self) -> Option<PositionSide> {
+        match self {
+            Self::NoPositionSide => None,
+            Self::Flat => Some(PositionSide::Flat),
+            Self::Long => Some(PositionSide::Long),
+            Self::Short => Some(PositionSide::Short),
+        }
+    }
+}
+
+impl From<Option<PositionSide>> for PositionSideOptional {
+    fn from(value: Option<PositionSide>) -> Self {
+        match value {
+            None => Self::NoPositionSide,
+            Some(PositionSide::Flat) => Self::Flat,
+            Some(PositionSide::Long) => Self::Long,
+            Some(PositionSide::Short) => Self::Short,
+        }
+    }
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {
@@ -427,7 +512,7 @@ pub unsafe extern "C" fn oto_trigger_mode_from_cstr(ptr: *const c_char) -> OtoTr
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn order_side_to_cstr(value: OrderSide) -> *const c_char {
+pub extern "C" fn order_side_to_cstr(value: OrderSideOptional) -> *const c_char {
     str_to_cstr(value.as_ref())
 }
 
@@ -439,13 +524,14 @@ pub extern "C" fn order_side_to_cstr(value: OrderSide) -> *const c_char {
 ///
 /// # Panics
 ///
-/// Panics if the C string does not correspond to a valid `OrderSide` variant.
+/// Panics if the C string does not correspond to a valid `OrderSideOptional` variant.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn order_side_from_cstr(ptr: *const c_char) -> OrderSide {
+pub unsafe extern "C" fn order_side_from_cstr(ptr: *const c_char) -> OrderSideOptional {
     abort_on_panic(|| {
         let value = unsafe { cstr_as_str(ptr) };
-        OrderSide::from_str(value)
-            .unwrap_or_else(|_| panic!("invalid `OrderSide` enum string value, was '{value}'"))
+        OrderSideOptional::from_str(value).unwrap_or_else(|_| {
+            panic!("invalid `OrderSideOptional` enum string value, was '{value}'")
+        })
     })
 }
 
@@ -496,7 +582,7 @@ pub unsafe extern "C" fn order_type_from_cstr(ptr: *const c_char) -> OrderType {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn position_side_to_cstr(value: PositionSide) -> *const c_char {
+pub extern "C" fn position_side_to_cstr(value: PositionSideOptional) -> *const c_char {
     str_to_cstr(value.as_ref())
 }
 
@@ -508,13 +594,14 @@ pub extern "C" fn position_side_to_cstr(value: PositionSide) -> *const c_char {
 ///
 /// # Panics
 ///
-/// Panics if the C string does not correspond to a valid `PositionSide` variant.
+/// Panics if the C string does not correspond to a valid `PositionSideOptional` variant.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn position_side_from_cstr(ptr: *const c_char) -> PositionSide {
+pub unsafe extern "C" fn position_side_from_cstr(ptr: *const c_char) -> PositionSideOptional {
     abort_on_panic(|| {
         let value = unsafe { cstr_as_str(ptr) };
-        PositionSide::from_str(value)
-            .unwrap_or_else(|_| panic!("invalid `PositionSide` enum string value, was '{value}'"))
+        PositionSideOptional::from_str(value).unwrap_or_else(|_| {
+            panic!("invalid `PositionSideOptional` enum string value, was '{value}'")
+        })
     })
 }
 
@@ -688,17 +775,18 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::enums::OrderSide;
 
     #[rstest]
     fn test_name() {
-        assert_eq!(OrderSide::NoOrderSide.as_ref(), "NO_ORDER_SIDE");
+        assert_eq!(OrderSideOptional::NoOrderSide.as_ref(), "NO_ORDER_SIDE");
         assert_eq!(OrderSide::Buy.as_ref(), "BUY");
         assert_eq!(OrderSide::Sell.as_ref(), "SELL");
     }
 
     #[rstest]
     fn test_value() {
-        assert_eq!(OrderSide::NoOrderSide as u8, 0);
+        assert_eq!(OrderSideOptional::NoOrderSide as u8, 0);
         assert_eq!(OrderSide::Buy as u8, 1);
         assert_eq!(OrderSide::Sell as u8, 2);
     }

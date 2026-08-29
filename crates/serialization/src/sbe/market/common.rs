@@ -348,12 +348,19 @@ pub(super) fn decode_book_action(cursor: &mut SbeCursor<'_>) -> Result<BookActio
 }
 
 #[inline]
-pub(super) fn decode_order_side(cursor: &mut SbeCursor<'_>) -> Result<OrderSide, SbeDecodeError> {
+pub(super) fn decode_order_side(
+    cursor: &mut SbeCursor<'_>,
+) -> Result<Option<OrderSide>, SbeDecodeError> {
     let value = cursor.read_u8()?;
-    OrderSide::from_u8(value).ok_or(SbeDecodeError::InvalidEnumValue {
-        type_name: "OrderSide",
-        value: u16::from(value),
-    })
+    match value {
+        0 => Ok(None),
+        1 => Ok(Some(OrderSide::Buy)),
+        2 => Ok(Some(OrderSide::Sell)),
+        _ => Err(SbeDecodeError::InvalidEnumValue {
+            type_name: "Option<OrderSide>",
+            value: u16::from(value),
+        }),
+    }
 }
 
 pub(super) fn decode_instrument_close_type(

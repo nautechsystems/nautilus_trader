@@ -269,7 +269,7 @@ pub fn parse_futures_ws_order_status_report(
         instrument_id: instrument.id(),
         client_order_id: order.cli_ord_id.as_ref().map(ClientOrderId::new),
         venue_order_id,
-        order_side,
+        order_side: order_side.into(),
         order_type,
         time_in_force: TimeInForce::Gtc,
         order_status,
@@ -434,7 +434,7 @@ pub fn parse_futures_ws_funding_rate(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::{CurrencyType, LiquiditySide},
+        enums::{CurrencyType, LiquiditySide, OrderSide},
         identifiers::{InstrumentId, Symbol},
         instruments::crypto_perpetual::CryptoPerpetual,
         types::Currency,
@@ -512,8 +512,8 @@ mod tests {
         assert_eq!(deltas.len(), 5);
         assert_eq!(deltas[0].action, BookAction::Clear);
         assert_eq!(deltas[1].action, BookAction::Add);
-        assert_eq!(deltas[1].order.side, OrderSide::Buy);
-        assert_eq!(deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas[1].order.side, OrderSide::Buy.into());
+        assert_eq!(deltas[3].order.side, OrderSide::Sell.into());
     }
 
     #[rstest]
@@ -527,11 +527,11 @@ mod tests {
         // CLEAR + 2 bids (skipped qty=0) + 1 ask (skipped qty=0) = 4
         assert_eq!(deltas.len(), 4);
         assert_eq!(deltas[0].action, BookAction::Clear);
-        assert_eq!(deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas[1].order.price, Price::from("34892.5"));
-        assert_eq!(deltas[2].order.side, OrderSide::Buy);
+        assert_eq!(deltas[2].order.side, OrderSide::Buy.into());
         assert_eq!(deltas[2].order.price, Price::from("34891.5"));
-        assert_eq!(deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas[3].order.side, OrderSide::Sell.into());
         assert_eq!(deltas[3].order.price, Price::from("34912.0"));
     }
 
@@ -544,7 +544,7 @@ mod tests {
         let delta = parse_futures_ws_book_delta(&delta_msg, &instrument, 10, TS).unwrap();
 
         assert_eq!(delta.instrument_id, instrument.id());
-        assert_eq!(delta.order.side, OrderSide::Sell);
+        assert_eq!(delta.order.side, OrderSide::Sell.into());
         assert_eq!(delta.action, BookAction::Delete); // qty=0
         assert_eq!(delta.sequence, 10);
     }
@@ -574,7 +574,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Accepted);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.quantity.as_decimal(), dec!(1000));
         assert_eq!(report.filled_qty.as_decimal(), Decimal::ZERO);
@@ -612,7 +612,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.order_status, OrderStatus::Canceled);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.cancel_reason.as_deref(), Some("cancelled_by_user"));
     }
 
@@ -673,7 +673,7 @@ mod tests {
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
         assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(36000));
         assert_eq!(report.price.unwrap().as_decimal(), dec!(35500));
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
     }
 
     #[rstest]

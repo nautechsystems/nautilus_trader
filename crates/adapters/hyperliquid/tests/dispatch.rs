@@ -118,7 +118,7 @@ fn make_status_report(
         InstrumentId::from(INSTRUMENT_ID),
         client_order_id.map(ClientOrderId::new),
         VenueOrderId::new(venue_order_id),
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         status,

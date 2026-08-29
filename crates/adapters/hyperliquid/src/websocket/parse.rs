@@ -354,7 +354,7 @@ pub fn parse_ws_order_status_report(
         instrument_id,
         None, // venue_order_id_modified
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -736,7 +736,7 @@ mod tests {
         assert!(result.is_ok());
 
         let report = result.unwrap();
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
@@ -959,13 +959,13 @@ mod tests {
 
         let bid_delta = &deltas.deltas[1];
         assert_eq!(bid_delta.action, BookAction::Add);
-        assert_eq!(bid_delta.order.side, OrderSide::Buy);
+        assert_eq!(bid_delta.order.side, OrderSide::Buy.into());
         assert!(bid_delta.order.size.is_positive());
         assert_eq!(bid_delta.order.order_id, 0);
 
         let ask_delta = &deltas.deltas[2];
         assert_eq!(ask_delta.action, BookAction::Add);
-        assert_eq!(ask_delta.order.side, OrderSide::Sell);
+        assert_eq!(ask_delta.order.side, OrderSide::Sell.into());
         assert!(ask_delta.order.size.is_positive());
         assert_eq!(ask_delta.order.order_id, 0);
     }
@@ -1019,26 +1019,26 @@ mod tests {
         assert_eq!(depth.asks.len(), 10);
 
         assert_eq!(depth.bids[0].price.as_f64(), 100.00);
-        assert_eq!(depth.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
         assert_eq!(depth.bid_counts[0], 2);
         assert_eq!(depth.bids[2].price.as_f64(), 99.98);
         assert_eq!(depth.bid_counts[2], 1);
 
         // Padded bid slots
         for i in 3..10 {
-            assert_eq!(depth.bids[i].side, OrderSide::Buy);
+            assert_eq!(depth.bids[i].side, OrderSide::Buy.into());
             assert!(depth.bids[i].size.is_zero());
             assert_eq!(depth.bid_counts[i], 0);
         }
 
         assert_eq!(depth.asks[0].price.as_f64(), 100.01);
-        assert_eq!(depth.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
         assert_eq!(depth.ask_counts[0], 1);
         assert_eq!(depth.asks[1].price.as_f64(), 100.02);
         assert_eq!(depth.ask_counts[1], 4);
 
         for i in 2..10 {
-            assert_eq!(depth.asks[i].side, OrderSide::Sell);
+            assert_eq!(depth.asks[i].side, OrderSide::Sell.into());
             assert!(depth.asks[i].size.is_zero());
             assert_eq!(depth.ask_counts[i], 0);
         }

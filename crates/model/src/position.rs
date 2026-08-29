@@ -33,7 +33,7 @@ use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::{InstrumentClass, OrderSide, OrderSideSpecified, PositionAdjustmentType, PositionSide},
+    enums::{InstrumentClass, OrderSide, PositionAdjustmentType, PositionSide},
     events::{OrderFillVoided, OrderFilled, PositionAdjusted},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
@@ -124,7 +124,6 @@ impl Position {
     ///
     /// This function panics if:
     /// - The `instrument.id()` does not match the `fill.instrument_id`.
-    /// - The `fill.order_side` is `NoOrderSide`.
     /// - The `fill.position_id` is `None`.
     #[must_use]
     #[allow(
@@ -139,8 +138,6 @@ impl Position {
             "fill.instrument_id",
         )
         .expect(FAILED);
-        assert_ne!(fill.order_side, OrderSide::NoOrderSide);
-
         let position_id = fill.position_id.expect("No position ID to open `Position`");
 
         let mut item = Self {
@@ -426,11 +423,11 @@ impl Position {
         }
 
         // Calculate avg prices, points, return, PnL
-        match fill.specified_side() {
-            OrderSideSpecified::Buy => {
+        match fill.order_side {
+            OrderSide::Buy => {
                 self.handle_buy_order_fill(fill);
             }
-            OrderSideSpecified::Sell => {
+            OrderSide::Sell => {
                 self.handle_sell_order_fill(fill);
             }
         }
@@ -492,7 +489,6 @@ impl Position {
                 PositionSide::Long => self.signed_qty > 0.0,
                 PositionSide::Short => self.signed_qty < 0.0,
                 PositionSide::Flat => self.signed_qty == 0.0,
-                PositionSide::NoPositionSide => false,
             },
             "Invariant: position side must match signed_qty sign (side={:?}, signed_qty={})",
             self.side,
@@ -704,16 +700,8 @@ impl Position {
             self.signed_qty = 0.0; // Normalize
         } else if self.signed_qty > 0.0 {
             self.side = PositionSide::Long;
-
-            if self.entry == OrderSide::NoOrderSide {
-                self.entry = OrderSide::Buy;
-            }
         } else {
             self.side = PositionSide::Short;
-
-            if self.entry == OrderSide::NoOrderSide {
-                self.entry = OrderSide::Sell;
-            }
         }
 
         self.adjustments.push(adjustment);
@@ -724,7 +712,6 @@ impl Position {
                 PositionSide::Long => self.signed_qty > 0.0,
                 PositionSide::Short => self.signed_qty < 0.0,
                 PositionSide::Flat => self.signed_qty == 0.0,
-                PositionSide::NoPositionSide => false,
             },
             "Invariant: position side must match signed_qty sign (side={:?}, signed_qty={})",
             self.side,
@@ -1088,7 +1075,7 @@ impl Position {
         match self.side {
             PositionSide::Long => avg_px_close - avg_px_open,
             PositionSide::Short => avg_px_open - avg_px_close,
-            _ => 0.0, // FLAT
+            PositionSide::Flat => 0.0,
         }
     }
 
@@ -1113,7 +1100,7 @@ impl Position {
         let result = match self.side {
             PositionSide::Long => inverse_open - inverse_close,
             PositionSide::Short => inverse_close - inverse_open,
-            _ => 0.0, // FLAT - this is a valid case
+            PositionSide::Flat => 0.0,
         };
         Ok(result)
     }
@@ -1234,11 +1221,11 @@ impl Position {
 
     /// Returns the order side required to close this position.
     #[must_use]
-    pub fn closing_order_side(&self) -> OrderSide {
+    pub fn closing_order_side(&self) -> Option<OrderSide> {
         match self.side {
-            PositionSide::Long => OrderSide::Sell,
-            PositionSide::Short => OrderSide::Buy,
-            _ => OrderSide::NoOrderSide,
+            PositionSide::Long => Some(OrderSide::Sell),
+            PositionSide::Short => Some(OrderSide::Buy),
+            PositionSide::Flat => None,
         }
     }
 
@@ -1857,7 +1844,7 @@ mod tests {
         let position = Position::new(&audusd_sim, fill.into());
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
-        assert_eq!(position.closing_order_side(), OrderSide::Sell);
+        assert_eq!(position.closing_order_side(), Some(OrderSide::Sell));
         assert!(!position.is_opposite_side(OrderSide::Buy));
         assert_eq!(position, position); // equality operator test
         assert!(position.closing_order_id.is_none());
@@ -1912,7 +1899,7 @@ mod tests {
         let position = Position::new(&audusd_sim, fill.into());
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
-        assert_eq!(position.closing_order_side(), OrderSide::Buy);
+        assert_eq!(position.closing_order_side(), Some(OrderSide::Buy));
         assert!(!position.is_opposite_side(OrderSide::Sell));
         assert_eq!(position, position); // Equality operator test
         assert!(position.closing_order_id.is_none());
@@ -2235,7 +2222,7 @@ mod tests {
             position.quantity,
             Quantity::zero(audusd_sim.price_precision())
         );
-        assert_eq!(position.closing_order_side(), OrderSide::NoOrderSide);
+        assert_eq!(position.closing_order_side(), None);
         assert_eq!(position.side, PositionSide::Flat);
         assert_eq!(position.ts_opened, 0);
         assert_eq!(position.avg_px_open, 1.0);

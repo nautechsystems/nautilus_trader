@@ -21,7 +21,7 @@ use rust_decimal::Decimal;
 
 use super::{BookLevel, BookPrice, OrderBook};
 use crate::{
-    enums::{BookType, OrderSide, OrderSideSpecified},
+    enums::{BookType, OrderSide},
     orderbook::BookIntegrityError,
     types::{Price, Quantity, fixed::FIXED_SCALAR, quantity::QuantityRaw},
 };
@@ -31,19 +31,19 @@ use crate::{
 #[must_use]
 pub fn get_quantity_for_price(
     price: Price,
-    order_side: OrderSideSpecified,
+    order_side: OrderSide,
     levels: &BTreeMap<BookPrice, BookLevel>,
 ) -> f64 {
     let mut matched_size: f64 = 0.0;
 
     for (book_price, level) in levels {
         match order_side {
-            OrderSideSpecified::Buy => {
+            OrderSide::Buy => {
                 if book_price.value > price {
                     break;
                 }
             }
-            OrderSideSpecified::Sell => {
+            OrderSide::Sell => {
                 if book_price.value < price {
                     break;
                 }
@@ -63,7 +63,7 @@ pub fn get_quantity_for_price(
 #[must_use]
 pub fn get_levels_for_price(
     price: Price,
-    order_side: OrderSideSpecified,
+    order_side: OrderSide,
     levels: &BTreeMap<BookPrice, BookLevel>,
     size_precision: u8,
 ) -> Vec<(Price, Quantity)> {
@@ -71,12 +71,12 @@ pub fn get_levels_for_price(
 
     for (book_price, level) in levels {
         match order_side {
-            OrderSideSpecified::Buy => {
+            OrderSide::Buy => {
                 if book_price.value > price {
                     break;
                 }
             }
-            OrderSideSpecified::Sell => {
+            OrderSide::Sell => {
                 if book_price.value < price {
                     break;
                 }

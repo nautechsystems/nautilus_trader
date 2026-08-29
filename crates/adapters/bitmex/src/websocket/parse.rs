@@ -526,7 +526,7 @@ pub fn parse_order_msg(
     let instrument_id = parse_instrument_id(msg.symbol);
     let venue_order_id = VenueOrderId::new(msg.order_id.to_string());
     let common_side: BitmexSide = msg.side.into();
-    let order_side: OrderSide = common_side.into();
+    let order_side = OrderSide::from(common_side);
 
     let order_type: OrderType = if let Some(ord_type) = msg.ord_type {
         // Pegged orders with TrailingStopPeg are trailing stop orders
@@ -571,7 +571,7 @@ pub fn parse_order_msg(
         instrument_id,
         None, // client_order_id - will be set later if present
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -945,10 +945,8 @@ pub fn parse_execution_msg(
     let instrument_id = parse_instrument_id(msg.symbol?);
     let venue_order_id = VenueOrderId::new(msg.order_id?.to_string());
     let trade_id = TradeId::new(msg.trd_match_id?.to_string());
-    let order_side: OrderSide = msg.side.map_or(OrderSide::NoOrderSide, |s| {
-        let side: BitmexSide = s.into();
-        side.into()
-    });
+    let side = msg.side?;
+    let order_side = OrderSide::from(BitmexSide::from(side));
     let last_qty = parse_signed_contracts_quantity(msg.last_qty?, instrument);
     let last_px = Price::new(msg.last_px?, instrument.price_precision());
     let settlement_currency_str = msg.settl_currency.unwrap_or(Ustr::from("XBT"));
@@ -991,7 +989,7 @@ pub fn parse_position_msg(
 ) -> PositionStatusReport {
     let account_id = bitmex_account_id(msg.account);
     let instrument_id = parse_instrument_id(msg.symbol);
-    let position_side = parse_position_side(msg.current_qty).as_specified();
+    let position_side = parse_position_side(msg.current_qty);
     let quantity = parse_signed_contracts_quantity(msg.current_qty.unwrap_or(0), instrument);
     let venue_position_id = None; // Not applicable on BitMEX
     let avg_px_open = msg
@@ -1268,7 +1266,7 @@ mod tests {
         assert_eq!(delta.instrument_id, instrument_id);
         assert_eq!(delta.order.price, Price::from("98459.9"));
         assert_eq!(delta.order.size, Quantity::from(33000));
-        assert_eq!(delta.order.side, OrderSide::Sell);
+        assert_eq!(delta.order.side, OrderSide::Sell.into());
         assert_eq!(delta.order.order_id, 62400580205);
         assert_eq!(delta.action, BookAction::Add);
         assert_eq!(delta.flags, 0);
@@ -1321,12 +1319,12 @@ mod tests {
         // Check first bid level
         assert_eq!(depth10.bids[0].price, Price::from("98490.3"));
         assert_eq!(depth10.bids[0].size, Quantity::from(22400));
-        assert_eq!(depth10.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth10.bids[0].side, OrderSide::Buy.into());
 
         // Check first ask level
         assert_eq!(depth10.asks[0].price, Price::from("98490.4"));
         assert_eq!(depth10.asks[0].size, Quantity::from(17600));
-        assert_eq!(depth10.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth10.asks[0].side, OrderSide::Sell.into());
 
         // Check counts (should be 1 for each populated level)
         assert_eq!(depth10.bid_counts, [1; DEPTH10_LEN]);
@@ -1530,7 +1528,7 @@ mod tests {
             report.client_order_id.unwrap().to_string(),
             "mm_bitmex_1a/oemUeQ4CAJZgP3fjHsA"
         );
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.order_status, OrderStatus::Accepted);
@@ -1801,7 +1799,7 @@ mod tests {
 
         assert_eq!(report.account_id.to_string(), "BITMEX-1234567");
         assert_eq!(report.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Long);
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from(1000));
         assert!(report.venue_position_id.is_none());
         assert_eq!(report.ts_last, 1732530900789000000); // 2024-11-25T10:35:00.789Z
@@ -1815,7 +1813,7 @@ mod tests {
 
         let instrument = create_test_perpetual_instrument();
         let report = parse_position_msg(&msg, &instrument, UnixNanos::default());
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from(500));
     }
 
@@ -1827,7 +1825,7 @@ mod tests {
 
         let instrument = create_test_perpetual_instrument();
         let report = parse_position_msg(&msg, &instrument, UnixNanos::default());
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Flat);
+        assert_eq!(report.position_side, PositionSide::Flat);
         assert_eq!(report.quantity, Quantity::from(0));
     }
 

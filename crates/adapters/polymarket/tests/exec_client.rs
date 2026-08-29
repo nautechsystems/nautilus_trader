@@ -4374,7 +4374,7 @@ async fn test_generate_order_status_report_single_returns_report() {
     let report = result.unwrap();
     assert_eq!(report.instrument_id, instrument_id);
     assert_eq!(report.account_id, AccountId::from("POLYMARKET-001"));
-    assert_eq!(report.order_side, OrderSide::Buy,);
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
     assert_eq!(report.order_type, OrderType::Limit,);
     assert_eq!(report.filled_qty, Quantity::zero(4));
     assert!(report.price.is_some());
@@ -4813,7 +4813,6 @@ async fn test_limit_submit_normalizes_signed_quantity_for_reporting(#[case] side
     response["side"] = json!(match side {
         OrderSide::Buy => "BUY",
         OrderSide::Sell => "SELL",
-        _ => unreachable!(),
     });
     *state.single_order_response.lock().await = Some(response);
     let mut trade = load_json("http_trade_report.json");
@@ -5918,7 +5917,7 @@ async fn test_generate_order_status_report_validates_confirmed_recovery_side(
     assert_eq!(report.venue_order_id, venue_order_id);
     assert_eq!(report.filled_qty, Quantity::new(10.0, 4));
     assert_eq!(report.quantity, Quantity::new(10.0, 4));
-    assert_eq!(report.order_side, OrderSide::Buy);
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
     assert_eq!(report.avg_px, Some(dec!(0.5)));
 }
 
@@ -8220,7 +8219,7 @@ fn make_cancel_cmd(client_order_id: &str, instrument_id: InstrumentId) -> Cancel
 fn make_cancel_all_cmd(
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
-    order_side: OrderSide,
+    order_side: Option<OrderSide>,
 ) -> CancelAllOrders {
     CancelAllOrders::new(
         TraderId::from("TESTER-001"),
@@ -8966,7 +8965,6 @@ async fn test_submit_limit_order_serializes_amount_matrix(
     let (expected_maker, expected_taker) = match side {
         OrderSide::Buy => (notional_amount, quantity_amount),
         OrderSide::Sell => (quantity_amount, notional_amount),
-        _ => unreachable!(),
     };
     assert_eq!(
         signed_order.get("makerAmount").and_then(Value::as_str),
@@ -9811,7 +9809,6 @@ async fn test_submit_order_list_serializes_amount_matrix(
         let (expected_maker, expected_taker) = match side {
             OrderSide::Buy => (notional_amount, quantity_amount),
             OrderSide::Sell => (quantity_amount, notional_amount),
-            _ => unreachable!(),
         };
         assert_eq!(
             signed_order.get("makerAmount").and_then(Value::as_str),
@@ -11518,7 +11515,7 @@ async fn test_cancel_all_without_side_uses_selected_token_with_empty_order_cache
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap();
 
@@ -11581,7 +11578,7 @@ async fn test_cancel_all_without_side_processes_cross_strategy_rejection() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap();
 
@@ -11673,7 +11670,7 @@ async fn test_cancel_all_with_side_uses_cached_matching_orders(
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            order_side,
+            Some(order_side),
         ))
         .unwrap();
 
@@ -11710,7 +11707,7 @@ async fn test_cancel_all_with_side_empty_local_cache_is_noop() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::Sell,
+            Some(OrderSide::Sell),
         ))
         .unwrap();
 
@@ -11751,7 +11748,7 @@ async fn test_cancel_all_market_ambiguous_failure_retries_without_rejection() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap();
 
@@ -11797,7 +11794,7 @@ async fn test_cancel_all_market_definitive_failure_emits_rejection() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap();
 
@@ -11849,7 +11846,7 @@ async fn test_cancel_all_side_failure_rejects_only_cached_side_targets() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
         ))
         .unwrap();
 
@@ -11901,7 +11898,7 @@ async fn test_cancel_all_with_side_uses_cached_order_without_instrument() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
         ))
         .unwrap();
 
@@ -11936,7 +11933,7 @@ async fn test_cancel_all_missing_instrument_returns_error_without_request() {
         .cancel_all_orders(make_cancel_all_cmd(
             StrategyId::from("S-001"),
             instrument_id,
-            OrderSide::NoOrderSide,
+            None,
         ))
         .unwrap_err();
 
@@ -12239,7 +12236,7 @@ async fn test_stop_does_not_abort_shutdown_cancel_response(#[case] mode: Shutdow
                 Some(*POLYMARKET_CLIENT_ID),
                 StrategyId::from("S-001"),
                 instrument_id,
-                OrderSide::NoOrderSide,
+                None,
                 UUID4::new(),
                 UnixNanos::default(),
                 None,
@@ -12525,7 +12522,7 @@ async fn test_group_cancel_around_batch_submit_ack_is_not_lost(
                 Some(*POLYMARKET_CLIENT_ID),
                 StrategyId::from("S-001"),
                 instrument_id,
-                OrderSide::Buy,
+                Some(OrderSide::Buy),
                 UUID4::new(),
                 UnixNanos::default(),
                 None,

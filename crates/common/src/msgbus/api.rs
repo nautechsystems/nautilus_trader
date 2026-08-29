@@ -3140,10 +3140,7 @@ mod tests {
 
     #[rstest]
     fn test_send_trading_command_allows_reentrant_topic_access() {
-        use nautilus_model::{
-            enums::OrderSide,
-            identifiers::{StrategyId, TraderId},
-        };
+        use nautilus_model::identifiers::{StrategyId, TraderId};
 
         use crate::{
             messages::execution::{TradingCommand, cancel::CancelAllOrders},
@@ -3168,7 +3165,7 @@ mod tests {
             None,
             StrategyId::new("S-001"),
             InstrumentId::from("TEST.VENUE"),
-            OrderSide::NoOrderSide,
+            None,
             UUID4::new(),
             0.into(),
             None,
@@ -3642,7 +3639,7 @@ mod tests {
                 None,
                 StrategyId::new("S-001"),
                 InstrumentId::from("TEST.VENUE"),
-                OrderSide::Buy,
+                Some(OrderSide::Buy),
                 UUID4::new(),
                 0.into(),
                 None,
@@ -3742,7 +3739,7 @@ mod tests {
             None,
             StrategyId::new("S-001"),
             InstrumentId::from("TEST.VENUE"),
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             UUID4::new(),
             0.into(),
             None,
@@ -3792,7 +3789,7 @@ mod tests {
                 None,
                 StrategyId::new("S-001"),
                 InstrumentId::from("TEST.VENUE"),
-                OrderSide::Buy,
+                Some(OrderSide::Buy),
                 UUID4::new(),
                 0.into(),
                 None,
@@ -3979,7 +3976,7 @@ mod tests {
             Some(ClientId::from("BINANCE")),
             StrategyId::from("S-001"),
             InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             UUID4::new(),
             nautilus_core::UnixNanos::from(1),
             None,

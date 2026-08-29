@@ -65,11 +65,11 @@ fn price_based_order_id(order: &BookOrder) -> u64 {
 
 pub(crate) fn pre_process_order(book_type: BookType, mut order: BookOrder, flags: u8) -> BookOrder {
     match book_type {
-        BookType::L1_MBP => order.order_id = order.side as u64,
+        BookType::L1_MBP => order.order_id = order.side.map_or(0, |side| side as u64),
         BookType::L2_MBP => order.order_id = price_based_order_id(&order),
         BookType::L3_MBO => {
             if RecordFlag::F_TOB.matches(flags) {
-                order.order_id = order.side as u64;
+                order.order_id = order.side.map_or(0, |side| side as u64);
             } else if RecordFlag::F_MBP.matches(flags) || order.order_id == 0 {
                 // An ID of zero carries no identity (for example, MBP-style data),
                 // so key by price hash to keep every level addressable.

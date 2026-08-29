@@ -66,7 +66,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
-    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce},
     events::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
@@ -1516,7 +1516,7 @@ async fn test_http_request_cfm_account_state_produces_margin_account() {
 #[rstest]
 #[tokio::test]
 async fn test_http_request_position_status_reports_for_cfm() {
-    use nautilus_model::enums::PositionSideSpecified;
+    use nautilus_model::enums::PositionSide;
 
     let state = TestState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -1529,7 +1529,7 @@ async fn test_http_request_position_status_reports_for_cfm() {
 
     assert_eq!(reports.len(), 1);
     let report = &reports[0];
-    assert_eq!(report.position_side, PositionSideSpecified::Long);
+    assert_eq!(report.position_side, PositionSide::Long);
     assert_eq!(report.quantity, Quantity::from("2"));
     assert_eq!(report.avg_px_open, Some(dec!(49000.00)));
     assert_eq!(report.instrument_id.symbol.as_str(), "BIP-20DEC30-CDE");
@@ -1544,7 +1544,7 @@ async fn test_http_request_position_status_reports_for_cfm() {
 #[rstest]
 #[tokio::test]
 async fn test_http_request_position_status_report_single_product() {
-    use nautilus_model::enums::PositionSideSpecified;
+    use nautilus_model::enums::PositionSide;
 
     let state = TestState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -1557,7 +1557,7 @@ async fn test_http_request_position_status_report_single_product() {
         .expect("position report should build")
         .expect("fixture provides a non-flat position");
 
-    assert_eq!(report.position_side, PositionSideSpecified::Short);
+    assert_eq!(report.position_side, PositionSide::Short);
     assert_eq!(report.quantity, Quantity::from("3"));
     assert_eq!(report.avg_px_open, Some(dec!(51000.00)));
 
@@ -1775,7 +1775,7 @@ async fn test_exec_client_position_reports_margin_list_hits_cfm_positions() {
         .expect("position reports");
 
     assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].position_side, PositionSide::Long);
     assert_eq!(reports[0].instrument_id.symbol.as_str(), "BIP-20DEC30-CDE");
 
     // Exec client must route to the list endpoint, not the single-product one.
@@ -1801,7 +1801,7 @@ async fn test_exec_client_position_reports_margin_single_hits_scoped_endpoint() 
         .expect("position reports");
 
     assert_eq!(reports.len(), 1);
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[0].position_side, PositionSide::Short);
     assert_eq!(reports[0].instrument_id, instrument_id);
 
     // Exec client must target the single-product endpoint; the list
@@ -2211,7 +2211,7 @@ async fn test_exec_cancel_all_http_failure_does_not_emit_cancel_rejected() {
         Some(*COINBASE_CLIENT_ID),
         StrategyId::from("S-CANCEL-ALL"),
         btc_usd_instrument_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,

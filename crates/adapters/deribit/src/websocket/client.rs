@@ -1576,11 +1576,6 @@ impl DeribitWebSocketClient {
                 strategy_id,
                 instrument_id,
             },
-            _ => {
-                return Err(DeribitWsError::ClientError(format!(
-                    "Invalid order side: {order_side}"
-                )));
-            }
         };
 
         self.cmd_tx

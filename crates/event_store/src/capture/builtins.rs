@@ -1529,7 +1529,7 @@ mod tests {
         data::{Bar, BarType, stubs::stub_depth10},
         enums::{
             AccountType, BookType, LiquiditySide, OrderSide, OrderStatus, OrderType,
-            PositionAdjustmentType, PositionSide, PositionSideSpecified, TimeInForce,
+            PositionAdjustmentType, PositionSide, TimeInForce,
         },
         events::{
             PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
@@ -1619,7 +1619,7 @@ mod tests {
             instrument_id(),
             Some(client_order_id()),
             venue_order_id(),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Gtc,
             OrderStatus::Filled,
@@ -1902,7 +1902,7 @@ mod tests {
             Some(ClientId::from("BINANCE")),
             strategy_id(),
             instrument_id(),
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             UUID4::new(),
             UnixNanos::from(7),
             None,
@@ -2506,7 +2506,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("BINANCE-001"),
             instrument_id(),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("1"),
             UnixNanos::from(50),
             UnixNanos::from(51),

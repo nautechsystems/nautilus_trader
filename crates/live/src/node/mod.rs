@@ -3971,8 +3971,8 @@ mod tests {
         accounts::{AccountAny, MarginAccount},
         data::QuoteTick,
         enums::{
-            AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-            PositionSideSpecified, TimeInForce,
+            AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+            TimeInForce,
         },
         events::{
             AccountState, OrderAcceptedBatch, OrderFilled,
@@ -4664,7 +4664,7 @@ mod tests {
             instrument_id,
             Some(client_order_id),
             old_venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Canceled,
@@ -4871,7 +4871,7 @@ mod tests {
             instrument.id(),
             Some(client_order_id),
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::PartiallyFilled,
@@ -5197,7 +5197,7 @@ mod tests {
         let venue_report = PositionStatusReport::new(
             key.1,
             key.0,
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("3.0"),
             venue_report.ts_last,
             venue_report.ts_init,
@@ -5582,7 +5582,7 @@ mod tests {
             .trader_id(node.trader_id())
             .strategy_id(StrategyId::from("S-RISK-DENIED"))
             .instrument_id(instrument_id)
-            .side(OrderSide::NoOrderSide)
+            .side(OrderSide::Buy)
             .quantity(Quantity::from("1.000"))
             .price(Price::from("100.00"))
             .build();
@@ -6586,7 +6586,7 @@ mod tests {
             fill_report.instrument_id,
             Some(client_order_id),
             fill_report.venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::PartiallyFilled,
@@ -6706,7 +6706,7 @@ mod tests {
         let venue_report = PositionStatusReport::new(
             account_id,
             instrument.id(),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("2.0"),
             ts_event,
             ts_event,

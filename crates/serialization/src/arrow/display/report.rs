@@ -121,7 +121,12 @@ pub fn encode_order_status_reports(data: &[OrderStatusReport]) -> Result<RecordB
         instrument_id.append_value(report.instrument_id.to_string());
         client_order_id.append_option(report.client_order_id.map(|v| v.to_string()));
         venue_order_id.append_value(report.venue_order_id);
-        order_side.append_value(format!("{}", report.order_side));
+        order_side.append_value(
+            report
+                .order_side
+                .as_ref()
+                .map_or("NO_ORDER_SIDE", AsRef::as_ref),
+        );
         order_type.append_value(format!("{}", report.order_type));
         time_in_force.append_value(format!("{}", report.time_in_force));
         order_status.append_value(format!("{}", report.order_status));
@@ -219,7 +224,7 @@ mod tests {
             instrument_id: InstrumentId::from(instrument_id),
             client_order_id: Some(ClientOrderId::from("O-001")),
             venue_order_id: VenueOrderId::from("V-001"),
-            order_side: OrderSide::Buy,
+            order_side: Some(OrderSide::Buy),
             order_type: OrderType::Limit,
             time_in_force: TimeInForce::Gtc,
             order_status: OrderStatus::Accepted,
@@ -362,6 +367,21 @@ mod tests {
 
         assert!(trigger_price_col.is_null(0));
         assert!(expire_time_col.is_null(0));
+    }
+
+    #[rstest]
+    fn test_encode_order_status_reports_no_order_side() {
+        let mut report = make_report("AAPL.XNAS", 1_000);
+        report.order_side = None;
+
+        let batch = encode_order_status_reports(&[report]).unwrap();
+        let order_side_col = batch
+            .column(4)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+
+        assert_eq!(order_side_col.value(0), "NO_ORDER_SIDE");
     }
 
     #[rstest]

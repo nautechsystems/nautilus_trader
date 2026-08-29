@@ -886,7 +886,7 @@ pub fn parse_order_status_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -1304,12 +1304,12 @@ mod tests {
             let buy_count = deltas
                 .deltas
                 .iter()
-                .filter(|d| d.order.side == OrderSide::Buy)
+                .filter(|d| d.order.side == Some(OrderSide::Buy))
                 .count();
             let sell_count = deltas
                 .deltas
                 .iter()
-                .filter(|d| d.order.side == OrderSide::Sell)
+                .filter(|d| d.order.side == Some(OrderSide::Sell))
                 .count();
             assert_eq!(buy_count, atb_len);
             assert_eq!(sell_count, atl_len);
@@ -1688,7 +1688,7 @@ mod tests {
 
             // Partially filled: sm=4.75, sr=0.25, status=E
             assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
-            assert_eq!(report.order_side, OrderSide::Sell); // Back → Sell
+            assert_eq!(report.order_side, Some(OrderSide::Sell)); // Back → Sell
             assert_eq!(report.order_type, OrderType::Limit);
             assert_eq!(report.filled_qty.as_f64(), 4.75);
             assert_eq!(report.quantity.as_f64(), 5.0);
@@ -1721,7 +1721,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(report.order_status, OrderStatus::Filled);
-            assert_eq!(report.order_side, OrderSide::Buy); // Lay → Buy
+            assert_eq!(report.order_side, Some(OrderSide::Buy)); // Lay → Buy
             assert_eq!(report.filled_qty.as_f64(), 10.0);
             assert_eq!(report.quantity.as_f64(), 10.0);
 
@@ -1754,7 +1754,7 @@ mod tests {
             .unwrap();
 
             assert_eq!(report.order_status, OrderStatus::Canceled);
-            assert_eq!(report.order_side, OrderSide::Sell); // Back → Sell
+            assert_eq!(report.order_side, Some(OrderSide::Sell)); // Back → Sell
             assert_eq!(report.filled_qty.as_f64(), 0.0);
             assert_eq!(report.quantity.as_f64(), 10.0);
         } else {
@@ -1785,7 +1785,7 @@ mod tests {
 
             // Partially filled: sm=1.12, status=E
             assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
-            assert_eq!(report.order_side, OrderSide::Buy); // Lay → Buy
+            assert_eq!(report.order_side, Some(OrderSide::Buy)); // Lay → Buy
             assert_eq!(report.filled_qty.as_f64(), 1.12);
         } else {
             panic!("expected OrderChange");
@@ -1815,7 +1815,7 @@ mod tests {
 
             // Partially filled: sm=16.19, status=E, has rfo
             assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
-            assert_eq!(report.order_side, OrderSide::Sell); // Back → Sell
+            assert_eq!(report.order_side, Some(OrderSide::Sell)); // Back → Sell
             assert_eq!(report.filled_qty.as_f64(), 16.19);
             assert!(report.client_order_id.is_some());
             assert!(report.avg_px.is_some());

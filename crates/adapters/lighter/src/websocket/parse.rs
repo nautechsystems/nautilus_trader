@@ -25,7 +25,7 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, BookAction, LiquiditySide, OrderSide, OrderStatus,
-        OrderType, PositionSideSpecified, RecordFlag, TimeInForce, TriggerType,
+        OrderType, PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderExpired, OrderFilled, OrderRejected,
@@ -508,7 +508,7 @@ pub fn parse_ws_order_status_report(
         instrument_id,
         None, // client_order_id set below when present
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -1042,14 +1042,14 @@ pub fn parse_ws_position_status_report(
 ) -> anyhow::Result<PositionStatusReport> {
     let quantity = quantity_from_decimal(position.position, instrument.size_precision())?;
     let position_side = if quantity.is_zero() {
-        PositionSideSpecified::Flat
+        PositionSide::Flat
     } else if position.sign < 0 {
-        PositionSideSpecified::Short
+        PositionSide::Short
     } else {
-        PositionSideSpecified::Long
+        PositionSide::Long
     };
 
-    let avg_px_open = if position_side == PositionSideSpecified::Flat {
+    let avg_px_open = if position_side == PositionSide::Flat {
         None
     } else {
         Some(position.avg_entry_price)
@@ -1417,10 +1417,10 @@ mod tests {
         assert_eq!(deltas.deltas.len(), 3);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
         assert_eq!(deltas.deltas[1].action, BookAction::Add);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
         assert_eq!(deltas.deltas[1].order.price, Price::from("2064.30"));
         assert_eq!(deltas.deltas[1].order.size, Quantity::from("1.0392"));
-        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell.into());
         assert_eq!(deltas.deltas[2].order.price, Price::from("2064.54"));
         assert_eq!(deltas.deltas[2].order.size, Quantity::from("0.3285"));
         assert_eq!(deltas.deltas[0].sequence, 9_182_390_020);
@@ -1450,10 +1450,10 @@ mod tests {
 
         assert_eq!(deltas.deltas.len(), 2);
         assert_eq!(deltas.deltas[0].action, BookAction::Update);
-        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy.into());
         assert_eq!(deltas.deltas[0].order.price, Price::from("2064.30"));
         assert_eq!(deltas.deltas[1].action, BookAction::Delete);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell.into());
         assert_eq!(deltas.deltas[1].order.price, Price::from("2064.54"));
     }
 
@@ -1732,10 +1732,10 @@ mod tests {
         // future refactor that swaps fields or drops precision would not
         // be caught by this test.
         assert_eq!(depth.bids[0].size, Quantity::from("1.0392"));
-        assert_eq!(depth.bids[0].side, OrderSide::Buy);
+        assert_eq!(depth.bids[0].side, OrderSide::Buy.into());
         assert_eq!(depth.asks[0].price, Price::from("2064.54"));
         assert_eq!(depth.asks[0].size, Quantity::from("0.3285"));
-        assert_eq!(depth.asks[0].side, OrderSide::Sell);
+        assert_eq!(depth.asks[0].side, OrderSide::Sell.into());
         assert_eq!(depth.sequence, 9_182_390_020);
         assert_eq!(depth.bid_counts[0], 1);
         assert_eq!(depth.ask_counts[0], 1);
@@ -1899,7 +1899,7 @@ mod tests {
 
         assert_eq!(report.venue_order_id.to_string(), "281476929510110");
         assert_eq!(report.client_order_id.unwrap().to_string(), "42");
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_type, OrderType::Limit);
         // Open + filled_qty > 0 must surface as PartiallyFilled.
         assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
@@ -1975,7 +1975,7 @@ mod tests {
             parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(7))
                 .unwrap();
 
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
     }
 
     #[rstest]
@@ -2292,7 +2292,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.position_side, PositionSideSpecified::Long);
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from("1.5000"));
         assert_eq!(report.signed_decimal_qty, Decimal::new(15, 1));
         assert_eq!(report.avg_px_open, Some(Decimal::new(235010, 2)));
@@ -2331,7 +2331,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.position_side, PositionSideSpecified::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from("0.7500"));
         assert_eq!(report.signed_decimal_qty, Decimal::new(-75, 2));
     }
@@ -2368,7 +2368,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.position_side, PositionSideSpecified::Flat);
+        assert_eq!(report.position_side, PositionSide::Flat);
         assert!(report.quantity.is_zero());
         assert_eq!(report.signed_decimal_qty, Decimal::ZERO);
         assert!(report.avg_px_open.is_none());

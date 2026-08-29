@@ -22,8 +22,8 @@ use nautilus_core::{datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, uuid
 use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{
-        AggressorSide, AssetClass, BarAggregation, ContingencyType, LiquiditySide, OrderStatus,
-        OrderType, PositionSideSpecified, TimeInForce, TrailingOffsetType, TriggerType,
+        AggressorSide, AssetClass, BarAggregation, ContingencyType, LiquiditySide, OrderSide,
+        OrderStatus, OrderType, PositionSide, TimeInForce, TrailingOffsetType, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{
@@ -608,7 +608,7 @@ pub fn parse_order_status_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order_id);
 
-    let order_side = order.descr.order_side.into();
+    let order_side = OrderSide::from(order.descr.order_side).into();
     let order_type = order.descr.ordertype.into();
     let order_status = order.status.into();
 
@@ -816,7 +816,7 @@ pub fn parse_futures_order_status_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(&order.order_id);
 
-    let order_side = order.side.into();
+    let order_side = OrderSide::from(order.side).into();
     let order_type: OrderType = order.order_type.into();
     let order_type = if order_type == OrderType::MarketIfTouched && order.limit_price.is_some() {
         OrderType::LimitIfTouched
@@ -901,7 +901,7 @@ pub fn parse_futures_order_event_status_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(&event.order_id);
 
-    let order_side = event.side.into();
+    let order_side = OrderSide::from(event.side).into();
     let order_type: OrderType = event.order_type.into();
     let order_type = if order_type == OrderType::MarketIfTouched && event.limit_price.is_some() {
         OrderType::LimitIfTouched
@@ -1067,15 +1067,15 @@ pub fn parse_futures_position_status_report(
     let instrument_id = instrument.id();
 
     let position_side = match position.side {
-        KrakenPositionSide::Long => PositionSideSpecified::Long,
-        KrakenPositionSide::Short => PositionSideSpecified::Short,
+        KrakenPositionSide::Long => PositionSide::Long,
+        KrakenPositionSide::Short => PositionSide::Short,
     };
 
     let quantity = Quantity::from_decimal_dp(position.size, instrument.size_precision())?;
     let signed_decimal_qty = match position_side {
-        PositionSideSpecified::Long => position.size,
-        PositionSideSpecified::Short => -position.size,
-        PositionSideSpecified::Flat => dec!(0),
+        PositionSide::Long => position.size,
+        PositionSide::Short => -position.size,
+        PositionSide::Flat => dec!(0),
     };
 
     let avg_px_open = Some(position.price);
@@ -1729,7 +1729,7 @@ mod tests {
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
         assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(36000));
         assert_eq!(report.price.unwrap().as_decimal(), dec!(35500));
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert!(!report.reduce_only);
     }
 
@@ -1798,7 +1798,7 @@ mod tests {
         assert_eq!(report.order_type, OrderType::LimitIfTouched);
         assert_eq!(report.trigger_price.unwrap().as_decimal(), dec!(40000));
         assert_eq!(report.price.unwrap().as_decimal(), dec!(39500));
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert!(report.reduce_only);
     }

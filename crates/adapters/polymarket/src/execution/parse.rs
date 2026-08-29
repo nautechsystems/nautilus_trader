@@ -91,7 +91,6 @@ pub fn determine_order_side(
         match order_side {
             OrderSide::Buy => OrderSide::Sell,
             OrderSide::Sell => OrderSide::Buy,
-            other => other,
         }
     }
 }
@@ -187,7 +186,7 @@ pub(super) fn parse_validated_order_status_report(
         ctx.instrument_id,
         ctx.client_order_id,
         ctx.venue_order_id,
-        order_side,
+        order_side.into(),
         OrderType::Limit,
         time_in_force,
         order_status,
@@ -753,7 +752,7 @@ pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
 mod tests {
     use nautilus_execution::models::fee::{FeeModel, ProbabilityPriceFeeModel};
     use nautilus_model::{
-        enums::OrderType,
+        enums::{OrderSide, OrderType},
         instruments::{Instrument, InstrumentAny, stubs::binary_option},
         orders::{OrderAny, builder::OrderTestBuilder, stubs::TestOrderStubs},
     };
@@ -1412,7 +1411,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         assert_eq!(report.order_status, OrderStatus::Accepted);

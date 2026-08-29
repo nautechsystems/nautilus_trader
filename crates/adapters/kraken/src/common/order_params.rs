@@ -56,7 +56,6 @@ pub fn build_add_order_params(
     let side = match order_side {
         OrderSide::Buy => KrakenOrderSide::Buy,
         OrderSide::Sell => KrakenOrderSide::Sell,
-        _ => anyhow::bail!("Invalid order side: {order_side:?}"),
     };
 
     if matches!(

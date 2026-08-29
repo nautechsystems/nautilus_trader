@@ -45,7 +45,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OmsType, OrderSide, OrderType, TimeInForce},
+    enums::{OmsType, OrderType, TimeInForce},
     events::OrderDeniedReason,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -509,7 +509,7 @@ impl BybitExecutionClient {
         tp_sl: &BybitTpSlParams,
         position_idx: Option<BybitPositionIdx>,
     ) -> anyhow::Result<BybitWsPlaceOrderParams> {
-        let bybit_side = BybitOrderSide::try_from(order.order_side())?;
+        let bybit_side = BybitOrderSide::from(order.order_side());
         let (bybit_order_type, is_conditional) = Self::map_order_type(order.order_type())?;
         let has_tp_sl = tp_sl.has_tp_sl();
         let trigger_dir = trigger_direction(order.order_type(), order.order_side(), is_conditional);
@@ -1194,14 +1194,6 @@ impl ExecutionClient for BybitExecutionClient {
         let product_type = self.get_product_type_for_instrument(instrument_id);
 
         // Validate order params before emitting submitted event
-        if BybitOrderSide::try_from(order.order_side()).is_err() {
-            let denied = OrderDeniedReason::InvalidOrderSide {
-                order_side: order.order_side(),
-            };
-            self.emitter.emit_order_denied(&order, &denied.to_string());
-            return Ok(());
-        }
-
         if Self::map_order_type(order.order_type()).is_err() {
             let denied = OrderDeniedReason::UnsupportedOrderType {
                 order_type: order.order_type(),
@@ -1249,8 +1241,7 @@ impl ExecutionClient for BybitExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
-        let bybit_side =
-            BybitOrderSide::try_from(order.order_side()).expect("order side validated above");
+        let bybit_side = BybitOrderSide::from(order.order_side());
         let position_idx = self.resolve_position_idx(
             instrument_id,
             bybit_side,
@@ -1463,17 +1454,6 @@ impl ExecutionClient for BybitExecutionClient {
                     break;
                 }
 
-                if BybitOrderSide::try_from(order.order_side()).is_err() {
-                    denial = Some((
-                        *cid,
-                        OrderDeniedReason::InvalidOrderSide {
-                            order_side: order.order_side(),
-                        },
-                        list_denied,
-                    ));
-                    break;
-                }
-
                 if Self::map_order_type(order.order_type()).is_err() {
                     denial = Some((
                         *cid,
@@ -1524,8 +1504,7 @@ impl ExecutionClient for BybitExecutionClient {
 
         for order in &valid_orders {
             self.emitter.emit_order_submitted(order);
-            let bybit_side =
-                BybitOrderSide::try_from(order.order_side()).expect("order side validated above");
+            let bybit_side = BybitOrderSide::from(order.order_side());
             let position_idx = self.resolve_position_idx(
                 instrument_id,
                 bybit_side,
@@ -1570,8 +1549,7 @@ impl ExecutionClient for BybitExecutionClient {
             let order_data: Vec<_> = valid_orders
                 .iter()
                 .map(|o| {
-                    let bybit_side = BybitOrderSide::try_from(o.order_side())
-                        .expect("order side validated above");
+                    let bybit_side = BybitOrderSide::from(o.order_side());
                     let position_idx = self.resolve_position_idx(
                         instrument_id,
                         bybit_side,
@@ -1668,8 +1646,7 @@ impl ExecutionClient for BybitExecutionClient {
         let mut client_order_ids = Vec::with_capacity(valid_orders.len());
 
         for order in &valid_orders {
-            let bybit_side =
-                BybitOrderSide::try_from(order.order_side()).expect("order side validated above");
+            let bybit_side = BybitOrderSide::from(order.order_side());
             let position_idx = self.resolve_position_idx(
                 instrument_id,
                 bybit_side,
@@ -1966,7 +1943,7 @@ impl ExecutionClient for BybitExecutionClient {
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
-        if cmd.order_side != OrderSide::NoOrderSide {
+        if cmd.order_side.is_some() {
             log::warn!(
                 "Bybit does not support order_side filtering for cancel all orders; \
                 ignoring order_side={:?} and canceling all orders",
@@ -2228,7 +2205,7 @@ mod tests {
     use nautilus_core::{Params, UUID4};
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
-        enums::{AccountType, OrderStatus},
+        enums::{AccountType, OrderSide, OrderStatus},
         events::OrderEventAny,
         identifiers::{ClientOrderId, OrderListId, PositionId, StrategyId, TraderId, VenueOrderId},
         orders::{OrderList, builder::OrderTestBuilder},
@@ -2690,7 +2667,7 @@ mod tests {
             instrument_id,
             Some(client_order_id),
             VenueOrderId::from("BYBIT-ORDER-001"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             order_status,

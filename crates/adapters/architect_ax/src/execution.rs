@@ -229,8 +229,7 @@ impl AxExecutionClient {
             {
                 let preview_result: anyhow::Result<Price> = async {
                     let symbol = instrument_id.symbol.inner();
-                    let ax_side = AxOrderSide::try_from(order_side)
-                        .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+                    let ax_side = AxOrderSide::from(order_side);
                     let qty_contracts = quantity_to_contracts(quantity)?;
 
                     let instrument = http_client.get_instrument(&symbol).ok_or_else(|| {
@@ -588,11 +587,11 @@ impl ExecutionClient for AxExecutionClient {
             let cache = self.core.cache();
             match cache.order(&client_order_id) {
                 Some(order) => (
-                    order.order_side(),
+                    Some(order.order_side()),
                     order.order_type(),
                     order.time_in_force(),
                 ),
-                None => (OrderSide::NoOrderSide, OrderType::Limit, TimeInForce::Gtc),
+                None => (None, OrderType::Limit, TimeInForce::Gtc),
             }
         };
 
@@ -1586,7 +1585,7 @@ pub(crate) fn create_order_filled(
     let last_qty = Quantity::new(execution.q as f64, metadata.size_precision);
     let last_px = Price::from_decimal_dp(execution.p, metadata.price_precision).ok()?;
 
-    let order_side: OrderSide = order.d.into();
+    let order_side = OrderSide::from(order.d);
 
     let liquidity_side = if execution.agg {
         LiquiditySide::Taker
@@ -1772,7 +1771,7 @@ fn create_order_status_report(
     let instrument = instruments_snap.get(&order.s)?;
     let venue_order_id = VenueOrderId::new(&order.oid);
     let instrument_id = instrument.id();
-    let order_side = order.d.into();
+    let order_side = OrderSide::from(order.d);
     let time_in_force = order.tif.into();
 
     let quantity = Quantity::new(order.q as f64, instrument.size_precision());
@@ -1795,7 +1794,7 @@ fn create_order_status_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         OrderType::Limit,
         time_in_force,
         order_status,
@@ -1900,8 +1899,6 @@ fn validate_order_for_ax_submit(order: &OrderAny) -> anyhow::Result<()> {
         order.display_qty().is_some(),
     )?;
 
-    AxOrderSide::try_from(order.order_side())
-        .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
     quantity_to_contracts(order.quantity())?;
 
     Ok(())

@@ -941,7 +941,7 @@ fn cancel_all_orders_emits_no_events_when_client_not_ready() {
         Some(client.core.client_id),
         order.strategy_id(),
         order.instrument_id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,

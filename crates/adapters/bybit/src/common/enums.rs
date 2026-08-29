@@ -633,24 +633,33 @@ impl From<BybitOrderSide> for AggressorSide {
     }
 }
 
-impl From<BybitOrderSide> for OrderSide {
+impl From<BybitOrderSide> for Option<OrderSide> {
     fn from(value: BybitOrderSide) -> Self {
         match value {
-            BybitOrderSide::Buy => Self::Buy,
-            BybitOrderSide::Sell => Self::Sell,
-            BybitOrderSide::Unknown => Self::NoOrderSide,
+            BybitOrderSide::Buy => Some(OrderSide::Buy),
+            BybitOrderSide::Sell => Some(OrderSide::Sell),
+            BybitOrderSide::Unknown => None,
         }
     }
 }
 
-impl TryFrom<OrderSide> for BybitOrderSide {
+impl TryFrom<BybitOrderSide> for OrderSide {
     type Error = anyhow::Error;
 
-    fn try_from(value: OrderSide) -> Result<Self, Self::Error> {
+    fn try_from(value: BybitOrderSide) -> Result<Self, Self::Error> {
         match value {
-            OrderSide::Buy => Ok(Self::Buy),
-            OrderSide::Sell => Ok(Self::Sell),
-            _ => anyhow::bail!("unsupported OrderSide for Bybit: {value:?}"),
+            BybitOrderSide::Buy => Ok(Self::Buy),
+            BybitOrderSide::Sell => Ok(Self::Sell),
+            BybitOrderSide::Unknown => anyhow::bail!("Unspecified Bybit order side"),
+        }
+    }
+}
+
+impl From<OrderSide> for BybitOrderSide {
+    fn from(value: OrderSide) -> Self {
+        match value {
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
         }
     }
 }

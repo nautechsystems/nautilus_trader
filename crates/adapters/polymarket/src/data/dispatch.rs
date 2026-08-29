@@ -7518,7 +7518,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Add,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.49"),
                     Quantity::from("10.00"),
                     0,
@@ -7530,7 +7530,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Add,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.45"),
                     Quantity::from("5.00"),
                     0,
@@ -7542,7 +7542,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Add,
-                    OrderSide::Sell,
+                    Some(OrderSide::Sell),
                     Price::from("0.51"),
                     Quantity::from("8.00"),
                     0,
@@ -7554,7 +7554,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Add,
-                    OrderSide::Sell,
+                    Some(OrderSide::Sell),
                     Price::from("0.55"),
                     Quantity::from("12.00"),
                     0,
@@ -7637,28 +7637,28 @@ mod tests {
             vec![
                 (
                     BookAction::Add,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.49"),
                     Quantity::from("10.00"),
                     0,
                 ),
                 (
                     BookAction::Update,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.45"),
                     Quantity::from("5.00"),
                     0,
                 ),
                 (
                     BookAction::Add,
-                    OrderSide::Sell,
+                    Some(OrderSide::Sell),
                     Price::from("0.51"),
                     Quantity::from("8.00"),
                     0,
                 ),
                 (
                     BookAction::Add,
-                    OrderSide::Sell,
+                    Some(OrderSide::Sell),
                     Price::from("0.55"),
                     Quantity::from("12.00"),
                     RecordFlag::F_LAST as u8,
@@ -7765,7 +7765,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Update,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.49"),
                     Quantity::from("20.00"),
                     0,
@@ -7777,7 +7777,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Update,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.47"),
                     Quantity::from("7.00"),
                     0,
@@ -7789,7 +7789,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Delete,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.45"),
                     Quantity::from("0.00"),
                     0,
@@ -7888,7 +7888,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Update,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.49"),
                     Quantity::from("20.00"),
                     0,
@@ -7900,7 +7900,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Add,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.47"),
                     Quantity::from("7.00"),
                     0,
@@ -7912,7 +7912,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Add,
-                    OrderSide::Sell,
+                    Some(OrderSide::Sell),
                     Price::from("0.53"),
                     Quantity::from("9.00"),
                     0,
@@ -7924,7 +7924,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Delete,
-                    OrderSide::Buy,
+                    Some(OrderSide::Buy),
                     Price::from("0.45"),
                     Quantity::from("5.00"),
                     0,
@@ -7936,7 +7936,7 @@ mod tests {
                 (
                     instrument_id,
                     BookAction::Delete,
-                    OrderSide::Sell,
+                    Some(OrderSide::Sell),
                     Price::from("0.51"),
                     Quantity::from("8.00"),
                     0,
@@ -8136,12 +8136,12 @@ mod tests {
         assert_eq!(deltas[0].action, BookAction::Clear);
         assert_eq!(deltas[0].flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(deltas[1].action, BookAction::Add);
-        assert_eq!(deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas[1].order.side, Some(OrderSide::Buy));
         assert_eq!(deltas[1].order.price, Price::from("0.45"));
         assert_eq!(deltas[1].order.size, Quantity::from("5.00"));
         assert_eq!(deltas[1].flags, RecordFlag::F_SNAPSHOT as u8);
         assert_eq!(deltas[2].action, BookAction::Add);
-        assert_eq!(deltas[2].order.side, OrderSide::Sell);
+        assert_eq!(deltas[2].order.side, Some(OrderSide::Sell));
         assert_eq!(deltas[2].order.price, Price::from("0.51"));
         assert_eq!(deltas[2].order.size, Quantity::from("8.00"));
         assert_eq!(

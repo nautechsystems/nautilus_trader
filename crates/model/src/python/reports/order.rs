@@ -80,7 +80,7 @@ impl OrderStatusReport {
         account_id: AccountId,
         instrument_id: InstrumentId,
         venue_order_id: VenueOrderId,
-        order_side: OrderSide,
+        order_side: Option<OrderSide>,
         order_type: OrderType,
         time_in_force: TimeInForce,
         order_status: OrderStatus,
@@ -243,7 +243,7 @@ impl OrderStatusReport {
 
     #[getter]
     #[pyo3(name = "order_side")]
-    const fn py_order_side(&self) -> OrderSide {
+    const fn py_order_side(&self) -> Option<OrderSide> {
         self.order_side
     }
 
@@ -457,7 +457,12 @@ impl OrderStatusReport {
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
         dict.set_item("venue_order_id", self.venue_order_id.to_string())?;
-        dict.set_item("order_side", self.order_side.to_string())?;
+        dict.set_item(
+            "order_side",
+            self.order_side
+                .as_ref()
+                .map_or("NO_ORDER_SIDE", AsRef::as_ref),
+        )?;
         dict.set_item("order_type", self.order_type.to_string())?;
         dict.set_item("time_in_force", self.time_in_force.to_string())?;
         dict.set_item("order_status", self.order_status.to_string())?;

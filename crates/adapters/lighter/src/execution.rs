@@ -60,7 +60,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, ContingencyType, OmsType, OrderSide, OrderType, PositionSideSpecified},
+    enums::{AccountType, ContingencyType, OmsType, OrderSide, OrderType, PositionSide},
     events::{OrderAccepted, OrderDeniedReason, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
@@ -2012,7 +2012,7 @@ fn emit_lighter_position_reports(
         let flat = PositionStatusReport::new(
             account_id,
             instrument_id,
-            PositionSideSpecified::Flat,
+            PositionSide::Flat,
             Quantity::zero(0),
             now,
             now,
@@ -4901,7 +4901,7 @@ impl ExecutionClient for LighterExecutionClient {
                 position_reports.push(PositionStatusReport::new(
                     self.core.account_id,
                     instrument_id,
-                    PositionSideSpecified::Flat,
+                    PositionSide::Flat,
                     Quantity::zero(instrument.size_precision()),
                     ts_init,
                     ts_init,
@@ -5989,7 +5989,7 @@ mod tests {
     };
     use nautilus_model::{
         data::QuoteTick,
-        enums::{LiquiditySide, OrderStatus, TimeInForce},
+        enums::{LiquiditySide, OrderSide, OrderStatus, TimeInForce},
         events::{OrderCanceled, OrderEventAny, OrderPendingCancel, OrderTriggered},
         identifiers::{
             InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
@@ -7766,7 +7766,7 @@ mod tests {
             Some(client_id()),
             strategy_id(),
             instrument_id,
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             UUID4::new(),
             UnixNanos::default(),
             None,
@@ -7990,7 +7990,7 @@ mod tests {
             Some(client_id()),
             strategy_id(),
             instrument_id,
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             command_id,
             ts_init,
             None,

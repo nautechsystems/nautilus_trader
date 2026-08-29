@@ -472,7 +472,6 @@ impl ScheduledOrders {
                 match side {
                     OrderSide::Buy => Price::from("30000.00"),
                     OrderSide::Sell => Price::from("70000.00"),
-                    _ => unreachable!(),
                 },
                 None,
                 None,

@@ -645,8 +645,8 @@ mod tests {
         // 1 clear + 4 levels
         assert_eq!(deltas.deltas.len(), 5);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
-        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
+        assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell.into());
 
         // Every delta in the snapshot sequence carries F_SNAPSHOT, and only the last F_LAST
         for delta in &deltas.deltas {
@@ -766,13 +766,13 @@ mod tests {
 
         // Check first bid level
         let first_bid = &deltas.deltas[1];
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price.as_f64(), 1.1712);
         assert_eq!(first_bid.order.size.as_f64(), 300.0);
 
         // Check first ask level (after 13 bids + 1 clear = index 14)
         let first_ask = &deltas.deltas[14];
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.order.price.as_f64(), 1.1719);
         assert_eq!(first_ask.order.size.as_f64(), 400.0);
 
@@ -805,7 +805,7 @@ mod tests {
 
         // Check first bid order
         let first_bid = &deltas.deltas[1];
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.order.price.as_f64(), 1.1714);
         assert_eq!(first_bid.order.size.as_f64(), 100.0);
 

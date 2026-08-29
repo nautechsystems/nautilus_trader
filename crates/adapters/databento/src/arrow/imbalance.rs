@@ -23,7 +23,7 @@ use arrow::{
 };
 use nautilus_model::{
     data::{Data, custom::CustomData},
-    enums::{FromU8, OrderSide},
+    enums::OrderSide,
     types::fixed::PRECISION_BYTES,
 };
 use nautilus_serialization::arrow::{
@@ -114,7 +114,7 @@ impl EncodeToRecordBatch for DatabentoImbalance {
             total_imbalance_qty_builder
                 .append_value(item.total_imbalance_qty.raw.to_le_bytes())
                 .unwrap();
-            side_builder.append_value(item.side as u8);
+            side_builder.append_value(item.side.map_or(0, |side| side as u8));
             significant_imbalance_builder.append_value(item.significant_imbalance as i8);
             ts_event_builder.append_value(item.ts_event.as_u64());
             ts_recv_builder.append_value(item.ts_recv.as_u64());
@@ -248,12 +248,17 @@ pub fn decode_imbalance_batch(
                 row,
             )?;
             let side_value = side_values.value(row);
-            let side = OrderSide::from_u8(side_value).ok_or_else(|| {
-                EncodingError::ParseError(
-                    stringify!(OrderSide),
-                    format!("Invalid enum value, was {side_value}"),
-                )
-            })?;
+            let side = match side_value {
+                0 => None,
+                1 => Some(OrderSide::Buy),
+                2 => Some(OrderSide::Sell),
+                _ => {
+                    return Err(EncodingError::ParseError(
+                        "Option<OrderSide>",
+                        format!("Invalid enum value, was {side_value}"),
+                    ));
+                }
+            };
             let significant_imbalance = significant_imbalance_values.value(row) as std::ffi::c_char;
 
             Ok(DatabentoImbalance {
@@ -321,7 +326,7 @@ mod tests {
             Price::from("100.55"),
             Quantity::from("1000"),
             Quantity::from("500"),
-            OrderSide::Buy,
+            Some(OrderSide::Buy),
             b'Y' as std::ffi::c_char,
             1.into(),
             2.into(),
@@ -389,11 +394,11 @@ mod tests {
         let metadata = test_metadata();
         let imb1 = test_imbalance(instrument_id);
         let mut imb2 = test_imbalance(instrument_id);
-        imb2.side = OrderSide::Sell;
+        imb2.side = Some(OrderSide::Sell);
         imb2.ref_price = Price::from("101.00");
         imb2.ts_event = 100.into();
         let mut imb3 = test_imbalance(instrument_id);
-        imb3.side = OrderSide::NoOrderSide;
+        imb3.side = None;
         imb3.significant_imbalance = b'N' as std::ffi::c_char;
         let original = vec![imb1, imb2, imb3];
 
@@ -483,7 +488,7 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = test_metadata();
         let mut imb2 = test_imbalance(instrument_id);
-        imb2.side = OrderSide::Sell;
+        imb2.side = Some(OrderSide::Sell);
         imb2.ts_event = 100.into();
         let original = vec![test_imbalance(instrument_id), imb2];
         let batch = DatabentoImbalance::encode_batch(&metadata, &original).unwrap();
@@ -516,7 +521,7 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let original = vec![test_imbalance(instrument_id), {
             let mut imb = test_imbalance(instrument_id);
-            imb.side = OrderSide::Sell;
+            imb.side = Some(OrderSide::Sell);
             imb.ref_price = Price::from("101.25");
             imb.ts_event = 100.into();
             imb

@@ -303,19 +303,16 @@ impl BaseAccount {
                 .as_decimal()
                 .max(Decimal::ZERO),
             OrderSide::Sell => quantity.as_decimal(),
-            OrderSide::NoOrderSide => {
-                anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}")
-            }
         };
 
         if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
             Ok(Money::from_decimal(amount, base_currency)?)
-        } else if side == OrderSide::Buy {
-            Ok(Money::from_decimal(amount, quote_currency)?)
-        } else if side == OrderSide::Sell {
-            Ok(Money::from_decimal(amount, base_currency)?)
         } else {
-            anyhow::bail!("Invalid `OrderSide` in `base_calculate_balance_locked`: {side}")
+            let currency = match side {
+                OrderSide::Buy => quote_currency,
+                OrderSide::Sell => base_currency,
+            };
+            Ok(Money::from_decimal(amount, currency)?)
         }
     }
 
@@ -353,7 +350,7 @@ impl BaseAccount {
                 );
             }
             pnls.insert(notional.currency, -notional);
-        } else if fill.order_side == OrderSide::Sell {
+        } else {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
                     base_currency_value,
@@ -361,11 +358,6 @@ impl BaseAccount {
                 );
             }
             pnls.insert(notional.currency, notional);
-        } else {
-            anyhow::bail!(
-                "Invalid `OrderSide` in base_calculate_pnls: {}",
-                fill.order_side
-            );
         }
         Ok(pnls.into_values().collect())
     }

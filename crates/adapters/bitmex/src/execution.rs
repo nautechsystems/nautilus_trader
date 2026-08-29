@@ -47,7 +47,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderType, TrailingOffsetType},
+    enums::{AccountType, OmsType, OrderType, TrailingOffsetType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -270,12 +270,13 @@ impl BitmexExecutionClient {
         }
 
         let cache = self.core.cache();
-        let (order_side, order_type) = cache
+        let order_identity = cache
             .order(&client_order_id)
-            .map_or((OrderSide::NoOrderSide, OrderType::Market), |o| {
-                (o.order_side(), o.order_type())
-            });
+            .map(|order| (order.order_side(), order.order_type()));
         drop(cache);
+        let Some((order_side, order_type)) = order_identity else {
+            return;
+        };
 
         self.ws_dispatch_state.order_identities.insert(
             client_order_id,
@@ -1110,14 +1111,7 @@ impl ExecutionClient for BitmexExecutionClient {
         let emitter = self.emitter.clone();
         let dispatch_state = Arc::clone(&self.ws_dispatch_state);
         let instrument_id = cmd.instrument_id;
-        let order_side = if cmd.order_side == OrderSide::NoOrderSide {
-            log::debug!(
-                "BitMEX cancel_all_orders received NoOrderSide for {instrument_id}, using unfiltered cancel-all",
-            );
-            None
-        } else {
-            Some(cmd.order_side)
-        };
+        let order_side = cmd.order_side;
 
         self.spawn_task("cancel_all_orders", async move {
             match canceller
@@ -1285,10 +1279,6 @@ fn validate_order_for_bitmex_submit(
     peg_price_type: Option<BitmexPegPriceType>,
     peg_offset_value: Option<f64>,
 ) -> anyhow::Result<()> {
-    if order.order_side() == OrderSide::NoOrderSide {
-        anyhow::bail!("Order side must be Buy or Sell");
-    }
-
     BitmexOrderType::try_from_order_type(order.order_type())?;
     BitmexTimeInForce::try_from_time_in_force(order.time_in_force())?;
 
@@ -1374,7 +1364,7 @@ mod tests {
     };
     use nautilus_core::{Params, UUID4};
     use nautilus_model::{
-        enums::TimeInForce,
+        enums::{OrderSide, TimeInForce},
         events::OrderEventAny,
         identifiers::{Symbol, TraderId},
         instruments::crypto_perpetual::CryptoPerpetual,

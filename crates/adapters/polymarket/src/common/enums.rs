@@ -271,14 +271,11 @@ impl From<PolymarketOrderSide> for OrderSide {
     }
 }
 
-impl TryFrom<OrderSide> for PolymarketOrderSide {
-    type Error = anyhow::Error;
-
-    fn try_from(value: OrderSide) -> anyhow::Result<Self> {
+impl From<OrderSide> for PolymarketOrderSide {
+    fn from(value: OrderSide) -> Self {
         match value {
-            OrderSide::Buy => Ok(Self::Buy),
-            OrderSide::Sell => Ok(Self::Sell),
-            _ => anyhow::bail!("Invalid `OrderSide` for Polymarket: {value:?}"),
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
         }
     }
 }
@@ -500,7 +497,7 @@ mod tests {
         #[case] nautilus: OrderSide,
         #[case] expected: PolymarketOrderSide,
     ) {
-        assert_eq!(PolymarketOrderSide::try_from(nautilus).unwrap(), expected);
+        assert_eq!(PolymarketOrderSide::from(nautilus), expected);
     }
 
     #[rstest]

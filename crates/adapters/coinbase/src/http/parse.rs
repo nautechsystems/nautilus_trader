@@ -24,7 +24,7 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, OrderBookDelta, OrderBookDeltas, TradeTick},
     enums::{
         AccountType, AggressorSide, BookAction, LiquiditySide, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, RecordFlag, TimeInForce, TriggerType,
+        PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -480,12 +480,25 @@ fn parse_book_delta(
     )
 }
 
-/// Converts a Coinbase order side to the Nautilus [`OrderSide`].
-pub fn parse_order_side(side: &CoinbaseOrderSide) -> OrderSide {
+/// Converts a Coinbase order side to the Nautilus [`Option<OrderSide>`].
+pub fn parse_order_side_optional(side: &CoinbaseOrderSide) -> Option<OrderSide> {
     match side {
-        CoinbaseOrderSide::Buy => OrderSide::Buy,
-        CoinbaseOrderSide::Sell => OrderSide::Sell,
-        CoinbaseOrderSide::Unknown => OrderSide::NoOrderSide,
+        CoinbaseOrderSide::Buy => Some(OrderSide::Buy),
+        CoinbaseOrderSide::Sell => Some(OrderSide::Sell),
+        CoinbaseOrderSide::Unknown => None,
+    }
+}
+
+/// Converts a Coinbase order side to a Nautilus [`OrderSide`].
+///
+/// # Errors
+///
+/// Returns an error when Coinbase supplies an unknown side.
+pub fn parse_order_side(side: &CoinbaseOrderSide) -> anyhow::Result<OrderSide> {
+    match side {
+        CoinbaseOrderSide::Buy => Ok(OrderSide::Buy),
+        CoinbaseOrderSide::Sell => Ok(OrderSide::Sell),
+        CoinbaseOrderSide::Unknown => anyhow::bail!("Coinbase fill has unknown order side"),
     }
 }
 
@@ -573,7 +586,7 @@ pub fn parse_order_status_report(
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
-    let order_side = parse_order_side(&order.side);
+    let order_side = parse_order_side_optional(&order.side);
     let order_type = parse_order_type(order.order_type);
     let time_in_force = parse_time_in_force(order.time_in_force);
     let mut order_status = parse_order_status(order.status);
@@ -593,6 +606,7 @@ pub fn parse_order_status_report(
 
     // API has no separate ADL flag, so liquidation and ADL share this branch
     if order.order_type == CoinbaseOrderType::Liquidation || order.is_liquidation {
+        let order_side = order_side.as_ref().map_or("NO_ORDER_SIDE", AsRef::as_ref);
         log::warn!(
             "Forced-close (liquidation/ADL) order: {instrument_id} venue_order_id={venue_order_id} side={order_side} filled={filled_qty}",
         );
@@ -689,7 +703,7 @@ pub fn parse_fill_report(
 
     let venue_order_id = VenueOrderId::new(&fill.order_id);
     let trade_id = TradeId::new(&fill.trade_id);
-    let order_side = parse_order_side(&fill.side);
+    let order_side = parse_order_side(&fill.side)?;
     let last_px = parse_price(&fill.price, price_precision)?;
     let last_qty = parse_quantity(&fill.size, size_precision)?;
 
@@ -1012,9 +1026,9 @@ pub fn parse_cfm_position_status_report(
     let size_precision = instrument.size_precision();
 
     let position_side = match position.side {
-        CoinbaseFcmPositionSide::Long => PositionSideSpecified::Long,
-        CoinbaseFcmPositionSide::Short => PositionSideSpecified::Short,
-        CoinbaseFcmPositionSide::Unspecified => PositionSideSpecified::Flat,
+        CoinbaseFcmPositionSide::Long => PositionSide::Long,
+        CoinbaseFcmPositionSide::Short => PositionSide::Short,
+        CoinbaseFcmPositionSide::Unspecified => PositionSide::Flat,
     };
 
     let quantity = Quantity::from_decimal_dp(position.number_of_contracts, size_precision)
@@ -1526,14 +1540,14 @@ mod tests {
 
         // Verify first bid side and price
         let first_bid = &deltas.deltas[1];
-        assert_eq!(first_bid.order.side, OrderSide::Buy);
+        assert_eq!(first_bid.order.side, OrderSide::Buy.into());
         assert_eq!(first_bid.action, BookAction::Add);
         assert!(first_bid.order.price.as_f64() > 0.0);
 
         // Verify first ask comes after bids
         let first_ask_idx = response.pricebook.bids.len() + 1;
         let first_ask = &deltas.deltas[first_ask_idx];
-        assert_eq!(first_ask.order.side, OrderSide::Sell);
+        assert_eq!(first_ask.order.side, OrderSide::Sell.into());
         assert_eq!(first_ask.action, BookAction::Add);
 
         // Last delta has F_LAST flag
@@ -1597,7 +1611,7 @@ mod tests {
             report.client_order_id.unwrap().as_str(),
             "11111-000000-000000"
         );
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
         // filled_size (0.001) == base_size (0.001), so status stays Accepted
@@ -1625,7 +1639,7 @@ mod tests {
 
         assert_eq!(report.order_status, OrderStatus::Filled);
         assert_eq!(report.order_type, OrderType::Market);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.time_in_force, TimeInForce::Ioc);
         // Market quote-size orders fall back to filled_qty for total quantity
         assert_eq!(report.filled_qty, Quantity::from("0.0325"));
@@ -1945,7 +1959,7 @@ mod tests {
         // Pin the fields the warn branch reads so a future refactor that drops
         // the `is_liquidation` arm cannot accept this fixture by accident.
         assert_eq!(report.order_status, OrderStatus::Filled);
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.filled_qty, Quantity::from("0.001"));
         assert_eq!(report.instrument_id, instrument.id());
     }
@@ -2417,12 +2431,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case(CoinbaseFcmPositionSide::Long, PositionSideSpecified::Long)]
-    #[case(CoinbaseFcmPositionSide::Short, PositionSideSpecified::Short)]
-    #[case(CoinbaseFcmPositionSide::Unspecified, PositionSideSpecified::Flat)]
+    #[case(CoinbaseFcmPositionSide::Long, PositionSide::Long)]
+    #[case(CoinbaseFcmPositionSide::Short, PositionSide::Short)]
+    #[case(CoinbaseFcmPositionSide::Unspecified, PositionSide::Flat)]
     fn test_parse_cfm_position_side_maps_all_variants(
         #[case] venue_side: CoinbaseFcmPositionSide,
-        #[case] expected: PositionSideSpecified,
+        #[case] expected: PositionSide,
     ) {
         let report = parse_cfm_position_status_report(
             &cfm_position(venue_side, "1", "49000.00"),

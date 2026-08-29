@@ -17,7 +17,6 @@ use nautilus_common::messages::execution::{BatchCancelOrders, CancelAllOrders, C
 use nautilus_core::time::AtomicTime;
 use nautilus_live::{ExecutionEventEmitter, execution::failure::CommandFailure};
 use nautilus_model::{
-    enums::OrderSide,
     identifiers::VenueOrderId,
     instruments::Instrument,
     orders::{Order, OrderAny},
@@ -125,7 +124,7 @@ impl PolymarketExecutionClient {
 
     pub(super) fn cancel_all_orders_command(&self, cmd: &CancelAllOrders) -> anyhow::Result<()> {
         let cache = self.core.cache();
-        let side = (cmd.order_side != OrderSide::NoOrderSide).then_some(cmd.order_side);
+        let side = cmd.order_side;
         let asset_id = if side.is_none() {
             let instrument = cache.instrument(&cmd.instrument_id).ok_or_else(|| {
                 anyhow::anyhow!(

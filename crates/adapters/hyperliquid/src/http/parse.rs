@@ -20,7 +20,7 @@ use nautilus_model::{
     data::TradeTick,
     enums::{
         AggressorSide, AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
-        PositionSideSpecified, TimeInForce, TriggerType,
+        PositionSide, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{BinaryOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
@@ -978,7 +978,7 @@ pub fn parse_order_status_report_from_basic(
         instrument_id,
         None, // client_order_id - will be set if present
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -1243,11 +1243,11 @@ pub fn parse_position_status_report(
 
     // Determine position side based on size (szi)
     let (position_side, quantity_value) = if position.szi.is_zero() {
-        (PositionSideSpecified::Flat, Decimal::ZERO)
+        (PositionSide::Flat, Decimal::ZERO)
     } else if position.szi.is_sign_positive() {
-        (PositionSideSpecified::Long, position.szi)
+        (PositionSide::Long, position.szi)
     } else {
-        (PositionSideSpecified::Short, position.szi.abs())
+        (PositionSide::Short, position.szi.abs())
     };
 
     let quantity = Quantity::from_decimal_dp(quantity_value, instrument.size_precision())
@@ -1286,9 +1286,9 @@ pub fn parse_spot_position_status_report(
     ts_init: UnixNanos,
 ) -> anyhow::Result<PositionStatusReport> {
     let (position_side, quantity_value) = if balance.total.is_zero() {
-        (PositionSideSpecified::Flat, Decimal::ZERO)
+        (PositionSide::Flat, Decimal::ZERO)
     } else {
-        (PositionSideSpecified::Long, balance.total)
+        (PositionSide::Long, balance.total)
     };
 
     let quantity = Quantity::from_decimal_dp(quantity_value, instrument.size_precision())
@@ -1322,8 +1322,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_fill_side() {
-        assert_eq!(parse_fill_side(&HyperliquidSide::Buy), OrderSide::Buy);
-        assert_eq!(parse_fill_side(&HyperliquidSide::Sell), OrderSide::Sell);
+        assert_eq!(parse_fill_side(&HyperliquidSide::Buy), OrderSide::Buy,);
+        assert_eq!(parse_fill_side(&HyperliquidSide::Sell), OrderSide::Sell,);
     }
 
     #[rstest]

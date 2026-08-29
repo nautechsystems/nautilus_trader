@@ -104,7 +104,8 @@ This installs:
 - **Shared Cargo CLIs** pinned in `.nautilus-engineering/tools.toml`: `cargo-audit`, `cargo-deny`,
   `cargo-edit`, `cargo-llvm-cov`, `cargo-nextest`, and `cargo-vet`.
 - **NautilusTrader Cargo CLIs** pinned in `Cargo.toml` under `[workspace.metadata.tools]`:
-  `cargo-codspeed`, `cargo-fuzz`, `cargo-hawk`, `cargo-machete`, `flamegraph`, and `lychee`.
+  `cargo-codspeed`, `cargo-fuzz`, `cargo-hawk`, `cargo-machete`, `cbindgen`, `flamegraph`, and
+  `lychee`.
 - **Prebuilt binaries** pinned in `.nautilus-engineering/tools.toml`: `prek` (pre-commit runner) and
   `osv-scanner` (vulnerability scanner).
 - **uv**, installed at the shared pinned version. The supported local uv minor series is defined in

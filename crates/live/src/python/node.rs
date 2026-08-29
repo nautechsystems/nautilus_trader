@@ -2325,7 +2325,7 @@ mod tests {
     use nautilus_execution::engine::stubs::StubExecutionClient;
     use nautilus_model::{
         data::{Bar, BarType},
-        enums::{OmsType, OrderSide, OrderStatus, OrderType},
+        enums::{OmsType, OrderStatus, OrderType},
         identifiers::{
             AccountId, ActorId, ClientId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
         },
@@ -2798,7 +2798,7 @@ mod tests {
                     None,
                     StrategyId::from("SHUTDOWN-CANCEL-001"),
                     self.instrument_id,
-                    OrderSide::NoOrderSide,
+                    None,
                     UUID4::new(),
                     UnixNanos::default(),
                     None,

@@ -950,7 +950,7 @@ mod tests {
             account_id: AccountId::from("BITMEX-001"),
             instrument_id: InstrumentId::from_str("XBTUSD.BITMEX").unwrap(),
             venue_order_id: VenueOrderId::from(venue_order_id),
-            order_side: OrderSide::Buy,
+            order_side: OrderSide::Buy.into(),
             order_type: OrderType::Limit,
             time_in_force: TimeInForce::Gtc,
             order_status: OrderStatus::Accepted,

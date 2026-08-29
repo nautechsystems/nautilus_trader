@@ -97,7 +97,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
 
         for delta in data {
             action_builder.append_value(delta.action as u8);
-            side_builder.append_value(delta.order.side as u8);
+            side_builder.append_value(delta.order.side.map_or(0, |side| side as u8));
             price_builder
                 .append_value(delta.order.price.raw.to_le_bytes())
                 .unwrap();
@@ -199,12 +199,17 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                     )
                 })?;
                 let side_value = side_values.value(i);
-                let side = OrderSide::from_u8(side_value).ok_or_else(|| {
-                    EncodingError::ParseError(
-                        stringify!(OrderSide),
-                        format!("Invalid enum value, was {side_value}"),
-                    )
-                })?;
+                let side = match side_value {
+                    0 => None,
+                    1 => Some(OrderSide::Buy),
+                    2 => Some(OrderSide::Sell),
+                    _ => {
+                        return Err(EncodingError::ParseError(
+                            "Option<OrderSide>",
+                            format!("Invalid enum value, was {side_value}"),
+                        ));
+                    }
+                };
                 let price =
                     decode_price_with_sentinel(price_values.value(i), price_precision, "price", i)?;
                 let size =
@@ -251,11 +256,14 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{array::Array, record_batch::RecordBatch};
-    use nautilus_model::types::{
-        Price, Quantity,
-        fixed::FIXED_SCALAR,
-        price::{PRICE_UNDEF, PriceRaw},
-        quantity::{QUANTITY_UNDEF, QuantityRaw},
+    use nautilus_model::{
+        enums::OrderSide,
+        types::{
+            Price, Quantity,
+            fixed::FIXED_SCALAR,
+            price::{PRICE_UNDEF, PriceRaw},
+            quantity::{QUANTITY_UNDEF, QuantityRaw},
+        },
     };
     use pretty_assertions::assert_eq;
     use rstest::rstest;
@@ -310,7 +318,7 @@ mod tests {
             instrument_id,
             action: BookAction::Add,
             order: BookOrder {
-                side: OrderSide::Buy,
+                side: OrderSide::Buy.into(),
                 price: Price::from("100.10"),
                 size: Quantity::from(100),
                 order_id: 1,
@@ -325,7 +333,7 @@ mod tests {
             instrument_id,
             action: BookAction::Update,
             order: BookOrder {
-                side: OrderSide::Sell,
+                side: OrderSide::Sell.into(),
                 price: Price::from("101.20"),
                 size: Quantity::from(200),
                 order_id: 2,
@@ -448,7 +456,7 @@ mod tests {
 
         // Create test data with 'R' (clear) action which has PRICE_UNDEF and QUANTITY_UNDEF
         let action = UInt8Array::from(vec![4, 1]); // 4 = Clear, 1 = Add
-        let side = UInt8Array::from(vec![0, 1]); // NoOrderSide for Clear, Buy for Add
+        let side = UInt8Array::from(vec![0, 1]); // No side for Clear, Buy for Add
         let price = fixed_size_binary(vec![
             &PRICE_UNDEF.to_le_bytes(),
             &((100.50 * FIXED_SCALAR) as PriceRaw).to_le_bytes(),
@@ -621,7 +629,7 @@ mod tests {
             instrument_id,
             action: BookAction::Add,
             order: BookOrder {
-                side: OrderSide::Buy,
+                side: OrderSide::Buy.into(),
                 price: Price::from("100.10"),
                 size: Quantity::from(100),
                 order_id: 1,
@@ -636,7 +644,7 @@ mod tests {
             instrument_id,
             action: BookAction::Update,
             order: BookOrder {
-                side: OrderSide::Sell,
+                side: OrderSide::Sell.into(),
                 price: Price::from("101.20"),
                 size: Quantity::from(200),
                 order_id: 2,

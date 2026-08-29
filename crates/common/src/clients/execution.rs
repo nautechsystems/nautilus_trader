@@ -436,8 +436,7 @@ mod tests {
     use nautilus_core::UUID4;
     use nautilus_model::{
         enums::{
-            LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-            TimeInForce,
+            LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         },
         identifiers::{PositionId, TradeId, TraderId, Venue},
         types::Currency,
@@ -608,7 +607,7 @@ mod tests {
             InstrumentId::from("AUD/USD.SIM"),
             None,
             VenueOrderId::from("ORDER-001"),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -644,7 +643,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("MASS-STATUS-001"),
             InstrumentId::from("AUD/USD.SIM"),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from("5"),
             UnixNanos::from(6_000_000_000),
             UnixNanos::from(7_000_000_000),

@@ -810,7 +810,7 @@ mod tests {
                     carrier.report.client_order_id.unwrap().as_str(),
                     "11111-000000-000001"
                 );
-                assert_eq!(carrier.report.order_side, OrderSide::Buy);
+                assert_eq!(carrier.report.order_side, OrderSide::Buy.into());
                 assert_eq!(carrier.report.order_status, OrderStatus::Accepted);
                 assert_eq!(carrier.report.filled_qty, Quantity::from("0.00000000"));
                 assert_eq!(carrier.report.quantity, Quantity::from("0.00100000"));

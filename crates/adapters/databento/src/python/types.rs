@@ -52,6 +52,7 @@ impl DatabentoImbalance {
     }
 
     fn __repr__(&self) -> String {
+        let side = self.side.as_ref().map_or("NO_ORDER_SIDE", AsRef::as_ref);
         format!(
             "{}(instrument_id={}, ref_price={}, cont_book_clr_price={}, auct_interest_clr_price={}, paired_qty={}, total_imbalance_qty={}, side={}, significant_imbalance={}, ts_event={}, ts_recv={}, ts_init={})",
             stringify!(DatabentoImbalance),
@@ -61,7 +62,7 @@ impl DatabentoImbalance {
             self.auct_interest_clr_price,
             self.paired_qty,
             self.total_imbalance_qty,
-            self.side,
+            side,
             self.significant_imbalance,
             self.ts_event,
             self.ts_recv,
@@ -111,7 +112,7 @@ impl DatabentoImbalance {
 
     #[getter]
     #[pyo3(name = "side")]
-    const fn py_side(&self) -> OrderSide {
+    const fn py_side(&self) -> Option<OrderSide> {
         self.side
     }
 

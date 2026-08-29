@@ -2623,7 +2623,7 @@ async fn test_cancel_all_orders_generates_canceled_events() {
         Some(*BINANCE_CLIENT_ID),
         StrategyId::from("TEST-STRATEGY"),
         instrument_id,
-        OrderSide::NoOrderSide,
+        None,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),
         None,

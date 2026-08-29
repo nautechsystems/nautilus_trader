@@ -43,7 +43,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType},
+    enums::{AccountType, OmsType, OrderStatus, OrderType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
@@ -1018,7 +1018,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if cmd.order_side == OrderSide::NoOrderSide {
+        if cmd.order_side.is_none() {
             log::debug!("Canceling all orders: instrument_id={instrument_id} (bulk)");
 
             let http = self.http.clone();
@@ -1065,7 +1065,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
 
             open_orders
                 .into_iter()
-                .filter(|order| order.order_side() == cmd.order_side)
+                .filter(|order| Some(order.order_side()) == cmd.order_side)
                 .filter_map(|order| {
                     Some((
                         order.venue_order_id()?,
@@ -1461,7 +1461,7 @@ fn synthesize_filled_order_status_report(
         order.instrument_id(),
         Some(order.client_order_id()),
         venue_order_id,
-        order.order_side(),
+        order.order_side().into(),
         order.order_type(),
         order.time_in_force(),
         OrderStatus::Filled,

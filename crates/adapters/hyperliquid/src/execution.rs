@@ -1449,7 +1449,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             Some(&cmd.instrument_id),
             None,
             None,
-            Some(cmd.order_side),
+            cmd.order_side,
         );
 
         if open_orders.is_empty() {
@@ -3482,7 +3482,7 @@ mod tests {
             InstrumentId::from(TEST_INSTRUMENT_ID),
             client_order_id.map(ClientOrderId::new),
             VenueOrderId::new(venue_order_id),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             status,

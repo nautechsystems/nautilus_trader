@@ -420,7 +420,6 @@ fn determine_tpsl_type(
                             HyperliquidExchangeTpSl::Tp
                         }
                     }
-                    _ => HyperliquidExchangeTpSl::Sl, // Default to SL for safety
                 }
             } else {
                 // No market price available, default to SL for safety

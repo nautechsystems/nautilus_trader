@@ -23,51 +23,87 @@ use nautilus_core::ffi::string::str_to_cstr;
 
 use crate::{
     data::BookOrder,
-    enums::OrderSide,
+    ffi::enums::OrderSideOptional,
     types::{Price, Quantity},
 };
+
+/// The stable C representation of a [`BookOrder`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct BookOrderFfi {
+    /// The order side, including the legacy zero value.
+    pub side: OrderSideOptional,
+    /// The order price.
+    pub price: Price,
+    /// The order size.
+    pub size: Quantity,
+    /// The order ID.
+    pub order_id: u64,
+}
+
+impl From<BookOrderFfi> for BookOrder {
+    fn from(value: BookOrderFfi) -> Self {
+        Self {
+            side: value.side.as_option(),
+            price: value.price,
+            size: value.size,
+            order_id: value.order_id,
+        }
+    }
+}
+
+impl From<BookOrder> for BookOrderFfi {
+    fn from(value: BookOrder) -> Self {
+        Self {
+            side: value.side.into(),
+            price: value.price,
+            size: value.size,
+            order_id: value.order_id,
+        }
+    }
+}
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn book_order_new(
-    order_side: OrderSide,
+    order_side: OrderSideOptional,
     price: Price,
     size: Quantity,
     order_id: u64,
-) -> BookOrder {
-    BookOrder::new(order_side, price, size, order_id)
+) -> BookOrderFfi {
+    BookOrder::new(order_side.as_option(), price, size, order_id).into()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn book_order_eq(lhs: &BookOrder, rhs: &BookOrder) -> u8 {
-    u8::from(lhs == rhs)
+pub extern "C" fn book_order_eq(lhs: &BookOrderFfi, rhs: &BookOrderFfi) -> u8 {
+    u8::from(BookOrder::from(*lhs) == BookOrder::from(*rhs))
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn book_order_hash(order: &BookOrder) -> u64 {
+pub extern "C" fn book_order_hash(order: &BookOrderFfi) -> u64 {
     let mut hasher = DefaultHasher::new();
-    order.hash(&mut hasher);
+    BookOrder::from(*order).hash(&mut hasher);
     hasher.finish()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn book_order_exposure(order: &BookOrder) -> f64 {
-    order.exposure()
+pub extern "C" fn book_order_exposure(order: &BookOrderFfi) -> f64 {
+    BookOrder::from(*order).exposure()
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn book_order_signed_size(order: &BookOrder) -> f64 {
-    order.signed_size()
+pub extern "C" fn book_order_signed_size(order: &BookOrderFfi) -> f64 {
+    BookOrder::from(*order).signed_size()
 }
 
 /// Returns a [`BookOrder`] display string as a C string pointer.
 #[unsafe(no_mangle)]
-pub extern "C" fn book_order_display_to_cstr(order: &BookOrder) -> *const c_char {
-    str_to_cstr(&format!("{order}"))
+pub extern "C" fn book_order_display_to_cstr(order: &BookOrderFfi) -> *const c_char {
+    str_to_cstr(&BookOrder::from(*order).to_string())
 }
 
 /// Returns a [`BookOrder`] debug string as a C string pointer.
 #[unsafe(no_mangle)]
-pub extern "C" fn book_order_debug_to_cstr(order: &BookOrder) -> *const c_char {
-    str_to_cstr(&format!("{order:?}"))
+pub extern "C" fn book_order_debug_to_cstr(order: &BookOrderFfi) -> *const c_char {
+    str_to_cstr(&format!("{:?}", BookOrder::from(*order)))
 }

@@ -801,14 +801,10 @@ impl Display for LighterAccountTier {
 /// Lighter's tx body encodes the side as `is_ask`: `false` for a bid (buy)
 /// and `true` for an ask (sell).
 ///
-/// # Errors
-///
-/// Returns an error if `side` is [`OrderSide::NoOrderSide`].
-pub fn is_ask_from_order_side(side: OrderSide) -> anyhow::Result<bool> {
+pub fn is_ask_from_order_side(side: OrderSide) -> bool {
     match side {
-        OrderSide::Buy => Ok(false),
-        OrderSide::Sell => Ok(true),
-        OrderSide::NoOrderSide => Err(anyhow::anyhow!("Lighter requires a specified order side")),
+        OrderSide::Buy => false,
+        OrderSide::Sell => true,
     }
 }
 
@@ -1204,16 +1200,10 @@ mod tests {
 
     #[rstest]
     fn test_is_ask_round_trip() {
-        assert!(!is_ask_from_order_side(OrderSide::Buy).unwrap());
-        assert!(is_ask_from_order_side(OrderSide::Sell).unwrap());
+        assert!(!is_ask_from_order_side(OrderSide::Buy));
+        assert!(is_ask_from_order_side(OrderSide::Sell));
         assert_eq!(order_side_from_is_ask(false), OrderSide::Buy);
         assert_eq!(order_side_from_is_ask(true), OrderSide::Sell);
-    }
-
-    #[rstest]
-    fn test_is_ask_rejects_unspecified_side() {
-        let err = is_ask_from_order_side(OrderSide::NoOrderSide).unwrap_err();
-        assert!(err.to_string().contains("specified order side"));
     }
 
     #[rstest]

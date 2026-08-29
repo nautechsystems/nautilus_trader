@@ -1005,14 +1005,28 @@ impl OtoTriggerMode {
     }
 }
 
-#[pymethods]
+// The stub macro must run first so it records the compatibility class attribute
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl OrderSide {
-    /// The order side for a specific order, or action related to orders.
+    /// The order side (BUY or SELL).
+    ///
+    /// Python retains `NO_ORDER_SIDE` as a compatibility alias for `None`. The alias is not an enum
+    /// variant and may be removed in a future version.
     #[new]
-    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
+    }
+
+    /// Compatibility alias for the removed `NO_ORDER_SIDE` variant.
+    ///
+    /// This alias returns `None` and may be removed in a future version.
+    #[classattr]
+    #[pyo3(name = "NO_ORDER_SIDE")]
+    #[allow(clippy::use_self)]
+    const fn py_no_order_side() -> Option<OrderSide> {
+        None
     }
 
     const fn __hash__(&self) -> isize {
@@ -1042,10 +1056,14 @@ impl OrderSide {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+        if tokenized == "NO_ORDER_SIDE" {
+            Ok(None)
+        } else {
+            Self::from_str(&tokenized).map(Some).map_err(to_pyvalue_err)
+        }
     }
 }
 
@@ -1157,14 +1175,28 @@ impl OrderType {
     }
 }
 
-#[pymethods]
+// The stub macro must run first so it records the compatibility class attribute
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
 impl PositionSide {
-    /// The market side for a specific position, or action related to positions.
+    /// The position side (FLAT, LONG, or SHORT).
+    ///
+    /// Python retains `NO_POSITION_SIDE` as a compatibility alias for `None`. The alias is not an enum
+    /// variant and may be removed in a future version.
     #[new]
-    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let t = Self::type_object(py);
         Self::py_from_str(&t, value)
+    }
+
+    /// Compatibility alias for the removed `NO_POSITION_SIDE` variant.
+    ///
+    /// This alias returns `None` and may be removed in a future version.
+    #[classattr]
+    #[pyo3(name = "NO_POSITION_SIDE")]
+    #[allow(clippy::use_self)]
+    const fn py_no_position_side() -> Option<PositionSide> {
+        None
     }
 
     const fn __hash__(&self) -> isize {
@@ -1194,10 +1226,14 @@ impl PositionSide {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Option<Self>> {
         let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+        if tokenized == "NO_POSITION_SIDE" {
+            Ok(None)
+        } else {
+            Self::from_str(&tokenized).map(Some).map_err(to_pyvalue_err)
+        }
     }
 }
 

@@ -878,7 +878,7 @@ mod tests {
 
     use nautilus_core::paths::get_test_data_path as get_test_data_root;
     use nautilus_model::{
-        enums::{AggressorSide, BookAction},
+        enums::{AggressorSide, BookAction, OrderSide},
         identifiers::{InstrumentId, TradeId},
         types::Price,
     };
@@ -990,7 +990,7 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
             InstrumentId::from("BTC-PERPETUAL.DERIBIT")
         );
         assert_eq!(deltas[1].action, BookAction::Add);
-        assert_eq!(deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas[1].order.side, OrderSide::Sell.into());
         assert_eq!(deltas[1].order.price, Price::from("6421.5"));
         assert_eq!(deltas[1].order.size, Quantity::from("18640"));
         assert_eq!(deltas[1].flags, 0);
@@ -1019,12 +1019,12 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(depths[0].bids.len(), 10);
         assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
         assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
-        assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
+        assert_eq!(depths[0].bids[0].side, OrderSide::Buy.into());
         assert_eq!(depths[0].bids[0].order_id, 0);
         assert_eq!(depths[0].asks.len(), 10);
         assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
         assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
-        assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
+        assert_eq!(depths[0].asks[0].side, OrderSide::Sell.into());
         assert_eq!(depths[0].asks[0].order_id, 0);
         assert_eq!(depths[0].bid_counts[0], 1);
         assert_eq!(depths[0].ask_counts[0], 1);
@@ -1063,12 +1063,12 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(depths[0].bids.len(), 10);
         assert_eq!(depths[0].bids[0].price, Price::from("11657.07"));
         assert_eq!(depths[0].bids[0].size, Quantity::from("10.896"));
-        assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
+        assert_eq!(depths[0].bids[0].side, OrderSide::Buy.into());
         assert_eq!(depths[0].bids[0].order_id, 0);
         assert_eq!(depths[0].asks.len(), 10);
         assert_eq!(depths[0].asks[0].price, Price::from("11657.08"));
         assert_eq!(depths[0].asks[0].size, Quantity::from("1.714"));
-        assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
+        assert_eq!(depths[0].asks[0].side, OrderSide::Sell.into());
         assert_eq!(depths[0].asks[0].order_id, 0);
         assert_eq!(depths[0].bid_counts[0], 1);
         assert_eq!(depths[0].ask_counts[0], 1);
@@ -1344,16 +1344,16 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
                 UnixNanos::from(2_010_000),
             ]
         );
-        assert_eq!(deltas[0].order.side, OrderSide::Buy);
+        assert_eq!(deltas[0].order.side, Some(OrderSide::Buy));
         assert_eq!(deltas[0].order.price, Price::from("100.0"));
         assert_eq!(deltas[0].order.size, Quantity::from("1.0"));
-        assert_eq!(deltas[1].order.side, OrderSide::Sell);
+        assert_eq!(deltas[1].order.side, Some(OrderSide::Sell));
         assert_eq!(deltas[1].order.price, Price::from("101.0"));
         assert_eq!(deltas[1].order.size, Quantity::from("2.0"));
-        assert_eq!(deltas[2].order.side, OrderSide::Buy);
+        assert_eq!(deltas[2].order.side, Some(OrderSide::Buy));
         assert_eq!(deltas[2].order.price, Price::from("99.0"));
         assert_eq!(deltas[2].order.size, Quantity::from("3.0"));
-        assert_eq!(deltas[3].order.side, OrderSide::Sell);
+        assert_eq!(deltas[3].order.side, Some(OrderSide::Sell));
         assert_eq!(deltas[3].order.price, Price::from("102.0"));
         assert_eq!(deltas[3].order.size, Quantity::from("4.0"));
     }
@@ -1486,57 +1486,57 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         // Check all bid levels (first 5 from data, rest empty)
         assert_eq!(first.bids[0].price, Price::from("11657.07"));
         assert_eq!(first.bids[0].size, Quantity::from("10.896"));
-        assert_eq!(first.bids[0].side, OrderSide::Buy);
+        assert_eq!(first.bids[0].side, OrderSide::Buy.into());
 
         assert_eq!(first.bids[1].price, Price::from("11656.97"));
         assert_eq!(first.bids[1].size, Quantity::from("0.2"));
-        assert_eq!(first.bids[1].side, OrderSide::Buy);
+        assert_eq!(first.bids[1].side, OrderSide::Buy.into());
 
         assert_eq!(first.bids[2].price, Price::from("11655.78"));
         assert_eq!(first.bids[2].size, Quantity::from("0.2"));
-        assert_eq!(first.bids[2].side, OrderSide::Buy);
+        assert_eq!(first.bids[2].side, OrderSide::Buy.into());
 
         assert_eq!(first.bids[3].price, Price::from("11655.77"));
         assert_eq!(first.bids[3].size, Quantity::from("0.98"));
-        assert_eq!(first.bids[3].side, OrderSide::Buy);
+        assert_eq!(first.bids[3].side, OrderSide::Buy.into());
 
         assert_eq!(first.bids[4].price, Price::from("11655.68"));
         assert_eq!(first.bids[4].size, Quantity::from("0.111"));
-        assert_eq!(first.bids[4].side, OrderSide::Buy);
+        assert_eq!(first.bids[4].side, OrderSide::Buy.into());
 
         // Empty levels
         for i in 5..10 {
             assert_eq!(first.bids[i].price.raw, 0);
             assert_eq!(first.bids[i].size.raw, 0);
-            assert_eq!(first.bids[i].side, OrderSide::NoOrderSide);
+            assert_eq!(first.bids[i].side, None);
         }
 
         // Check all ask levels (first 5 from data, rest empty)
         assert_eq!(first.asks[0].price, Price::from("11657.08"));
         assert_eq!(first.asks[0].size, Quantity::from("1.714"));
-        assert_eq!(first.asks[0].side, OrderSide::Sell);
+        assert_eq!(first.asks[0].side, OrderSide::Sell.into());
 
         assert_eq!(first.asks[1].price, Price::from("11657.54"));
         assert_eq!(first.asks[1].size, Quantity::from("5.4"));
-        assert_eq!(first.asks[1].side, OrderSide::Sell);
+        assert_eq!(first.asks[1].side, OrderSide::Sell.into());
 
         assert_eq!(first.asks[2].price, Price::from("11657.56"));
         assert_eq!(first.asks[2].size, Quantity::from("0.238"));
-        assert_eq!(first.asks[2].side, OrderSide::Sell);
+        assert_eq!(first.asks[2].side, OrderSide::Sell.into());
 
         assert_eq!(first.asks[3].price, Price::from("11657.61"));
         assert_eq!(first.asks[3].size, Quantity::from("0.077"));
-        assert_eq!(first.asks[3].side, OrderSide::Sell);
+        assert_eq!(first.asks[3].side, OrderSide::Sell.into());
 
         assert_eq!(first.asks[4].price, Price::from("11657.92"));
         assert_eq!(first.asks[4].size, Quantity::from("0.918"));
-        assert_eq!(first.asks[4].side, OrderSide::Sell);
+        assert_eq!(first.asks[4].side, OrderSide::Sell.into());
 
         // Empty levels
         for i in 5..10 {
             assert_eq!(first.asks[i].price.raw, 0);
             assert_eq!(first.asks[i].size.raw, 0);
-            assert_eq!(first.asks[i].side, OrderSide::NoOrderSide);
+            assert_eq!(first.asks[i].side, None);
         }
 
         // Logical checks: bid prices should decrease
@@ -1615,7 +1615,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         for (i, (price, size)) in expected_bids.iter().enumerate() {
             assert_eq!(first.bids[i].price, Price::from(*price));
             assert_eq!(first.bids[i].size, Quantity::from(*size));
-            assert_eq!(first.bids[i].side, OrderSide::Buy);
+            assert_eq!(first.bids[i].side, OrderSide::Buy.into());
         }
 
         // Check all 10 ask levels from snapshot25
@@ -1635,7 +1635,7 @@ binance,BTCUSDT,1640995203000000,1640995203100000,trade4,sell,49999.123,3.0";
         for (i, (price, size)) in expected_asks.iter().enumerate() {
             assert_eq!(first.asks[i].price, Price::from(*price));
             assert_eq!(first.asks[i].size, Quantity::from(*size));
-            assert_eq!(first.asks[i].side, OrderSide::Sell);
+            assert_eq!(first.asks[i].side, OrderSide::Sell.into());
         }
 
         // Logical checks: bid prices should strictly decrease

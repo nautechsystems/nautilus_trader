@@ -158,8 +158,7 @@ impl OrderSubmitter {
             tick_size,
             fee_context,
         } = request;
-        let poly_side = PolymarketOrderSide::try_from(side)
-            .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+        let poly_side = PolymarketOrderSide::from(side);
         let order_type = PolymarketOrderType::from_market_time_in_force(time_in_force)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         let amount_dec = amount.as_decimal();
@@ -433,8 +432,7 @@ impl OrderSubmitter {
     ) -> anyhow::Result<SignedLimitOrderSubmission> {
         let order_type = PolymarketOrderType::try_from(request.time_in_force)
             .map_err(|e| anyhow::anyhow!("Unsupported time in force: {e}"))?;
-        let side = PolymarketOrderSide::try_from(request.side)
-            .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+        let side = PolymarketOrderSide::from(request.side);
         let expiration = limit_order_expiration(request.expire_time);
 
         let order = self

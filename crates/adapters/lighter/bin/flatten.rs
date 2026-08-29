@@ -60,7 +60,7 @@ use nautilus_lighter::{
     websocket::{LighterWebSocketClient, LighterWsChannel, NautilusWsMessage},
 };
 use nautilus_model::{
-    enums::PositionSideSpecified,
+    enums::PositionSide,
     identifiers::{AccountId, InstrumentId, TraderId},
     instruments::Instrument,
     reports::PositionStatusReport,
@@ -244,7 +244,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
         };
-        let is_ask = matches!(pos.position_side, PositionSideSpecified::Long);
+        let is_ask = matches!(pos.position_side, PositionSide::Long);
 
         let price_decimals = instrument.price_precision();
         let crossing_price =
@@ -667,7 +667,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::new("LIGHTER-TEST-001"),
             InstrumentId::from(instrument_id),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from(quantity),
             UnixNanos::default(),
             UnixNanos::default(),

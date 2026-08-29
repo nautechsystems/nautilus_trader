@@ -3298,7 +3298,7 @@ impl HyperliquidHttpClient {
             instrument_id,
             client_order_id,
             venue_order_id,
-            order_side,
+            order_side.into(),
             order_type,
             time_in_force,
             order_status,

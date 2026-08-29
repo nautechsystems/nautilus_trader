@@ -19,7 +19,7 @@ use std::fmt::Display;
 
 use rust_decimal::Decimal;
 
-use crate::enums::{BetSide, OrderSide, OrderSideSpecified};
+use crate::enums::{BetSide, OrderSide};
 
 /// A bet in a betting market.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -726,14 +726,14 @@ pub fn check_probability_invertible(probability: Decimal) -> anyhow::Result<()> 
 pub fn probability_to_bet(
     probability: Decimal,
     volume: Decimal,
-    side: OrderSideSpecified,
+    side: OrderSide,
 ) -> anyhow::Result<Bet> {
     check_probability_non_zero(probability)?;
     let price = checked_div(Decimal::ONE, probability)?;
     let stake = checked_div(volume, price)?;
     let bet = match side {
-        OrderSideSpecified::Buy => Bet::new(price, stake, BetSide::Back),
-        OrderSideSpecified::Sell => Bet::new(price, stake, BetSide::Lay),
+        OrderSide::Buy => Bet::new(price, stake, BetSide::Back),
+        OrderSide::Sell => Bet::new(price, stake, BetSide::Lay),
     };
     Ok(bet)
 }
@@ -748,13 +748,13 @@ pub fn probability_to_bet(
 pub fn inverse_probability_to_bet(
     probability: Decimal,
     volume: Decimal,
-    side: OrderSideSpecified,
+    side: OrderSide,
 ) -> anyhow::Result<Bet> {
     check_probability_invertible(probability)?;
     let inverse_probability = checked_sub(Decimal::ONE, probability)?;
     let inverse_side = match side {
-        OrderSideSpecified::Buy => OrderSideSpecified::Sell,
-        OrderSideSpecified::Sell => OrderSideSpecified::Buy,
+        OrderSide::Buy => OrderSide::Sell,
+        OrderSide::Sell => OrderSide::Buy,
     };
     probability_to_bet(inverse_probability, volume, inverse_side)
 }
@@ -771,21 +771,6 @@ fn check_nonzero_denominator(value: Decimal, name: &str) -> anyhow::Result<()> {
         anyhow::bail!("invalid {name}: must be non-zero")
     }
     Ok(())
-}
-
-/// Converts [`OrderSide`] into a specified side for betting conversions.
-///
-/// # Errors
-///
-/// Returns an error if `side` is [`OrderSide::NoOrderSide`].
-pub fn specified_order_side(side: OrderSide) -> anyhow::Result<OrderSideSpecified> {
-    match side {
-        OrderSide::Buy => Ok(OrderSideSpecified::Buy),
-        OrderSide::Sell => Ok(OrderSideSpecified::Sell),
-        OrderSide::NoOrderSide => {
-            anyhow::bail!("invalid OrderSide: must be Buy or Sell, was {side}")
-        }
-    }
 }
 
 fn checked_add(lhs: Decimal, rhs: Decimal) -> anyhow::Result<Decimal> {
@@ -1399,8 +1384,8 @@ mod tests {
 
     #[rstest]
     fn test_probability_to_bet_back_simple() {
-        // Using OrderSideSpecified in place of ProbSide.
-        let bet = probability_to_bet(dec!(0.50), dec!(50.0), OrderSideSpecified::Buy).unwrap();
+        // Using OrderSide in place of ProbSide.
+        let bet = probability_to_bet(dec!(0.50), dec!(50.0), OrderSide::Buy).unwrap();
         let expected = Bet::new(dec!(2.0), dec!(25.0), BetSide::Back);
         assert_eq!(bet, expected);
         assert_eq!(bet.outcome_win_payoff(), dec!(25.0));
@@ -1409,7 +1394,7 @@ mod tests {
 
     #[rstest]
     fn test_probability_to_bet_back_high_prob() {
-        let bet = probability_to_bet(dec!(0.64), dec!(50.0), OrderSideSpecified::Buy).unwrap();
+        let bet = probability_to_bet(dec!(0.64), dec!(50.0), OrderSide::Buy).unwrap();
         let expected = Bet::new(dec!(1.5625), dec!(32.0), BetSide::Back);
         assert_eq!(bet, expected);
         assert_eq!(bet.outcome_win_payoff(), dec!(18.0));
@@ -1418,7 +1403,7 @@ mod tests {
 
     #[rstest]
     fn test_probability_to_bet_back_low_prob() {
-        let bet = probability_to_bet(dec!(0.40), dec!(50.0), OrderSideSpecified::Buy).unwrap();
+        let bet = probability_to_bet(dec!(0.40), dec!(50.0), OrderSide::Buy).unwrap();
         let expected = Bet::new(dec!(2.5), dec!(20.0), BetSide::Back);
         assert_eq!(bet, expected);
         assert_eq!(bet.outcome_win_payoff(), dec!(30.0));
@@ -1427,7 +1412,7 @@ mod tests {
 
     #[rstest]
     fn test_probability_to_bet_sell() {
-        let bet = probability_to_bet(dec!(0.80), dec!(50.0), OrderSideSpecified::Sell).unwrap();
+        let bet = probability_to_bet(dec!(0.80), dec!(50.0), OrderSide::Sell).unwrap();
         let expected = Bet::new(dec_str("1.25"), dec_str("40"), BetSide::Lay);
         assert_eq!(bet, expected);
         assert_eq!(bet.outcome_win_payoff(), dec_str("-10"));
@@ -1437,13 +1422,11 @@ mod tests {
     #[rstest]
     fn test_inverse_probability_to_bet() {
         // Original bet with SELL side
-        let original_bet =
-            probability_to_bet(dec!(0.80), dec!(100.0), OrderSideSpecified::Sell).unwrap();
+        let original_bet = probability_to_bet(dec!(0.80), dec!(100.0), OrderSide::Sell).unwrap();
         // Equivalent reverse bet by buying the inverse probability
-        let reverse_bet =
-            probability_to_bet(dec!(0.20), dec!(100.0), OrderSideSpecified::Buy).unwrap();
+        let reverse_bet = probability_to_bet(dec!(0.20), dec!(100.0), OrderSide::Buy).unwrap();
         let inverse_bet =
-            inverse_probability_to_bet(dec!(0.80), dec!(100.0), OrderSideSpecified::Sell).unwrap();
+            inverse_probability_to_bet(dec!(0.80), dec!(100.0), OrderSide::Sell).unwrap();
 
         assert_eq!(
             original_bet.outcome_win_payoff(),
@@ -1465,10 +1448,9 @@ mod tests {
 
     #[rstest]
     fn test_inverse_probability_to_bet_example2() {
-        let original_bet =
-            probability_to_bet(dec!(0.64), dec!(50.0), OrderSideSpecified::Sell).unwrap();
+        let original_bet = probability_to_bet(dec!(0.64), dec!(50.0), OrderSide::Sell).unwrap();
         let inverse_bet =
-            inverse_probability_to_bet(dec!(0.64), dec!(50.0), OrderSideSpecified::Sell).unwrap();
+            inverse_probability_to_bet(dec!(0.64), dec!(50.0), OrderSide::Sell).unwrap();
 
         assert_eq!(original_bet.stake, dec!(32.0));
         assert_eq!(original_bet.outcome_win_payoff(), dec!(-18.0));
@@ -1600,15 +1582,6 @@ mod tests {
         assert_eq!(position.price(), before_price);
         assert_eq!(position.exposure(), before_exposure);
         assert_eq!(position.bets().len(), before_len);
-    }
-
-    #[rstest]
-    fn test_specified_order_side_rejects_unspecified() {
-        let err = specified_order_side(OrderSide::NoOrderSide).unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "invalid OrderSide: must be Buy or Sell, was NO_ORDER_SIDE"
-        );
     }
 
     #[rstest]

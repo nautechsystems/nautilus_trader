@@ -1973,7 +1973,7 @@ mod tests {
             .iter()
             .find(|d| {
                 d.action == BookAction::Update
-                    && d.order.side == OrderSide::Buy
+                    && d.order.side == Some(OrderSide::Buy)
                     && d.order.price.as_decimal() == dec!(100.10)
             })
             .expect("expected a Buy Update delta from crossed-book resolution");

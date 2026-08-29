@@ -987,7 +987,7 @@ async fn test_cancel_all_orders_skips_invalid_order_rejection() {
         report.client_order_id,
         Some(ClientOrderId::from("cancel-control"))
     );
-    assert_eq!(report.order_side, OrderSide::Buy);
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
     assert_eq!(report.order_type, OrderType::Limit);
     assert_eq!(report.time_in_force, TimeInForce::Gtc);
     assert_eq!(report.order_status, OrderStatus::Canceled);

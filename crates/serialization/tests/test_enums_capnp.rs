@@ -105,10 +105,10 @@ fn test_option_kind_roundtrip(#[case] value: OptionKind) {
 }
 
 #[rstest]
-#[case(OrderSide::NoOrderSide)]
-#[case(OrderSide::Buy)]
-#[case(OrderSide::Sell)]
-fn test_order_side_roundtrip(#[case] value: OrderSide) {
+#[case(None)]
+#[case(Some(OrderSide::Buy))]
+#[case(Some(OrderSide::Sell))]
+fn test_order_side_roundtrip(#[case] value: Option<OrderSide>) {
     let capnp_value = order_side_to_capnp(value);
     let decoded = order_side_from_capnp(capnp_value);
     assert_eq!(value, decoded);
@@ -195,11 +195,11 @@ fn test_contingency_type_roundtrip(#[case] value: ContingencyType) {
 }
 
 #[rstest]
-#[case(PositionSide::NoPositionSide)]
-#[case(PositionSide::Flat)]
-#[case(PositionSide::Long)]
-#[case(PositionSide::Short)]
-fn test_position_side_roundtrip(#[case] value: PositionSide) {
+#[case(None)]
+#[case(Some(PositionSide::Flat))]
+#[case(Some(PositionSide::Long))]
+#[case(Some(PositionSide::Short))]
+fn test_position_side_roundtrip(#[case] value: Option<PositionSide>) {
     let capnp_value = position_side_to_capnp(value);
     let decoded = position_side_from_capnp(capnp_value);
     assert_eq!(value, decoded);

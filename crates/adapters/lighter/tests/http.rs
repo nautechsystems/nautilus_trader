@@ -843,12 +843,12 @@ async fn domain_client_registers_markets_and_parses_recent_trades() {
     assert_eq!(deltas.deltas[0].action, BookAction::Clear);
     assert_eq!(deltas.deltas[0].sequence, 0);
     assert_eq!(deltas.deltas[1].action, BookAction::Add);
-    assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+    assert_eq!(deltas.deltas[1].order.side, Some(OrderSide::Buy));
     assert_eq!(deltas.deltas[1].order.price, Price::from("2361.17"));
     assert_eq!(deltas.deltas[1].order.size, Quantity::from("3.4125"));
     assert_eq!(deltas.deltas[1].sequence, 1);
     assert_eq!(deltas.deltas[2].action, BookAction::Add);
-    assert_eq!(deltas.deltas[2].order.side, OrderSide::Sell);
+    assert_eq!(deltas.deltas[2].order.side, Some(OrderSide::Sell));
     assert_eq!(deltas.deltas[2].order.price, Price::from("2361.32"));
     assert_eq!(deltas.deltas[2].order.size, Quantity::from("0.0317"));
     assert_eq!(deltas.deltas[2].sequence, 2);

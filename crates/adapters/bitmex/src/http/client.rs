@@ -1691,10 +1691,7 @@ impl BitmexHttpClient {
         params.symbol(instrument_id.symbol.as_str());
         params.cl_ord_id(client_order_id.as_str());
 
-        if order_side == OrderSide::NoOrderSide {
-            anyhow::bail!("Order side must be Buy or Sell");
-        }
-        let side = BitmexSide::from(order_side.as_specified());
+        let side = BitmexSide::from(order_side);
         params.side(side);
 
         let ord_type = BitmexOrderType::try_from_order_type(order_type)?;
@@ -1741,7 +1738,6 @@ impl BitmexHttpClient {
             let signed_offset = match order_side {
                 OrderSide::Sell => -offset.abs(),
                 OrderSide::Buy => offset.abs(),
-                _ => offset,
             };
             params.peg_offset_value(signed_offset);
         }
@@ -1942,14 +1938,10 @@ impl BitmexHttpClient {
         params.symbol(instrument_id.symbol.as_str());
 
         if let Some(side) = order_side {
-            if side == OrderSide::NoOrderSide {
-                log::debug!("Ignoring NoOrderSide filter for cancel_all_orders on {instrument_id}",);
-            } else {
-                let side = BitmexSide::from(side.as_specified());
-                params.filter(serde_json::json!({
-                    "side": side
-                }));
-            }
+            let side = BitmexSide::from(side);
+            params.filter(serde_json::json!({
+                "side": side
+            }));
         }
 
         let params = params.build().map_err(|e| anyhow::anyhow!(e))?;
@@ -2949,7 +2941,7 @@ mod tests {
             InstrumentId::from("XBTUSD.BITMEX"),
             Some(ClientOrderId::from(client_order_id)),
             VenueOrderId::from(venue_order_id),
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,

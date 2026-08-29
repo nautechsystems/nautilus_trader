@@ -74,8 +74,8 @@ use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-        TimeInForce, TrailingOffsetType,
+        LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TrailingOffsetType,
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
@@ -902,7 +902,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     ) {
                         Ok(report) => {
                             if !cmd.open_only && report.filled_qty.as_decimal() > Decimal::ZERO {
-                                let signed_filled = if report.order_side == OrderSide::Buy {
+                                let signed_filled = if report.order_side == Some(OrderSide::Buy) {
                                     report.filled_qty.as_decimal()
                                 } else {
                                     -report.filled_qty.as_decimal()
@@ -999,7 +999,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                             instrument_id,
                             Some(ClientOrderId::new(id.clone())),
                             VenueOrderId::new(id),
-                            order_side,
+                            order_side.into(),
                             OrderType::Market,
                             TimeInForce::Fok,
                             OrderStatus::Filled,
@@ -1181,11 +1181,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
                     // Determine position side
                     let position_side = if position.position == 0.0 {
-                        PositionSideSpecified::Flat
+                        PositionSide::Flat
                     } else if position.position > 0.0 {
-                        PositionSideSpecified::Long
+                        PositionSide::Long
                     } else {
-                        PositionSideSpecified::Short
+                        PositionSide::Short
                     };
 
                     let quantity =
@@ -1233,7 +1233,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             reports.push(PositionStatusReport::new(
                 self.core.account_id,
                 instrument_id,
-                PositionSideSpecified::Flat,
+                PositionSide::Flat,
                 Quantity::zero(precision),
                 ts_init,
                 ts_init,
@@ -1667,7 +1667,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         // Warn if order_side is specified (IB doesn't support side filtering)
-        if cmd.order_side != OrderSide::NoOrderSide {
+        if cmd.order_side.is_some() {
             tracing::warn!(
                 "Interactive Brokers does not support order_side filtering for cancel all orders; \
                 ignoring order_side={:?} and canceling all orders",

@@ -32,7 +32,7 @@ use std::hint::black_box;
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_execution::matching_core::{MatchAction, OrderMatchingCore, RestingOrder};
 use nautilus_model::{
-    enums::{OrderSide, OrderSideSpecified, OrderType},
+    enums::{OrderSide, OrderType},
     events::{OrderEventAny, order::spec::OrderInitializedSpec},
     identifiers::{ClientOrderId, InstrumentId},
     orders::{OrderAny, OrderError, PassiveOrderAny},
@@ -67,8 +67,8 @@ fn seeded_core(n: usize) -> (OrderMatchingCore, Vec<ClientOrderId>, Vec<ClientOr
     for i in 0..n {
         let order = seeded_limit(i);
         match order.order_side {
-            OrderSideSpecified::Buy => bid_ids.push(order.client_order_id),
-            OrderSideSpecified::Sell => ask_ids.push(order.client_order_id),
+            OrderSide::Buy => bid_ids.push(order.client_order_id),
+            OrderSide::Sell => ask_ids.push(order.client_order_id),
         }
         core.add_order(order);
     }
@@ -293,26 +293,24 @@ fn bench_predicates(c: &mut Criterion) {
 
     let buy_price = Price::from("100.00");
     let before = core.get_orders();
-    assert!(!core.is_limit_matched(OrderSideSpecified::Buy, buy_price));
-    assert!(core.is_stop_matched(OrderSideSpecified::Buy, buy_price));
-    assert!(!core.is_touch_triggered(OrderSideSpecified::Buy, buy_price));
-    assert!(!core.is_limit_fillable(OrderSideSpecified::Buy, buy_price));
+    assert!(!core.is_limit_matched(OrderSide::Buy, buy_price));
+    assert!(core.is_stop_matched(OrderSide::Buy, buy_price));
+    assert!(!core.is_touch_triggered(OrderSide::Buy, buy_price));
+    assert!(!core.is_limit_fillable(OrderSide::Buy, buy_price));
     assert_eq!(core.get_orders(), before);
 
     // Single-call predicates; useful as a baseline against `iterate` per-order cost.
     c.bench_function("matching_core/is_limit_matched/buy", |b| {
-        b.iter(|| black_box(core.is_limit_matched(OrderSideSpecified::Buy, black_box(buy_price))));
+        b.iter(|| black_box(core.is_limit_matched(OrderSide::Buy, black_box(buy_price))));
     });
     c.bench_function("matching_core/is_stop_matched/buy", |b| {
-        b.iter(|| black_box(core.is_stop_matched(OrderSideSpecified::Buy, black_box(buy_price))));
+        b.iter(|| black_box(core.is_stop_matched(OrderSide::Buy, black_box(buy_price))));
     });
     c.bench_function("matching_core/is_touch_triggered/buy", |b| {
-        b.iter(|| {
-            black_box(core.is_touch_triggered(OrderSideSpecified::Buy, black_box(buy_price)))
-        });
+        b.iter(|| black_box(core.is_touch_triggered(OrderSide::Buy, black_box(buy_price))));
     });
     c.bench_function("matching_core/is_limit_fillable/buy", |b| {
-        b.iter(|| black_box(core.is_limit_fillable(OrderSideSpecified::Buy, black_box(buy_price))));
+        b.iter(|| black_box(core.is_limit_fillable(OrderSide::Buy, black_box(buy_price))));
     });
 }
 

@@ -1185,13 +1185,7 @@ impl RiskEngine {
         for order in orders {
             let price = match order {
                 OrderAny::Market(_) | OrderAny::MarketToLimit(_) => {
-                    match self.market_order_price(instrument.id(), order.order_side()) {
-                        Ok(price) => price,
-                        Err(reason) => {
-                            self.deny_order(order, &reason.to_string());
-                            return false;
-                        }
-                    }
+                    self.market_order_price(instrument.id(), order.order_side())
                 }
                 _ => None,
             };
@@ -1427,7 +1421,7 @@ impl RiskEngine {
                                     trailing_stop_calculate_with_bid_ask(
                                         instrument.price_increment(),
                                         offset_type,
-                                        order.order_side_specified(),
+                                        order.order_side(),
                                         trailing_offset,
                                         quote.bid_price,
                                         quote.ask_price,
@@ -1446,7 +1440,7 @@ impl RiskEngine {
                                 trailing_stop_calculate_with_last(
                                     instrument.price_increment(),
                                     offset_type,
-                                    order.order_side_specified(),
+                                    order.order_side(),
                                     trailing_offset,
                                     last_trade.price,
                                 )
@@ -1457,7 +1451,7 @@ impl RiskEngine {
                                     trailing_stop_calculate_with_bid_ask(
                                         instrument.price_increment(),
                                         offset_type,
-                                        order.order_side_specified(),
+                                        order.order_side(),
                                         trailing_offset,
                                         quote.bid_price,
                                         quote.ask_price,
@@ -1520,7 +1514,6 @@ impl RiskEngine {
                         OrderSide::Buy => last_px.min(quote_tick.ask_price),
                         // SELL: could execute at best bid if above limit (but less quantity, so use limit)
                         OrderSide::Sell => last_px.max(quote_tick.bid_price),
-                        OrderSide::NoOrderSide => last_px,
                     }
                 } else {
                     last_px // No market data, use limit price
@@ -1808,16 +1801,6 @@ impl RiskEngine {
                     match order.order_side() {
                         OrderSide::Buy => Money::from_raw(-notional.raw, notional.currency),
                         OrderSide::Sell => Money::from_raw(notional.raw, notional.currency),
-                        OrderSide::NoOrderSide => {
-                            self.deny_order(
-                                order,
-                                &OrderDeniedReason::InvalidOrderSide {
-                                    order_side: order.order_side(),
-                                }
-                                .to_string(),
-                            );
-                            return false; // Denied
-                        }
                     }
                 };
 
@@ -2001,23 +1984,20 @@ impl RiskEngine {
         &self,
         instrument_id: InstrumentId,
         order_side: OrderSide,
-    ) -> Result<Option<Price>, OrderDeniedReason> {
+    ) -> Option<Price> {
         let price_type = match order_side {
             OrderSide::Buy => PriceType::Ask,
             OrderSide::Sell => PriceType::Bid,
-            OrderSide::NoOrderSide => {
-                return Err(OrderDeniedReason::InvalidOrderSide { order_side });
-            }
         };
 
         let cache = self.cache.borrow();
 
         if let Some(price) = cache.price(&instrument_id, price_type) {
-            return Ok(Some(price));
+            return Some(price);
         }
 
         if let Some(price) = cache.price(&instrument_id, PriceType::Last) {
-            return Ok(Some(price));
+            return Some(price);
         }
 
         let bar_price = |price_type| {
@@ -2037,7 +2017,7 @@ impl RiskEngine {
                 .map(|(_, _, price)| price)
         };
 
-        Ok(bar_price(price_type).or_else(|| bar_price(PriceType::Last)))
+        bar_price(price_type).or_else(|| bar_price(PriceType::Last))
     }
 
     fn check_cash_sell_balance(

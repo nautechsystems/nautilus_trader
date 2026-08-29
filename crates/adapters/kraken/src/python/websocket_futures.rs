@@ -29,7 +29,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{Data, OrderBookDeltas, QuoteTick},
-    enums::{BookType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{BookType, OrderStatus, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -851,7 +851,7 @@ fn handle_open_orders_cancel(
         instrument_id,
         client_order_id,
         venue_order_id,
-        OrderSide::NoOrderSide,
+        None,
         OrderType::Limit,
         TimeInForce::Gtc,
         OrderStatus::Canceled,

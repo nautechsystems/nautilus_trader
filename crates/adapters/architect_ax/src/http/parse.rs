@@ -22,7 +22,7 @@ use nautilus_model::{
     data::{Bar, BarSpecification, BarType, FundingRateUpdate, TradeTick},
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, CurrencyType,
-        LiquiditySide, OrderSide, OrderType, PositionSideSpecified, PriceType,
+        LiquiditySide, OrderSide, OrderType, PositionSide, PriceType,
     },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
@@ -574,7 +574,7 @@ where
 {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order.oid);
-    let order_side = order.side.into();
+    let order_side = OrderSide::from(order.side);
     let order_status = order.status.into();
     let time_in_force = order.time_in_force.into();
 
@@ -596,7 +596,7 @@ where
         instrument_id,
         None,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -671,7 +671,7 @@ pub fn parse_fill_report(
     };
 
     // Use explicit side field from fill
-    let order_side: OrderSide = fill.side.into();
+    let order_side = OrderSide::from(fill.side);
 
     let last_px = decimal_to_price_dp(fill.price, instrument.price_precision(), "fill.price")?;
     let last_qty = Quantity::new(fill.quantity as f64, instrument.size_precision());
@@ -734,12 +734,12 @@ pub fn parse_position_status_report(
     // Determine position side and quantity from signed_quantity sign
     let (position_side, quantity) = if position.signed_quantity > 0 {
         (
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::new(position.signed_quantity as f64, instrument.size_precision()),
         )
     } else if position.signed_quantity < 0 {
         (
-            PositionSideSpecified::Short,
+            PositionSide::Short,
             Quantity::new(
                 position.signed_quantity.unsigned_abs() as f64,
                 instrument.size_precision(),
@@ -747,7 +747,7 @@ pub fn parse_position_status_report(
         )
     } else {
         (
-            PositionSideSpecified::Flat,
+            PositionSide::Flat,
             Quantity::zero(instrument.size_precision()),
         )
     };

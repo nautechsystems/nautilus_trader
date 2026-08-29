@@ -75,8 +75,8 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::QuoteTick,
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-        TimeInForce, TriggerType,
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TriggerType,
     },
     events::{AccountState, OrderEventAny, OrderInitialized},
     identifiers::{
@@ -3324,7 +3324,7 @@ async fn test_cancel_all_orders_without_side_sends_cancel_by_instrument_for_empt
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3400,7 +3400,7 @@ async fn test_cancel_all_orders_without_side_cancels_matching_triggers() {
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3511,7 +3511,7 @@ async fn test_cancel_all_orders_side_filter_iterates_matching_open_orders(
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        side,
+        Some(side),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -3566,7 +3566,7 @@ async fn test_cancel_all_orders_trigger_list_failure_still_cancels_regular_order
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -5670,7 +5670,7 @@ async fn test_generate_mass_status_adds_flat_position_without_current_position()
         .expect("ETH-PERP flat position report");
 
     assert_eq!(eth_reports.len(), 1);
-    assert_eq!(eth_reports[0].position_side, PositionSideSpecified::Flat);
+    assert_eq!(eth_reports[0].position_side, PositionSide::Flat);
     assert_eq!(eth_reports[0].signed_decimal_qty, dec!(0));
 
     tc.client.disconnect().await.expect("disconnect");
@@ -5729,14 +5729,14 @@ async fn test_generate_mass_status_does_not_flatten_unconverted_position() {
         .get(&InstrumentId::from("SOL-PERP.DERIVE"))
         .expect("valid SOL-PERP position report");
     assert_eq!(sol_reports.len(), 1);
-    assert_eq!(sol_reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(sol_reports[0].position_side, PositionSide::Long);
     assert_eq!(sol_reports[0].signed_decimal_qty, dec!(2.5));
 
     let btc_reports = position_reports
         .get(&InstrumentId::from("BTC-PERP.DERIVE"))
         .expect("genuinely absent BTC-PERP position has a flat report");
     assert_eq!(btc_reports.len(), 1);
-    assert_eq!(btc_reports[0].position_side, PositionSideSpecified::Flat);
+    assert_eq!(btc_reports[0].position_side, PositionSide::Flat);
     assert_eq!(btc_reports[0].signed_decimal_qty, dec!(0));
 
     tc.client.disconnect().await.expect("disconnect");
@@ -7513,7 +7513,7 @@ async fn test_cancel_all_orders_bulk_failures_emit_no_order_events(
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -7570,7 +7570,7 @@ async fn test_cancel_all_orders_buy_side_with_no_open_orders_is_noop() {
         Some(ClientId::from("DERIVE")),
         StrategyId::from("S-1"),
         InstrumentId::from("ETH-PERP.DERIVE"),
-        OrderSide::Buy,
+        Some(OrderSide::Buy),
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -7705,10 +7705,10 @@ async fn test_generate_order_status_reports_open_no_filter_returns_all_instrumen
         Some("L-ETH-1".to_string()),
     );
     assert_eq!(eth1.instrument_id.symbol.as_str(), "ETH-PERP");
-    assert_eq!(eth1.order_side, OrderSide::Buy);
+    assert_eq!(eth1.order_side, Some(OrderSide::Buy));
 
     let eth2 = by_voi.get("ord-eth-2").expect("ord-eth-2 present");
-    assert_eq!(eth2.order_side, OrderSide::Sell);
+    assert_eq!(eth2.order_side, Some(OrderSide::Sell));
 
     let btc1 = by_voi.get("ord-btc-1").expect("ord-btc-1 present");
     assert_eq!(btc1.instrument_id.symbol.as_str(), "BTC-PERP");
@@ -7760,15 +7760,15 @@ async fn test_generate_position_status_reports_returns_long_short_and_flat() {
         .collect();
 
     let eth = by_symbol.get("ETH-PERP").expect("ETH-PERP present");
-    assert_eq!(eth.position_side, PositionSideSpecified::Long);
+    assert_eq!(eth.position_side, PositionSide::Long);
     assert_eq!(eth.signed_decimal_qty, dec!(3));
 
     let btc = by_symbol.get("BTC-PERP").expect("BTC-PERP present");
-    assert_eq!(btc.position_side, PositionSideSpecified::Short);
+    assert_eq!(btc.position_side, PositionSide::Short);
     assert_eq!(btc.signed_decimal_qty, dec!(-1.5));
 
     let sol = by_symbol.get("SOL-PERP").expect("SOL-PERP present");
-    assert_eq!(sol.position_side, PositionSideSpecified::Flat);
+    assert_eq!(sol.position_side, PositionSide::Flat);
     assert_eq!(sol.signed_decimal_qty, dec!(0));
 
     tc.client.disconnect().await.expect("disconnect");
@@ -8271,7 +8271,7 @@ async fn test_generate_position_status_reports_option_position() {
         reports[0].instrument_id.symbol.as_str(),
         "ETH-20260626-3500-C"
     );
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[0].position_side, PositionSide::Short);
     assert_eq!(reports[0].signed_decimal_qty, dec!(-2));
     assert_eq!(reports[0].avg_px_open, Some(dec!(80)));
 

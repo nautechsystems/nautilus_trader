@@ -678,7 +678,7 @@ fn build_signed_order_params(
     time_in_force: DeriveTimeInForce,
     trigger_fields: Option<DeriveTriggerFields>,
 ) -> anyhow::Result<DeriveOrderParams> {
-    let direction = order_side_to_derive(order.order_side())?;
+    let direction = order_side_to_derive(order.order_side());
 
     let asset_address: Address = instrument
         .base_asset_address

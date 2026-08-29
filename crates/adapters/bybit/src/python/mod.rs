@@ -101,14 +101,9 @@ fn py_bybit_resolve_position_idx(
     order_side: OrderSide,
     is_reduce_only: bool,
     manual_override: Option<BybitPositionIdx>,
-) -> PyResult<Option<BybitPositionIdx>> {
-    let bybit_side = BybitOrderSide::try_from(order_side).map_err(to_pyvalue_err)?;
-    Ok(resolve_position_idx(
-        position_mode,
-        bybit_side,
-        is_reduce_only,
-        manual_override,
-    ))
+) -> Option<BybitPositionIdx> {
+    let bybit_side = BybitOrderSide::from(order_side);
+    resolve_position_idx(position_mode, bybit_side, is_reduce_only, manual_override)
 }
 
 #[expect(clippy::needless_pass_by_value)]

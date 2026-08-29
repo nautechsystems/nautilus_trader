@@ -37,8 +37,8 @@ use crate::{
     common::enums::CoinbaseProductStatus,
     http::parse::{
         coinbase_side_to_aggressor, parse_epoch_secs_timestamp, parse_order_side,
-        parse_order_status, parse_order_type, parse_price, parse_quantity, parse_rfc3339_timestamp,
-        parse_time_in_force,
+        parse_order_side_optional, parse_order_status, parse_order_type, parse_price,
+        parse_quantity, parse_rfc3339_timestamp, parse_time_in_force,
     },
     websocket::messages::{
         WsBookSide, WsCandle, WsL2DataEvent, WsL2Update, WsOrderUpdate, WsStatusProduct, WsTicker,
@@ -252,7 +252,7 @@ pub fn parse_ws_user_event_to_order_status_report(
     let instrument_id = instrument.id();
     let size_precision = instrument.size_precision();
 
-    let order_side = parse_order_side(&update.order_side);
+    let order_side = parse_order_side_optional(&update.order_side);
     let order_type = parse_order_type(update.order_type);
     let time_in_force = parse_time_in_force(Some(update.time_in_force));
     let mut order_status = parse_order_status(update.status);
@@ -340,7 +340,7 @@ pub fn parse_ws_user_event_to_fill_report(
     liquidity_side: LiquiditySide,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> FillReport {
+) -> anyhow::Result<FillReport> {
     let instrument_id = instrument.id();
 
     let venue_order_id = VenueOrderId::new(&update.order_id);
@@ -349,9 +349,9 @@ pub fn parse_ws_user_event_to_fill_report(
     } else {
         Some(ClientOrderId::new(&update.client_order_id))
     };
-    let order_side = parse_order_side(&update.order_side);
+    let order_side = parse_order_side(&update.order_side)?;
 
-    FillReport::new(
+    Ok(FillReport::new(
         account_id,
         instrument_id,
         venue_order_id,
@@ -366,7 +366,7 @@ pub fn parse_ws_user_event_to_fill_report(
         ts_event,
         ts_init,
         None,
-    )
+    ))
 }
 
 /// Parses a [`WsStatusProduct`] from the `status` channel into an
@@ -573,12 +573,12 @@ mod tests {
                 assert_eq!(deltas.deltas[0].action, BookAction::Clear);
 
                 // Bids
-                assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+                assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy.into());
                 assert_eq!(deltas.deltas[1].order.price, Price::from("68900.00"));
                 assert_eq!(deltas.deltas[1].order.size, Quantity::from("1.50000000"));
 
                 // Asks
-                assert_eq!(deltas.deltas[4].order.side, OrderSide::Sell);
+                assert_eq!(deltas.deltas[4].order.side, OrderSide::Sell.into());
                 assert_eq!(deltas.deltas[4].order.price, Price::from("68901.00"));
 
                 // Last delta has F_LAST flag
@@ -672,13 +672,13 @@ mod tests {
                 }
 
                 // First update: bid at 68900.00, qty 2.0 -> Update action
-                assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy);
+                assert_eq!(deltas.deltas[0].order.side, OrderSide::Buy.into());
                 assert_eq!(deltas.deltas[0].order.price, Price::from("68900.00"));
                 assert_eq!(deltas.deltas[0].order.size, Quantity::from("2.00000000"));
                 assert_eq!(deltas.deltas[0].action, BookAction::Update);
 
                 // Second update: offer at 68901.00, qty 0.0 -> Delete action
-                assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell);
+                assert_eq!(deltas.deltas[1].order.side, OrderSide::Sell.into());
                 assert_eq!(deltas.deltas[1].action, BookAction::Delete);
                 assert_eq!(deltas.deltas[1].order.size, Quantity::from("0.00000000"));
 
@@ -710,7 +710,7 @@ mod tests {
                     .iter()
                     .find(|d| d.action == BookAction::Delete)
                     .expect("should have a delete action for zero quantity");
-                assert_eq!(delete_delta.order.side, OrderSide::Sell);
+                assert_eq!(delete_delta.order.side, OrderSide::Sell.into());
                 assert_eq!(delete_delta.ts_event, ts_event);
             }
             _ => panic!("Expected L2Data"),
@@ -719,7 +719,7 @@ mod tests {
 
     #[rstest]
     fn test_ws_book_side_conversion() {
-        assert_eq!(ws_book_side_to_order_side(WsBookSide::Bid), OrderSide::Buy);
+        assert_eq!(ws_book_side_to_order_side(WsBookSide::Bid), OrderSide::Buy,);
         assert_eq!(
             ws_book_side_to_order_side(WsBookSide::Offer),
             OrderSide::Sell
@@ -759,7 +759,7 @@ mod tests {
             report.client_order_id.unwrap().as_str(),
             "11111-000000-000001"
         );
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.filled_qty, Quantity::from("0.00000000"));
         assert_eq!(report.quantity, Quantity::from("0.00100000"));
@@ -849,7 +849,8 @@ mod tests {
             LiquiditySide::Maker,
             UnixNanos::default(),
             UnixNanos::default(),
-        );
+        )
+        .unwrap();
 
         assert_eq!(report.venue_order_id.as_str(), "venue-1");
         assert_eq!(report.client_order_id.unwrap().as_str(), "client-1");

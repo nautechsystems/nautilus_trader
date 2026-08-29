@@ -213,13 +213,3 @@ def test_add_bet_rejects_overflow_and_leaves_position_unchanged() -> None:
 
     assert position.price == before_price
     assert position.exposure == before_exposure
-
-
-def test_probability_conversion_rejects_unspecified_side() -> None:
-    """
-    Test probability conversion rejects unspecified side.
-    """
-    with pytest.raises(ValueError, match="must be Buy or Sell"):
-        probability_to_bet(Decimal("0.4"), Decimal(10), OrderSide.NO_ORDER_SIDE)
-    with pytest.raises(ValueError, match="must be Buy or Sell"):
-        inverse_probability_to_bet(Decimal("0.4"), Decimal(10), OrderSide.NO_ORDER_SIDE)

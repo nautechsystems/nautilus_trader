@@ -16,8 +16,8 @@
 //! Enumerations mapping OKX concepts onto idiomatic Nautilus variants.
 
 use nautilus_model::enums::{
-    AggressorSide, GreeksConvention, LiquiditySide, OptionKind, OrderSide, OrderSideSpecified,
-    OrderStatus, OrderType, PositionSide, TriggerType,
+    AggressorSide, GreeksConvention, LiquiditySide, OptionKind, OrderSide, OrderStatus, OrderType,
+    PositionSide, TriggerType,
 };
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
@@ -94,11 +94,11 @@ pub enum OKXSide {
     Sell,
 }
 
-impl From<OrderSideSpecified> for OKXSide {
-    fn from(value: OrderSideSpecified) -> Self {
+impl From<OrderSide> for OKXSide {
+    fn from(value: OrderSide) -> Self {
         match value {
-            OrderSideSpecified::Buy => Self::Buy,
-            OrderSideSpecified::Sell => Self::Sell,
+            OrderSide::Buy => Self::Buy,
+            OrderSide::Sell => Self::Sell,
         }
     }
 }
@@ -1340,7 +1340,7 @@ impl From<PositionSide> for OKXPositionSide {
         match value {
             PositionSide::Long => Self::Long,
             PositionSide::Short => Self::Short,
-            _ => Self::None,
+            PositionSide::Flat => Self::None,
         }
     }
 }

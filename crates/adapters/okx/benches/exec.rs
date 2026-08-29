@@ -304,7 +304,7 @@ fn build_status_report(
         btc_usdt_swap().id(),
         Some(cid),
         voi,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         status,

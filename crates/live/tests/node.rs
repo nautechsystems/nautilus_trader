@@ -1415,7 +1415,7 @@ mod serial_tests {
             crypto_perpetual_ethusdt().id(),
             Some(client_order_id),
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             order_status,

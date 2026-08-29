@@ -185,7 +185,7 @@ pub struct PortfolioGreeksParams {
     pub instrument_id: Option<InstrumentId>,
     /// Strategy ID to filter positions by
     pub strategy_id: Option<StrategyId>,
-    /// Position side to filter by (default: `NoPositionSide`)
+    /// Position side to filter by (default: `None`)
     pub side: Option<PositionSide>,
     /// Flat interest rate (default: 0.0425)
     #[builder(default = 0.0425)]
@@ -971,15 +971,13 @@ impl GreeksCalculator {
         let cache_greeks = cache_greeks.unwrap_or(false);
         let publish_greeks = publish_greeks.unwrap_or(false);
         let percent_greeks = percent_greeks.unwrap_or(false);
-        let side = side.unwrap_or(PositionSide::NoPositionSide);
-
         let cache = self.cache.borrow();
         let open_positions = cache.positions_open(
             venue.as_ref(),
             instrument_id.as_ref(),
             strategy_id.as_ref(),
             None, // account_id
-            Some(side),
+            side,
         );
         let open_positions: Vec<Position> =
             open_positions.iter().map(PositionRef::cloned).collect();

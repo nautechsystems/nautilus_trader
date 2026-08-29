@@ -1647,7 +1647,7 @@ async fn test_subscribe_book_deltas_with_partial_depth_stream() {
     assert_eq!(deltas.sequence, 99_999);
     assert_eq!(deltas.deltas[0].action, BookAction::Clear);
     assert_eq!(deltas.deltas[1].action, BookAction::Add);
-    assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+    assert_eq!(deltas.deltas[1].order.side, Some(OrderSide::Buy));
     assert_eq!(deltas.deltas[1].order.price.as_decimal(), dec!(42000.00));
     assert_eq!(deltas.deltas[1].order.size.as_decimal(), dec!(1.00000));
     assert_eq!(
@@ -1770,7 +1770,7 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
     assert_eq!(snapshot.ts_event, replayed.ts_event);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
     assert_eq!(snapshot.deltas[1].action, BookAction::Add);
-    assert_eq!(snapshot.deltas[1].order.side, OrderSide::Buy);
+    assert_eq!(snapshot.deltas[1].order.side, Some(OrderSide::Buy));
     assert_eq!(snapshot.deltas[1].order.price.as_decimal(), dec!(42000.00));
     assert_eq!(snapshot.deltas[1].order.size.as_decimal(), dec!(1.00000));
     assert_eq!(
@@ -1780,7 +1780,7 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
 
     assert_eq!(replayed.sequence, 101);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
-    assert_eq!(replayed.deltas[0].order.side, OrderSide::Buy);
+    assert_eq!(replayed.deltas[0].order.side, Some(OrderSide::Buy));
     assert_eq!(replayed.deltas[0].order.price.as_decimal(), dec!(41999.00));
     assert_eq!(replayed.deltas[0].order.size.as_decimal(), dec!(1.25000));
     assert_eq!(replayed.deltas[0].flags, RecordFlag::F_LAST as u8);
@@ -1855,7 +1855,7 @@ async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_
     assert_eq!(snapshot.deltas[1].order.size.as_decimal(), dec!(1.00000));
     assert_eq!(replayed.sequence, 101);
     assert_eq!(replayed.deltas[0].action, BookAction::Update);
-    assert_eq!(replayed.deltas[0].order.side, OrderSide::Buy);
+    assert_eq!(replayed.deltas[0].order.side, Some(OrderSide::Buy));
     assert_eq!(replayed.deltas[0].order.price.as_decimal(), dec!(41999.00));
     assert_eq!(replayed.deltas[0].order.size.as_decimal(), dec!(1.25000));
     assert_eq!(replayed.deltas[0].flags, RecordFlag::F_LAST as u8);

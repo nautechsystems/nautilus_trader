@@ -64,7 +64,7 @@ use nautilus_core::{
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory};
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{AccountType, OmsType, OrderStatus, OrderType, TimeInForce},
     events::{AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, Venue, VenueOrderId,
@@ -485,10 +485,14 @@ impl DydxExecutionClient {
                                                 .unwrap_or(crate::grpc::DEFAULT_RUST_CLIENT_METADATA);
                                             terminal_orders.push((cid, meta, ws_order.id.clone()));
                                         }
+                                        let order_side = report
+                                            .order_side
+                                            .as_ref()
+                                            .map_or("NO_ORDER_SIDE", AsRef::as_ref);
                                         log::debug!(
                                             "Parsed order report: {} {} {:?} qty={} client_order_id={:?}",
                                             report.instrument_id,
-                                            report.order_side,
+                                            order_side,
                                             report.order_status,
                                             report.quantity,
                                             report.client_order_id
@@ -2088,8 +2092,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         let order_data: Vec<CancelAllOrderData> = {
             let cache = self.core.cache();
-            let side_filter =
-                (order_side_filter != OrderSide::NoOrderSide).then_some(order_side_filter);
+            let side_filter = order_side_filter;
             cache
                 .orders_open(None, Some(&instrument_id), None, None, side_filter)
                 .into_iter()
@@ -3071,7 +3074,7 @@ mod tests {
         cache::Cache, clock::TestClock, factories::OrderFactory, messages::ExecutionEvent,
     };
     use nautilus_model::{
-        enums::OrderSide as NautilusOrderSide,
+        enums::OrderSide,
         identifiers::{Symbol, TraderId},
         instruments::{CryptoPerpetual, InstrumentAny},
         orders::{Order as _, OrderAny},
@@ -3116,7 +3119,7 @@ mod tests {
             subaccount_id: "sub-1".to_string(),
             client_id: client_id.to_string(),
             clob_pair_id,
-            side: NautilusOrderSide::Buy,
+            side: OrderSide::Buy,
             size: dec!(1.0),
             total_filled: dec!(0),
             price: dec!(50000),

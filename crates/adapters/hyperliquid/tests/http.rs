@@ -48,7 +48,7 @@ use nautilus_hyperliquid::{
 };
 use nautilus_model::{
     data::BarType,
-    enums::{OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{OrderStatus, OrderType, PositionSide, TimeInForce},
     identifiers::{AccountId, ClientOrderId, InstrumentId},
 };
 use nautilus_network::http::{HttpClient, Method};
@@ -732,7 +732,7 @@ async fn test_request_spot_position_status_reports_emits_for_cached_instrument()
     );
     assert_eq!(report.quantity.as_f64(), 2000.0);
     // Spot holdings are always Long on Hyperliquid (no spot shorting)
-    assert_eq!(report.position_side, PositionSideSpecified::Long);
+    assert_eq!(report.position_side, PositionSide::Long);
     // entryNtl=1234.56 / total=2000 = 0.61728
     assert_eq!(
         report.avg_px_open.unwrap(),
@@ -983,7 +983,7 @@ async fn test_request_spot_position_status_reports_resolves_outcome_side_token()
         .iter()
         .find(|r| r.instrument_id == InstrumentId::from("1-YES-OUTCOME.HYPERLIQUID"))
         .expect("outcome side token must surface as a position report");
-    assert_eq!(outcome_report.position_side, PositionSideSpecified::Long);
+    assert_eq!(outcome_report.position_side, PositionSide::Long);
     assert_eq!(outcome_report.quantity.as_f64(), 25.0);
     // entryNtl=12.5 / total=25 = 0.5
     assert_eq!(
@@ -1672,7 +1672,7 @@ async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
 
     assert_eq!(reports.len(), 3);
     assert_eq!(reports[0].instrument_id, "BTC-USD-PERP.HYPERLIQUID".into());
-    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].position_side, PositionSide::Long);
     assert_eq!(
         reports[0].quantity.as_decimal(),
         rust_decimal_macros::dec!(0.1)
@@ -1681,7 +1681,7 @@ async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
         reports[1].instrument_id,
         "flx:TEST-USD-PERP.HYPERLIQUID".into()
     );
-    assert_eq!(reports[1].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[1].position_side, PositionSide::Long);
     assert_eq!(
         reports[1].quantity.as_decimal(),
         rust_decimal_macros::dec!(0.2)
@@ -1690,7 +1690,7 @@ async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
         reports[2].instrument_id,
         "xyz:XYZ100-USD-PERP.HYPERLIQUID".into()
     );
-    assert_eq!(reports[2].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[2].position_side, PositionSide::Short);
     assert_eq!(
         reports[2].quantity.as_decimal(),
         rust_decimal_macros::dec!(0.3)
@@ -1702,20 +1702,20 @@ async fn test_request_position_status_reports_aggregates_all_cached_dexs() {
 #[case(
     "flx:TEST-USD-PERP.HYPERLIQUID",
     "flx",
-    PositionSideSpecified::Long,
+    PositionSide::Long,
     rust_decimal_macros::dec!(0.2)
 )]
 #[case(
     "xyz:XYZ100-USD-PERP.HYPERLIQUID",
     "xyz",
-    PositionSideSpecified::Short,
+    PositionSide::Short,
     rust_decimal_macros::dec!(0.3)
 )]
 #[tokio::test]
 async fn test_request_position_status_reports_routes_builder_dex_filter(
     #[case] instrument_id: InstrumentId,
     #[case] expected_dex: &str,
-    #[case] expected_side: PositionSideSpecified,
+    #[case] expected_side: PositionSide,
     #[case] expected_quantity: rust_decimal::Decimal,
 ) {
     let state = TestServerState::default();

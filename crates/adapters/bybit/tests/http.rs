@@ -46,7 +46,7 @@ use nautilus_bybit::{
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_model::{
     data::BarType,
-    enums::{OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce, TriggerType},
+    enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol},
     instruments::{CurrencyPair, InstrumentAny},
     types::{Currency, Price, Quantity},
@@ -2833,7 +2833,7 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
         .find(|r| r.instrument_id.symbol.as_str() == "ETHUSDT-SPOT")
         .expect("ETH SPOT position report not found");
 
-    assert_eq!(eth_report.position_side, PositionSideSpecified::Short);
+    assert_eq!(eth_report.position_side, PositionSide::Short);
     assert_eq!(eth_report.quantity, Quantity::new(0.06142, 5));
 }
 
@@ -4498,7 +4498,7 @@ async fn test_request_order_status_reports_tp_sl_orders() {
         .find(|r| r.venue_order_id.as_str() == "tp-order-001")
         .unwrap();
     assert_eq!(tp_report.order_type, OrderType::MarketIfTouched);
-    assert_eq!(tp_report.order_side, OrderSide::Sell);
+    assert_eq!(tp_report.order_side, Some(OrderSide::Sell));
     assert_eq!(tp_report.trigger_price, Some(Price::from("55000.00")));
     assert_eq!(tp_report.trigger_type, Some(TriggerType::LastPrice));
     assert!(tp_report.reduce_only);
@@ -4509,7 +4509,7 @@ async fn test_request_order_status_reports_tp_sl_orders() {
         .find(|r| r.venue_order_id.as_str() == "sl-order-001")
         .unwrap();
     assert_eq!(sl_report.order_type, OrderType::StopLimit);
-    assert_eq!(sl_report.order_side, OrderSide::Sell);
+    assert_eq!(sl_report.order_side, Some(OrderSide::Sell));
     assert_eq!(sl_report.trigger_price, Some(Price::from("48000.00")));
     assert_eq!(sl_report.price, Some(Price::from("47500.00")));
     assert_eq!(sl_report.trigger_type, Some(TriggerType::LastPrice));

@@ -831,7 +831,7 @@ pub fn parse_order_status_report(
         (quantity, filled_qty)
     };
 
-    let order_side: OrderSide = order.side.into();
+    let order_side = OrderSide::from(order.side);
     let order_status: OrderStatus = order
         .state
         .try_into()
@@ -899,7 +899,7 @@ pub fn parse_order_status_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -1007,7 +1007,7 @@ pub fn parse_spot_margin_position_from_balance(
     Ok(Some(PositionStatusReport::new(
         account_id,
         instrument_id,
-        position_side.as_specified(),
+        position_side,
         quantity,
         ts_last,
         ts_init,
@@ -1120,8 +1120,6 @@ pub fn parse_position_status_report(
         (side, pos_dec.abs())
     };
 
-    let position_side = position_side.as_specified();
-
     // Convert to absolute quantity (positions are always positive in Nautilus)
     let quantity = Quantity::from_decimal_dp(quantity_dec, size_precision)?;
 
@@ -1186,7 +1184,7 @@ pub fn parse_fill_report(
     };
     let venue_order_id = VenueOrderId::new(detail.ord_id);
     let trade_id = TradeId::new(detail.trade_id);
-    let order_side: OrderSide = detail.side.into();
+    let order_side = OrderSide::from(detail.side);
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
     let fee_dec = required_fee_amount(detail.fee.as_deref()).with_context(|| {
@@ -1233,7 +1231,7 @@ pub fn parse_spread_order_status_report(
     let order_type = determine_order_type(order.ord_type, &order.px)?;
     let quantity = parse_quantity(&order.sz, size_precision)?;
     let filled_qty = parse_quantity(&order.acc_fill_sz, size_precision)?;
-    let order_side: OrderSide = order.side.into();
+    let order_side = OrderSide::from(order.side);
     let order_status: OrderStatus = order
         .state
         .try_into()
@@ -1264,7 +1262,7 @@ pub fn parse_spread_order_status_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        order_side,
+        order_side.into(),
         order_type,
         time_in_force,
         order_status,
@@ -1316,7 +1314,7 @@ pub fn parse_spread_fill_report(
     };
     let venue_order_id = VenueOrderId::new(detail.ord_id.as_str());
     let trade_id = TradeId::new(detail.trade_id.as_str());
-    let order_side: OrderSide = detail.side.into();
+    let order_side = OrderSide::from(detail.side);
     let last_px = parse_price(&detail.fill_px, price_precision)?;
     let last_qty = parse_quantity(&detail.fill_sz, size_precision)?;
     let fee_dec = required_fee_amount(detail.fee.as_deref()).with_context(|| {
@@ -2872,7 +2870,7 @@ pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<jiff::Timestamp> {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{identifiers::PositionId, instruments::Instrument};
+    use nautilus_model::{enums::OrderSide, identifiers::PositionId, instruments::Instrument};
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -4349,7 +4347,7 @@ mod tests {
         assert_eq!(order_report.instrument_id, instrument_id);
         assert_eq!(order_report.quantity, Quantity::from("0.03000000"));
         assert_eq!(order_report.filled_qty, Quantity::from("0.03000000"));
-        assert_eq!(order_report.order_side, OrderSide::Buy);
+        assert_eq!(order_report.order_side, OrderSide::Buy.into());
         assert_eq!(order_report.order_type, OrderType::Market);
         assert_eq!(order_report.order_status, OrderStatus::Filled);
     }
@@ -4898,7 +4896,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
-        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from("1.5"));
         // Net mode: venue_position_id is None (signals NETTING OMS)
         assert_eq!(report.venue_position_id, None);
@@ -4970,7 +4968,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
-        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from("2.3")); // Absolute value
         // Net mode: venue_position_id is None (signals NETTING OMS)
         assert_eq!(report.venue_position_id, None);
@@ -5042,7 +5040,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
-        assert_eq!(report.position_side, PositionSide::Flat.as_specified());
+        assert_eq!(report.position_side, PositionSide::Flat);
         assert_eq!(report.quantity, Quantity::from("0"));
         // Net mode: venue_position_id is None (signals NETTING OMS)
         assert_eq!(report.venue_position_id, None);
@@ -5114,7 +5112,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
-        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from("3.2"));
         // Long/Short mode - Long leg: "-LONG" suffix
         assert_eq!(
@@ -5191,7 +5189,7 @@ mod tests {
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
         // This is the critical assertion: positive quantity but SHORT side
-        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from("1.8"));
         // Long/Short mode - Short leg: "-SHORT" suffix
         assert_eq!(
@@ -5266,7 +5264,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
-        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity, Quantity::from("1.5")); // 1.5 ETH in base
         assert_eq!(report.venue_position_id, None); // Net mode
     }
@@ -5338,7 +5336,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
-        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.position_side, PositionSide::Short);
         // Position is 244.56 USDT / 4092 USDT/ETH = 0.0597... ETH
         assert_eq!(report.quantity.to_string(), "0.0598");
         assert_eq!(report.venue_position_id, None); // Net mode
@@ -5407,7 +5405,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity.to_string(), "0.0300");
     }
 
@@ -5489,7 +5487,7 @@ mod tests {
 
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id, instrument_id);
-        assert_eq!(report.position_side, PositionSide::Flat.as_specified());
+        assert_eq!(report.position_side, PositionSide::Flat);
         assert_eq!(report.quantity, Quantity::from("0"));
         assert_eq!(report.venue_position_id, None); // Net mode
     }
@@ -5759,7 +5757,7 @@ mod tests {
         let report = result.unwrap();
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id.to_string(), "ENA-USDT.OKX".to_string());
-        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity.to_string(), "129950.00");
     }
 
@@ -5824,7 +5822,7 @@ mod tests {
 
         assert!(result.is_some());
         let report = result.unwrap();
-        assert_eq!(report.position_side, PositionSide::Long.as_specified());
+        assert_eq!(report.position_side, PositionSide::Long);
         assert_eq!(report.quantity.to_string(), "1.20000000");
     }
 
@@ -5889,7 +5887,7 @@ mod tests {
 
         assert!(result.is_some());
         let report = result.unwrap();
-        assert_eq!(report.position_side, PositionSide::Short.as_specified());
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity.to_string(), "10.000000");
         assert!(report.instrument_id.to_string().contains("ETH-"));
     }

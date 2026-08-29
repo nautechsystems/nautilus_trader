@@ -958,11 +958,11 @@ pub const fn map_order_type_sbe(order_type: SbeOrderType) -> OrderType {
 
 /// Maps Binance SBE order side to Nautilus order side.
 #[must_use]
-pub const fn map_order_side_sbe(side: SbeOrderSide) -> OrderSide {
+pub const fn map_order_side_sbe(side: SbeOrderSide) -> Option<OrderSide> {
     match side {
-        SbeOrderSide::Buy => OrderSide::Buy,
-        SbeOrderSide::Sell => OrderSide::Sell,
-        SbeOrderSide::NonRepresentable | SbeOrderSide::NullVal => OrderSide::NoOrderSide,
+        SbeOrderSide::Buy => Some(OrderSide::Buy),
+        SbeOrderSide::Sell => Some(OrderSide::Sell),
+        SbeOrderSide::NonRepresentable | SbeOrderSide::NullVal => None,
     }
 }
 
@@ -2207,7 +2207,7 @@ mod tests {
             Some(ClientOrderId::new("client-123"))
         );
         assert_eq!(report.venue_order_id, VenueOrderId::new("42"));
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, OrderSide::Buy.into());
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
         assert_eq!(report.quantity.as_f64(), 2.5);
@@ -2271,7 +2271,7 @@ mod tests {
             Some(ClientOrderId::new("client-456"))
         );
         assert_eq!(report.venue_order_id, VenueOrderId::new("99"));
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_type, OrderType::StopLimit);
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert_eq!(report.quantity.as_f64(), 2.0);

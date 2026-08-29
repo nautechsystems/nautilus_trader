@@ -1555,7 +1555,6 @@ fn passive_limit_price(side: OrderSide, order_index: usize) -> Price {
     let cents = match side {
         OrderSide::Buy => 90_000 - offset,
         OrderSide::Sell => 110_000 + offset,
-        _ => unreachable!(),
     };
     Price::from(price_from_cents(cents).as_str())
 }

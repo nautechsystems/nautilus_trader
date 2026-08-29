@@ -46,8 +46,8 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderSide, OrderType, PositionSideSpecified, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
     events::OrderEventAny,
     identifiers::{
@@ -777,7 +777,7 @@ impl KrakenSpotExecutionClient {
     ) {
         let reported: HashSet<InstrumentId> = reports
             .iter()
-            .filter(|r| r.position_side != PositionSideSpecified::Flat)
+            .filter(|r| r.position_side != PositionSide::Flat)
             .map(|r| r.instrument_id)
             .collect();
 
@@ -803,7 +803,7 @@ impl KrakenSpotExecutionClient {
             reports.push(PositionStatusReport::new(
                 account_id,
                 inst_id,
-                PositionSideSpecified::Flat,
+                PositionSide::Flat,
                 Quantity::zero(precision),
                 ts_now,
                 ts_now,
@@ -935,7 +935,6 @@ fn build_batch_order(
     let side = match order.order_side() {
         OrderSide::Buy => KrakenOrderSide::Buy,
         OrderSide::Sell => KrakenOrderSide::Sell,
-        side => anyhow::bail!("Invalid order side: {side:?}"),
     };
 
     if matches!(
@@ -1552,7 +1551,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
 
-        if cmd.order_side == OrderSide::NoOrderSide {
+        if cmd.order_side.is_none() {
             log::debug!("Canceling all orders: instrument_id={instrument_id} (bulk)");
 
             let http = self.http.clone();
@@ -1588,7 +1587,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
             open_orders
                 .into_iter()
-                .filter(|order| order.order_side() == cmd.order_side)
+                .filter(|order| Some(order.order_side()) == cmd.order_side)
                 .filter_map(|order| {
                     Some((
                         order.venue_order_id()?,

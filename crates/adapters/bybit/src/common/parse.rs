@@ -178,8 +178,7 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggressorSide, BarAggregation, BookAction, LiquiditySide, OptionKind,
-        OrderSide, OrderStatus, OrderType, PositionSideSpecified, RecordFlag, TimeInForce,
-        TriggerType,
+        OrderSide, OrderStatus, OrderType, PositionSide, RecordFlag, TimeInForce, TriggerType,
     },
     events::account::state::AccountState,
     identifiers::{
@@ -1078,7 +1077,7 @@ pub fn parse_fill_report(
     let trade_id = TradeId::new_checked(execution.exec_id.as_str())
         .context("invalid execId in Bybit execution payload")?;
 
-    let order_side: OrderSide = execution.side.into();
+    let order_side = OrderSide::try_from(execution.side)?;
 
     let last_px = parse_price_with_precision(
         &execution.exec_price,
@@ -1162,11 +1161,11 @@ pub fn parse_position_status_report(
 
     // Determine position side and quantity
     let (position_side, quantity) = match position.side {
-        BybitPositionSide::Buy => (PositionSideSpecified::Long, size),
-        BybitPositionSide::Sell => (PositionSideSpecified::Short, size),
+        BybitPositionSide::Buy => (PositionSide::Long, size),
+        BybitPositionSide::Sell => (PositionSide::Short, size),
         BybitPositionSide::Flat => {
             let qty = Quantity::zero(instrument.size_precision());
-            (PositionSideSpecified::Flat, qty)
+            (PositionSide::Flat, qty)
         }
     };
 
@@ -1443,7 +1442,7 @@ pub fn parse_order_status_report(
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(order.order_id);
 
-    let order_side: OrderSide = order.side.into();
+    let order_side: Option<OrderSide> = order.side.into();
 
     let order_type = parse_bybit_order_type(
         order.order_type,
@@ -2361,7 +2360,7 @@ mod tests {
         // Verify short position is correctly parsed
         assert_eq!(report.account_id, account_id);
         assert_eq!(report.instrument_id.symbol.as_str(), "ETHUSDT-LINEAR");
-        assert_eq!(report.position_side.as_position_side(), PositionSide::Short);
+        assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, eth_instrument.make_qty(5.0, None));
         assert_eq!(
             report.avg_px_open,
@@ -2969,7 +2968,7 @@ mod tests {
         let report = parse_order_status_report(order, &instrument, account_id, TS).unwrap();
 
         assert_eq!(report.order_type, OrderType::MarketIfTouched);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert!(report.trigger_price.is_some());
         assert_eq!(
@@ -2991,7 +2990,7 @@ mod tests {
         let report = parse_order_status_report(order, &instrument, account_id, TS).unwrap();
 
         assert_eq!(report.order_type, OrderType::StopLimit);
-        assert_eq!(report.order_side, OrderSide::Sell);
+        assert_eq!(report.order_side, OrderSide::Sell.into());
         assert_eq!(report.order_status, OrderStatus::Accepted);
         assert!(report.trigger_price.is_some());
         assert_eq!(

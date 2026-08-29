@@ -704,9 +704,9 @@ mod tests {
         assert_eq!(deltas.deltas.len(), 7);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
         assert_eq!(deltas.deltas[1].action, BookAction::Add);
-        assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
+        assert_eq!(deltas.deltas[1].order.side, Some(OrderSide::Buy));
         assert_eq!(deltas.deltas[4].action, BookAction::Add);
-        assert_eq!(deltas.deltas[4].order.side, OrderSide::Sell);
+        assert_eq!(deltas.deltas[4].order.side, Some(OrderSide::Sell));
 
         // Every snapshot delta carries F_SNAPSHOT
         for delta in &deltas.deltas {

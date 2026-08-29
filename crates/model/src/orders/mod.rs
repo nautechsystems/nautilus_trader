@@ -73,8 +73,8 @@ pub use crate::orders::{
 };
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType,
-        PositionSide, TimeInForce, TrailingOffsetType, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -366,9 +366,6 @@ pub trait Order: 'static + Send {
     fn ts_closed(&self) -> Option<UnixNanos>;
     fn ts_last(&self) -> UnixNanos;
 
-    fn order_side_specified(&self) -> OrderSideSpecified {
-        self.order_side().as_specified()
-    }
     fn commissions(&self) -> &IndexMap<Currency, Money>;
 
     /// Applies the `event` to the order.
@@ -527,7 +524,7 @@ pub trait Order: 'static + Send {
             self.trader_id(),
             self.client_order_id(),
             self.venue_order_id(),
-            self.order_side().as_specified(),
+            self.order_side(),
             self.price().expect("`OwnBookOrder` must have a price"),
             self.leaves_qty(),
             self.order_type(),
@@ -554,7 +551,7 @@ pub trait Order: 'static + Send {
             self.instrument_id(),
             Some(self.client_order_id()),
             venue_order_id,
-            self.order_side(),
+            self.order_side().into(),
             self.order_type(),
             self.time_in_force(),
             self.status(),
@@ -1424,33 +1421,24 @@ impl OrderCore {
     /// Returns the opposite order side.
     #[must_use]
     pub fn opposite_side(side: OrderSide) -> OrderSide {
-        match side {
-            OrderSide::Buy => OrderSide::Sell,
-            OrderSide::Sell => OrderSide::Buy,
-            OrderSide::NoOrderSide => OrderSide::NoOrderSide,
-        }
+        side.opposite()
     }
 
     /// Returns the order side needed to close a position.
     #[must_use]
-    pub fn closing_side(side: PositionSide) -> OrderSide {
+    pub fn closing_side(side: PositionSide) -> Option<OrderSide> {
         match side {
-            PositionSide::Long => OrderSide::Sell,
-            PositionSide::Short => OrderSide::Buy,
-            PositionSide::Flat => OrderSide::NoOrderSide,
-            PositionSide::NoPositionSide => OrderSide::NoOrderSide,
+            PositionSide::Long => Some(OrderSide::Sell),
+            PositionSide::Short => Some(OrderSide::Buy),
+            PositionSide::Flat => None,
         }
     }
 
-    /// # Panics
-    ///
-    /// Panics if the order side is neither `Buy` nor `Sell`.
     #[must_use]
     pub fn signed_decimal_qty(&self) -> Decimal {
         match self.side {
             OrderSide::Buy => self.quantity.as_decimal(),
             OrderSide::Sell => -self.quantity.as_decimal(),
-            OrderSide::NoOrderSide => panic!("Invalid order side"),
         }
     }
 
@@ -1465,7 +1453,7 @@ impl OrderCore {
             (OrderSide::Buy, PositionSide::Short) => self.leaves_qty <= position_qty,
             (OrderSide::Sell, PositionSide::Short) => false,
             (OrderSide::Sell, PositionSide::Long) => self.leaves_qty <= position_qty,
-            _ => true,
+            (_, PositionSide::Flat) => false,
         }
     }
 
@@ -1528,17 +1516,19 @@ mod tests {
     #[rstest]
     #[case(OrderSide::Buy, OrderSide::Sell)]
     #[case(OrderSide::Sell, OrderSide::Buy)]
-    #[case(OrderSide::NoOrderSide, OrderSide::NoOrderSide)]
     fn test_order_opposite_side(#[case] order_side: OrderSide, #[case] expected_side: OrderSide) {
         let result = OrderCore::opposite_side(order_side);
         assert_eq!(result, expected_side);
     }
 
     #[rstest]
-    #[case(PositionSide::Long, OrderSide::Sell)]
-    #[case(PositionSide::Short, OrderSide::Buy)]
-    #[case(PositionSide::NoPositionSide, OrderSide::NoOrderSide)]
-    fn test_closing_side(#[case] position_side: PositionSide, #[case] expected_side: OrderSide) {
+    #[case(PositionSide::Long, Some(OrderSide::Sell))]
+    #[case(PositionSide::Short, Some(OrderSide::Buy))]
+    #[case(PositionSide::Flat, None)]
+    fn test_closing_side(
+        #[case] position_side: PositionSide,
+        #[case] expected_side: Option<OrderSide>,
+    ) {
         let result = OrderCore::closing_side(position_side);
         assert_eq!(result, expected_side);
     }
@@ -3550,7 +3540,7 @@ mod tests {
         assert_eq!(report.instrument_id, InstrumentId::from("AUDUSD.SIM"));
         assert_eq!(report.client_order_id, Some(accepted.client_order_id()));
         assert_eq!(report.venue_order_id, VenueOrderId::from("V-001"));
-        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, accepted.time_in_force());
         assert_eq!(report.order_status, OrderStatus::Accepted);

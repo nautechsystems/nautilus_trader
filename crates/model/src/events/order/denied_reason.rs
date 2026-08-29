@@ -133,10 +133,13 @@ pub enum OrderDeniedReason {
         value: Decimal,
     },
     /// The order side is invalid for this operation.
-    #[error("INVALID_ORDER_SIDE: {order_side}")]
+    #[error(
+        "INVALID_ORDER_SIDE: {}",
+        order_side.as_ref().map_or("NO_ORDER_SIDE", AsRef::as_ref)
+    )]
     InvalidOrderSide {
         /// The offending order side.
-        order_side: OrderSide,
+        order_side: Option<OrderSide>,
     },
     /// A GTD order is missing its expire time.
     #[error("MISSING_EXPIRE_TIME")]
@@ -653,9 +656,7 @@ mod tests {
         let not_found = OrderDeniedReason::InstrumentNotFound {
             instrument_id: InstrumentId::from("AUD/USD.SIM"),
         };
-        let bad_side = OrderDeniedReason::InvalidOrderSide {
-            order_side: OrderSide::NoOrderSide,
-        };
+        let bad_side = OrderDeniedReason::InvalidOrderSide { order_side: None };
         let reducing = OrderDeniedReason::TradingStateReducing {
             order_side: OrderSide::Buy,
             instrument_id: InstrumentId::from("AUD/USD.SIM"),
@@ -833,9 +834,7 @@ mod tests {
                 instrument_id: InstrumentId::from("AUD/USD.SIM"),
                 value: Decimal::ONE,
             },
-            OrderDeniedReason::InvalidOrderSide {
-                order_side: OrderSide::NoOrderSide,
-            },
+            OrderDeniedReason::InvalidOrderSide { order_side: None },
             OrderDeniedReason::MissingExpireTime,
             OrderDeniedReason::ExpireTimeInPast {
                 expire_time: "1970-01-01T00:00:00Z".to_string(),

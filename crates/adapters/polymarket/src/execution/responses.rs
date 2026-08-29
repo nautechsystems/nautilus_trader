@@ -1054,7 +1054,7 @@ fn handle_fok_rest_status(
                 ctx.order.instrument_id(),
                 Some(ctx.order.client_order_id()),
                 venue_order_id,
-                ctx.order.order_side(),
+                ctx.order.order_side().into(),
                 OrderType::Limit,
                 TimeInForce::Fok,
                 order_status,
@@ -1083,7 +1083,7 @@ mod tests {
     use nautilus_common::messages::ExecutionEvent;
     use nautilus_core::{UnixNanos, collections::AtomicMap};
     use nautilus_model::{
-        enums::{AccountType, LiquiditySide},
+        enums::{AccountType, LiquiditySide, OrderSide},
         identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId},
         instruments::{Instrument, InstrumentAny},
         orders::{LimitOrder, MarketOrder, Order, stubs::TestOrderEventStubs},
@@ -1932,15 +1932,14 @@ mod tests {
         let pending_cancels = PendingCancelTracker::default();
         let order_identities = OrderIdentityRegistry::default();
 
-        fill_tracker.buffer_fill_for_test(
+        let mut fill = test_fill_report(
+            instrument_id,
             venue_order_id,
-            test_fill_report(
-                instrument_id,
-                venue_order_id,
-                Quantity::new(18.181, 3),
-                fill_ts,
-            ),
+            Quantity::new(18.181, 3),
+            fill_ts,
         );
+        fill.order_side = OrderSide::Sell;
+        fill_tracker.buffer_fill_for_test(venue_order_id, fill);
 
         emit_market_order_submitted(
             &mut order,
@@ -2007,6 +2006,7 @@ mod tests {
             ExecutionEvent::Order(OrderEventAny::Filled(event)) => {
                 assert_eq!(event.client_order_id, order.client_order_id());
                 assert_eq!(event.venue_order_id, venue_order_id);
+                assert_eq!(event.order_side, OrderSide::Buy);
                 assert_eq!(event.last_qty, Quantity::new(18.180, 3));
             }
             other => panic!("expected filled event, was {other:?}"),
@@ -2147,7 +2147,7 @@ mod tests {
             instrument_id,
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             status,
@@ -2209,7 +2209,7 @@ mod tests {
             instrument.id(),
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Rejected,
@@ -2274,7 +2274,7 @@ mod tests {
             instrument_id,
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Market,
             TimeInForce::Ioc,
             OrderStatus::Canceled,
@@ -2353,7 +2353,7 @@ mod tests {
             instrument_id,
             None,
             venue_order_id,
-            OrderSide::Buy,
+            OrderSide::Buy.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Filled,

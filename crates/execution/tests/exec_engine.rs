@@ -65,7 +65,7 @@ use nautilus_model::{
     data::QuoteTick,
     enums::{
         AccountType, AssetClass, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus,
-        OrderType, PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
+        OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled,
@@ -707,7 +707,7 @@ fn test_external_client_command_publishes_to_client_topic_and_skips_local_routin
         Some(external_client_id),
         StrategyId::test_default(),
         audusd_sim().id(),
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -876,7 +876,7 @@ fn test_cancel_all_orders_fans_out_with_one_resolved_client_and_shared_lineage()
         None,
         StrategyId::from("CALLER-001"),
         instrument_id,
-        OrderSide::Buy,
+        Some(OrderSide::Buy),
         command_id,
         UnixNanos::default(),
         Some(params.clone()),
@@ -901,7 +901,7 @@ fn test_cancel_all_orders_fans_out_with_one_resolved_client_and_shared_lineage()
     for child in [venue_command, emulator_command] {
         assert_eq!(child.client_id, Some(selected_client_id));
         assert_eq!(child.instrument_id, instrument_id);
-        assert_eq!(child.order_side, OrderSide::Buy);
+        assert_eq!(child.order_side, Some(OrderSide::Buy));
         assert_eq!(child.params.as_ref(), Some(&params));
         assert_eq!(child.correlation_id, Some(correlation_id));
         assert_eq!(child.causation_id, Some(command_id));
@@ -1010,7 +1010,7 @@ fn test_counters_increment_and_reset(mut execution_engine: ExecutionEngine) {
         None,
         StrategyId::test_default(),
         instrument_id,
-        OrderSide::NoOrderSide,
+        None,
         UUID4::new(),
         UnixNanos::default(),
         None,
@@ -13132,7 +13132,7 @@ fn create_order_status_report(
         instrument_id,
         client_order_id,
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Limit,
         TimeInForce::Gtc,
         status,
@@ -13994,7 +13994,7 @@ fn test_handle_fill_skips_duplicate_trade_id_already_on_position(
 
 fn create_position_report(
     instrument_id: InstrumentId,
-    position_side: PositionSideSpecified,
+    position_side: PositionSide,
     quantity: Quantity,
     venue_position_id: Option<PositionId>,
 ) -> PositionStatusReport {
@@ -14024,7 +14024,7 @@ fn test_reconcile_position_report_netting_mode(mut execution_engine: ExecutionEn
     // No venue_position_id = netting mode
     let report = create_position_report(
         instrument.id(),
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from(100_000),
         None,
     );
@@ -14048,7 +14048,7 @@ fn test_reconcile_position_report_hedging_mode_position_not_found(
     // With venue_position_id = hedging mode
     let report = create_position_report(
         instrument.id(),
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from(100_000),
         Some(venue_position_id),
     );
@@ -14557,7 +14557,7 @@ fn test_reconcile_position_report_publishes_raw_topic(mut execution_engine: Exec
 
     let report = create_position_report(
         instrument.id(),
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from(100_000),
         None,
     );
@@ -16773,7 +16773,9 @@ fn test_reconcile_order_with_fills_infers_residual_gap(mut execution_engine: Exe
 }
 
 #[rstest]
-fn test_reconcile_order_with_fills_applies_to_cached_order(mut execution_engine: ExecutionEngine) {
+fn test_reconcile_order_with_fills_uses_cached_order_side_when_status_side_missing(
+    mut execution_engine: ExecutionEngine,
+) {
     let instrument = audusd_sim();
     let client_order_id = ClientOrderId::from("O-LOCAL-001");
     let venue_order_id = VenueOrderId::from("V-LOCAL-001");
@@ -16802,7 +16804,7 @@ fn test_reconcile_order_with_fills_applies_to_cached_order(mut execution_engine:
     let accepted = TestOrderEventStubs::accepted(&order, AccountId::test_default(), venue_order_id);
     execution_engine.process(&accepted);
 
-    let order_report = create_order_status_report(
+    let mut order_report = create_order_status_report(
         Some(client_order_id),
         venue_order_id,
         instrument.id(),
@@ -16810,7 +16812,8 @@ fn test_reconcile_order_with_fills_applies_to_cached_order(mut execution_engine:
         Quantity::from(100_000),
         Quantity::from(100_000),
     );
-    let fill = create_fill_report(
+    order_report.order_side = None;
+    let mut fill = create_fill_report(
         instrument.id(),
         Some(client_order_id),
         venue_order_id,
@@ -16818,6 +16821,7 @@ fn test_reconcile_order_with_fills_applies_to_cached_order(mut execution_engine:
         Quantity::from(100_000),
         Price::from("1.00000"),
     );
+    fill.order_side = OrderSide::Sell;
 
     execution_engine.reconcile_order_with_fills(&order_report, &[fill]);
 
@@ -16827,6 +16831,10 @@ fn test_reconcile_order_with_fills_applies_to_cached_order(mut execution_engine:
     assert_eq!(order.filled_qty(), Quantity::from(100_000));
     assert_eq!(order.trade_ids().len(), 1);
     assert_eq!(*order.trade_ids()[0], TradeId::from("T-LOCAL-001"));
+    let OrderEventAny::Filled(filled) = order.last_event() else {
+        panic!("expected final fill event");
+    };
+    assert_eq!(filled.order_side, OrderSide::Buy);
 }
 
 #[rstest]

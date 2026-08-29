@@ -2320,7 +2320,6 @@ fn test_trigger_limit_order_modify_completes_once_after_acceptance(
     let expected_price = match side {
         OrderSide::Buy => original_price - increment,
         OrderSide::Sell => original_price + increment,
-        OrderSide::NoOrderSide => unreachable!(),
     };
     assert_eq!(
         limit_order_maintenance_state(&tester, side),
@@ -2437,7 +2436,6 @@ fn test_trigger_limit_order_cancel_replace_waits_for_cancel_and_completes_once(
     let expected_price = match side {
         OrderSide::Buy => original_price - increment,
         OrderSide::Sell => original_price + increment,
-        OrderSide::NoOrderSide => unreachable!(),
     };
     let exec_saver = capture_exec_commands();
     let risk_saver = capture_risk_commands();
@@ -2812,7 +2810,6 @@ fn tracked_limit_order(tester: &ExecTester, side: OrderSide) -> &OrderAny {
     match side {
         OrderSide::Buy => tester.buy_order.as_ref().expect("buy order should exist"),
         OrderSide::Sell => tester.sell_order.as_ref().expect("sell order should exist"),
-        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2826,7 +2823,6 @@ fn tracked_stop_order(tester: &ExecTester, side: OrderSide) -> &OrderAny {
             .sell_stop_order
             .as_ref()
             .expect("sell stop order should exist"),
-        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2837,7 +2833,6 @@ fn limit_order_maintenance_state(
     match side {
         OrderSide::Buy => tester.buy_limit_maintenance_state,
         OrderSide::Sell => tester.sell_limit_maintenance_state,
-        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2845,7 +2840,6 @@ fn stop_cancel_replace_attempted(tester: &ExecTester, side: OrderSide) -> bool {
     match side {
         OrderSide::Buy => tester.buy_stop_cancel_replace_attempted,
         OrderSide::Sell => tester.sell_stop_cancel_replace_attempted,
-        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 

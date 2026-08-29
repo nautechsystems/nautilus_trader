@@ -47,7 +47,7 @@ use nautilus_event_store::{
     default_registry, noop_halt,
 };
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::{
         OrderEventAny, OrderFilled,
         order::spec::{OrderFilledSpec, OrderInitializedSpec},
@@ -223,7 +223,7 @@ fn make_order_status_report(
         InstrumentId::from("ETHUSDT-PERP.BINANCE"),
         Some(client_order_id),
         venue_order_id,
-        OrderSide::Buy,
+        OrderSide::Buy.into(),
         OrderType::Market,
         TimeInForce::Gtc,
         OrderStatus::Filled,
@@ -533,7 +533,7 @@ fn make_position_status_report_for_capture() -> PositionStatusReport {
     PositionStatusReport::new(
         AccountId::from("BINANCE-001"),
         InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-        PositionSideSpecified::Long,
+        PositionSide::Long,
         Quantity::from("1"),
         UnixNanos::from(40),
         UnixNanos::from(41),

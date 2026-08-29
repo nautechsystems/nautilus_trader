@@ -3905,7 +3905,7 @@ fn make_cancel_all_cmd(instrument_id: &str, side: OrderSide) -> CancelAllOrders 
         Some(*HYPERLIQUID_CLIENT_ID),
         StrategyId::from("S-001"),
         InstrumentId::from(instrument_id),
-        side,
+        Some(side),
         UUID4::new(),
         UnixNanos::default(),
         None,

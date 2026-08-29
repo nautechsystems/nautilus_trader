@@ -204,6 +204,5 @@ fn order_side_tag(side: OrderSide) -> &'static str {
     match side {
         OrderSide::Buy => "BUY",
         OrderSide::Sell => "SELL",
-        _ => "UNSPECIFIED",
     }
 }

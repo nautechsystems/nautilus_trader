@@ -2194,9 +2194,7 @@ mod tests {
 
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{
-            AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified,
-        },
+        enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide},
         identifiers::{AccountId, StrategyId, TradeId},
         orders::Order,
         reports::FillReport,
@@ -2220,7 +2218,7 @@ mod tests {
             InstrumentId::from("ETH-PERP.LIGHTER"),
             Some(ClientOrderId::new(client_order_id_str)),
             VenueOrderId::new("281476929510110"),
-            OrderSide::Sell,
+            OrderSide::Sell.into(),
             OrderType::Limit,
             TimeInForce::Gtc,
             OrderStatus::Accepted,
@@ -2243,7 +2241,7 @@ mod tests {
         PositionStatusReport::new(
             AccountId::from("LIGHTER-TEST"),
             InstrumentId::from(instrument),
-            PositionSideSpecified::Long,
+            PositionSide::Long,
             Quantity::from(qty),
             UnixNanos::from(1),
             UnixNanos::from(2),

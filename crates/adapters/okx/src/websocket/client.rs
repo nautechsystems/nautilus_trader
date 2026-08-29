@@ -2581,7 +2581,7 @@ impl OKXWebSocketClient {
             }
         }
 
-        builder.side(order_side.as_specified());
+        builder.side(order_side);
 
         if let Some(pos_side) = position_side {
             builder.pos_side(pos_side);
@@ -3070,7 +3070,7 @@ impl OKXWebSocketClient {
 
                 builder.td_mode(td_mode);
                 builder.cl_ord_id(cl_ord_id.as_str());
-                builder.side(ord_side.as_specified());
+                builder.side(ord_side);
 
                 if inst_type != OKXInstrumentType::Events
                     && let Some(instrument) = instruments.get(&inst_id_symbol)
@@ -3364,7 +3364,7 @@ impl OKXWebSocketClient {
 
         builder.td_mode(td_mode);
         builder.cl_ord_id(client_order_id.as_str());
-        builder.side(order_side.as_specified());
+        builder.side(order_side);
         builder.ord_type(
             conditional_order_to_algo_type(order_type)
                 .map_err(|e| OKXWsError::ClientError(e.to_string()))?,

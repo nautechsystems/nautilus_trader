@@ -20,7 +20,7 @@ use tabled::{builder::Builder, settings::Style};
 
 use super::{BookPrice, level::BookLevel, own::OwnBookLevel};
 use crate::{
-    enums::OrderSideSpecified,
+    enums::OrderSide,
     orderbook::{OrderBook, own::OwnOrderBook},
 };
 
@@ -82,8 +82,8 @@ pub(crate) fn pprint_book(
         levels
             .iter()
             .map(|(book_price, level)| {
-                let is_bid_level = book_price.side == OrderSideSpecified::Buy;
-                let is_ask_level = book_price.side == OrderSideSpecified::Sell;
+                let is_bid_level = book_price.side == OrderSide::Buy;
+                let is_ask_level = book_price.side == OrderSide::Sell;
 
                 let bid_sizes: Vec<String> = level
                     .orders
@@ -185,8 +185,8 @@ pub(crate) fn pprint_own_book(
         levels
             .iter()
             .map(|(book_price, level)| {
-                let is_bid_level = book_price.side == OrderSideSpecified::Buy;
-                let is_ask_level = book_price.side == OrderSideSpecified::Sell;
+                let is_bid_level = book_price.side == OrderSide::Buy;
+                let is_ask_level = book_price.side == OrderSide::Sell;
 
                 let bid_sizes: Vec<String> = level
                     .orders
