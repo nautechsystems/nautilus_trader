@@ -50,10 +50,11 @@
 use std::{
     collections::VecDeque,
     fmt::Debug,
+    future::Future,
     pin::pin,
     sync::{
         Arc, OnceLock, RwLock,
-        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -120,11 +121,13 @@ use crate::{
         ReconnectRequestOutcome,
     },
     ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
+    retry::{RetryConfig, RetryError, RetryManager},
     transport::{BoxedWsTransport, Message, TransportError, tungstenite::TungsteniteTransport},
 };
 
 const WRITE_TIMEOUT_SECS: u64 = 5;
 const CONTROLLER_FALLBACK_INTERVAL_MS: u64 = 100;
+const INITIAL_CONNECT_OPERATION: &str = "WebSocket initial connection";
 
 /// The RFC 6455 control-frame payload limit.
 const MAX_CONTROL_FRAME_PAYLOAD_BYTES: usize = 125;
@@ -388,44 +391,25 @@ impl WebSocketClientInner {
         let cancellation_token = initial_connect_options
             .cancellation_token
             .unwrap_or_default();
-        let max_attempts = initial_connect_options
-            .retry_policy
+        let retry_policy = initial_connect_options.retry_policy;
+        let max_attempts = retry_policy
             .as_ref()
             .map_or(1, |policy| policy.max_attempts.get());
-        let mut initial_connect_backoff = initial_connect_options
-            .retry_policy
-            .as_ref()
-            .map(|policy| {
-                ExponentialBackoff::new(
-                    policy.delay_initial,
-                    policy.delay_max,
-                    policy.backoff_factor,
-                    policy.jitter_ms,
-                    false,
-                )
-            })
-            .transpose()
-            .map_err(|e| {
-                TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
-            })?;
+        let retry_manager = RetryManager::new(initial_connect_retry_config(retry_policy.as_ref())?);
+        let attempt = AtomicU32::new(0);
+        let operation = || {
+            attempt.fetch_add(1, Ordering::Relaxed);
 
-        let mut attempt = 0;
-        let (writer, reader) = loop {
-            attempt += 1;
-
-            if let Some(rate_limit) = &connection_rate_limit {
-                tokio::select! {
-                    biased;
-                    () = cancellation_token.cancelled() => return Err(initial_connect_cancelled()),
-                    () = rate_limit.limiter.await_keys_ready(Some(&rate_limit.keys)) => {}
+            await_initial_connect_attempt(&cancellation_token, async {
+                if let Some(rate_limit) = &connection_rate_limit {
+                    rate_limit
+                        .limiter
+                        .await_keys_ready(Some(&rate_limit.keys))
+                        .await;
                 }
-            }
 
-            // Bound the connection attempt: a server that accepts TCP but never upgrades must not hang the caller.
-            let result = tokio::select! {
-                biased;
-                () = cancellation_token.cancelled() => return Err(initial_connect_cancelled()),
-                result = dst::time::timeout(
+                // Bound only the dial: the connection rate-limit wait has its own venue timing
+                dst::time::timeout(
                     connect_timeout,
                     Box::pin(Self::connect_with_server(
                         &config.url,
@@ -433,9 +417,9 @@ impl WebSocketClientInner {
                         config.backend,
                         config.proxy_url.as_deref(),
                     )),
-                ) => result.unwrap_or_else(|_| {
-                    // A timed-out attempt is transient and must reach the retry
-                    // classification below rather than aborting the ladder.
+                )
+                .await
+                .unwrap_or_else(|_| {
                     Err(TransportError::Io(std::io::Error::new(
                         std::io::ErrorKind::TimedOut,
                         format!(
@@ -443,40 +427,33 @@ impl WebSocketClientInner {
                             connect_timeout.as_secs_f64()
                         ),
                     )))
-                }),
-            };
-
-            match result {
-                Ok(transport) => {
-                    if attempt > 1 {
-                        log::info!("WebSocket connection established after {attempt} attempts");
-                    }
-                    break transport;
-                }
-                Err(e) if attempt < max_attempts && is_retryable_initial_connect_error(&e) => {
-                    // The URL is redacted for the same reason `WebSocketConfig::Debug` redacts it:
-                    // it can carry credentials, tokens, or signed query parameters.
-                    log::warn!(
-                        "WebSocket connection attempt {attempt}/{max_attempts} to {REDACTED} failed: {e}"
-                    );
-                }
-                Err(e) => return Err(e),
-            }
-
-            let delay = initial_connect_backoff
-                .as_mut()
-                .expect("multiple attempts require a retry policy")
-                .next_duration();
-            log::debug!(
-                "Retrying in {delay:?} (attempt {}/{max_attempts})",
-                attempt + 1,
-            );
-            tokio::select! {
-                biased;
-                () = cancellation_token.cancelled() => return Err(initial_connect_cancelled()),
-                () = dst::time::sleep(delay) => {}
-            }
+                })
+            })
         };
+        let classify = |error: &TransportError| {
+            let retryable = is_retryable_initial_connect_error(error);
+            let attempt = attempt.load(Ordering::Relaxed);
+            if retryable && attempt < max_attempts && !cancellation_token.is_cancelled() {
+                log::warn!(
+                    "WebSocket connection attempt {attempt}/{max_attempts} to {REDACTED} failed: {error}"
+                );
+            }
+            retryable
+        };
+        let transport = retry_manager
+            .execute_with_retry_with_cancel(
+                INITIAL_CONNECT_OPERATION,
+                operation,
+                classify,
+                initial_connect_retry_error,
+                &cancellation_token,
+            )
+            .await?;
+        let attempt = attempt.load(Ordering::Relaxed);
+        if attempt > 1 {
+            log::info!("WebSocket connection established after {attempt} attempts");
+        }
+        let (writer, reader) = transport;
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let connection_epoch = Arc::new(AtomicU64::new(0));
@@ -944,6 +921,90 @@ const fn retryable_status(status: u16) -> bool {
     matches!(status, 408 | 425 | 429 | 500..=599)
 }
 
+fn initial_connect_retry_config(
+    policy: Option<&InitialConnectRetryPolicy>,
+) -> Result<RetryConfig, TransportError> {
+    if let Some(policy) = policy {
+        ExponentialBackoff::new(
+            policy.delay_initial,
+            policy.delay_max,
+            policy.backoff_factor,
+            policy.jitter_ms,
+            false,
+        )
+        .map_err(|e| {
+            TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
+        })?;
+
+        Ok(RetryConfig {
+            max_retries: policy.max_attempts.get() - 1,
+            initial_delay_ms: duration_to_millis("delay_initial", policy.delay_initial)?,
+            max_delay_ms: duration_to_millis("delay_max", policy.delay_max)?,
+            backoff_factor: policy.backoff_factor,
+            jitter_ms: policy.jitter_ms,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: None,
+        })
+    } else {
+        Ok(RetryConfig {
+            max_retries: 0,
+            initial_delay_ms: 1,
+            max_delay_ms: 1,
+            backoff_factor: 1.0,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            immediate_first: false,
+            max_elapsed_ms: None,
+        })
+    }
+}
+
+fn duration_to_millis(field: &str, duration: Duration) -> Result<u64, TransportError> {
+    let nanoseconds = duration.as_nanos();
+    if nanoseconds > u128::from(u64::MAX) {
+        return Err(TransportError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{field} exceeds the maximum backoff duration"),
+        )));
+    }
+
+    let milliseconds = nanoseconds
+        .div_ceil(1_000_000)
+        .min(u128::from(u64::MAX / 1_000_000));
+    u64::try_from(milliseconds).map_err(|_| {
+        TransportError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{field} exceeds the maximum backoff duration"),
+        ))
+    })
+}
+
+async fn await_initial_connect_attempt<F, T>(
+    cancellation_token: &CancellationToken,
+    attempt: F,
+) -> Result<T, TransportError>
+where
+    F: Future<Output = Result<T, TransportError>>,
+{
+    tokio::select! {
+        biased;
+        () = cancellation_token.cancelled() => Err(initial_connect_cancelled()),
+        result = attempt => result,
+    }
+}
+
+fn initial_connect_retry_error(error: RetryError) -> TransportError {
+    let kind = match error {
+        RetryError::Canceled => return initial_connect_cancelled(),
+        RetryError::InvalidConfiguration { .. } => std::io::ErrorKind::InvalidInput,
+        RetryError::OperationTimeout { .. } | RetryError::ElapsedBudgetExceeded { .. } => {
+            std::io::ErrorKind::TimedOut
+        }
+    };
+    TransportError::Io(std::io::Error::new(kind, error))
+}
+
 fn initial_connect_cancelled() -> TransportError {
     TransportError::Io(std::io::Error::new(
         std::io::ErrorKind::Interrupted,
@@ -1005,37 +1066,73 @@ mod connection_error_tests {
     }
 
     #[rstest]
-    #[case(408, true)]
-    #[case(425, true)]
-    #[case(429, true)]
-    #[case(500, true)]
-    #[case(503, true)]
-    #[case(599, true)]
-    #[case(400, false)]
-    #[case(401, false)]
-    #[case(403, false)]
-    #[case(404, false)]
-    #[case(407, false)]
-    #[case(409, false)]
-    #[case(426, false)]
-    #[case(499, false)]
-    #[case(600, false)]
-    #[case(101, false)]
-    #[case(200, false)]
-    fn initial_connect_retryable_status_policy(#[case] status: u16, #[case] expected: bool) {
-        assert_eq!(retryable_status(status), expected);
+    #[case(Duration::ZERO, 0)]
+    #[case(Duration::from_nanos(1), 1)]
+    #[case(Duration::from_micros(500), 1)]
+    #[case(Duration::from_nanos(1_000_001), 2)]
+    #[case(Duration::from_millis(500), 500)]
+    #[case(Duration::from_secs(5), 5_000)]
+    fn duration_to_millis_rounds_up(#[case] duration: Duration, #[case] expected: u64) {
+        assert_eq!(duration_to_millis("delay", duration).unwrap(), expected);
     }
 
     #[rstest]
-    #[case(TransportError::UpgradeRejected(429), true)]
-    #[case(TransportError::UpgradeRejected(503), true)]
-    #[case(TransportError::UpgradeRejected(404), false)]
-    #[case(TransportError::ProxyConnectRejected(429), true)]
-    #[case(TransportError::ProxyConnectRejected(407), false)]
-    #[case(TransportError::ConnectionClosed, true)]
-    #[case(TransportError::Handshake("malformed".into()), false)]
-    fn initial_connect_error_classification(#[case] err: TransportError, #[case] expected: bool) {
-        assert_eq!(is_retryable_initial_connect_error(&err), expected);
+    fn duration_to_millis_caps_at_backoff_maximum() {
+        assert_eq!(
+            duration_to_millis("delay", Duration::from_nanos(u64::MAX)).unwrap(),
+            u64::MAX / 1_000_000
+        );
+    }
+
+    #[rstest]
+    fn duration_to_millis_rejects_excessive_duration() {
+        let error = duration_to_millis("delay", Duration::from_secs(u64::MAX)).unwrap_err();
+        let TransportError::Io(error) = error else {
+            panic!("expected an I/O error, was: {error:?}");
+        };
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            error.to_string(),
+            "delay exceeds the maximum backoff duration"
+        );
+    }
+
+    #[rstest]
+    fn initial_connect_retry_config_preserves_duration_validation() {
+        let policy = InitialConnectRetryPolicy {
+            max_attempts: std::num::NonZeroU32::new(2).unwrap(),
+            delay_initial: Duration::from_micros(900),
+            delay_max: Duration::from_micros(500),
+            backoff_factor: 2.0,
+            jitter_ms: 0,
+        };
+        let error = initial_connect_retry_config(Some(&policy)).unwrap_err();
+        let TransportError::Io(error) = error else {
+            panic!("expected an I/O error, was: {error:?}");
+        };
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(
+            error
+                .to_string()
+                .contains("delay_max must be >= delay_initial")
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn initial_connect_attempt_prefers_cancellation_over_ready_result() {
+        let token = CancellationToken::new();
+        token.cancel();
+
+        let error = await_initial_connect_attempt(&token, std::future::ready(Ok(())))
+            .await
+            .expect_err("cancellation should take priority");
+
+        assert!(
+            matches!(error, TransportError::Io(ref error) if error.kind() == io::ErrorKind::Interrupted)
+        );
     }
 }
 
@@ -4750,6 +4847,7 @@ mod rust_tests {
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
+        sync::oneshot,
         task::{self, JoinHandle},
         time::{Duration, sleep},
     };
@@ -4840,17 +4938,64 @@ mod rust_tests {
         }
     }
 
-    fn initial_connect_test_policy() -> InitialConnectRetryPolicy {
+    fn initial_connect_retry_policy(
+        max_attempts: u32,
+        initial_delay_ms: u64,
+    ) -> InitialConnectRetryPolicy {
         InitialConnectRetryPolicy {
-            max_attempts: std::num::NonZeroU32::new(5).unwrap(),
-            delay_initial: Duration::from_secs(30),
-            delay_max: Duration::from_secs(30),
+            max_attempts: std::num::NonZeroU32::new(max_attempts).unwrap(),
+            delay_initial: Duration::from_millis(initial_delay_ms),
+            delay_max: Duration::from_millis(initial_delay_ms),
             backoff_factor: 2.0,
             jitter_ms: 0,
         }
     }
 
-    async fn rejected_upgrade_attempts(status: u16, backend: TransportBackend) -> u64 {
+    #[rstest]
+    #[case(TransportError::UpgradeRejected(408), true)]
+    #[case(TransportError::UpgradeRejected(425), true)]
+    #[case(TransportError::UpgradeRejected(429), true)]
+    #[case(TransportError::UpgradeRejected(500), true)]
+    #[case(TransportError::UpgradeRejected(599), true)]
+    #[case(TransportError::UpgradeRejected(404), false)]
+    #[case(TransportError::UpgradeRejected(600), false)]
+    #[case(TransportError::ProxyConnectRejected(429), true)]
+    #[case(TransportError::ProxyConnectRejected(407), false)]
+    #[case(TransportError::ConnectionClosed, true)]
+    #[case(
+        TransportError::Io(std::io::Error::from(std::io::ErrorKind::TimedOut)),
+        true
+    )]
+    #[case(
+        TransportError::Io(std::io::Error::from(std::io::ErrorKind::Interrupted)),
+        true
+    )]
+    #[case(
+        TransportError::Io(std::io::Error::from(std::io::ErrorKind::InvalidInput)),
+        false
+    )]
+    #[case(
+        TransportError::Io(std::io::Error::from(std::io::ErrorKind::InvalidData)),
+        false
+    )]
+    #[case(
+        TransportError::Io(std::io::Error::from(std::io::ErrorKind::Unsupported)),
+        false
+    )]
+    #[case(
+        TransportError::Io(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+        false
+    )]
+    #[case(TransportError::Handshake("malformed".to_string()), false)]
+    fn initial_connect_error_classification(#[case] error: TransportError, #[case] expected: bool) {
+        assert_eq!(is_retryable_initial_connect_error(&error), expected);
+    }
+
+    async fn rejected_upgrade_attempts(
+        status: u16,
+        backend: TransportBackend,
+        retry_policy: Option<InitialConnectRetryPolicy>,
+    ) -> u64 {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let accepted = Arc::new(AtomicU64::new(0));
@@ -4883,18 +5028,10 @@ mod rust_tests {
         let (handler, _rx) = channel_message_handler();
         let mut config = reconnect_test_config(port);
         config.backend = backend;
-        let policy = InitialConnectRetryPolicy {
-            max_attempts: std::num::NonZeroU32::new(3).unwrap(),
-            delay_initial: Duration::from_millis(1),
-            delay_max: Duration::from_millis(1),
-            backoff_factor: 1.0,
-            jitter_ms: 0,
-        };
-
         WebSocketClient::builder()
             .config(config)
             .message_handler(handler)
-            .initial_connect_retry_policy(policy)
+            .maybe_initial_connect_retry_policy(retry_policy)
             .connect()
             .await
             .expect_err("server always rejects the upgrade");
@@ -4922,18 +5059,10 @@ mod rust_tests {
         let (handler, _rx) = channel_message_handler();
         let mut config = reconnect_test_config(9);
         config.proxy_url = Some(format!("http://{proxy_addr}"));
-        let policy = InitialConnectRetryPolicy {
-            max_attempts: std::num::NonZeroU32::new(3).unwrap(),
-            delay_initial: Duration::from_millis(1),
-            delay_max: Duration::from_millis(1),
-            backoff_factor: 1.0,
-            jitter_ms: 0,
-        };
-
         WebSocketClient::builder()
             .config(config)
             .message_handler(handler)
-            .initial_connect_retry_policy(policy)
+            .initial_connect_retry_policy(initial_connect_retry_policy(3, 1))
             .connect()
             .await
             .expect_err("proxy always closes before its CONNECT response");
@@ -4962,7 +5091,7 @@ mod rust_tests {
         let connect = WebSocketClient::builder()
             .config(config)
             .message_handler(handler)
-            .initial_connect_retry_policy(initial_connect_test_policy())
+            .initial_connect_retry_policy(initial_connect_retry_policy(5, 30_000))
             .cancellation_token(token.clone())
             .connect();
         tokio::pin!(connect);
@@ -5007,18 +5136,10 @@ mod rust_tests {
         let (handler, _rx) = channel_message_handler();
         let mut config = reconnect_test_config(port);
         config.connect_timeout_ms = Some(50);
-        let policy = InitialConnectRetryPolicy {
-            max_attempts: std::num::NonZeroU32::new(3).unwrap(),
-            delay_initial: Duration::from_millis(1),
-            delay_max: Duration::from_millis(1),
-            backoff_factor: 1.0,
-            jitter_ms: 0,
-        };
-
         let err = WebSocketClient::builder()
             .config(config)
             .message_handler(handler)
-            .initial_connect_retry_policy(policy)
+            .initial_connect_retry_policy(initial_connect_retry_policy(3, 1))
             .connect()
             .await
             .expect_err("every attempt times out");
@@ -5054,8 +5175,22 @@ mod rust_tests {
     #[tokio::test]
     async fn transient_upgrade_rejection_is_retried(#[case] status: u16) {
         assert_eq!(
-            rejected_upgrade_attempts(status, TransportBackend::Tungstenite).await,
+            rejected_upgrade_attempts(
+                status,
+                TransportBackend::Tungstenite,
+                Some(initial_connect_retry_policy(3, 1)),
+            )
+            .await,
             3
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn initial_connect_without_retry_policy_makes_one_attempt() {
+        assert_eq!(
+            rejected_upgrade_attempts(503, TransportBackend::Tungstenite, None).await,
+            1
         );
     }
 
@@ -5064,7 +5199,12 @@ mod rust_tests {
     #[tokio::test]
     async fn sockudo_too_many_requests_upgrade_rejection_is_retried() {
         assert_eq!(
-            rejected_upgrade_attempts(429, TransportBackend::Sockudo).await,
+            rejected_upgrade_attempts(
+                429,
+                TransportBackend::Sockudo,
+                Some(initial_connect_retry_policy(3, 1)),
+            )
+            .await,
             3
         );
     }
@@ -5073,7 +5213,12 @@ mod rust_tests {
     #[tokio::test]
     async fn permanent_upgrade_rejection_is_not_retried() {
         assert_eq!(
-            rejected_upgrade_attempts(404, TransportBackend::Tungstenite).await,
+            rejected_upgrade_attempts(
+                404,
+                TransportBackend::Tungstenite,
+                Some(initial_connect_retry_policy(3, 1)),
+            )
+            .await,
             1
         );
     }
@@ -5086,6 +5231,62 @@ mod rust_tests {
 
     #[rstest]
     #[tokio::test]
+    async fn initial_connect_cancellation_interrupts_retry_backoff() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicU64::new(0));
+        let accepted_server = Arc::clone(&accepted);
+        let (rejected_tx, rejected_rx) = oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let mut rejected_tx = Some(rejected_tx);
+
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                accepted_server.fetch_add(1, Ordering::SeqCst);
+                let mut request = [0; 1024];
+                let _ = stream.read(&mut request).await.unwrap();
+                stream
+                    .write_all(b"HTTP/1.1 503 Service Unavailable\r\n\r\n")
+                    .await
+                    .unwrap();
+                if let Some(rejected_tx) = rejected_tx.take() {
+                    rejected_tx.send(()).unwrap();
+                }
+            }
+        });
+        let token = CancellationToken::new();
+        let (handler, _rx) = channel_message_handler();
+        let connect = WebSocketClient::builder()
+            .config(reconnect_test_config(port))
+            .message_handler(handler)
+            .initial_connect_retry_policy(initial_connect_retry_policy(5, 30_000))
+            .cancellation_token(token.clone())
+            .connect();
+        tokio::pin!(connect);
+
+        tokio::select! {
+            biased;
+            result = &mut connect => panic!("connect completed before backoff: {result:?}"),
+            result = rejected_rx => result.unwrap(),
+        }
+        assert!(futures_util::poll!(&mut connect).is_pending());
+        token.cancel();
+
+        let error = tokio::time::timeout(Duration::from_millis(250), connect)
+            .await
+            .expect("cancellation should interrupt retry backoff")
+            .expect_err("cancelled connect should fail");
+
+        assert!(
+            matches!(error, TransportError::Io(ref error) if error.kind() == std::io::ErrorKind::Interrupted)
+        );
+        assert_eq!(accepted.load(Ordering::SeqCst), 1);
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn permanent_initial_connect_error_does_not_wait_for_retry_ladder() {
         let (handler, _rx) = channel_message_handler();
         let mut config = reconnect_test_config(1);
@@ -5093,7 +5294,7 @@ mod rust_tests {
         let connect = WebSocketClient::builder()
             .config(config)
             .message_handler(handler)
-            .initial_connect_retry_policy(initial_connect_test_policy())
+            .initial_connect_retry_policy(initial_connect_retry_policy(5, 30_000))
             .connect();
 
         let err = tokio::time::timeout(Duration::from_millis(250), connect)
@@ -5156,6 +5357,43 @@ mod rust_tests {
         assert_eq!(reconnect.await.unwrap(), ReconnectOutcome::Reconnected);
 
         server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn initial_connect_cancellation_interrupts_connection_rate_limit_wait() {
+        let key = Ustr::from("connection-attempt");
+        let limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![(key, Quota::with_period(Duration::from_secs(1)).unwrap())],
+        ));
+        limiter.await_keys_ready(Some(&[key])).await;
+        let rate_limit = ConnectionRateLimit {
+            limiter,
+            keys: Arc::from([key]),
+        };
+        let token = CancellationToken::new();
+        let (handler, _rx) = channel_message_handler();
+        let connect = WebSocketClientInner::connect_url_with_handler(
+            reconnect_test_config(1),
+            Some(IncomingHandler::Message(handler)),
+            None,
+            None,
+            Some(rate_limit),
+            InitialConnectOptions {
+                retry_policy: None,
+                cancellation_token: Some(token.clone()),
+            },
+        );
+        tokio::pin!(connect);
+        assert!(futures_util::poll!(&mut connect).is_pending());
+
+        token.cancel();
+        let error = connect.await.expect_err("cancelled connect should fail");
+
+        assert!(
+            matches!(error, TransportError::Io(ref error) if error.kind() == std::io::ErrorKind::Interrupted)
+        );
     }
 
     #[rstest]

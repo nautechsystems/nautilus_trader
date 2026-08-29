@@ -110,6 +110,7 @@ use crate::common::{
         BybitRateLimiter, batch_call_limit, batch_endpoint_limit, batch_send_limit, batch_weight,
         category_from_payload,
     },
+    retry::should_retry_http,
     symbol::BybitSymbol,
     urls::bybit_http_base_url,
 };
@@ -608,15 +609,6 @@ impl BybitRawHttpClient {
             }
         };
 
-        let should_retry = |error: &BybitHttpError| -> bool {
-            match error {
-                BybitHttpError::NetworkError(_) => true,
-                BybitHttpError::UnexpectedStatus { status, .. } => *status == 429 || *status >= 500,
-                BybitHttpError::BybitError { error_code, .. } => *error_code == 10006,
-                _ => false,
-            }
-        };
-
         let create_error = |error: RetryError| -> BybitHttpError {
             match error {
                 RetryError::Canceled => {
@@ -632,7 +624,7 @@ impl BybitRawHttpClient {
             .execute_with_retry_with_cancel(
                 endpoint.as_str(),
                 operation,
-                should_retry,
+                should_retry_http,
                 create_error,
                 &token,
             )

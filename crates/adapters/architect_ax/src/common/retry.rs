@@ -13,20 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Common types, constants, and utilities shared across the AX Exchange adapter.
-//!
-//! This module contains:
-//! - Venue constants and identifiers
-//! - Shared enums (instrument state, order status, etc.)
-//! - Shared data models
-//! - Credential management and signing utilities
-//! - Parsing helpers
-//! - Test fixtures
+//! AX HTTP retry classification.
 
-pub mod auth;
-pub mod consts;
-pub mod credential;
-pub mod enums;
-pub mod parse;
+use crate::http::error::AxHttpError;
 
-pub(crate) mod retry;
+pub(crate) fn should_retry_http(error: &AxHttpError) -> bool {
+    match error {
+        AxHttpError::NetworkError(_) => true,
+        AxHttpError::UnexpectedStatus { status, .. } => {
+            is_retryable_status(*status) || *status >= 600
+        }
+        AxHttpError::MissingCredentials
+        | AxHttpError::MissingSessionToken
+        | AxHttpError::ApiError { .. }
+        | AxHttpError::JsonError(_)
+        | AxHttpError::ValidationError(_)
+        | AxHttpError::BuildError(_)
+        | AxHttpError::Canceled(_) => false,
+    }
+}
+
+const fn is_retryable_status(status: u16) -> bool {
+    matches!(status, 429 | 500..=599)
+}
