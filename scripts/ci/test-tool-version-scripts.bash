@@ -4,47 +4,30 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-case_root="$(mktemp -d "${TMPDIR:-/tmp}/nautilus-tool-version-test.XXXXXX")"
-trap 'rm -rf "$case_root"' EXIT
+for catalog in \
+  "${REPO_ROOT}/.nautilus-engineering/tools.toml" \
+  "${REPO_ROOT}/tools.toml"; do
+  tool_count=0
+  while IFS= read -r tool; do
+    version=$(bash "${REPO_ROOT}/scripts/tool-version.sh" "$tool")
+    if [[ -z "$version" ]]; then
+      printf 'Tool version was empty for %s\n' "$tool" >&2
+      exit 1
+    fi
+    tool_count=$((tool_count + 1))
+  done < <(awk '
+    /^\[[a-z0-9][a-z0-9_-]*\]$/ {
+      section=$0
+      gsub(/^\[|\]$/, "", section)
+      print section
+    }
+  ' "$catalog")
 
-mkdir -p "${case_root}/scripts"
-cp "${REPO_ROOT}/scripts/tool-version.sh" "${case_root}/scripts/"
-
-printf '%s\n' \
-  '[valid-tool]' \
-  'version = "nightly-2026-08-14"' \
-  '[bad-tool]' \
-  'version = "1..2"' \
-  > "${case_root}/tools.toml"
-
-expect_output() {
-  local tool=$1 expected=$2 actual
-
-  actual=$(bash "${case_root}/scripts/tool-version.sh" "$tool")
-  if [[ "$actual" != "$expected" ]]; then
-    printf 'Expected tool-version.sh %s to return %s, was %s\n' "$tool" "$expected" "$actual" >&2
+  if ((tool_count == 0)); then
+    printf 'No tool pins were found in %s\n' "$catalog" >&2
     exit 1
   fi
-}
-
-expect_failure() {
-  local tool=$1 expected=$2
-
-  if bash "${case_root}/scripts/tool-version.sh" "$tool" \
-    > "${case_root}/stdout.txt" 2> "${case_root}/stderr.txt"; then
-    printf 'Expected tool-version.sh %s to fail\n' "$tool" >&2
-    exit 1
-  fi
-  if ! grep -Fq "$expected" "${case_root}/stderr.txt"; then
-    printf 'Expected tool-version.sh failure reason not found: %s\n' "$expected" >&2
-    cat "${case_root}/stderr.txt" >&2
-    exit 1
-  fi
-}
-
-expect_output valid-tool nightly-2026-08-14
-expect_failure valid.tool 'Invalid tool name: valid.tool'
-expect_failure bad-tool 'Invalid version for [bad-tool]: 1..2'
+done
 
 cargo_tool_count=0
 while IFS= read -r tool; do
@@ -64,6 +47,20 @@ if ((cargo_tool_count == 0)); then
   echo "No local Cargo tool pins were found" >&2
   exit 1
 fi
+
+for tool in cargo-audit cargo-deny cargo-edit cargo-llvm-cov cargo-nextest cargo-vet; do
+  if [[ -z $(bash "${REPO_ROOT}/scripts/cargo-tool-version.sh" "$tool") ]]; then
+    printf 'Shared Cargo tool version was empty for %s\n' "$tool" >&2
+    exit 1
+  fi
+done
+
+uv_version=$(bash "${REPO_ROOT}/scripts/uv-version.sh")
+if [[ "$uv_version" != $(bash "${REPO_ROOT}/scripts/tool-version.sh" uv) ]]; then
+  echo "uv-version.sh did not match the shared uv pin" >&2
+  exit 1
+fi
+
 if [[ -z $(bash "${REPO_ROOT}/scripts/rust-toolchain.sh") ]]; then
   echo "Rust toolchain version was empty" >&2
   exit 1

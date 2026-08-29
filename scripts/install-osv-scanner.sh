@@ -3,7 +3,6 @@ set -euo pipefail
 
 # Install the osv-scanner prebuilt binary from GitHub releases.
 #
-# Version comes from tools.toml (single source of truth).
 # Installs to $OSV_SCANNER_PREFIX (default: ~/.cargo/bin) which is already
 # on PATH for anyone who uses the cargo-install tools in install-tools.
 

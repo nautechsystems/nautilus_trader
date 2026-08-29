@@ -36,6 +36,12 @@ sha256 = "f9d1883fdafe45d8b8e70f706f06360a342c106caddc679a3f53a9fe70e6bec0"
 executable = false
 
 [[file]]
+artifact = "shared-tool-catalog"
+path = ".nautilus-engineering/tools.toml"
+sha256 = "f967ebbbc6a97e4ac2b3c6fe3fd4fb3e98972179771706871aab8e3dabbb009c"
+executable = false
+
+[[file]]
 artifact = "taplo-config"
 path = ".taplo.toml"
 sha256 = "2ebf46fbb3a9f63bc11c46154e7312cfec48cb99a3af6258c707bb0a318b15f9"
@@ -96,7 +102,19 @@ sha256 = "059461aaf186a5771b2e7e4b9ff3031189535ccb52243dd643b6e2a1a4d6a3bd"
 executable = true
 
 [[file]]
+artifact = "tool-version"
+path = "scripts/tool-version.sh"
+sha256 = "f927cd95160b8f2b1aea74e379e62237bba806845731499900befba81f319868"
+executable = true
+
+[[file]]
 artifact = "cargo-dependency-update"
 path = "scripts/update-cargo-dependencies.bash"
 sha256 = "4e6a4756ab6aa7927cabcd65cd1e00b5fabfd5e2b496f9916707a058879a21bb"
+executable = true
+
+[[file]]
+artifact = "uv-version"
+path = "scripts/uv-version.sh"
+sha256 = "5f2935ec72cfaeeeccfc6abf5a9af5c9667cc196212eddc4fcd935e2cc523b4e"
 executable = true

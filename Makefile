@@ -6,7 +6,7 @@ IMAGE?=$(REGISTRY)$(PROJECT)
 GIT_TAG:=$(shell git rev-parse --abbrev-ref HEAD)
 IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
-# Tool versions from Cargo.toml [workspace.metadata.tools]
+# Shared and NautilusTrader-specific Cargo tool versions
 CARGO_AUDIT_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-audit)
 CARGO_CODSPEED_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-codspeed)
 CARGO_DENY_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-deny)
@@ -19,7 +19,7 @@ CARGO_NEXTEST_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-nextes
 CARGO_VET_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-vet)
 FLAMEGRAPH_VERSION := $(shell bash scripts/cargo-tool-version.sh flamegraph)
 LYCHEE_VERSION := $(shell bash scripts/cargo-tool-version.sh lychee)
-# Tool versions from tools.toml
+# Shared and NautilusTrader-specific tool versions
 PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
 NIGHTLY_TOOLCHAIN := $(shell bash scripts/tool-version.sh miri) # Pinned nightly, shared with Miri
 UV_VERSION := $(shell bash scripts/uv-version.sh)
@@ -540,7 +540,7 @@ update: cargo-update update-uv  #-- Update all dependencies (cargo and uv)
 	$Q cd python && VIRTUAL_ENV= uv lock --upgrade
 
 .PHONY: update-uv
-update-uv:  #-- Install or upgrade uv to the version pinned in tools.toml
+update-uv:  #-- Install or upgrade uv to the version pinned in the shared tool catalog
 	$(info $(M) Ensuring uv $(UV_VERSION) is installed...)
 	@if [ "$$(uv --version 2>/dev/null | awk '{print $$2}')" = "$(UV_VERSION)" ]; then \
 		printf "$(GREEN)uv $(UV_VERSION) already installed$(RESET)\n"; \
@@ -549,7 +549,7 @@ update-uv:  #-- Install or upgrade uv to the version pinned in tools.toml
 	fi
 
 .PHONY: install-tools
-install-tools: check-binstall-installed update-uv  #-- Install required development tools (pinned versions from Cargo.toml and tools.toml)
+install-tools: check-binstall-installed update-uv  #-- Install required development tools at shared and local pinned versions
 	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
 	&& cargo install cargo-codspeed --version $(CARGO_CODSPEED_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \
@@ -702,7 +702,7 @@ check-deny-installed:  #-- Verify the pinned cargo-deny version is installed
 	fi
 	@INSTALLED=$$(cargo deny --version | awk '{print $$2}'); \
 	if [ "$$INSTALLED" != "$(CARGO_DENY_VERSION)" ]; then \
-		printf "$(RED)cargo-deny version mismatch: installed %s, expected %s (from Cargo.toml)$(RESET)\n" \
+		printf "$(RED)cargo-deny version mismatch: installed %s, expected %s (from the shared tool catalog)$(RESET)\n" \
 			"$$INSTALLED" "$(CARGO_DENY_VERSION)"; \
 		printf "Install with: $(CYAN)cargo install cargo-deny --version %s --locked$(RESET)\n" \
 			"$(CARGO_DENY_VERSION)"; \
@@ -726,7 +726,7 @@ check-vet-installed:  #-- Verify cargo-vet is installed
 	fi
 
 .PHONY: check-osv-scanner-installed
-check-osv-scanner-installed:  #-- Verify osv-scanner is installed and version matches tools.toml
+check-osv-scanner-installed:  #-- Verify osv-scanner is installed and version matches the shared tool catalog
 	@if ! osv-scanner --version >/dev/null 2>&1; then \
 		echo "osv-scanner is not installed. See https://google.github.io/osv-scanner/installation/"; \
 		exit 1; \
@@ -734,7 +734,7 @@ check-osv-scanner-installed:  #-- Verify osv-scanner is installed and version ma
 	@EXPECTED=$$(bash scripts/tool-version.sh osv-scanner); \
 	INSTALLED=$$(osv-scanner --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1); \
 	if [ "$$INSTALLED" != "$$EXPECTED" ]; then \
-		printf "$(YELLOW)osv-scanner version mismatch: installed %s, expected %s (from tools.toml)$(RESET)\n" "$$INSTALLED" "$$EXPECTED"; \
+		printf "$(YELLOW)osv-scanner version mismatch: installed %s, expected %s (from the shared tool catalog)$(RESET)\n" "$$INSTALLED" "$$EXPECTED"; \
 	fi
 
 # Testing tool checks

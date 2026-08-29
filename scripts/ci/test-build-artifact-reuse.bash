@@ -178,7 +178,13 @@ grep -Fq '            crates/network/.*\.rs|' "$REPO_ROOT/.pre-commit-config.yam
 grep -Fq '            crates/network/Cargo\.toml|' "$REPO_ROOT/.pre-commit-config.yaml" ||
   fail "Non-Linux network Clippy hook is not limited to Rust build inputs"
 
-for config in .config/nextest.toml .cargo/audit.toml deny.toml tools.toml crates/model/cbindgen.toml; do
+for config in \
+  .config/nextest.toml \
+  .cargo/audit.toml \
+  .nautilus-engineering/tools.toml \
+  deny.toml \
+  tools.toml \
+  crates/model/cbindgen.toml; do
   run_changed_script clippy-changed.sh "$config"
   [[ ! -s "$CARGO_LOG" ]] || fail "Non-build TOML triggered Clippy: $config"
   grep -Fq "No Rust build inputs detected; skipping clippy" "$RUST_CHECK_LOG" ||

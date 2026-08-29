@@ -37,6 +37,7 @@ on:
       - .cargo/deny-fuzz.toml
       - osv-scanner.toml
       - .supply-chain/**
+      - .nautilus-engineering/tools.toml
       - tools.toml
       - .cargo/config.toml
       - .cargo/audit.toml

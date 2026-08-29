@@ -250,7 +250,7 @@ runs:
 
     # > --------------------------------------------------
     # > UV
-    - name: Get uv version from pyproject.toml
+    - name: Get uv version
       id: uv-version
       shell: bash
       run: |

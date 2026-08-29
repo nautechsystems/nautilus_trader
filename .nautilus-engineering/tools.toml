@@ -1,0 +1,89 @@
+# Shared version pins for Nautilus engineering tools
+#
+# Consumers vendor this catalog to .nautilus-engineering/tools.toml. The pin checker also verifies
+# shared hook fragments and this repository's pre-commit revisions against these versions.
+
+[prek]
+version = "0.4.14"
+ci = true
+
+[pre-commit-hooks]
+version = "6.0.0"
+pre-commit-repository = "https://github.com/pre-commit/pre-commit-hooks"
+pre-commit-revision = "v{version}"
+
+[ruff]
+version = "0.16.4"
+ci = true
+pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
+pre-commit-revision = "v{version}"
+
+[shfmt]
+version = "3.13.1"
+ci = true
+pre-commit-repository = "https://github.com/scop/pre-commit-shfmt"
+pre-commit-revision = "v{version}-1"
+pre-commit-fragment = "pre-commit/shell.yaml"
+
+[shellcheck]
+version = "0.11.0.1"
+ci = true
+pre-commit-repository = "https://github.com/shellcheck-py/shellcheck-py"
+pre-commit-revision = "v{version}-1"
+pre-commit-fragment = "pre-commit/shell.yaml"
+
+[yamllint]
+version = "1.38.0"
+ci = true
+pre-commit-repository = "https://github.com/adrienverge/yamllint"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/yaml.yaml"
+
+[taplo]
+version = "0.9.3"
+ci = true
+pre-commit-repository = "https://github.com/ComPWA/taplo-pre-commit"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/toml.yaml"
+
+[markdownlint-cli2]
+version = "0.23.2"
+ci = true
+pre-commit-repository = "https://github.com/DavidAnson/markdownlint-cli2"
+pre-commit-revision = "v{version}"
+pre-commit-fragment = "pre-commit/markdown.yaml"
+
+[actionlint]
+version = "1.7.12"
+pre-commit-repository = "https://github.com/rhysd/actionlint"
+pre-commit-revision = "v{version}"
+
+[cargo-audit]
+version = "0.22.2"
+
+[cargo-deny]
+version = "0.20.2"
+
+[cargo-edit]
+version = "0.13.13"
+
+[cargo-llvm-cov]
+version = "0.9.0"
+
+[cargo-nextest]
+version = "0.9.143"
+
+[cargo-vet]
+version = "0.10.2"
+
+[uv]
+version = "0.12.6"
+
+[pip-audit]
+version = "2.10.1"
+
+[osv-scanner]
+version = "2.5.1"
+
+[capnp]
+version = "1.5.0"

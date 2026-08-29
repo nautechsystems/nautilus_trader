@@ -31,7 +31,7 @@ set -euo pipefail
 #   - Audit policy              deny.toml, .cargo/deny-fuzz.toml, osv-scanner.toml,
 #                               .cargo/audit.toml, .supply-chain/*
 #   - Toolchain config          .cargo/config.toml, rust-toolchain.toml,
-#                               tools.toml
+#                               .nautilus-engineering/tools.toml, tools.toml
 #   - Audit scripts             selected scripts/ci release, publication,
 #                               workflow, and validation scripts
 #   - CI config                 .pre-commit-config.yaml, .github/workflows/*
@@ -91,7 +91,7 @@ pattern+='|crates/.*/fuzz/Cargo\.lock'
 pattern+='|\.pre-commit-config\.yaml'
 pattern+='|python/(uv\.lock|pyproject\.toml)'
 pattern+='|deny\.toml|\.cargo/deny-fuzz\.toml|osv-scanner\.toml|\.supply-chain/.*'
-pattern+='|tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
+pattern+='|(\.nautilus-engineering/)?tools\.toml|\.cargo/(config|audit)\.toml|rust-toolchain\.toml'
 pattern+='|scripts/(cargo-tool-version|rust-toolchain|tool-version|uv-version)\.sh'
 pattern+='|scripts/purge-orphan-dev-wheels\.sh'
 pattern+='|scripts/ci/('
