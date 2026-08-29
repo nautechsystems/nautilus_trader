@@ -117,11 +117,7 @@ impl Visitor<'_> for DecimalVisitor {
 
     // Float handling - direct conversion
     fn visit_f64<E: Error>(self, v: f64) -> Result<Self::Value, E> {
-        if v.is_nan() {
-            return Err(E::invalid_value(Unexpected::Float(v), &self));
-        }
-
-        if v.is_infinite() {
+        if !v.is_finite() {
             return Err(E::invalid_value(Unexpected::Float(v), &self));
         }
         Decimal::try_from(v).map_err(E::custom)
