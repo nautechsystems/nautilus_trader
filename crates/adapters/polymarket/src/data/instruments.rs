@@ -17,7 +17,7 @@ use std::{sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
-use nautilus_common::{live::get_runtime, messages::DataEvent, providers::InstrumentProvider};
+use nautilus_common::{messages::DataEvent, providers::InstrumentProvider};
 use nautilus_core::{AtomicMap, UnixNanos, time::AtomicTime};
 use nautilus_model::{
     identifiers::InstrumentId,
@@ -26,7 +26,7 @@ use nautilus_model::{
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
-use super::{PolymarketDataClient, runtime::is_instrument_expired};
+use super::{PolymarketDataClient, runtime::is_instrument_expired, spawn_task};
 use crate::{
     common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
     filters::{
@@ -424,7 +424,7 @@ impl PolymarketDataClient {
         Ok(())
     }
 
-    pub(super) fn spawn_instrument_refresh_task(&mut self) {
+    pub(super) fn spawn_instrument_refresh_task(&self) {
         let Some(interval_mins) = self.config.update_instruments_interval_mins else {
             return;
         };
@@ -449,7 +449,7 @@ impl PolymarketDataClient {
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             log::debug!("Polymarket instrument refresh task started");
 
             loop {
@@ -487,9 +487,13 @@ impl PolymarketDataClient {
             }
 
             log::debug!("Polymarket instrument refresh task ended");
-        });
-
-        self.tasks.push(handle);
+        };
+        spawn_task(
+            &self.tasks,
+            &self.task_registration,
+            &self.cancellation_token,
+            future,
+        );
     }
 }
 
@@ -582,7 +586,7 @@ mod tests {
 
     #[rstest]
     fn refresh_task_does_not_spawn_without_config_or_filters() {
-        let mut client = make_client(PolymarketDataClientConfig {
+        let client = make_client(PolymarketDataClientConfig {
             update_instruments_interval_mins: Some(1),
             instrument_config: None,
             ..PolymarketDataClientConfig::default()

@@ -33,11 +33,11 @@
 //! valid snapshot arrives. The mismatched snapshot is not parsed, applied, or
 //! emitted as a quote.
 
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, Mutex as StdMutex, Weak};
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::{DashMap, mapref::entry::Entry};
-use nautilus_common::{live::get_runtime, messages::DataEvent};
+use nautilus_common::{live::task::TaskHandles, messages::DataEvent};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 use nautilus_model::{
     data::{Data as NautilusData, InstrumentStatus, OrderBookDeltas, QuoteTick},
@@ -53,12 +53,13 @@ use super::{
     NEW_MARKET_EMPTY_RECHECK_DELAY, NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS,
     effective_deltas::apply_snapshot_and_diff,
     instruments::{TokenMeta, apply_live_instrument},
+    spawn_task,
 };
 use crate::{
     filters::InstrumentFilter,
     http::{
-        clob::PolymarketClobPublicClient, gamma::PolymarketGammaHttpClient,
-        parse::rebuild_instrument_with_tick_size, query::GetGammaMarketsParams,
+        gamma::PolymarketGammaHttpClient, parse::rebuild_instrument_with_tick_size,
+        query::GetGammaMarketsParams,
     },
     resolve::{ResolveContext, ResolveWatchEntry, apply_condition_resolution},
     rtds::PolymarketRtdsFeed,
@@ -95,7 +96,6 @@ pub(super) struct WsMessageContext {
     pub(super) token_meta: Arc<DashMap<Ustr, TokenMeta>>,
     pub(super) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     pub(super) gamma_client: PolymarketGammaHttpClient,
-    pub(super) clob_public_client: PolymarketClobPublicClient,
     pub(super) filters: Vec<Arc<dyn InstrumentFilter>>,
     pub(super) order_books: Arc<DashMap<InstrumentId, OrderBook>>,
     pub(super) last_quotes: Arc<DashMap<InstrumentId, QuoteTick>>,
@@ -108,6 +108,8 @@ pub(super) struct WsMessageContext {
     pub(super) pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     pub(super) new_market_inflight_keys: Arc<DashMap<String, ()>>,
     pub(super) new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
+    pub(super) tasks: Weak<TaskHandles>,
+    pub(super) task_registration: Weak<StdMutex<()>>,
     pub(super) rtds_feed: PolymarketRtdsFeed,
     pub(super) subscribe_new_markets: bool,
     pub(super) new_market_filter: Option<Arc<dyn InstrumentFilter>>,
@@ -647,9 +649,16 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             let fetch_semaphore = ctx.new_market_fetch_semaphore.clone();
             let active = nm.active;
 
-            get_runtime().spawn(async move {
-                let _inflight_guard =
-                    NewMarketInflightGuard::new(inflight_keys, dedupe_key.clone());
+            let (Some(tasks), Some(task_registration)) =
+                (ctx.tasks.upgrade(), ctx.task_registration.upgrade())
+            else {
+                ctx.new_market_inflight_keys.remove(&dedupe_key);
+                return;
+            };
+
+            let inflight_guard = NewMarketInflightGuard::new(inflight_keys, dedupe_key.clone());
+            let future = async move {
+                let _inflight_guard = inflight_guard;
                 let _permit = tokio::select! {
                     permit = fetch_semaphore.clone().acquire_owned() => {
                         match permit {
@@ -691,7 +700,8 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                     break Ok(instruments);
                                 }
 
-                                let transient_hit = transient.iter().any(|cid| cid == &condition_id);
+                                let transient_hit =
+                                    transient.iter().any(|cid| cid == &condition_id);
 
                                 if attempt < NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS {
                                     attempt += 1;
@@ -766,8 +776,8 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 &token_meta,
                                 &inst,
                                 |instrument| {
-                                    if let Err(e) = data_sender
-                                        .send(DataEvent::Instrument(instrument.clone()))
+                                    if let Err(e) =
+                                        data_sender.send(DataEvent::Instrument(instrument.clone()))
                                     {
                                         log::error!(
                                             "Failed to emit new market instrument {instrument_id}: {e}"
@@ -804,11 +814,12 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                             );
                         }
                     }
-                    Err(e) => log::warn!(
-                        "Failed to fetch instruments for new market slug '{slug}': {e}"
-                    ),
+                    Err(e) => {
+                        log::warn!("Failed to fetch instruments for new market slug '{slug}': {e}");
+                    }
                 }
-            });
+            };
+            spawn_task(&tasks, &task_registration, &ctx.cancellation_token, future);
         }
 
         MarketWsMessage::MarketResolved(resolved) => {
@@ -945,6 +956,7 @@ mod tests {
         collections::VecDeque,
         net::SocketAddr,
         num::NonZeroUsize,
+        ops::{Deref, DerefMut},
         sync::atomic::{AtomicUsize, Ordering},
         time::{Duration, Duration as StdDuration},
     };
@@ -1001,7 +1013,7 @@ mod tests {
             enums::PolymarketOrderSide,
         },
         config::PolymarketDataClientConfig,
-        http::data_api::PolymarketDataApiHttpClient,
+        http::{clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient},
         resolve::{
             PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
             fetch_and_apply_resolutions_by_condition_ids, pause_resolve_watch_entries,
@@ -1023,6 +1035,26 @@ mod tests {
     }
 
     type CacheProbe = Arc<dyn Fn() -> bool + Send + Sync>;
+
+    struct TestWsContext {
+        ctx: WsMessageContext,
+        tasks: Arc<TaskHandles>,
+        _task_registration: Arc<StdMutex<()>>,
+    }
+
+    impl Deref for TestWsContext {
+        type Target = WsMessageContext;
+
+        fn deref(&self) -> &Self::Target {
+            &self.ctx
+        }
+    }
+
+    impl DerefMut for TestWsContext {
+        fn deref_mut(&mut self) -> &mut Self::Target {
+            &mut self.ctx
+        }
+    }
 
     async fn record_json_ws_payloads(
         mut socket: WebSocket,
@@ -1141,7 +1173,7 @@ mod tests {
     fn make_ws_ctx_with_gamma_base_url(
         gamma_base_url: &str,
     ) -> (
-        WsMessageContext,
+        TestWsContext,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -1160,10 +1192,9 @@ mod tests {
             },
         )
         .expect("gamma client");
-        let clob_public_client =
-            PolymarketClobPublicClient::new(Some("http://localhost".to_string()), 5)
-                .expect("clob client");
         let default_config = PolymarketDataClientConfig::default();
+        let tasks = Arc::new(TaskHandles::default());
+        let task_registration = Arc::new(StdMutex::new(()));
 
         let ctx = WsMessageContext {
             clock: get_atomic_clock_realtime(),
@@ -1171,7 +1202,6 @@ mod tests {
             token_meta: Arc::new(DashMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             gamma_client,
-            clob_public_client,
             filters: vec![],
             order_books: Arc::new(DashMap::new()),
             last_quotes: Arc::new(DashMap::new()),
@@ -1186,6 +1216,8 @@ mod tests {
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
                 default_config.new_market_fetch_max_concurrency,
             )),
+            tasks: Arc::downgrade(&tasks),
+            task_registration: Arc::downgrade(&task_registration),
             rtds_feed: crate::rtds::PolymarketRtdsFeed::new(
                 "ws://localhost/rtds".to_string(),
                 TransportBackend::default(),
@@ -1199,11 +1231,18 @@ mod tests {
             cancellation_token: CancellationToken::new(),
         };
 
-        (ctx, data_rx)
+        (
+            TestWsContext {
+                ctx,
+                tasks,
+                _task_registration: task_registration,
+            },
+            data_rx,
+        )
     }
 
     fn make_ws_ctx() -> (
-        WsMessageContext,
+        TestWsContext,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) {
         make_ws_ctx_with_gamma_base_url("http://localhost")
@@ -1321,14 +1360,13 @@ mod tests {
         stub_position_opened_event_with_position_id(instrument_id, "P-1")
     }
 
-    fn make_client_ws_ctx(client: &PolymarketDataClient) -> WsMessageContext {
-        WsMessageContext {
+    fn make_client_ws_ctx(client: &PolymarketDataClient) -> TestWsContext {
+        let ctx = WsMessageContext {
             clock: client.clock,
             data_sender: client.data_sender.clone(),
             token_meta: client.token_meta.clone(),
             instruments: client.instruments.clone(),
             gamma_client: client.provider.http_client().clone(),
-            clob_public_client: client.clob_public_client.clone(),
             filters: client.provider.filters(),
             order_books: client.order_books.clone(),
             last_quotes: client.last_quotes.clone(),
@@ -1341,12 +1379,20 @@ mod tests {
             pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: client.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
+            tasks: Arc::downgrade(&client.tasks),
+            task_registration: Arc::downgrade(&client.task_registration),
             rtds_feed: client.rtds_feed.clone(),
             subscribe_new_markets: client.config.subscribe_new_markets,
             new_market_filter: client.config.new_market_filter.clone(),
             drop_quotes_missing_side: client.config.drop_quotes_missing_side,
             compute_effective_deltas: client.config.compute_effective_deltas,
             cancellation_token: client.cancellation_token.clone(),
+        };
+
+        TestWsContext {
+            ctx,
+            tasks: client.tasks.clone(),
+            _task_registration: client.task_registration.clone(),
         }
     }
 
@@ -1864,6 +1910,19 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn new_market_canceled_registration_cleans_inflight_key() {
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        ctx.subscribe_new_markets = true;
+        ctx.cancellation_token.cancel();
+
+        handle_market_message(make_new_market("btc-updown-5m-1", true), &ctx);
+
+        assert!(ctx.tasks.is_empty());
+        assert!(ctx.new_market_inflight_keys.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn new_market_dedupes_same_slug_and_cleans_inflight_on_cancel() {
         let state = NewMarketFetchTestServerState::default();
         let addr = start_new_market_test_server(state.clone()).await;
@@ -1881,20 +1940,18 @@ mod tests {
             ctx.new_market_inflight_keys
                 .contains_key("cond:cond-btc-updown-5m-1")
         );
+        assert_eq!(ctx.tasks.len(), 1);
 
         ctx.cancellation_token.cancel();
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
-
-        loop {
-            if ctx.new_market_inflight_keys.is_empty() {
-                break;
-            }
-            assert!(
-                tokio::time::Instant::now() < deadline,
-                "expected in-flight key cleanup after cancellation"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
+        for handle in ctx.tasks.take_all() {
+            tokio::time::timeout(Duration::from_secs(1), handle)
+                .await
+                .expect("new market fetch cancellation timeout")
+                .expect("new market fetch task join");
         }
+
+        assert!(ctx.tasks.is_empty());
+        assert!(ctx.new_market_inflight_keys.is_empty());
     }
 
     #[rstest]
@@ -3700,7 +3757,8 @@ mod tests {
         client.cancellation_token.cancel();
         client
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
-            .await;
+            .await
+            .expect("new market fetch tasks terminated");
 
         let events = collect_events_until(&mut data_rx, StdDuration::from_secs(1), |events| {
             count_instrument_close_events(events) >= 2
@@ -5884,7 +5942,7 @@ mod tests {
     fn quote_context(
         asset_id: &str,
     ) -> (
-        WsMessageContext,
+        TestWsContext,
         tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         InstrumentId,
     ) {

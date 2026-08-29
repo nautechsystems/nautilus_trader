@@ -13,10 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_common::{live::get_runtime, messages::DataEvent};
+use nautilus_common::messages::DataEvent;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -30,6 +36,7 @@ use super::{
     runtime::{
         is_condition_closed, register_closed_condition_for_live_data, retire_closed_condition_state,
     },
+    spawn_task,
     subscriptions::{resolve_token_id_from, sync_ws_subscription_with_terminal_async},
 };
 use crate::{
@@ -42,6 +49,33 @@ enum AutoLoadOutcome {
     Open(Vec<InstrumentAny>),
     Closed,
     Unknown,
+}
+
+struct AutoLoadScheduledGuard {
+    scheduled: Arc<AtomicBool>,
+    armed: bool,
+}
+
+impl AutoLoadScheduledGuard {
+    fn new(scheduled: Arc<AtomicBool>) -> Self {
+        Self {
+            scheduled,
+            armed: true,
+        }
+    }
+
+    fn release(&mut self) {
+        if self.armed {
+            self.scheduled.store(false, Ordering::Release);
+            self.armed = false;
+        }
+    }
+}
+
+impl Drop for AutoLoadScheduledGuard {
+    fn drop(&mut self) {
+        self.release();
+    }
 }
 
 impl PolymarketDataClient {
@@ -92,12 +126,7 @@ impl PolymarketDataClient {
     fn ensure_auto_load_task(&self) {
         if self
             .auto_load_scheduled
-            .compare_exchange(
-                false,
-                true,
-                std::sync::atomic::Ordering::AcqRel,
-                std::sync::atomic::Ordering::Acquire,
-            )
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
             return;
@@ -126,15 +155,15 @@ impl PolymarketDataClient {
         let last_quotes = self.last_quotes.clone();
         let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
         let pending_snapshot_after_tick_change = self.pending_snapshot_after_tick_change.clone();
+        let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
 
-        get_runtime().spawn(async move {
+        let future = async move {
+            let mut scheduled_guard = scheduled_guard;
+
             // Coalesce concurrent misses into one Gamma call.
             tokio::select! {
                 () = tokio::time::sleep(Duration::from_millis(debounce_ms)) => {}
-                () = cancellation.cancelled() => {
-                    scheduled.store(false, std::sync::atomic::Ordering::Release);
-                    return;
-                }
+                () = cancellation.cancelled() => return,
             }
 
             // Drain pending and release `scheduled` so new misses spawn a fresh
@@ -145,7 +174,7 @@ impl PolymarketDataClient {
                 guard.clear();
                 snapshot
             };
-            scheduled.store(false, std::sync::atomic::Ordering::Release);
+            scheduled_guard.release();
 
             if batch.is_empty() {
                 return;
@@ -245,10 +274,8 @@ impl PolymarketDataClient {
 
                             for (condition_id, instruments) in open_by_condition {
                                 if !explicitly_closed.contains(&condition_id) {
-                                    outcomes.insert(
-                                        condition_id,
-                                        AutoLoadOutcome::Open(instruments),
-                                    );
+                                    outcomes
+                                        .insert(condition_id, AutoLoadOutcome::Open(instruments));
                                 }
                             }
 
@@ -499,6 +526,12 @@ impl PolymarketDataClient {
 
                 batch = next_batch;
             }
-        });
+        };
+        spawn_task(
+            &self.tasks,
+            &self.task_registration,
+            &self.cancellation_token,
+            future,
+        );
     }
 }

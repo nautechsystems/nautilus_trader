@@ -13,16 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::DashMap;
 use nautilus_common::{
-    live::get_runtime,
+    live::task::TaskHandles,
     msgbus::{self, TypedHandler},
 };
 use nautilus_core::{AtomicMap, AtomicSet};
 use nautilus_model::events::PositionEvent;
+use tokio::task::JoinHandle;
 
 use super::{
     PolymarketDataClient,
@@ -32,6 +33,7 @@ use super::{
         retire_closed_condition_state, retire_expired_local_instruments,
         seed_token_meta_from_live_instruments,
     },
+    spawn_task,
 };
 use crate::{
     data_types::register_polymarket_custom_data,
@@ -42,6 +44,8 @@ use crate::{
     },
     websocket::messages::PolymarketWsMessage,
 };
+
+const TASK_GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
 
 impl PolymarketDataClient {
     fn ensure_position_event_subscription(&mut self) {
@@ -66,7 +70,7 @@ impl PolymarketDataClient {
     }
 
     fn spawn_message_handler(
-        &mut self,
+        &self,
         mut rx: tokio::sync::mpsc::UnboundedReceiver<PolymarketWsMessage>,
     ) {
         let cancellation = self.cancellation_token.clone();
@@ -84,7 +88,6 @@ impl PolymarketDataClient {
             token_meta: self.token_meta.clone(),
             instruments: self.instruments.clone(),
             gamma_client: self.provider.http_client().clone(),
-            clob_public_client: self.clob_public_client.clone(),
             filters: self.provider.filters(),
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
@@ -97,6 +100,8 @@ impl PolymarketDataClient {
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
+            tasks: Arc::downgrade(&self.tasks),
+            task_registration: Arc::downgrade(&self.task_registration),
             rtds_feed: self.rtds_feed.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
             new_market_filter: self.config.new_market_filter.clone(),
@@ -105,7 +110,7 @@ impl PolymarketDataClient {
             cancellation_token: cancellation.clone(),
         };
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             log::debug!("Polymarket message handler started");
 
             loop {
@@ -127,12 +132,16 @@ impl PolymarketDataClient {
             }
 
             log::debug!("Polymarket message handler ended");
-        });
-
-        self.tasks.push(handle);
+        };
+        spawn_task(
+            &self.tasks,
+            &self.task_registration,
+            &self.cancellation_token,
+            future,
+        );
     }
 
-    pub(super) fn spawn_resolve_poll_task(&mut self) {
+    pub(super) fn spawn_resolve_poll_task(&self) {
         let cancellation = self.cancellation_token.clone();
         let gamma_client = self.provider.http_client().clone();
         let clob_public_client = self.clob_public_client.clone();
@@ -163,7 +172,6 @@ impl PolymarketDataClient {
             token_meta: self.token_meta.clone(),
             instruments: self.instruments.clone(),
             gamma_client: gamma_client.clone(),
-            clob_public_client: clob_public_client.clone(),
             filters: self.provider.filters(),
             order_books: self.order_books.clone(),
             last_quotes: self.last_quotes.clone(),
@@ -176,6 +184,8 @@ impl PolymarketDataClient {
             pending_snapshot_after_tick_change: self.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: self.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
+            tasks: Arc::downgrade(&self.tasks),
+            task_registration: Arc::downgrade(&self.task_registration),
             rtds_feed: self.rtds_feed.clone(),
             subscribe_new_markets: self.config.subscribe_new_markets,
             new_market_filter: self.config.new_market_filter.clone(),
@@ -194,7 +204,7 @@ impl PolymarketDataClient {
             );
         }
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut retired_condition_ids: AHashSet<String> = AHashSet::new();
@@ -352,15 +362,67 @@ impl PolymarketDataClient {
                     }
                 }
             }
-        });
-
-        self.tasks.push(handle);
+        };
+        spawn_task(
+            &self.tasks,
+            &self.task_registration,
+            &self.cancellation_token,
+            future,
+        );
     }
 
-    pub(super) async fn await_tasks_with_timeout(&mut self, timeout: tokio::time::Duration) {
-        for handle in self.tasks.drain(..) {
-            let _ = tokio::time::timeout(timeout, handle).await;
+    pub(super) async fn await_tasks_with_timeout(
+        &self,
+        timeout: tokio::time::Duration,
+    ) -> anyhow::Result<()> {
+        let now = tokio::time::Instant::now();
+        let deadline = now + timeout;
+        let graceful_deadline = now + timeout.min(TASK_GRACEFUL_SHUTDOWN_TIMEOUT);
+        let mut aborting = false;
+
+        loop {
+            if aborting {
+                self.tasks.abort_all_retained();
+            }
+
+            let handles = self.tasks.take_all();
+            if handles.is_empty() {
+                break;
+            }
+            let mut batch = TaskJoinBatch::new(&self.tasks, handles);
+
+            if aborting {
+                batch.abort_unfinished();
+            }
+
+            let join_deadline = if aborting {
+                deadline
+            } else {
+                graceful_deadline
+            };
+
+            if tokio::time::timeout_at(join_deadline, batch.join())
+                .await
+                .is_err()
+            {
+                batch.abort_unfinished();
+                self.tasks.abort_all_retained();
+
+                if aborting
+                    || tokio::time::timeout_at(deadline, batch.join())
+                        .await
+                        .is_err()
+                {
+                    anyhow::bail!("Timed out joining Polymarket data tasks after abort");
+                }
+
+                aborting = true;
+            } else if tokio::time::Instant::now() >= graceful_deadline {
+                aborting = true;
+            }
         }
+
+        Ok(())
     }
 
     pub(super) fn start_client(&mut self) {
@@ -370,7 +432,14 @@ impl PolymarketDataClient {
 
     pub(super) fn stop_client(&mut self) {
         log::info!("Stopping Polymarket data client: {}", self.client_id);
-        self.cancellation_token.cancel();
+        {
+            let _registration = self
+                .task_registration
+                .lock()
+                .expect("task registration mutex poisoned");
+            self.cancellation_token.cancel();
+            self.tasks.abort_all_retained();
+        }
         self.is_connected
             .store(false, std::sync::atomic::Ordering::Relaxed);
         self.clear_position_event_subscription();
@@ -378,7 +447,14 @@ impl PolymarketDataClient {
 
     pub(super) fn reset_client(&mut self) {
         log::debug!("Resetting Polymarket data client: {}", self.client_id);
-        self.cancellation_token.cancel();
+        {
+            let _registration = self
+                .task_registration
+                .lock()
+                .expect("task registration mutex poisoned");
+            self.cancellation_token.cancel();
+            self.tasks.abort_all();
+        }
         self.is_connected
             .store(false, std::sync::atomic::Ordering::Relaxed);
 
@@ -391,10 +467,6 @@ impl PolymarketDataClient {
         self.rtds_feed.abort();
         self.resolve_poll_watchlist.store(AHashMap::new());
         self.clear_position_event_subscription();
-
-        for handle in self.tasks.drain(..) {
-            handle.abort();
-        }
 
         let old_closed_condition_ids = self.closed_condition_ids.clone();
         let _generation_guard = old_closed_condition_ids
@@ -433,7 +505,17 @@ impl PolymarketDataClient {
             return Ok(());
         }
 
-        self.cancellation_token = tokio_util::sync::CancellationToken::new();
+        if !self.tasks.is_empty() || self.ws_client.connection_count() > 0 {
+            self.disconnect_client().await?;
+        }
+
+        {
+            let _registration = self
+                .task_registration
+                .lock()
+                .expect("task registration mutex poisoned");
+            self.cancellation_token = tokio_util::sync::CancellationToken::new();
+        }
         self.ensure_position_event_subscription();
         register_polymarket_custom_data();
 
@@ -448,23 +530,34 @@ impl PolymarketDataClient {
 
         self.ws_client.connect().await?;
 
-        if self.config.subscribe_new_markets {
-            log::debug!("Subscribing to new markets...");
-            self.ws_client.subscribe_new_markets_feed().await?;
+        let session_result = async {
+            if self.config.subscribe_new_markets {
+                log::debug!("Subscribing to new markets...");
+                self.ws_client.subscribe_new_markets_feed().await?;
+            }
+
+            let rx = self.ws_client.take_message_receiver().ok_or_else(|| {
+                anyhow::anyhow!("WS message receiver not available after connect")
+            })?;
+
+            self.spawn_message_handler(rx);
+            self.spawn_instrument_refresh_task();
+            self.spawn_resolve_poll_task();
+
+            // Connect unconditionally: this clears the feed's closing latch from a prior
+            // disconnect; without retained subscriptions no RTDS socket is opened.
+            self.rtds_feed.connect().await
         }
+        .await;
 
-        let rx = self
-            .ws_client
-            .take_message_receiver()
-            .ok_or_else(|| anyhow::anyhow!("WS message receiver not available after connect"))?;
-
-        self.spawn_message_handler(rx);
-        self.spawn_instrument_refresh_task();
-        self.spawn_resolve_poll_task();
-
-        // Connect unconditionally: this clears the feed's closing latch from a prior
-        // disconnect; without retained subscriptions no RTDS socket is opened.
-        self.rtds_feed.connect().await?;
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.disconnect_client().await {
+                log::warn!(
+                    "Error tearing down partial Polymarket data connection: {teardown_error:?}"
+                );
+            }
+            return Err(e);
+        }
 
         self.is_connected
             .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -474,17 +567,24 @@ impl PolymarketDataClient {
     }
 
     pub(super) async fn disconnect_client(&mut self) -> anyhow::Result<()> {
-        if !self.is_connected() {
+        if !self.is_connected() && self.tasks.is_empty() && self.ws_client.connection_count() == 0 {
             return Ok(());
         }
 
         log::info!("Disconnecting Polymarket data client");
 
-        self.cancellation_token.cancel();
-        self.await_tasks_with_timeout(tokio::time::Duration::from_secs(5))
+        {
+            let _registration = self
+                .task_registration
+                .lock()
+                .expect("task registration mutex poisoned");
+            self.cancellation_token.cancel();
+        }
+        let tasks_result = self
+            .await_tasks_with_timeout(tokio::time::Duration::from_secs(5))
             .await;
 
-        self.ws_client.disconnect().await?;
+        let ws_result = self.ws_client.disconnect().await;
         self.rtds_feed.disconnect().await;
 
         self.is_connected
@@ -492,7 +592,55 @@ impl PolymarketDataClient {
         self.clear_position_event_subscription();
         log::info!("Disconnected Polymarket data client");
 
+        tasks_result?;
+        ws_result?;
+
         Ok(())
+    }
+}
+
+struct TaskJoinBatch<'a> {
+    tasks: &'a TaskHandles,
+    handles: Vec<JoinHandle<()>>,
+    next: usize,
+}
+
+impl<'a> TaskJoinBatch<'a> {
+    fn new(tasks: &'a TaskHandles, handles: Vec<JoinHandle<()>>) -> Self {
+        Self {
+            tasks,
+            handles,
+            next: 0,
+        }
+    }
+
+    fn abort_unfinished(&self) {
+        for handle in self.handles.iter().filter(|handle| !handle.is_finished()) {
+            handle.abort();
+        }
+    }
+
+    async fn join(&mut self) {
+        while self.next < self.handles.len() {
+            if let Err(e) = (&mut self.handles[self.next]).await
+                && !e.is_cancelled()
+            {
+                log::warn!("Error joining Polymarket data task: {e}");
+            }
+            self.next += 1;
+        }
+    }
+}
+
+impl Drop for TaskJoinBatch<'_> {
+    fn drop(&mut self) {
+        for handle in self
+            .handles
+            .drain(..)
+            .filter(|handle| !handle.is_finished())
+        {
+            self.tasks.push(handle);
+        }
     }
 }
 
@@ -501,14 +649,20 @@ mod tests {
     use std::{
         cell::RefCell,
         rc::Rc,
-        sync::{Arc, atomic::Ordering},
+        sync::{
+            Arc, Condvar, Mutex as StdMutex,
+            atomic::{AtomicBool, Ordering},
+        },
     };
 
     use nautilus_common::{
         cache::Cache,
         clients::{DataClient, ExecutionClient},
         clock::{Clock, TestClock},
-        live::runner::{replace_data_event_sender, replace_exec_event_sender},
+        live::{
+            get_runtime,
+            runner::{replace_data_event_sender, replace_exec_event_sender},
+        },
         messages::{
             DataEvent, ExecutionEvent,
             data::{
@@ -552,6 +706,16 @@ mod tests {
         resolve::upsert_resolve_watch_entry_from_instrument,
         websocket::{messages::PolymarketWsMessage, pool::PolymarketMarketConnectionPool},
     };
+
+    struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            if let Some(sender) = self.0.take() {
+                let _ = sender.send(());
+            }
+        }
+    }
 
     fn make_client_for_reset_test() -> PolymarketDataClient {
         make_client_for_reset_test_with_proxy(None)
@@ -795,6 +959,256 @@ mod tests {
                 .is_empty()
         );
         assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn reset_aborts_and_drains_old_tasks_before_starting_fresh_generation() {
+        let mut client = make_client_for_reset_test();
+        let old_token = client.cancellation_token.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+
+        let handle = get_runtime().spawn(async move {
+            let _drop_signal = DropSignal(Some(dropped_tx));
+            started_tx.send(()).expect("task start receiver");
+            std::future::pending::<()>().await;
+        });
+        client.tasks.push(handle);
+        tokio::time::timeout(Duration::from_secs(1), started_rx)
+            .await
+            .expect("old generation task start timeout")
+            .expect("old generation task started");
+
+        client.reset().expect("reset data client");
+
+        assert!(old_token.is_cancelled());
+        assert!(client.tasks.is_empty());
+        assert!(!client.cancellation_token.is_cancelled());
+        tokio::time::timeout(Duration::from_secs(1), dropped_rx)
+            .await
+            .expect("old generation task stop timeout")
+            .expect("old generation task stopped");
+
+        let (late_dropped_tx, late_dropped_rx) = tokio::sync::oneshot::channel();
+        let late_drop_signal = DropSignal(Some(late_dropped_tx));
+        spawn_task(
+            &client.tasks,
+            &client.task_registration,
+            &old_token,
+            async move {
+                let _drop_signal = late_drop_signal;
+                std::future::pending::<()>().await;
+            },
+        );
+
+        assert!(client.tasks.is_empty());
+        tokio::time::timeout(Duration::from_secs(1), late_dropped_rx)
+            .await
+            .expect("late old generation task stop timeout")
+            .expect("late old generation task stopped");
+
+        client.spawn_resolve_poll_task();
+
+        assert_eq!(client.tasks.len(), 1);
+        assert!(!client.tasks.all_finished());
+
+        client.cancellation_token.cancel();
+        client
+            .await_tasks_with_timeout(Duration::from_secs(1))
+            .await
+            .expect("fresh generation task terminated");
+
+        assert!(client.tasks.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn task_registration_cannot_cross_cancellation_boundary() {
+        let tasks = Arc::new(TaskHandles::default());
+        let task_registration = Arc::new(StdMutex::new(()));
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let polled = Arc::new(AtomicBool::new(false));
+        let registration_guard = task_registration
+            .lock()
+            .expect("task registration mutex poisoned");
+        let (attempt_tx, attempt_rx) = std::sync::mpsc::channel();
+
+        let thread_tasks = tasks.clone();
+        let thread_registration = task_registration.clone();
+        let thread_cancellation = cancellation.clone();
+        let thread_polled = polled.clone();
+
+        let registration_thread = std::thread::spawn(move || {
+            attempt_tx.send(()).expect("registration attempt receiver");
+            spawn_task(
+                &thread_tasks,
+                &thread_registration,
+                &thread_cancellation,
+                async move {
+                    thread_polled.store(true, Ordering::Release);
+                },
+            );
+        });
+
+        attempt_rx.recv().expect("registration attempt sender");
+        cancellation.cancel();
+        drop(registration_guard);
+        registration_thread
+            .join()
+            .expect("task registration thread");
+
+        assert!(tasks.is_empty());
+        assert!(!polled.load(Ordering::Acquire));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn disconnect_allows_cancellation_cleanup_before_abort() {
+        let mut client = make_client_for_reset_test();
+        client.auto_load_scheduled.store(true, Ordering::Release);
+        let cancellation = client.cancellation_token.clone();
+        let scheduled = client.auto_load_scheduled.clone();
+        let future = async move {
+            cancellation.cancelled().await;
+            scheduled.store(false, Ordering::Release);
+        };
+        spawn_task(
+            &client.tasks,
+            &client.task_registration,
+            &client.cancellation_token,
+            future,
+        );
+
+        client.disconnect().await.expect("disconnect data client");
+
+        assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
+        assert!(client.tasks.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn stop_drops_unpolled_auto_load_scheduling_guard() {
+        let mut client = make_client_for_reset_test();
+        client.config.auto_load_debounce_ms = 60_000;
+        let instrument_id = InstrumentId::from("0xCOND-0xTOKEN.POLYMARKET");
+        client.active_quote_subs.insert(instrument_id);
+
+        client.queue_pending_load(instrument_id);
+        assert!(client.auto_load_scheduled.load(Ordering::Acquire));
+        assert_eq!(client.tasks.len(), 1);
+
+        client.stop().expect("stop data client");
+        client
+            .await_tasks_with_timeout(Duration::from_secs(1))
+            .await
+            .expect("auto-load task terminated");
+
+        assert!(!client.auto_load_scheduled.load(Ordering::Acquire));
+        assert!(client.tasks.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn bounded_join_does_not_repoll_completed_handles_after_abort() {
+        let client = make_client_for_reset_test();
+        let (first_release_tx, first_release_rx) = tokio::sync::oneshot::channel();
+        let (first_done_tx, first_done_rx) = tokio::sync::oneshot::channel();
+
+        client.tasks.push(get_runtime().spawn(async move {
+            first_release_rx.await.expect("first task release sender");
+            first_done_tx.send(()).expect("first task done receiver");
+        }));
+        client
+            .tasks
+            .push(get_runtime().spawn(std::future::pending()));
+
+        first_release_tx
+            .send(())
+            .expect("first task release receiver");
+        first_done_rx.await.expect("first task done sender");
+
+        client
+            .await_tasks_with_timeout(Duration::from_secs(2))
+            .await
+            .expect("task batch terminated after abort");
+
+        assert!(client.tasks.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn disconnect_aborts_owned_tasks_when_connection_flag_is_false() {
+        let mut client = make_client_for_reset_test();
+        let token = client.cancellation_token.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
+
+        let handle = get_runtime().spawn(async move {
+            let _drop_signal = DropSignal(Some(dropped_tx));
+            started_tx.send(()).expect("task start receiver");
+            std::future::pending::<()>().await;
+        });
+        client.tasks.push(handle);
+        tokio::time::timeout(Duration::from_secs(1), started_rx)
+            .await
+            .expect("owned task start timeout")
+            .expect("owned task started");
+
+        client.disconnect().await.expect("disconnect data client");
+
+        assert!(token.is_cancelled());
+        assert!(client.tasks.is_empty());
+        assert!(!client.is_connected());
+        tokio::time::timeout(Duration::from_secs(1), dropped_rx)
+            .await
+            .expect("owned task stop timeout")
+            .expect("owned task stopped");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn cancelled_disconnect_requeues_unfinished_task_handle() {
+        let client = make_client_for_reset_test();
+        let release = Arc::new((StdMutex::new(false), Condvar::new()));
+        let task_release = release.clone();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+
+        let handle = get_runtime().spawn_blocking(move || {
+            started_tx.send(()).expect("task start receiver");
+            let (lock, condvar) = &*task_release;
+            let released = lock.lock().expect("release mutex poisoned");
+            drop(
+                condvar
+                    .wait_while(released, |released| !*released)
+                    .expect("release mutex poisoned"),
+            );
+        });
+        client.tasks.push(handle);
+        tokio::time::timeout(Duration::from_secs(1), started_rx)
+            .await
+            .expect("blocking task start timeout")
+            .expect("blocking task started");
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(10),
+            client.await_tasks_with_timeout(Duration::from_secs(1)),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert_eq!(client.tasks.len(), 1);
+
+        let (lock, condvar) = &*release;
+        *lock.lock().expect("release mutex poisoned") = true;
+        condvar.notify_all();
+
+        client
+            .await_tasks_with_timeout(Duration::from_secs(1))
+            .await
+            .expect("blocking task terminated");
+
+        assert!(client.tasks.is_empty());
     }
 
     #[rstest]
@@ -1131,7 +1545,8 @@ mod tests {
         client.cancellation_token.cancel();
         client
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
-            .await;
+            .await
+            .expect("resolve poll task terminated");
 
         assert!(!client.active_quote_subs.contains(&instrument_id));
         assert!(!client.active_delta_subs.contains(&instrument_id));
@@ -1183,7 +1598,8 @@ mod tests {
         client.cancellation_token.cancel();
         client
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
-            .await;
+            .await
+            .expect("resolve poll task terminated");
 
         assert!(!client.instruments.load().contains_key(&instrument_id));
         assert!(
@@ -1246,7 +1662,8 @@ mod tests {
         client.cancellation_token.cancel();
         client
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
-            .await;
+            .await
+            .expect("resolve poll task terminated");
 
         assert!(client.instruments.load().contains_key(&instrument_id));
     }
@@ -1303,7 +1720,8 @@ mod tests {
         client.cancellation_token.cancel();
         client
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
-            .await;
+            .await
+            .expect("resolve poll task terminated");
 
         assert!(!client.instruments.load().contains_key(&instrument_id));
         assert!(
@@ -1373,7 +1791,8 @@ mod tests {
         client.cancellation_token.cancel();
         client
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
-            .await;
+            .await
+            .expect("resolve poll task terminated");
 
         assert!(client.token_meta.is_empty());
         assert!(client.order_books.is_empty());
@@ -1397,7 +1816,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn spawn_message_handler_does_not_reseed_token_meta_for_watched_expired_instrument() {
-        let mut client = make_client_for_reset_test();
+        let client = make_client_for_reset_test();
         let inst = seed_expired_instrument(&client, "0xTOKEN_RETAINED", "0xCOND-RETAINED");
 
         upsert_resolve_watch_entry_from_instrument(
@@ -1436,7 +1855,8 @@ mod tests {
             client.spawn_message_handler(rx);
             client
                 .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
-                .await;
+                .await
+                .expect("message handler terminated");
 
             assert!(
                 client.instruments.load().contains_key(&instrument_id),
@@ -1452,7 +1872,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn spawn_message_handler_does_not_reseed_terminal_condition_routing() {
-        let mut client = make_client_for_reset_test();
+        let client = make_client_for_reset_test();
         let expiration_ns = UnixNanos::from(
             client
                 .clock
@@ -1480,7 +1900,8 @@ mod tests {
         client.spawn_message_handler(rx);
         client
             .await_tasks_with_timeout(tokio::time::Duration::from_secs(1))
-            .await;
+            .await
+            .expect("message handler terminated");
 
         assert!(client.instruments.load().contains_key(&inst.id()));
         assert!(!client.token_meta.contains_key(&token_id));

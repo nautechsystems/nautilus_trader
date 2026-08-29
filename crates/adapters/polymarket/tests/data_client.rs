@@ -1128,6 +1128,20 @@ async fn test_request_trades_emits_one_empty_response_for_empty_result() {
 
 #[rstest]
 #[tokio::test]
+async fn test_stop_reconnect_recreates_market_message_receiver() {
+    let state = TestServerState::default();
+    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx) = create_test_data_client(addr);
+
+    client.connect().await.expect("connect #1");
+    client.stop().expect("stop");
+    client.connect().await.expect("connect #2");
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_reset_reconnect_does_not_replay_stale_market_subscriptions() {
     let state = TestServerState::default();
     *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));

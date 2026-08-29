@@ -25,6 +25,7 @@ mod runtime;
 mod subscriptions;
 
 use std::{
+    future::Future,
     sync::{
         Arc, Mutex as StdMutex,
         atomic::{AtomicBool, Ordering},
@@ -37,7 +38,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{get_runtime, runner::get_data_event_sender},
+    live::{get_runtime, runner::get_data_event_sender, task::TaskHandles},
     messages::{
         DataEvent,
         data::{
@@ -64,7 +65,6 @@ use nautilus_model::{
     orderbook::OrderBook,
 };
 use nautilus_network::websocket::proxy::ProxyUrl;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -117,7 +117,8 @@ pub struct PolymarketDataClient {
     ws_client: PolymarketMarketConnectionPool,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: Vec<JoinHandle<()>>,
+    tasks: Arc<TaskHandles>,
+    task_registration: Arc<StdMutex<()>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: Arc<DashMap<Ustr, TokenMeta>>,
@@ -209,7 +210,8 @@ impl PolymarketDataClient {
             ws_client,
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
-            tasks: Vec::new(),
+            tasks: Arc::new(TaskHandles::default()),
+            task_registration: Arc::new(StdMutex::new(())),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             token_meta: Arc::new(DashMap::new()),
@@ -394,18 +396,22 @@ impl PolymarketDataClient {
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws = self.ws_client.handle();
-
-        get_runtime().spawn(sync_ws_subscription_with_terminal_async(
-            instrument_id,
-            token_id_str,
-            active_quote_subs,
-            active_delta_subs,
-            active_trade_subs,
-            closed_condition_ids,
-            ws_open_tokens,
-            ws_sub_mutex,
-            ws,
-        ));
+        spawn_task(
+            &self.tasks,
+            &self.task_registration,
+            &self.cancellation_token,
+            sync_ws_subscription_with_terminal_async(
+                instrument_id,
+                token_id_str,
+                active_quote_subs,
+                active_delta_subs,
+                active_trade_subs,
+                closed_condition_ids,
+                ws_open_tokens,
+                ws_sub_mutex,
+                ws,
+            ),
+        );
     }
 }
 
@@ -683,4 +689,32 @@ impl DataClient for PolymarketDataClient {
 
         Ok(())
     }
+}
+
+pub(super) fn spawn_task<F>(
+    tasks: &TaskHandles,
+    registration: &StdMutex<()>,
+    cancellation: &CancellationToken,
+    future: F,
+) where
+    F: Future<Output = ()> + Send + 'static,
+{
+    // This mutex is also held when cancellation tokens are canceled or replaced,
+    // and the start gate prevents polling before the handle is tracked.
+    let _guard = registration
+        .lock()
+        .expect("task registration mutex poisoned");
+
+    if cancellation.is_cancelled() {
+        return;
+    }
+
+    let (start_tx, start_rx) = tokio::sync::oneshot::channel();
+    let handle = get_runtime().spawn(async move {
+        if start_rx.await.is_ok() {
+            future.await;
+        }
+    });
+    tasks.push(handle);
+    let _ = start_tx.send(());
 }
