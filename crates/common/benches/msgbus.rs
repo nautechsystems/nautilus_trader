@@ -30,7 +30,8 @@ use std::{
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::msgbus::{
-    Handler, MStr, Pattern, Topic, TypedHandler, typed_handler::shareable_handler,
+    Endpoint, Handler, MStr, MessageBus, Pattern, Topic, TypedHandler, publish_quote, register_any,
+    send_any, send_any_value, set_message_bus, subscribe_quotes, typed_handler::shareable_handler,
     typed_router::TopicRouter,
 };
 use nautilus_model::data::QuoteTick;
@@ -178,6 +179,47 @@ fn bench_noop_dispatch(c: &mut Criterion) {
             id: Ustr::from("noop"),
         });
         b.iter(|| handler.handle(black_box(&quote)));
+    });
+
+    group.finish();
+}
+
+fn bench_message_bus_dispatch(c: &mut Criterion) {
+    set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+
+    let endpoint: MStr<Endpoint> = "bench.endpoint".into();
+    register_any(
+        endpoint,
+        shareable_handler(Rc::new(NoopAnyHandler {
+            id: Ustr::from("endpoint-handler"),
+        })),
+    );
+
+    let topic: MStr<Topic> = "data.quotes.BINANCE.BTCUSDT".into();
+    subscribe_quotes(
+        "data.quotes.BINANCE.BTCUSDT".into(),
+        TypedHandler::new(NoopTypedHandler {
+            id: Ustr::from("quote-handler"),
+        }),
+        None,
+    );
+
+    let quote = QuoteTick::default();
+    publish_quote(topic, &quote);
+
+    let mut group = c.benchmark_group("Message bus dispatch");
+    group.throughput(Throughput::Elements(1));
+
+    group.bench_function("send_any", |b| {
+        b.iter(|| send_any(black_box(endpoint), black_box(&quote as &dyn Any)));
+    });
+
+    group.bench_function("send_any_value", |b| {
+        b.iter(|| send_any_value(black_box(endpoint), black_box(&quote)));
+    });
+
+    group.bench_function("publish_quote", |b| {
+        b.iter(|| publish_quote(black_box(topic), black_box(&quote)));
     });
 
     group.finish();
@@ -640,6 +682,7 @@ fn bench_subscribe_with_cached_topics(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_noop_dispatch,
+    bench_message_bus_dispatch,
     bench_router_publish,
     bench_cold_path_publish,
     bench_router_multiple_subscribers,
