@@ -278,6 +278,73 @@ implementation, standard-library, toolchain, or representative-workload change, 
 baseline spread enough to resolve the observed range. A different measured cost within
 `BookLadder::replace_l1` remains eligible for investigation.
 
+## Trade ID formatting follow-up
+
+A fourth 2026-08-29 follow-up used the signed `Document OrderBook L1 optimization rejection`
+commit `30dbec8ea3b10796c333247d5214e3886758e53f` as its baseline. Fresh one-millisecond `gprofng`
+profiles covered all four canonical scenarios under both benchmark boundaries. This section
+supersedes the [L1 level reuse follow-up](#l1-level-reuse-follow-up) as the current replay-only
+preloaded reference. As percentages of total captured CPU samples, inclusive samples for
+`IdsGenerator::generate_trade_id` and for the allocation-backed formatting entry point were:
+
+| Scenario                | Full load/setup/run ID generation | Full load/setup/run formatting | Preloaded `run()` ID generation | Preloaded `run()` formatting |
+| ----------------------- | --------------------------------: | -----------------------------: | ------------------------------: | ---------------------------: |
+| Replay only             |                            13.07% |                          9.87% |                          14.52% |                        8.94% |
+| Scheduled market orders |                            10.55% |                          8.48% |                          12.37% |                        8.37% |
+| Passive limit orders    |                             8.19% |                          6.57% |                           8.44% |                        5.89% |
+| Bar EMA cross           |                             4.07% |                          4.49% |                           4.48% |                        4.05% |
+
+The formatting percentages are the inclusive share for `alloc::fmt::format::format_inner`.
+Profile mode included setup and fingerprint work, so these shares selected the target but do not
+support the elapsed-time claim.
+
+The candidate replaces the `format!` call in `IdsGenerator::generate_trade_id` with a stack buffer.
+It writes the fixed-width lowercase hexadecimal hash and the zero-padded decimal execution counter
+directly, then passes the resulting string slice through the same `TradeId::from` validation. The
+counter still increments before hashing and formatting. Checked counter overflow, unchecked
+wrapping, minimum three-digit padding, digit growth, and the 36-character limit retain their prior
+behavior.
+
+| Item                 | Baseline                                                           | Candidate                                                          |
+| -------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Repository revision  | `30dbec8ea3b10796c333247d5214e3886758e53f`                         | Baseline revision plus the measured patch                          |
+| Measured source tree | `86007d5fb76ff719cbfb63b0a54697baeb107b10`                         | `6ded9b806f789d83e8e74a2fb315d02beedeaf24`                         |
+| Executable SHA-256   | `e96730816eb9c6f3c57c98b06acad2da9cea76989cf084794f257da39e86c4bb` | `acbfd21e0acec786e808f487e8f37f23a7157f1702f33760441783068671f4b1` |
+| ELF build ID         | `4e634bb099808fb65fd385bc0ef9d860d7872b6a`                         | `28332a01915deb7ad09a6e51148853e98aac859e`                         |
+
+Both executables were built once with the command in [How to reproduce](#how-to-reproduce), copied
+to immutable paths, and reused unchanged. Both used Rust and Cargo 1.98.0, LLVM 22.1.8, standard
+precision, the default empty `nautilus-backtest` feature set, and the `bench-lto` profile. The host
+was the Threadripper 9980X system described above with Linux 7.0.0-28-generic. All 128 governors
+remained `powersave`; no host control changed. ASLR was disabled per process, and the benchmark
+thread was not pinned.
+
+Three fresh baseline sessions measured 16.147417250, 16.537059000, and 16.888020000 ms. Their
+16.537059000 ms median and 4.478442932% full spread set the predeclared threshold.
+Canonical replay-only `run_preloaded` was selected before viewing candidate timing because it had
+the largest `IdsGenerator::generate_trade_id` inclusive share at 14.52% and excluded setup from the
+returned duration.
+
+Three paired sessions alternated the immutable executables. Each run used an isolated Criterion
+home, a 3-second warm-up, a 5-second measurement target, and 50 samples. Accepted sessions recorded
+no concurrent Cargo, Rust compiler, Clippy, or Make work and 98.21% to 98.35% CPU idle. Sessions
+where a sibling build appeared or CPU idle fell below the predeclared 95% floor were discarded.
+
+| Pair order         | Baseline median | Candidate median | Reduction |
+| ------------------ | --------------: | ---------------: | --------: |
+| Baseline/candidate |    15.917690 ms |     13.617237 ms |   14.452% |
+| Candidate/baseline |    16.763418 ms |     13.247239 ms |   20.975% |
+| Baseline/candidate |    15.990977 ms |     13.376372 ms |   16.351% |
+
+The median reduction was 16.351%, and every pair cleared the baseline spread threshold. The
+optimization was retained. The immutable baseline and candidate executables matched all eight exact
+canonical fingerprints. The canonical workload matrix test passed after the change. Focused trade
+ID tests cover exact hash width and case, counter padding boundaries, the maximum valid length,
+oversized values, counter mutation before validation, checked and unchecked overflow behavior,
+reset behavior, and the existing Rust parity fixtures. All 31 tests in the `ids_generator` module
+passed, along with focused rustfmt and Clippy checks. The later test strengthening and this benchmark
+documentation do not alter the library code compiled into the measured candidate executable.
+
 ## v1.231.0 and v2 comparison
 
 The 2026-08-27 comparison uses the Python
