@@ -226,6 +226,58 @@ both boundaries before and after the production change. Focused quote-tick tests
 replacement, incomplete-batch reset, zero-size clearing, and deletion after replacement. The other
 seven canonical cases were fingerprint-verified but not re-timed.
 
+## Rejected same-price L1 node reuse
+
+A third 2026-08-29 follow-up used the signed `Optimize OrderBook L1 level reuse` commit
+`f87112bd2e356ce621fe4b09bfd329c70adf6735` as its baseline. Fresh one-millisecond `gprofng`
+profiles again covered all four canonical scenarios under both boundaries. Inclusive samples for
+`BookLadder::replace_l1` ranged from 8.94% to 35.74% of total captured CPU samples. Its B-tree
+insertion ranged from 3.00% to 13.27%, and removing the current node ranged from 1.34% to 5.09%.
+
+The candidate kept the sole existing `BookLevel` in the B-tree when its `BookPrice` matched the
+replacement, then replaced its orders and reset the order cache and incomplete batch state in
+place. Empty ladders, changed prices, and multiple existing levels continued through the prior
+remove, clear, and reinsert path.
+
+| Item                 | Baseline                                                           | Candidate                                                          |
+| -------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Repository revision  | `f87112bd2e356ce621fe4b09bfd329c70adf6735`                         | Baseline revision plus the measured patch                          |
+| Measured source tree | `a069f478ef0315c385ef0fe45e3ea532703562de`                         | `39d7fdd7a3f8eb695d62b09308c4d82fe531ec4e`                         |
+| Executable SHA-256   | `4c949cc095beae17d7047084bf8df588d06af438fbe4c8c9fc765f61ff52f9b6` | `b898927bb34d0ed0c0a584f78d8f627dd4ca6d72580841d2dbaf3be2806d06ed` |
+| ELF build ID         | `15677b977ae773c38763608ec3fd4c2f30629f6e`                         | `bea9f4f9f30208c5d4edcbffc965548800a573d4`                         |
+
+Both executables were built once with the command in [How to reproduce](#how-to-reproduce) and
+reused unchanged. Both used Rust and Cargo 1.98.0, standard precision, the default empty
+`nautilus-backtest` feature set, and the `bench-lto` profile. The Threadripper 9980X host retained
+its `powersave` governors, ASLR was disabled per process, no host control changed, and accepted
+sessions recorded no concurrent Cargo work and 95% to 98% CPU idle. Runs with concurrent Cargo work
+or CPU idle below the predeclared 95% floor were discarded.
+
+Canonical replay-only `run_preloaded` was selected before viewing timing results because it had the
+largest `BookLadder::replace_l1` inclusive share at 35.74% and excluded setup from the returned
+duration. Three fresh baseline sessions measured 16.492150083, 17.152273000, and 17.723467333 ms.
+Their 17.152273000 ms median and 7.178740975% full spread set the predeclared threshold. Three paired
+sessions then alternated the immutable executables with a 3-second warm-up, a 5-second measurement
+target, 50 samples, and isolated Criterion homes.
+
+| Pair order         | Baseline median | Candidate median |     Reduction |
+| ------------------ | --------------: | ---------------: | ------------: |
+| Baseline/candidate | 18.788075900 ms |  18.277741900 ms |  2.716265373% |
+| Candidate/baseline | 18.306483200 ms |  18.615707100 ms | -1.689149667% |
+| Baseline/candidate | 18.577500800 ms |  17.914931000 ms |  3.566517408% |
+
+The three reductions remained inside the 7.178740975% baseline spread, including one regression, so
+the result is no measurable change. The correctness matrix matched all eight exact canonical
+fingerprints. The measured candidate was removed. Its direct B-tree lookup could also panic for an
+opposite-side replacement. A corrected equality-gated variant passed focused correctness checks but
+was not timed, so it did not change the rejection.
+
+Do not select this same-price in-map replacement again solely because `BookLadder::replace_l1` or
+its B-tree operations remain prominent in a profile. Reconsider it only after a material
+implementation, standard-library, toolchain, or representative-workload change, or after reducing
+baseline spread enough to resolve the observed range. A different measured cost within
+`BookLadder::replace_l1` remains eligible for investigation.
+
 ## v1.231.0 and v2 comparison
 
 The 2026-08-27 comparison uses the Python
