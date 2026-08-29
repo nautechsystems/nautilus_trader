@@ -455,7 +455,7 @@ def _resolve_executable(name: str) -> str:
     executable = shutil.which(name)
     if executable is None:
         raise AuditError(f"required command is not installed: {name}")
-    return str(Path(executable).resolve())
+    return str(Path(executable).absolute())
 
 
 def _run_process(

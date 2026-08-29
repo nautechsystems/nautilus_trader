@@ -172,10 +172,11 @@ repos:
       - id: check-no-build-packages
         name: check no-build-packages
         description: Ensures `[tool.uv].no-build-package` matches `uv.lock`
-        entry: bash scripts/check-no-build-packages.sh
+        entry: bash scripts/check-no-build-packages.sh --pair python/uv.lock:python/pyproject.toml
         language: system
         files: ^python/(uv\.lock|pyproject\.toml)$
         pass_filenames: false
+        always_run: true
 
       - id: python-test-collection
         name: Python test collection

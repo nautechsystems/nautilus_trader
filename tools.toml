@@ -1,6 +1,7 @@
 # NautilusTrader-specific version pins for tools without a native manifest.
 #
 # Shared tools:      .nautilus-engineering/tools.toml
+# Shared source:     https://github.com/nautechsystems/nautilus_engineering
 # Rust toolchain:    rust-toolchain.toml
 # Nightly toolchain: tools.toml [miri]
 # Local Cargo CLIs:  Cargo.toml [workspace.metadata.tools]

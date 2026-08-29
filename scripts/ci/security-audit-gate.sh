@@ -42,8 +42,13 @@ emit() {
   echo "audit_needed=$1 ($2)"
 }
 
+if [[ "$EVENT_NAME" == "push" && "${SKIP_SECURITY_AUDIT:-false}" == "true" ]]; then
+  emit false "skipped by caller"
+  exit 0
+fi
+
 if [[ "$EVENT_NAME" == "push" && "${FORCE_SECURITY_AUDIT:-false}" == "true" ]]; then
-  emit true "required for wheel publication"
+  emit true "forced by caller"
   exit 0
 fi
 

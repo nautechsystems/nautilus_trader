@@ -49,7 +49,6 @@ jobs:
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
-      security-audit-needed: ${{ steps.security-audit.outputs.audit_needed }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
       publish_r2: ${{ steps.wheel-publication.outputs.publish_r2 }}
       publish_development: ${{ steps.wheel-publication.outputs.publish_development }}
@@ -88,23 +87,28 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
         run: bash scripts/ci/plan.sh
 
-      - name: Plan security audit
-        id: security-audit
-        shell: bash
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
-          PUSH_AFTER_SHA: ${{ github.event.after }}
-        run: bash scripts/ci/security-audit-gate.sh
-
       - name: Plan wheel publication
         id: wheel-publication
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
         run: bash scripts/ci/plan-wheel-publication.bash
+
+  security-audit:
+    name: security audit
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: ./.github/workflows/security-audit.yml
+    with:
+      force: >-
+        ${{
+        github.event_name == 'push' &&
+        (github.ref == 'refs/heads/test-ci' ||
+        github.ref == 'refs/heads/test-pre-commit')
+        }}
+      skip: ${{ github.ref == 'refs/heads/nightly' }}
 
   test-scripts:
     name: script tests
@@ -830,6 +834,7 @@ jobs:
       - build-macos
       - build-windows
       - rust-tests-linux-x86
+      - security-audit
       - security-gate-nightly
     runs-on: ubuntu-latest
     # Publish dev/nightly wheels to the R2 index. The platform jobs are skipped on develop
@@ -843,6 +848,9 @@ jobs:
       needs.build-macos.result != 'failure' &&
       needs.build-windows.result != 'failure' &&
       needs.rust-tests-linux-x86.result == 'success' &&
+      (needs.security-audit.result == 'success' ||
+       (needs.plan.outputs.publish_development == 'true' &&
+        needs.security-audit.result == 'failure')) &&
       github.event_name == 'push' &&
       needs.plan.outputs.publish_r2 == 'true' &&
       (needs.plan.outputs.wheel_matrix != 'nightly' ||
@@ -886,12 +894,11 @@ jobs:
           SECURITY_GATE_SHA: ${{ github.sha }}
         run: bash scripts/ci/check-security-gate-result.bash
 
-      - name: Require successful same-commit security audit
-        if: >-
-          needs.plan.outputs.publish_development == 'true' &&
-          needs.plan.outputs.security-audit-needed == 'true'
+      - name: Require successful security audit
+        if: needs.security-audit.result != 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SECURITY_AUDIT_RESULT: ${{ needs.security-audit.result }}
           SECURITY_GATE_OVERRIDE: ${{ vars.SECURITY_GATE_OVERRIDE }}
         run: bash scripts/ci/check-security-audit-result.sh
 

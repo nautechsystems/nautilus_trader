@@ -4,13 +4,12 @@ name: security-audit
 #
 # Triggers:
 #   - Nightly cron and manual dispatch: every audit job runs unconditionally.
-#   - Pull requests: GitHub path filters create a workflow run only when
-#     audit-relevant paths change. The gate job remains as a second check
-#     before the audit jobs run.
-#   - Pushes to develop / master / test-ci / test-security: GitHub path filters
-#     create a workflow run only when audit-relevant paths change. Do not broaden
-#     this filter to every develop push. Development wheel publication waits for
-#     and forces all audit jobs only within that path-scoped run.
+#   - Calls from build.yml: audit jobs run for audit-relevant changes, while
+#     test-ci and test-pre-commit force every audit job and nightly skips them.
+#   - Pull requests not targeting develop: GitHub path filters create a workflow
+#     run only when audit-relevant paths change.
+#   - Pushes to test-security: GitHub path filters create a workflow run only
+#     when audit-relevant paths change.
 
 permissions:
   contents: read
@@ -24,7 +23,18 @@ env:
     || 'block' }}
 
 on:
+  workflow_call:
+    inputs:
+      force:
+        description: Run every audit job regardless of changed paths
+        type: boolean
+        default: false
+      skip:
+        description: Complete the audit gate without running audit jobs
+        type: boolean
+        default: false
   pull_request:
+    branches-ignore: [develop]
     paths: &security_audit_paths
       - Cargo.lock # Keep in sync with scripts/ci/security-audit-gate.sh.
       - Cargo.toml
@@ -70,7 +80,7 @@ on:
       - .github/actions/**
       - .github/workflows/**
   push:
-    branches: [develop, master, test-ci, test-security]
+    branches: [test-security]
     paths: *security_audit_paths
   schedule:
     - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
@@ -104,13 +114,16 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
+          FORCE_AUDIT: ${{ inputs.force }}
+          SKIP_AUDIT: ${{ inputs.skip }}
           PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           PUSH_AFTER_SHA: ${{ github.event.after }}
         run: |
-          mode="$(bash scripts/ci/publish-wheels-policy.bash "$EVENT_NAME" "$GITHUB_REF_NAME")"
-          if [ "$mode" = "development" ]; then
+          if [ "$SKIP_AUDIT" = "true" ]; then
+            export SKIP_SECURITY_AUDIT=true
+          elif [ "$FORCE_AUDIT" = "true" ]; then
             export FORCE_SECURITY_AUDIT=true
           fi
           bash scripts/ci/security-audit-gate.sh

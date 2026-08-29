@@ -579,6 +579,11 @@ http://127.0.0.1:8888/lab
 We aim to provide the most pleasant developer experience possible for this hybrid Rust and Python codebase.
 See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/) for helpful information.
 
+[Nautilus Engineering](https://github.com/nautechsystems/nautilus_engineering) maintains the
+engineering standards, lint configuration, pre-commit definitions, tool pins, and repository
+checks shared across Nautilus projects. This repository vendors selected files at the revision
+recorded in `.nautilus-engineering.lock`; project-specific policy and CI wiring remain local.
+
 > [!TIP]
 >
 > Run `make build-debug` to compile after Rust changes for the most efficient development workflow.

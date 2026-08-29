@@ -47,8 +47,8 @@ integration, scheduled checks, and publication.
 - [`performance.yml`](workflows/performance.yml): runs Rust tests and registered benchmarks on
   `nightly`, plus selected CodSpeed benchmarks on `develop`, `test-performance`, and pull requests
   targeting `develop`.
-- [`security-audit.yml`](workflows/security-audit.yml): runs change-aware and scheduled supply-chain
-  audits.
+- [`security-audit.yml`](workflows/security-audit.yml): provides the change-aware supply-chain audit
+  used by `build.yml`, plus non-`develop` pull request, scheduled, manual, and `test-security` runs.
 - [`test.yml`](workflows/test.yml): runs pre-commit, Python tests, and Rust tests on Linux x86 with
   Python 3.14 for pushes to the protected `test` branch.
 
@@ -121,8 +121,9 @@ Jobs that declare a GitHub Environment can override the repository or organizati
 with an environment-scoped variable. Security audit jobs read repository and organization variables
 directly and do not use deployment environments or environment secrets.
 
-Fork pull requests in `build.yml` and `security-audit.yml` use `audit` mode because they cannot read
-the endpoint variables. Other workflows retain the configured policy and default to `block`.
+Fork pull requests and their called security audit jobs in `build.yml` use `audit` mode because they
+cannot read the endpoint variables. Other workflows retain the configured policy and default to
+`block`.
 
 ### Security gate override
 
@@ -143,11 +144,12 @@ future. The SHA must match the publication commit. Missing, malformed, expired, 
 mismatched values fail closed. Cancelled, skipped, and other incomplete gate results cannot be
 overridden.
 
-Development security audits remain path-scoped: ordinary pushes to `develop` do not start the
-workflow. When an audit-relevant change triggers the workflow, the publication job waits for its
-same-commit result. The nightly security gate also completes its scans before the publication job
-checks the override. The override does not suppress pull request, scheduled, manual, or stable
-release audits.
+Security audits run as part of `build.yml`. The Zizmor and supply-chain jobs remain path-scoped for
+ordinary pull requests and branch pushes, while `test-ci` and `test-pre-commit` force both jobs. The
+publication job depends directly on the same build's audit result. Nightly builds do not repeat the
+full audit; the nightly security gate completes its scans before publication. Scheduled and manual
+audits run independently, so the repository is still audited when no build runs. The override does
+not suppress pull request, scheduled, manual, or stable release audits.
 
 To approve a blocked development or nightly publication:
 

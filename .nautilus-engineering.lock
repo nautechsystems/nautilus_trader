@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "2b2364e2aeb24f8351da961228eaa9d27bc6eb04"
+revision = "4fe30d2e0cb60058a4a9aeab342b24c8d3b2f120"
 manifest_sha256 = "8ffdbf5086f6dddee747f5c915d05c660fc861b72b16bab56e9cad34122fba45"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -84,6 +84,12 @@ sha256 = "4d9fd0173ef208e40d55c7aef2939143b564f0b135f35dbc969bcb710b2a4ce9"
 executable = true
 
 [[file]]
+artifact = "no-build-package-check"
+path = "scripts/check-no-build-packages.sh"
+sha256 = "4f34c20dc50135b158d7b646e01a6f7de16709760a5789c6aa8267d2e2d08d5a"
+executable = true
+
+[[file]]
 artifact = "github-action-pin-check"
 path = "scripts/ci/check-github-action-shas.sh"
 sha256 = "70967bb1f127845e195f18319fa814c95b64378c851f79f4179ca67f58aa3360"
@@ -116,7 +122,7 @@ executable = true
 [[file]]
 artifact = "security-audit"
 path = "scripts/security-audit.py"
-sha256 = "0d9f68b1f7c34c92ee2a9cf19fd28c0afd4af026cb7c6c0e9352e7f0e01504f4"
+sha256 = "0eeeaa8298fa9b0f0843ecb97bff2ecc70871863f623e878e64f61d23c6375b9"
 executable = false
 
 [[file]]
