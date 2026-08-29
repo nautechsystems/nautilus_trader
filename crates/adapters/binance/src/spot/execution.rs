@@ -337,6 +337,7 @@ impl BinanceSpotExecutionClient {
                 order_type,
                 price,
                 quantity,
+                venue_position_id: None,
             },
         );
 
@@ -1563,6 +1564,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     order_type: order.order_type(),
                     price: order.price(),
                     quantity: order.quantity(),
+                    venue_position_id: None,
                 },
             );
             self.emitter.emit_order_submitted(order);
@@ -3492,6 +3494,7 @@ mod tests {
                 order_type: OrderType::Limit,
                 price: None,
                 quantity: Quantity::from("1"),
+                venue_position_id: None,
             },
         );
         dispatch_state
@@ -3804,6 +3807,7 @@ mod tests {
             order_type: OrderType::Limit,
             price: None,
             quantity: Quantity::from("1"),
+            venue_position_id: None,
         };
 
         let json = crate::common::testing::load_fixture_string(

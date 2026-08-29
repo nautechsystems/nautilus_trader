@@ -21,7 +21,7 @@ use std::{
     net::SocketAddr,
     rc::Rc,
     sync::{
-        Arc,
+        Arc, Mutex as StdMutex,
         atomic::{AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -37,6 +37,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, post},
 };
+use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_binance::{
     common::{
         consts::{
@@ -56,6 +57,7 @@ use nautilus_binance::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    clock::TestClock,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, SystemEvent,
@@ -69,24 +71,32 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UnixNanos};
-use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_execution::engine::ExecutionEngine;
+use nautilus_live::{
+    ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    manager::{ExecutionManager, ExecutionManagerConfig},
+};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
         AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce, TrailingOffsetType, TriggerType,
     },
-    events::{AccountState, OrderAccepted, OrderEventAny, OrderUpdated},
+    events::{
+        AccountState, OrderAccepted, OrderEventAny, OrderUpdated, order::spec::OrderFilledSpec,
+    },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, TradeId,
+        TraderId, VenueOrderId,
     },
     instruments::{InstrumentAny, stubs::currency_pair_btcusdt},
     orders::{
         LimitOrder, MarketIfTouchedOrder, Order, OrderAny, OrderList, StopLimitOrder,
         StopMarketOrder, TrailingStopMarketOrder,
     },
-    types::{AccountBalance, Money, Price, Quantity},
+    position::Position,
+    reports::{ExecutionMassStatus, PositionStatusReport},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -189,7 +199,11 @@ enum ReportFixtureMode {
     FillsOnly,
     Gtd,
     HedgePositions,
+    HedgePositionsEqual,
+    HedgePositionsWithFills,
+    HedgePositionsWithPartialFills,
     InvalidFill,
+    InvalidPositions,
     PaginatedFills,
     PreBoundaryFill,
     Populated,
@@ -448,8 +462,57 @@ async fn handle_position_risk_query(
         ReportFixtureMode::Empty | ReportFixtureMode::FillsOnly | ReportFixtureMode::Gtd => {
             json_response(&json!([]))
         }
-        ReportFixtureMode::ClosePosition | ReportFixtureMode::HedgePositions => {
+        ReportFixtureMode::ClosePosition
+        | ReportFixtureMode::HedgePositions
+        | ReportFixtureMode::HedgePositionsWithFills
+        | ReportFixtureMode::HedgePositionsWithPartialFills => {
             json_response(&load_fixture("position_risk_hedge.json"))
+        }
+        ReportFixtureMode::HedgePositionsEqual => {
+            let mut positions = load_fixture("position_risk_hedge.json");
+            positions[1]["positionAmt"] = json!("-0.005");
+            positions[1]["notional"] = json!("-255.0");
+            json_response(&positions)
+        }
+        ReportFixtureMode::InvalidPositions => {
+            let positions = load_fixture("position_risk_hedge.json");
+            let mut flat_long = positions[0].clone();
+            flat_long["positionAmt"] = json!("0.000");
+            let valid_short = positions[1].clone();
+
+            let mut missing_side = positions[0].clone();
+            missing_side.as_object_mut().unwrap().remove("positionSide");
+
+            let mut invalid_amount = positions[0].clone();
+            invalid_amount["positionAmt"] = json!("invalid-amount");
+
+            let mut invalid_amount_out_of_scope = positions[0].clone();
+            invalid_amount_out_of_scope["symbol"] = json!("SOLUSDT");
+            invalid_amount_out_of_scope["positionAmt"] = json!("invalid-amount-out-of-scope");
+
+            let mut unresolved_instrument = positions[0].clone();
+            unresolved_instrument["symbol"] = json!("ETHUSDT");
+
+            let mut unknown_side = positions[0].clone();
+            unknown_side["positionSide"] = json!("UNRECOGNIZED");
+
+            let mut invalid_entry_price = positions[0].clone();
+            invalid_entry_price["entryPrice"] = json!("invalid-entry-price");
+
+            let mut contradictory_side = positions[0].clone();
+            contradictory_side["positionAmt"] = json!("-0.005");
+
+            json_response(&json!([
+                flat_long,
+                missing_side,
+                invalid_amount,
+                invalid_amount_out_of_scope,
+                unresolved_instrument,
+                unknown_side,
+                invalid_entry_price,
+                contradictory_side,
+                valid_short,
+            ]))
         }
         ReportFixtureMode::Delivery => {
             let mut positions = load_fixture("position_risk.json");
@@ -477,7 +540,12 @@ async fn handle_open_orders_query(
     match state.report_fixture_mode {
         ReportFixtureMode::ClosePosition
         | ReportFixtureMode::Empty
-        | ReportFixtureMode::FillsOnly => json_response(&json!([])),
+        | ReportFixtureMode::FillsOnly
+        | ReportFixtureMode::HedgePositions
+        | ReportFixtureMode::HedgePositionsEqual
+        | ReportFixtureMode::HedgePositionsWithFills
+        | ReportFixtureMode::HedgePositionsWithPartialFills
+        | ReportFixtureMode::InvalidPositions => json_response(&json!([])),
         ReportFixtureMode::Gtd => {
             let mut order = load_fixture("order_response.json");
             order["timeInForce"] = json!("GTD");
@@ -493,7 +561,6 @@ async fn handle_open_orders_query(
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
-        | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => {
             json_response(&json!([load_fixture("order_response.json")]))
@@ -511,7 +578,13 @@ async fn handle_open_algo_orders_query(
     }
     record_query(&state, "openAlgoOrders", query);
     match state.report_fixture_mode {
-        ReportFixtureMode::Empty | ReportFixtureMode::FillsOnly => json_response(&json!([])),
+        ReportFixtureMode::Empty
+        | ReportFixtureMode::FillsOnly
+        | ReportFixtureMode::HedgePositions
+        | ReportFixtureMode::HedgePositionsEqual
+        | ReportFixtureMode::HedgePositionsWithFills
+        | ReportFixtureMode::HedgePositionsWithPartialFills
+        | ReportFixtureMode::InvalidPositions => json_response(&json!([])),
         ReportFixtureMode::ClosePosition => {
             let template = load_fixture("open_algo_orders.json")[0].clone();
             let mut close_long = template.clone();
@@ -582,7 +655,6 @@ async fn handle_open_algo_orders_query(
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
-        | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => json_response(&load_fixture("open_algo_orders.json")),
     }
@@ -633,12 +705,16 @@ async fn handle_all_algo_orders_query(
         | ReportFixtureMode::ClosePosition
         | ReportFixtureMode::Empty
         | ReportFixtureMode::FillsOnly
-        | ReportFixtureMode::Gtd => json_response(&json!([])),
+        | ReportFixtureMode::Gtd
+        | ReportFixtureMode::HedgePositions
+        | ReportFixtureMode::HedgePositionsEqual
+        | ReportFixtureMode::HedgePositionsWithFills
+        | ReportFixtureMode::HedgePositionsWithPartialFills
+        | ReportFixtureMode::InvalidPositions => json_response(&json!([])),
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
         | ReportFixtureMode::Populated
-        | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => {
             let mut orders = load_fixture("open_algo_orders.json");
@@ -692,10 +768,37 @@ async fn handle_user_trades_query(
         ReportFixtureMode::ClosePosition
         | ReportFixtureMode::Delivery
         | ReportFixtureMode::Empty
-        | ReportFixtureMode::Gtd => json_response(&json!([])),
+        | ReportFixtureMode::Gtd
+        | ReportFixtureMode::HedgePositions
+        | ReportFixtureMode::HedgePositionsEqual
+        | ReportFixtureMode::InvalidPositions => json_response(&json!([])),
+        ReportFixtureMode::HedgePositionsWithFills
+        | ReportFixtureMode::HedgePositionsWithPartialFills => {
+            let partial = matches!(
+                state.report_fixture_mode,
+                ReportFixtureMode::HedgePositionsWithPartialFills
+            );
+            let mut long = load_fixture("user_trade.json");
+            long["price"] = json!("50000.0");
+            long["qty"] = json!(if partial { "0.001" } else { "0.005" });
+            long["quoteQty"] = json!(if partial { "50.0" } else { "250.0" });
+            long["realizedPnl"] = json!("0.0");
+            long["time"] = json!(trade_time);
+
+            let mut short = long.clone();
+            short["id"] = json!(12345679);
+            short["orderId"] = json!(8886775);
+            short["price"] = json!("52000.0");
+            short["qty"] = json!(if partial { "0.001" } else { "0.002" });
+            short["quoteQty"] = json!(if partial { "52.0" } else { "104.0" });
+            short["side"] = json!("SELL");
+            short["positionSide"] = json!("SHORT");
+            short["buyer"] = json!(false);
+
+            json_response(&json!([long, short]))
+        }
         ReportFixtureMode::FillsOnly
         | ReportFixtureMode::Populated
-        | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => {
             let mut trade = load_fixture("user_trade.json");
@@ -1045,6 +1148,19 @@ async fn start_exec_test_server_with_query_capture_and_responses(
     responses: CommandResponses,
     report_fixture_mode: ReportFixtureMode,
 ) -> (SocketAddr, CapturedQueries) {
+    start_exec_test_server_with_query_capture_and_responses_and_hedge_mode(
+        responses,
+        report_fixture_mode,
+        false,
+    )
+    .await
+}
+
+async fn start_exec_test_server_with_query_capture_and_responses_and_hedge_mode(
+    responses: CommandResponses,
+    report_fixture_mode: ReportFixtureMode,
+    hedge_mode: bool,
+) -> (SocketAddr, CapturedQueries) {
     let captured_queries = Arc::new(std::sync::Mutex::new(Vec::new()));
     let router = create_exec_test_router_with_command_responses(CommandResponseState {
         responses,
@@ -1052,7 +1168,7 @@ async fn start_exec_test_server_with_query_capture_and_responses(
         captured_queries: Some(captured_queries.clone()),
         captured_ws_trading_messages: None,
         report_fixture_mode,
-        hedge_mode: false,
+        hedge_mode,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -1379,6 +1495,7 @@ fn create_test_execution_client_for_product(
         product_type,
         None,
         BinanceInstrumentProviderConfig::default(),
+        true,
     )
 }
 
@@ -1397,6 +1514,7 @@ fn create_test_execution_client_with_leverages(
         BinanceProductType::UsdM,
         futures_leverages,
         BinanceInstrumentProviderConfig::default(),
+        true,
     )
 }
 
@@ -1415,6 +1533,7 @@ fn create_test_execution_client_with_provider(
         BinanceProductType::UsdM,
         None,
         instrument_provider,
+        true,
     )
 }
 
@@ -1424,6 +1543,7 @@ fn create_test_execution_client_with_config(
     product_type: BinanceProductType,
     futures_leverages: Option<HashMap<String, u32>>,
     instrument_provider: BinanceInstrumentProviderConfig,
+    use_position_ids: bool,
 ) -> (
     BinanceFuturesExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -1456,6 +1576,7 @@ fn create_test_execution_client_with_config(
         api_secret: Some("test_api_secret".to_string()),
         futures_leverages,
         instrument_provider,
+        use_position_ids,
         ..Default::default()
     };
 
@@ -1496,6 +1617,32 @@ fn add_test_instrument_to_cache(cache: &Rc<RefCell<Cache>>) {
         parse_usdm_instrument(symbol, UnixNanos::default(), UnixNanos::default()).unwrap();
 
     cache.borrow_mut().add_instrument(instrument).unwrap();
+}
+
+fn add_legacy_hedge_position_to_cache(cache: &Rc<RefCell<Cache>>) {
+    let instrument_id = test_instrument_id();
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    let opening_fill = OrderFilledSpec::builder()
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("O-LEGACY-LONG"))
+        .venue_order_id(VenueOrderId::from("V-LEGACY-LONG"))
+        .account_id(account_id)
+        .trade_id(TradeId::from("T-LEGACY-LONG"))
+        .order_side(OrderSide::Buy)
+        .last_qty(Quantity::from("0.005"))
+        .last_px(Price::from("50000.0"))
+        .currency(Currency::USDT())
+        .position_id(PositionId::from("P-LEGACY-LONG"))
+        .build();
+    let position = Position::new(&instrument, opening_fill);
+
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
 }
 
 #[rstest]
@@ -1750,6 +1897,70 @@ async fn test_submit_order_list_posts_batch_orders_for_independent_limits() {
         batch[0]["newClientOrderId"]
             .as_str()
             .is_some_and(|value| value.contains("list-limit-001"))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_hedge_order_rejects_custom_position_id_before_request() {
+    let (addr, captured_query) =
+        start_exec_test_server_with_order_capture_and_hedge_mode(true).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let order = add_limit_order_to_cache(&cache, ClientOrderId::new("custom-position-id-001"));
+    let mut command = submit_order_command(&order);
+    command.position_id = Some(PositionId::from("P-VIRTUAL-LONG"));
+
+    let error = client.submit_order(command).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "submitted position ID P-VIRTUAL-LONG conflicts with canonical Binance Futures venue position ID BTCUSDT-PERP.BINANCE-LONG; omit position_id while use_position_ids=true, or set use_position_ids=false for virtual hedging",
+    );
+    assert!(captured_query.lock().unwrap().is_none());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_hedge_order_list_rejects_custom_position_id_before_request() {
+    let (addr, captured_queries) =
+        start_exec_test_server_with_query_capture_and_responses_and_hedge_mode(
+            CommandResponses::default(),
+            ReportFixtureMode::Empty,
+            true,
+        )
+        .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let orders = vec![
+        add_limit_order_to_cache(&cache, ClientOrderId::new("custom-position-list-001")),
+        add_limit_order_to_cache(&cache, ClientOrderId::new("custom-position-list-002")),
+    ];
+    let mut command = submit_order_list_command(&orders);
+    command.position_id = Some(PositionId::from("P-VIRTUAL-LONG"));
+
+    let error = client.submit_order_list(command).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "submitted position ID P-VIRTUAL-LONG conflicts with canonical Binance Futures venue position ID BTCUSDT-PERP.BINANCE-LONG; omit position_id while use_position_ids=true, or set use_position_ids=false for virtual hedging",
+    );
+    assert!(
+        captured_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|query| query.path != "batchOrders")
     );
 }
 
@@ -4821,8 +5032,13 @@ async fn test_generate_mass_status_filters_fills_before_report_window() {
 }
 
 #[rstest]
+#[case(true, Some("BTCUSDT-PERP.BINANCE-LONG"))]
+#[case(false, None)]
 #[tokio::test]
-async fn test_report_generation_without_instrument_matches_raw_symbol_responses() {
+async fn test_report_generation_without_instrument_matches_raw_symbol_responses(
+    #[case] use_position_ids: bool,
+    #[case] expected_fill_position_id: Option<&str>,
+) {
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses::default(),
         ReportFixtureMode::Populated,
@@ -4831,7 +5047,11 @@ async fn test_report_generation_without_instrument_matches_raw_symbol_responses(
     let base_url_http = format!("http://{addr}");
     let base_url_ws = format!("ws://{addr}/ws");
 
-    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    let (mut client, _rx, cache) = create_test_execution_client_with_position_ids(
+        base_url_http,
+        base_url_ws,
+        use_position_ids,
+    );
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
     client.start().unwrap();
@@ -4864,6 +5084,28 @@ async fn test_report_generation_without_instrument_matches_raw_symbol_responses(
             .iter()
             .all(|report| report.instrument_id == test_instrument_id())
     );
+    assert_eq!(order_reports[0].venue_position_id, None);
+    assert_eq!(order_reports[1].venue_position_id, None);
+
+    let fill_reports = client
+        .generate_fill_reports(GenerateFillReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            Some(test_instrument_id()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(
+        fill_reports[0].venue_position_id,
+        expected_fill_position_id.map(PositionId::from),
+    );
 
     let positions = GeneratePositionStatusReports::new(
         nautilus_core::UUID4::new(),
@@ -4882,11 +5124,22 @@ async fn test_report_generation_without_instrument_matches_raw_symbol_responses(
 
     assert_eq!(position_reports.len(), 1);
     assert_eq!(position_reports[0].instrument_id, test_instrument_id());
+    assert_eq!(position_reports[0].venue_position_id, None);
 }
 
 #[rstest]
+#[case(
+    true,
+    Some("BTCUSDT-PERP.BINANCE-LONG"),
+    Some("BTCUSDT-PERP.BINANCE-SHORT")
+)]
+#[case(false, None, None)]
 #[tokio::test]
-async fn test_position_report_generation_preserves_hedge_legs() {
+async fn test_position_report_generation_preserves_hedge_legs(
+    #[case] use_position_ids: bool,
+    #[case] expected_id_long: Option<&str>,
+    #[case] expected_id_short: Option<&str>,
+) {
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses::default(),
         ReportFixtureMode::HedgePositions,
@@ -4894,7 +5147,11 @@ async fn test_position_report_generation_preserves_hedge_legs() {
     .await;
     let base_url_http = format!("http://{addr}");
     let base_url_ws = format!("ws://{addr}/ws");
-    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    let (mut client, _rx, cache) = create_test_execution_client_with_position_ids(
+        base_url_http,
+        base_url_ws,
+        use_position_ids,
+    );
     let account_id = AccountId::from("BINANCE-001");
     let instrument_id = test_instrument_id();
     add_test_account_to_cache(&cache, account_id);
@@ -4924,7 +5181,10 @@ async fn test_position_report_generation_preserves_hedge_legs() {
         reports[0].signed_decimal_qty,
         rust_decimal_macros::dec!(0.005)
     );
-    assert_eq!(reports[0].venue_position_id, None);
+    assert_eq!(
+        reports[0].venue_position_id,
+        expected_id_long.map(PositionId::from),
+    );
     assert_eq!(
         reports[0].avg_px_open,
         Some(rust_decimal_macros::dec!(50000.0)),
@@ -4939,12 +5199,311 @@ async fn test_position_report_generation_preserves_hedge_legs() {
         reports[1].signed_decimal_qty,
         rust_decimal_macros::dec!(-0.002)
     );
-    assert_eq!(reports[1].venue_position_id, None);
+    assert_eq!(
+        reports[1].venue_position_id,
+        expected_id_short.map(PositionId::from),
+    );
     assert_eq!(
         reports[1].avg_px_open,
         Some(rust_decimal_macros::dec!(52000.0)),
     );
     assert_eq!(reports[1].ts_last, reports[1].ts_init);
+}
+
+#[rstest]
+#[case(ReportFixtureMode::HedgePositions, "0.002", 0, 4)]
+#[case(ReportFixtureMode::HedgePositionsEqual, "0.005", 0, 4)]
+#[case(ReportFixtureMode::HedgePositionsWithFills, "0.002", 2, 8)]
+#[case(ReportFixtureMode::HedgePositionsWithPartialFills, "0.002", 2, 8)]
+#[tokio::test]
+async fn test_startup_reconciliation_preserves_both_hedge_legs(
+    #[case] report_fixture_mode: ReportFixtureMode,
+    #[case] expected_short_quantity: &str,
+    #[case] expected_fill_count: usize,
+    #[case] expected_event_count: usize,
+) {
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        report_fixture_mode,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_id = test_instrument_id();
+    add_test_account_to_cache(&cache, account_id);
+    add_test_instrument_to_cache(&cache);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client.generate_mass_status(None).await.unwrap().unwrap();
+    let replay_status = mass_status.clone();
+
+    assert!(mass_status.order_reports().is_empty());
+    let mut fill_position_ids: Vec<_> = mass_status
+        .fill_reports()
+        .into_values()
+        .flatten()
+        .map(|report| report.venue_position_id.unwrap())
+        .collect();
+    fill_position_ids.sort();
+    assert_eq!(fill_position_ids.len(), expected_fill_count);
+    if expected_fill_count > 0 {
+        assert_eq!(
+            fill_position_ids,
+            [
+                PositionId::from("BTCUSDT-PERP.BINANCE-LONG"),
+                PositionId::from("BTCUSDT-PERP.BINANCE-SHORT"),
+            ],
+        );
+    }
+    assert_eq!(mass_status.position_reports()[&instrument_id].len(), 2);
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut manager = ExecutionManager::new(
+        clock.clone(),
+        cache.clone(),
+        ExecutionManagerConfig::default(),
+    )
+    .unwrap();
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
+    let engine = Rc::new(RefCell::new(engine));
+
+    let result = manager
+        .reconcile_execution_mass_status(mass_status, engine.clone())
+        .await;
+
+    let long_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-LONG");
+    let short_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-SHORT");
+    assert_eq!(result.events.len(), expected_event_count);
+    {
+        let cache_ref = cache.borrow();
+        let long_position = cache_ref.position(&long_position_id).unwrap();
+        let short_position = cache_ref.position(&short_position_id).unwrap();
+
+        assert_eq!(cache_ref.positions(None, None, None, None, None).len(), 2);
+        assert_eq!(long_position.id, long_position_id);
+        assert_eq!(long_position.account_id, account_id);
+        assert_eq!(long_position.instrument_id, instrument_id);
+        assert_eq!(long_position.side, PositionSide::Long);
+        assert_eq!(long_position.quantity, Quantity::from("0.005"));
+        assert_eq!(
+            long_position.signed_decimal_qty(),
+            rust_decimal_macros::dec!(0.005)
+        );
+        assert_eq!(long_position.avg_px_open, 50000.0);
+        assert_eq!(short_position.id, short_position_id);
+        assert_eq!(short_position.account_id, account_id);
+        assert_eq!(short_position.instrument_id, instrument_id);
+        assert_eq!(short_position.side, PositionSide::Short);
+        assert_eq!(
+            short_position.quantity,
+            Quantity::from(expected_short_quantity),
+        );
+        assert_eq!(
+            short_position.signed_decimal_qty(),
+            -expected_short_quantity
+                .parse::<rust_decimal::Decimal>()
+                .unwrap(),
+        );
+        assert_eq!(short_position.avg_px_open, 52000.0);
+    }
+
+    let replay = manager
+        .reconcile_execution_mass_status(replay_status, engine)
+        .await;
+
+    assert!(replay.events.is_empty());
+    assert_eq!(
+        cache.borrow().positions(None, None, None, None, None).len(),
+        2
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_position_report_failures_warn_with_count_and_mass_status_counts_hedge_legs() {
+    let logger = install_position_log_capture();
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::InvalidPositions,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let provider = BinanceInstrumentProviderConfig {
+        load_all: false,
+        load_ids: Some(vec![
+            "BTCUSDT-PERP.BINANCE".to_string(),
+            "ETHUSDT-PERP.BINANCE".to_string(),
+        ]),
+        ..Default::default()
+    };
+    let (mut client, _rx, cache) =
+        create_test_execution_client_with_provider(base_url_http, base_url_ws, provider);
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_id = test_instrument_id();
+    add_test_account_to_cache(&cache, account_id);
+    add_test_instrument_to_cache(&cache);
+    add_legacy_hedge_position_to_cache(&cache);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let error = client.generate_mass_status(None).await.unwrap_err();
+    let records = logger.take_records();
+    let position_warnings: Vec<_> = records
+        .iter()
+        .filter(|(level, message)| *level == Level::Warn && message.contains("Futures position"))
+        .collect();
+
+    assert_eq!(
+        error.to_string(),
+        "Failed to process 7 Binance Futures position reports",
+    );
+    assert_eq!(position_warnings.len(), 7);
+    assert!(position_warnings.iter().any(|(_, message)| {
+        message.contains(
+            "incompatible cached Long position IDs for BTCUSDT-PERP.BINANCE: P-LEGACY-LONG; expected BTCUSDT-PERP.BINANCE-LONG",
+        )
+    }));
+    assert!(position_warnings.iter().any(|(_, message)| {
+        message
+            == "Failed to create Futures position report for symbol=BTCUSDT: missing position_side"
+    }));
+    assert!(position_warnings.iter().any(|(_, message)| {
+        message.starts_with("Failed to parse Futures position_amt for symbol=BTCUSDT:")
+    }));
+    assert!(position_warnings.iter().any(|(_, message)| {
+        message
+            == "Failed to create Futures position report for symbol=ETHUSDT: instrument ETHUSDT-PERP.BINANCE is unresolved"
+    }));
+    assert!(position_warnings.iter().any(|(_, message)| {
+        message
+            == "Failed to create Futures position report for symbol=BTCUSDT: unknown position_side"
+    }));
+    assert!(position_warnings.iter().any(|(_, message)| {
+        message
+            == "Failed to create Futures position report for symbol=BTCUSDT: invalid entry_price"
+    }));
+    assert!(position_warnings.iter().any(|(_, message)| {
+        message
+            == "Failed to create Futures position report for symbol=BTCUSDT: position_side LONG conflicts with negative position_amt"
+    }));
+
+    let ts_init = UnixNanos::default();
+    let mut mass_status = ExecutionMassStatus::new(
+        *BINANCE_CLIENT_ID,
+        account_id,
+        *BINANCE_VENUE,
+        ts_init,
+        None,
+    );
+    mass_status.add_position_reports(vec![
+        PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Long,
+            Quantity::from("0.005"),
+            ts_init,
+            ts_init,
+            None,
+            Some(PositionId::from("BTCUSDT-PERP.BINANCE-LONG")),
+            Some(rust_decimal_macros::dec!(50000.0)),
+        ),
+        PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSide::Short,
+            Quantity::from("0.002"),
+            ts_init,
+            ts_init,
+            None,
+            Some(PositionId::from("BTCUSDT-PERP.BINANCE-SHORT")),
+            Some(rust_decimal_macros::dec!(52000.0)),
+        ),
+    ]);
+    let count_cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&count_cache, account_id);
+    add_test_instrument_to_cache(&count_cache);
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let mut manager = ExecutionManager::new(
+        clock.clone(),
+        count_cache.clone(),
+        ExecutionManagerConfig::default(),
+    )
+    .unwrap();
+    let mut engine = ExecutionEngine::new(clock, count_cache, None);
+    engine.register_client(Box::new(client)).unwrap();
+    engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
+    let result = manager
+        .reconcile_execution_mass_status(mass_status, Rc::new(RefCell::new(engine)))
+        .await;
+    let records = logger.take_records();
+
+    assert_eq!(result.events.len(), 4);
+    assert!(records.iter().any(|(level, message)| {
+        *level == Level::Info && message == "Received 0 order(s), 0 fill(s), 2 position(s)"
+    }));
+}
+
+struct PositionLogCapture {
+    records: StdMutex<Vec<(Level, String)>>,
+}
+
+impl PositionLogCapture {
+    fn take_records(&self) -> Vec<(Level, String)> {
+        std::mem::take(&mut self.records.lock().unwrap())
+    }
+}
+
+impl Log for PositionLogCapture {
+    fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+        metadata.level() <= Level::Info
+    }
+
+    fn log(&self, record: &Record<'_>) {
+        if self.enabled(record.metadata()) {
+            self.records
+                .lock()
+                .unwrap()
+                .push((record.level(), record.args().to_string()));
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static POSITION_LOG_CAPTURE: PositionLogCapture = PositionLogCapture {
+    records: StdMutex::new(Vec::new()),
+};
+
+fn install_position_log_capture() -> &'static PositionLogCapture {
+    log::set_logger(&POSITION_LOG_CAPTURE).expect("position log capture installs");
+    log::set_max_level(LevelFilter::Info);
+    POSITION_LOG_CAPTURE.take_records();
+    &POSITION_LOG_CAPTURE
+}
+
+fn create_test_execution_client_with_position_ids(
+    base_url_http: String,
+    base_url_ws: String,
+    use_position_ids: bool,
+) -> (
+    BinanceFuturesExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    create_test_execution_client_with_config(
+        base_url_http,
+        base_url_ws,
+        BinanceProductType::UsdM,
+        None,
+        BinanceInstrumentProviderConfig::default(),
+        use_position_ids,
+    )
 }
 
 #[rstest]

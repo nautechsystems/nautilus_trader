@@ -301,6 +301,13 @@ could duplicate an order or amendment.
 | Leverage control | -    | ✓            | ✓            | Dynamic leverage adjustment per symbol. |
 | Margin mode      | -    | ✓            | ✓            | Cross vs Isolated margin per symbol.    |
 
+Binance Futures logs out-of-scope position symbols at debug and drops them before parsing. For the
+remaining rows, position report generation warns when an amount cannot be parsed. After flat
+positions are removed, unresolved instruments and other conversion failures also warn. If any
+position fails, `generate_position_status_reports` returns an error with the failure count instead
+of an incomplete report set. See
+[instrument availability](../concepts/reconciliation.md#instrument-availability).
+
 ### Risk events
 
 | Feature              | Spot | USDT Futures | Coin Futures | Notes                              |
@@ -339,27 +346,6 @@ orders (the typical case for a live liquidation or ADL event). The engine
 assigns the order to any strategy that has claimed the instrument via
 `external_order_claims`, or to the `EXTERNAL` strategy by default.
 
-#### Commission estimation
-
-When Binance omits the commission fields (`N`/`n`) from the fill event, the
-adapter estimates commission as `default_taker_fee * qty * price` using
-the quote currency. This applies to USD-M linear contracts only. COIN-M
-inverse contracts use zero commission as a fallback because the linear
-formula does not account for contract size. Configure `default_taker_fee` on
-`BinanceExecutionClientConfig` to match your fee tier (default: 0.0004 / 0.04%).
-
-#### Hedge-mode position IDs
-
-When `use_position_ids` is enabled (default), exchange-generated fill reports
-include a `venue_position_id` derived from the instrument and position side
-(e.g. `ETHUSDT-PERP.BINANCE-LONG`). Keep this enabled for Binance dual-side
-positions. Set `use_position_ids` to false only for virtual positions with
-`OmsType.HEDGING`, where the engine manages position identity.
-
-For Futures accounts in dual-side position mode, set `oms_type=OmsType.HEDGING`. The adapter
-defaults to `OmsType.NETTING` for one-way position mode. Leave `use_position_ids` enabled to track
-Binance's separate long and short sides.
-
 :::note
 The status report and fill report are emitted bundled as a single
 `OrderWithFills` execution report. The engine creates the external order
@@ -368,6 +354,15 @@ venue's `trade_id` and `commission`. Any residual quantity not covered by
 the bundled fills is closed with an inferred fill from the status report's
 `avg_px`.
 :::
+
+#### Commission estimation
+
+When Binance omits the commission fields (`N`/`n`) from the fill event, the
+adapter estimates commission as `default_taker_fee * qty * price` using
+the quote currency. This applies to USD-M linear contracts only. COIN-M
+inverse contracts use zero commission as a fallback because the linear
+formula does not account for contract size. Configure `default_taker_fee` on
+`BinanceExecutionClientConfig` to match your fee tier (default: 0.0004 / 0.04%).
 
 ### Order querying
 
@@ -1071,7 +1066,7 @@ For the latest rate limits, query `/api/v3/exchangeInfo` (Spot) or `/fapi/v1/exc
 | `us`                               | `False`   | Route a live Spot execution client to Binance US.                       |
 | `api_key` / `api_secret`           | `None`    | Global uses Ed25519 WebSocket auth; Binance US uses HMAC HTTP signing.  |
 | `use_gtd`                          | `True`    | Use native USD-M GTD; see [GTD policy](#gtd-policy).                    |
-| `use_position_ids`                 | `True`    | Expose Futures hedge-side position IDs.                                 |
+| `use_position_ids`                 | `True`    | Expose Futures IDs on order, fill, and hedge REST reports.              |
 | `oms_type`                         | `None`    | `None` selects Futures netting; use `Hedging` for dual-side mode.       |
 | `default_taker_fee`                | `0.0004`  | Fallback for exchange-generated Futures fills.                          |
 | `futures_leverages`                | `None`    | Initial leverage by Futures symbol.                                     |
@@ -1422,6 +1417,17 @@ instrument_provider = BinanceInstrumentProviderConfig(
 Binance Futures Hedge mode allows holding both long and short positions on the
 same instrument simultaneously.
 
+When `use_position_ids` is enabled (default), Futures order and fill reports include a
+`venue_position_id` derived from the instrument and Binance position side. Hedge-mode REST position
+reports use the same IDs, such as `ETHUSDT-PERP.BINANCE-LONG`. This identity is preserved through
+REST history, user stream updates, stream recovery, exchange-generated fills, and tracked
+`TRADE_LITE` fills.
+
+One-way `BOTH` positions, orders, and fills remain unkeyed and use netting reconciliation. Set
+`use_position_ids` to false only for virtual positions with `OmsType.HEDGING`, where the engine
+manages position identity. With `use_position_ids=True`, the adapter rejects a submitted custom
+position ID that differs from the canonical Binance hedge-leg ID before sending the order.
+
 To use hedge mode, configure it on Binance, set
 `oms_type=OmsType.HEDGING` on `BinanceExecutionClientConfig`, and keep `use_position_ids=True` to track
 both venue position sides:
@@ -1439,6 +1445,14 @@ config = BinanceExecutionClientConfig(
     use_position_ids=True,
 )
 ```
+
+This configuration is required for startup reconciliation to retain the `LONG` and `SHORT` legs
+separately.
+
+If the cache contains an open Binance hedge position under a different locally generated ID, the
+adapter rejects that position row and reports both the cached and expected IDs. Reconcile the cached
+state before retrying startup. The adapter does not alias the old ID or create a duplicate venue
+position.
 
 ### COIN-M / USD-M architecture
 

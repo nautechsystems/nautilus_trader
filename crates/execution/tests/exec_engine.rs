@@ -8059,18 +8059,15 @@ fn test_cached_position_id_used_for_hedging_fill(mut execution_engine: Execution
     execution_engine.process(&order_accepted_event);
 
     // Fill with position_id = None; engine should use cached value
-    let order_filled_event = TestOrderEventStubs::filled(
-        &cached_order_or(&execution_engine, &order),
-        &instrument.into(),
-        Some(TradeId::new("E-19700101-000000-001-001-1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(AccountId::test_default()),
-    );
+    let cached_order = cached_order_or(&execution_engine, &order);
+    let instrument_any: InstrumentAny = instrument.into();
+    let mut fill_builder = OrderFilledTestBuilder::new(&cached_order, &instrument_any);
+    fill_builder
+        .trade_id(TradeId::new("E-19700101-000000-001-001-1"))
+        .without_position_id()
+        .account_id(AccountId::test_default());
+
+    let order_filled_event = fill_builder.build();
     execution_engine.process(&order_filled_event);
 
     let cache = execution_engine.cache().borrow();
@@ -8096,7 +8093,7 @@ fn test_cached_position_id_used_for_hedging_fill(mut execution_engine: Execution
 }
 
 #[rstest]
-fn test_cached_position_id_overrides_fill_position_id(mut execution_engine: ExecutionEngine) {
+fn test_conflicting_venue_position_id_rejects_hedging_fill(mut execution_engine: ExecutionEngine) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
     let instrument = audusd_sim();
@@ -8156,7 +8153,6 @@ fn test_cached_position_id_overrides_fill_position_id(mut execution_engine: Exec
     );
     execution_engine.process(&order_accepted_event);
 
-    // Fill with a DIFFERENT position_id (venue-supplied); cached should take precedence
     let venue_position_id = PositionId::from("VENUE-POS");
     let order_filled_event = TestOrderEventStubs::filled(
         &cached_order_or(&execution_engine, &order),
@@ -8170,28 +8166,24 @@ fn test_cached_position_id_overrides_fill_position_id(mut execution_engine: Exec
         None,
         Some(AccountId::test_default()),
     );
+
     execution_engine.process(&order_filled_event);
 
     let cache = execution_engine.cache().borrow();
+    let cached_order = cache.order(&order.client_order_id()).unwrap();
 
-    // Cached position_id takes precedence over venue-supplied
-    assert!(
-        cache.position_exists(&cached_position_id),
-        "Position should exist with cached ID"
-    );
-    assert!(
-        !cache.position_exists(&venue_position_id),
-        "No position should exist with venue-supplied ID"
-    );
-    assert!(
-        cache.is_position_open(&cached_position_id),
-        "Position should be open"
-    );
+    assert_eq!(cached_order.status(), OrderStatus::Accepted);
+    assert_eq!(cached_order.filled_qty(), Quantity::from(0));
+    assert!(!cache.position_exists(&cached_position_id));
+    assert!(!cache.position_exists(&venue_position_id));
 }
 
 #[rstest]
+#[case(false)]
+#[case(true)]
 fn test_exec_algorithm_position_id_propagates_to_primary_order(
     mut execution_engine: ExecutionEngine,
+    #[case] use_venue_position_id: bool,
 ) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
@@ -8277,19 +8269,21 @@ fn test_exec_algorithm_position_id_propagates_to_primary_order(
     );
     execution_engine.process(&child_accepted_event);
 
-    // Fill the child order with no position_id; engine should generate one and propagate
-    let child_filled_event = TestOrderEventStubs::filled(
-        &cached_order_or(&execution_engine, &child_order),
-        &instrument.into(),
-        Some(TradeId::new("E-19700101-000000-001-001-1")),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(AccountId::test_default()),
-    );
+    let cached_child_order = cached_order_or(&execution_engine, &child_order);
+    let instrument_any: InstrumentAny = instrument.into();
+    let venue_position_id = PositionId::from("VENUE-POS");
+    let mut fill_builder = OrderFilledTestBuilder::new(&cached_child_order, &instrument_any);
+    fill_builder
+        .trade_id(TradeId::new("E-19700101-000000-001-001-1"))
+        .account_id(AccountId::test_default());
+
+    if use_venue_position_id {
+        fill_builder.position_id(venue_position_id);
+    } else {
+        fill_builder.without_position_id();
+    }
+
+    let child_filled_event = fill_builder.build();
     execution_engine.process(&child_filled_event);
 
     let cache = execution_engine.cache().borrow();
@@ -8297,27 +8291,26 @@ fn test_exec_algorithm_position_id_propagates_to_primary_order(
     let primary = cache
         .order(&primary_client_order_id)
         .expect("Primary order should be in cache");
-    assert!(
-        primary.position_id().is_some(),
-        "Primary order should have position_id assigned"
-    );
-
-    let primary_cached_pos_id = cache.position_id(&primary_client_order_id);
-    assert!(
-        primary_cached_pos_id.is_some(),
-        "Cache should index position_id for primary order"
-    );
+    let position_id = primary
+        .position_id()
+        .expect("Primary order should have position_id assigned");
+    let cached_position_id = cache
+        .position_id(&primary_client_order_id)
+        .copied()
+        .expect("Cache should index position_id for primary order");
 
     assert_eq!(
-        primary.position_id().unwrap(),
-        *primary_cached_pos_id.unwrap(),
+        position_id, cached_position_id,
         "Primary order position_id and cache index should match"
     );
 
-    let position_id = primary.position_id().unwrap();
+    if use_venue_position_id {
+        assert_eq!(position_id, venue_position_id);
+    }
+
     assert!(
         cache.position_exists(&position_id),
-        "Position should exist with generated ID"
+        "Position should exist with propagated ID"
     );
     assert!(
         cache.is_position_open(&position_id),

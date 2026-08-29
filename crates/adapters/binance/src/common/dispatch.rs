@@ -30,7 +30,7 @@ use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
     events::{OrderAccepted, OrderEventAny},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, VenueOrderId},
     types::{Price, Quantity},
 };
 
@@ -66,6 +66,7 @@ pub struct OrderIdentity {
     pub order_type: OrderType,
     pub price: Option<Price>,
     pub quantity: Quantity,
+    pub venue_position_id: Option<PositionId>,
 }
 
 #[derive(Debug, Clone, Copy)]

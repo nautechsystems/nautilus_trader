@@ -58,7 +58,9 @@ use nautilus_model::{
         AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderModifyRejected,
         OrderRejected, OrderUpdated,
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, Venue, VenueOrderId,
+    },
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -85,7 +87,10 @@ use super::{
     websocket::{
         streams::{
             client::BinanceFuturesWebSocketClient,
-            dispatch::{DispatchCtx, dispatch_user_stream_message, spawn_user_stream_dispatch},
+            dispatch::{
+                DispatchCtx, dispatch_user_stream_message, make_venue_position_id,
+                spawn_user_stream_dispatch, with_venue_position_id,
+            },
             recovery::{
                 RecoveryCtx, WsBuildParams, build_and_connect_user_stream, run_recovery_driver,
             },
@@ -487,6 +492,8 @@ impl BinanceFuturesExecutionClient {
         &self,
         cmd: &SubmitOrder,
         lifetime: FuturesOrderLifetime,
+        position_side: Option<BinancePositionSide>,
+        venue_position_id: Option<PositionId>,
     ) -> anyhow::Result<()> {
         let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
@@ -516,15 +523,6 @@ impl BinanceFuturesExecutionClient {
             .and_then(|p| p.get_bool(PARAMS_CLOSE_POSITION))
             .unwrap_or(false);
 
-        // `close_position` retires an entire hedge leg, so it carries close intent on
-        // its own. It cannot be combined with `reduce_only` (rejected in `submit_order`),
-        // which is otherwise the flag that selects the closing `positionSide`.
-        let position_side = determine_position_side(
-            self.is_hedge_mode(),
-            order_side,
-            reduce_only || close_position,
-        );
-
         // Register identity for tracked/external dispatch routing
         self.dispatch_state.order_identities.insert(
             client_order_id,
@@ -535,6 +533,7 @@ impl BinanceFuturesExecutionClient {
                 order_type,
                 price,
                 quantity,
+                venue_position_id,
             },
         );
 
@@ -940,6 +939,34 @@ impl BinanceFuturesExecutionClient {
             PositionSide::Short
         };
 
+        if self.config.use_position_ids {
+            match position.position_side {
+                Some(BinancePositionSide::Long) => anyhow::ensure!(
+                    position_side == PositionSide::Long,
+                    "position_side LONG conflicts with negative position_amt"
+                ),
+                Some(BinancePositionSide::Short) => anyhow::ensure!(
+                    position_side == PositionSide::Short,
+                    "position_side SHORT conflicts with positive position_amt"
+                ),
+                _ => {}
+            }
+        }
+
+        let venue_position_id = make_venue_position_id(
+            self.config.use_position_ids,
+            instrument_id,
+            position.position_side,
+        )?;
+
+        if let Some(venue_position_id) = venue_position_id {
+            self.ensure_cached_position_id_compatible(
+                instrument_id,
+                position_side,
+                venue_position_id,
+            )?;
+        }
+
         let ts_now = self.clock.get_time_ns();
 
         Ok(PositionStatusReport::new(
@@ -950,9 +977,38 @@ impl BinanceFuturesExecutionClient {
             ts_now,
             ts_now,
             Some(UUID4::new()),
-            None, // venue_position_id
+            venue_position_id,
             Some(entry_price),
         ))
+    }
+
+    fn ensure_cached_position_id_compatible(
+        &self,
+        instrument_id: InstrumentId,
+        position_side: PositionSide,
+        venue_position_id: PositionId,
+    ) -> anyhow::Result<()> {
+        let cache = self.core.cache();
+        let mut incompatible_ids: Vec<_> = cache
+            .positions_open(
+                Some(&BINANCE_VENUE),
+                Some(&instrument_id),
+                None,
+                Some(&self.core.account_id),
+                Some(position_side),
+            )
+            .into_iter()
+            .filter(|position| position.id != venue_position_id)
+            .map(|position| position.id.to_string())
+            .collect();
+        incompatible_ids.sort_unstable();
+
+        anyhow::ensure!(
+            incompatible_ids.is_empty(),
+            "incompatible cached {position_side:?} position IDs for {instrument_id}: {}; expected {venue_position_id}",
+            incompatible_ids.join(", "),
+        );
+        Ok(())
     }
 
     async fn generate_open_order_status_reports(
@@ -1016,8 +1072,13 @@ impl BinanceFuturesExecutionClient {
                 self.config.treat_expired_as_canceled,
                 ts_init,
             ) {
+                let venue_position_id = make_venue_position_id(
+                    self.config.use_position_ids,
+                    instrument.id(),
+                    order.position_side,
+                )?;
                 reports.push(OpenOrderStatusReport {
-                    report,
+                    report: with_venue_position_id(report, venue_position_id),
                     quantity_free_close_position_side: None,
                 });
             }
@@ -1046,8 +1107,13 @@ impl BinanceFuturesExecutionClient {
                 instrument.size_precision(),
                 ts_init,
             ) {
+                let venue_position_id = make_venue_position_id(
+                    self.config.use_position_ids,
+                    instrument.id(),
+                    algo_order.position_side,
+                )?;
                 reports.push(OpenOrderStatusReport {
-                    report,
+                    report: with_venue_position_id(report, venue_position_id),
                     quantity_free_close_position_side: quantity_free_close_position_side(
                         &algo_order,
                     ),
@@ -1173,6 +1239,42 @@ fn restore_close_position_quantities(
 
         order_report.report.quantity = position.quantity;
     }
+}
+
+fn resolve_order_position_identity(
+    is_hedge_mode: bool,
+    use_position_ids: bool,
+    order: &OrderAny,
+    close_position: bool,
+) -> anyhow::Result<(Option<BinancePositionSide>, Option<PositionId>)> {
+    // `close_position` retires an entire hedge leg, so it carries close intent on its own
+    // and cannot be combined with `reduce_only`, which otherwise selects the closing side.
+    let position_side = determine_position_side(
+        is_hedge_mode,
+        order.order_side(),
+        order.is_reduce_only() || close_position,
+    );
+    let venue_position_id = make_venue_position_id(
+        use_position_ids,
+        order.instrument_id(),
+        Some(position_side.unwrap_or(BinancePositionSide::Both)),
+    )?;
+    Ok((position_side, venue_position_id))
+}
+
+fn validate_submit_position_id(
+    submitted_position_id: Option<PositionId>,
+    venue_position_id: Option<PositionId>,
+) -> anyhow::Result<()> {
+    if let (Some(submitted_position_id), Some(venue_position_id)) =
+        (submitted_position_id, venue_position_id)
+    {
+        anyhow::ensure!(
+            submitted_position_id == venue_position_id,
+            "submitted position ID {submitted_position_id} conflicts with canonical Binance Futures venue position ID {venue_position_id}; omit position_id while use_position_ids=true, or set use_position_ids=false for virtual hedging",
+        );
+    }
+    Ok(())
 }
 
 fn build_futures_order_list_batch(
@@ -1922,6 +2024,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     price_precision,
                     size_precision,
                     self.config.treat_expired_as_canceled,
+                    self.config.use_position_ids,
                     ts_init,
                 )?)),
                 None => {
@@ -1941,7 +2044,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     self.config.treat_expired_as_canceled,
                     ts_init,
                 )?;
-                Ok(Some(report))
+                let venue_position_id = make_venue_position_id(
+                    self.config.use_position_ids,
+                    instrument_id,
+                    order.position_side,
+                )?;
+                Ok(Some(with_venue_position_id(report, venue_position_id)))
             }
             Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
                 if algo_lookup == BinanceFuturesAlgoLookup::Skip {
@@ -1975,6 +2083,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         price_precision,
                         size_precision,
                         self.config.treat_expired_as_canceled,
+                        self.config.use_position_ids,
                         ts_init,
                     )?)),
                     None => {
@@ -2080,7 +2189,12 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     self.config.treat_expired_as_canceled,
                     ts_init,
                 ) {
-                    reports.push(report);
+                    let venue_position_id = make_venue_position_id(
+                        self.config.use_position_ids,
+                        instrument.id(),
+                        order.position_side,
+                    )?;
+                    reports.push(with_venue_position_id(report, venue_position_id));
                 }
             }
         }
@@ -2236,14 +2350,21 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let mut reports = Vec::new();
 
         for trade in trades {
-            reports.push(trade.to_fill_report(
+            let venue_position_id = make_venue_position_id(
+                self.config.use_position_ids,
+                instrument.id(),
+                trade.position_side,
+            )?;
+            let mut report = trade.to_fill_report(
                 self.core.account_id,
                 instrument.id(),
                 instrument.price_precision(),
                 instrument.size_precision(),
                 self.config.bnfcr_currency,
                 ts_init,
-            )?);
+            )?;
+            report.venue_position_id = venue_position_id;
+            reports.push(report);
         }
 
         Ok(reports)
@@ -2281,8 +2402,18 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let positions = self.http_client.query_positions(&params).await?;
 
         let mut reports = Vec::new();
+        let mut position_reports_failed = 0usize;
 
         for position in positions {
+            let instrument_id = format_instrument_id(&position.symbol, self.product_type);
+
+            if self.is_instrument_out_of_scope(instrument_id) {
+                log::debug!(
+                    "Dropping out-of-scope Binance Futures position for instrument {instrument_id}"
+                );
+                continue;
+            }
+
             let position_amt = match position.position_amt.parse::<Decimal>() {
                 Ok(value) => value,
                 Err(e) => {
@@ -2290,24 +2421,46 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         "Failed to parse Futures position_amt for symbol={}: {e}",
                         position.symbol
                     );
+                    position_reports_failed += 1;
                     continue;
                 }
             };
 
             if position_amt.is_zero() {
+                if self.config.use_position_ids {
+                    let position_side = match position.position_side {
+                        Some(BinancePositionSide::Long) => PositionSide::Long,
+                        Some(BinancePositionSide::Short) => PositionSide::Short,
+                        _ => continue,
+                    };
+
+                    let venue_position_id =
+                        make_venue_position_id(true, instrument_id, position.position_side)?
+                            .expect("hedge position sides always produce an ID");
+
+                    if let Err(e) = self.ensure_cached_position_id_compatible(
+                        instrument_id,
+                        position_side,
+                        venue_position_id,
+                    ) {
+                        log::warn!(
+                            "Failed to create Futures position report for symbol={}: {e}",
+                            position.symbol
+                        );
+                        position_reports_failed += 1;
+                    }
+                }
                 continue;
             }
 
-            let instrument_id = format_instrument_id(&position.symbol, self.product_type);
             let Some(instrument) = self.http_client.instrument_reconciliation(&instrument_id)
             else {
-                if self.is_instrument_out_of_scope(instrument_id) {
-                    log::debug!(
-                        "Dropping out-of-scope Binance Futures position for instrument {instrument_id}"
-                    );
-                    continue;
-                }
-                anyhow::bail!("Binance Futures position has unresolved instrument {instrument_id}");
+                log::warn!(
+                    "Failed to create Futures position report for symbol={}: instrument {instrument_id} is unresolved",
+                    position.symbol
+                );
+                position_reports_failed += 1;
+                continue;
             };
 
             match self.create_position_report(
@@ -2321,9 +2474,15 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         "Failed to create Futures position report for symbol={}: {e}",
                         position.symbol
                     );
+                    position_reports_failed += 1;
                 }
             }
         }
+
+        anyhow::ensure!(
+            position_reports_failed == 0,
+            "Failed to process {position_reports_failed} Binance Futures position reports",
+        );
 
         Ok(reports)
     }
@@ -2503,6 +2662,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let (price_precision, size_precision) =
             self.get_instrument_precision(command.instrument_id)?;
         let treat_expired_as_canceled = self.config.treat_expired_as_canceled;
+        let use_position_ids = self.config.use_position_ids;
 
         self.spawn_task("query_order", async move {
             if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
@@ -2522,6 +2682,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                             price_precision,
                             size_precision,
                             treat_expired_as_canceled,
+                            use_position_ids,
                             clock.get_time_ns(),
                         )?;
                         emitter.send_order_status_report(report);
@@ -2560,8 +2721,16 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         treat_expired_as_canceled,
                         ts_init,
                     )?;
+                    let venue_position_id = make_venue_position_id(
+                        use_position_ids,
+                        command.instrument_id,
+                        order.position_side,
+                    )?;
 
-                    emitter.send_order_status_report(report);
+                    emitter.send_order_status_report(with_venue_position_id(
+                        report,
+                        venue_position_id,
+                    ));
                 }
                 Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
                     if algo_lookup == BinanceFuturesAlgoLookup::Skip {
@@ -2597,6 +2766,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                                 price_precision,
                                 size_precision,
                                 treat_expired_as_canceled,
+                                use_position_ids,
                                 clock.get_time_ns(),
                             )?;
                             emitter.send_order_status_report(report);
@@ -2745,10 +2915,18 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             self.clock.get_time_ns(),
         )?;
 
+        let (position_side, venue_position_id) = resolve_order_position_identity(
+            self.is_hedge_mode(),
+            self.config.use_position_ids,
+            &order,
+            close_position,
+        )?;
+        validate_submit_position_id(cmd.position_id, venue_position_id)?;
+
         log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
         self.emitter.emit_order_submitted(&order);
 
-        self.submit_order_internal(&cmd, lifetime)
+        self.submit_order_internal(&cmd, lifetime, position_side, venue_position_id)
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
@@ -2806,7 +2984,24 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             }
         };
 
-        for order in &orders {
+        let venue_position_ids = orders
+            .iter()
+            .map(|order| {
+                resolve_order_position_identity(
+                    self.is_hedge_mode(),
+                    self.config.use_position_ids,
+                    order,
+                    close_position,
+                )
+                .map(|(_, venue_position_id)| venue_position_id)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        for venue_position_id in &venue_position_ids {
+            validate_submit_position_id(cmd.position_id, *venue_position_id)?;
+        }
+
+        for (order, venue_position_id) in orders.iter().zip(venue_position_ids) {
             self.dispatch_state.order_identities.insert(
                 order.client_order_id(),
                 OrderIdentity {
@@ -2816,6 +3011,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     order_type: order.order_type(),
                     price: order.price(),
                     quantity: order.quantity(),
+                    venue_position_id,
                 },
             );
             self.emitter.emit_order_submitted(order);
@@ -3295,6 +3491,10 @@ struct OpenOrderStatusReport {
     quantity_free_close_position_side: Option<PositionSide>,
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the converter receives one cohesive set of report conversion inputs"
+)]
 fn create_algo_order_status_report(
     result: &BinanceFuturesAlgoOrderQueryResult,
     account_id: AccountId,
@@ -3302,8 +3502,16 @@ fn create_algo_order_status_report(
     price_precision: u8,
     size_precision: u8,
     treat_expired_as_canceled: bool,
+    use_position_ids: bool,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OrderStatusReport> {
+    let position_side = result
+        .actual
+        .as_ref()
+        .and_then(|actual| actual.position_side)
+        .or(result.algo.position_side);
+    let venue_position_id = make_venue_position_id(use_position_ids, instrument_id, position_side)?;
+
     if let Some(actual) = result.actual.as_ref() {
         match result.algo.to_order_status_report_with_actual(
             actual,
@@ -3314,7 +3522,7 @@ fn create_algo_order_status_report(
             treat_expired_as_canceled,
             ts_init,
         ) {
-            Ok(report) => return Ok(report),
+            Ok(report) => return Ok(with_venue_position_id(report, venue_position_id)),
             Err(e) => {
                 log::warn!(
                     "Failed to convert matching-engine enrichment for algo order {}: {e}; falling back to Algo Service report",
@@ -3324,13 +3532,14 @@ fn create_algo_order_status_report(
         }
     }
 
-    result.algo.to_order_status_report(
+    let report = result.algo.to_order_status_report(
         account_id,
         instrument_id,
         price_precision,
         size_precision,
         ts_init,
-    )
+    )?;
+    Ok(with_venue_position_id(report, venue_position_id))
 }
 
 fn user_trades_complete_start(ts_init: UnixNanos, ts_now: UnixNanos) -> UnixNanos {
@@ -3395,6 +3604,35 @@ mod tests {
             code,
             message: format!("test error {code}"),
         })
+    }
+
+    #[rstest]
+    #[case(None, Some("BTCUSDT-PERP.BINANCE-LONG"))]
+    #[case(Some("BTCUSDT-PERP.BINANCE-LONG"), Some("BTCUSDT-PERP.BINANCE-LONG"))]
+    #[case(Some("P-VIRTUAL-LONG"), None)]
+    fn test_validate_submit_position_id_accepts_compatible_identity(
+        #[case] submitted_position_id: Option<&str>,
+        #[case] venue_position_id: Option<&str>,
+    ) {
+        validate_submit_position_id(
+            submitted_position_id.map(PositionId::from),
+            venue_position_id.map(PositionId::from),
+        )
+        .unwrap();
+    }
+
+    #[rstest]
+    fn test_validate_submit_position_id_rejects_custom_venue_identity() {
+        let error = validate_submit_position_id(
+            Some(PositionId::from("P-VIRTUAL-LONG")),
+            Some(PositionId::from("BTCUSDT-PERP.BINANCE-LONG")),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "submitted position ID P-VIRTUAL-LONG conflicts with canonical Binance Futures venue position ID BTCUSDT-PERP.BINANCE-LONG; omit position_id while use_position_ids=true, or set use_position_ids=false for virtual hedging",
+        );
     }
 
     #[rstest]

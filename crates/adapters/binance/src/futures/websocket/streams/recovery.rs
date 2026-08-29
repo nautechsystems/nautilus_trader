@@ -36,7 +36,9 @@ use tokio_util::sync::CancellationToken;
 
 use super::{
     client::BinanceFuturesWebSocketClient,
-    dispatch::{DispatchCtx, spawn_user_stream_dispatch},
+    dispatch::{
+        DispatchCtx, make_venue_position_id, spawn_user_stream_dispatch, with_venue_position_id,
+    },
     messages::BinanceFuturesWsStreamsMessage,
 };
 use crate::{
@@ -295,6 +297,11 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                             )
                         },
                     )?;
+                let venue_position_id = make_venue_position_id(
+                    ctx.dispatch_ctx.use_position_ids,
+                    instrument_id,
+                    order.position_side,
+                )?;
 
                 match order.to_order_status_report(
                     ctx.dispatch_ctx.account_id,
@@ -305,7 +312,12 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                     ts_init,
                 ) {
                     Ok(report) => {
-                        ctx.dispatch_ctx.emitter.send_order_status_report(report);
+                        ctx.dispatch_ctx
+                            .emitter
+                            .send_order_status_report(with_venue_position_id(
+                                report,
+                                venue_position_id,
+                            ));
                         emitted += 1;
                     }
                     Err(e) => {
@@ -337,6 +349,11 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                             )
                         },
                     )?;
+                let venue_position_id = make_venue_position_id(
+                    ctx.dispatch_ctx.use_position_ids,
+                    instrument_id,
+                    algo_order.position_side,
+                )?;
 
                 match algo_order.to_order_status_report(
                     ctx.dispatch_ctx.account_id,
@@ -346,7 +363,12 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                     ts_init,
                 ) {
                     Ok(report) => {
-                        ctx.dispatch_ctx.emitter.send_order_status_report(report);
+                        ctx.dispatch_ctx
+                            .emitter
+                            .send_order_status_report(with_venue_position_id(
+                                report,
+                                venue_position_id,
+                            ));
                         emitted += 1;
                     }
                     Err(e) => {
@@ -404,12 +426,15 @@ mod tests {
         response::{IntoResponse, Response},
         routing::get,
     };
-    use nautilus_common::{cache::fifo::FifoCache, messages::ExecutionEvent};
+    use nautilus_common::{
+        cache::fifo::FifoCache,
+        messages::{ExecutionEvent, ExecutionReport},
+    };
     use nautilus_core::{AtomicSet, time::get_atomic_clock_realtime};
     use nautilus_live::ExecutionEventEmitter;
     use nautilus_model::{
         enums::AccountType,
-        identifiers::{AccountId, ClientOrderId, InstrumentId, TraderId},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TraderId},
         types::Currency,
     };
     use rstest::rstest;
@@ -458,7 +483,8 @@ mod tests {
                     "status": "NEW",
                     "timeInForce": "GTC",
                     "type": "LIMIT",
-                    "side": "BUY"
+                    "side": "BUY",
+                    "positionSide": "LONG"
                 }]),
                 RecoveryServerMode::MissingAlgo => json!([]),
                 RecoveryServerMode::FailedQueries => unreachable!(),
@@ -472,7 +498,11 @@ mod tests {
                     "algoType": "CONDITIONAL",
                     "orderType": "STOP_MARKET",
                     "symbol": "ALGOUSDT",
-                    "side": "SELL"
+                    "side": "SELL",
+                    "positionSide": "SHORT",
+                    "quantity": "1",
+                    "algoStatus": "NEW",
+                    "triggerPrice": "1"
                 }]),
                 RecoveryServerMode::FailedQueries => unreachable!(),
             }
@@ -649,6 +679,43 @@ mod tests {
         assert_eq!(error.to_string(), expected_error);
         assert_eq!(error.root_cause().to_string(), expected_root_cause);
         assert!(event.is_err());
+    }
+
+    #[rstest]
+    #[case(
+        RecoveryServerMode::MissingRegular,
+        "NEWUSDT",
+        "NEWUSDT-PERP.BINANCE-LONG"
+    )]
+    #[case(
+        RecoveryServerMode::MissingAlgo,
+        "ALGOUSDT",
+        "ALGOUSDT-PERP.BINANCE-SHORT"
+    )]
+    #[tokio::test]
+    async fn test_recovery_reconcile_includes_position_id(
+        #[case] mode: RecoveryServerMode,
+        #[case] symbol: &str,
+        #[case] expected_position_id: &str,
+    ) {
+        let (base_url, server_task) = start_recovery_server(mode).await;
+        let (context, mut event_rx) = recovery_context(base_url);
+        context
+            .http_client
+            .instruments_cache()
+            .insert(Ustr::from(symbol), usdm_instrument(symbol, 3));
+
+        emit_open_order_reports(&context).await.unwrap();
+        let event = event_rx.try_recv().unwrap();
+        server_task.abort();
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            panic!("Expected recovery order status report, was {event:?}");
+        };
+        assert_eq!(
+            report.venue_position_id,
+            Some(PositionId::from(expected_position_id)),
+        );
     }
 
     #[rstest]

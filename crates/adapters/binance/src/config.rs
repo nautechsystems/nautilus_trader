@@ -327,12 +327,12 @@ pub struct BinanceExecutionClientConfig {
     /// to GTC and the strategy must enable `manage_gtd_expiry`.
     #[builder(default = true)]
     pub use_gtd: bool,
-    /// Whether to use Binance Futures hedging position IDs.
+    /// Whether to use canonical Binance Futures position IDs.
     ///
-    /// When true, fill reports include a `venue_position_id` derived from
-    /// the instrument and position side (e.g. `ETHUSDT-PERP.BINANCE-LONG`).
-    /// When false, `venue_position_id` is None, allowing virtual positions
-    /// with `OmsType::Hedging`.
+    /// When true, Futures hedge-mode order and fill reports include a `venue_position_id` derived
+    /// from the instrument and Binance position side (e.g. `ETHUSDT-PERP.BINANCE-LONG`). Hedge-mode
+    /// REST position reports use the same IDs. One-way `BOTH` reports remain unkeyed. When false,
+    /// `venue_position_id` is None, allowing virtual positions with `OmsType::Hedging`.
     #[builder(default = true)]
     pub use_position_ids: bool,
     /// Optional OMS type override for Binance Futures accounts.

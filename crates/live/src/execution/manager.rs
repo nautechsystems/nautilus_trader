@@ -692,7 +692,7 @@ impl ExecutionManager {
         let venue = mass_status.venue;
         let order_count = mass_status.order_reports().len();
         let fill_count: usize = mass_status.fill_reports().values().map(Vec::len).sum();
-        let position_count = mass_status.position_reports().len();
+        let position_count: usize = mass_status.position_reports().values().map(Vec::len).sum();
 
         log_info!(
             "Reconciling ExecutionMassStatus for {venue}",
@@ -1080,11 +1080,62 @@ impl ExecutionManager {
                             fill_queue.push(&mut events, event, fill_key);
                         }
                     }
+                } else {
+                    orders_skipped_no_instrument += 1;
+                }
+            } else if fills.iter().any(FillReport::has_venue_position_id) {
+                let Some(instrument) = self.get_instrument(&first_fill.instrument_id) else {
+                    orders_skipped_no_instrument += 1;
+                    continue;
+                };
+
+                let mut sorted_fills: Vec<&FillReport> = fills.iter().collect();
+                sorted_fills.sort_by_key(|fill| fill.ts_event);
+
+                let report = match Self::create_orphan_fill_order_report(&sorted_fills, &instrument)
+                {
+                    Ok(report) => report,
+                    Err(e) => {
+                        log::error!(
+                            "Cannot materialize orphan fills for venue order {venue_order_id}: {e}"
+                        );
+
+                        continue;
+                    }
+                };
+
+                let engine_ref = exec_engine.borrow();
+                let commission_client = engine_ref.get_client(&mass_status.client_id);
+                let (external_events, metadata) = self.handle_external_order(
+                    &report,
+                    mass_status.account_id,
+                    &instrument,
+                    &sorted_fills,
+                    false,
+                    Some(&mut fill_queue),
+                    commission_client,
+                );
+                drop(engine_ref);
+
+                if !external_events.is_empty() {
+                    external_orders_created += 1;
+                    fills_applied += external_events
+                        .iter()
+                        .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+                        .count();
+
+                    events.extend(external_events);
+
+                    if let Some(metadata) = metadata {
+                        external_orders.push(metadata);
+                    }
                 }
             }
         }
 
         events.sort_by_key(OrderEventAny::ts_event);
+
+        let mut unapplied_fill_position_ids = IndexSet::new();
 
         for event in &events {
             if let OrderEventAny::Filled(fill) = event
@@ -1102,9 +1153,17 @@ impl ExecutionManager {
 
             if let OrderEventAny::Filled(fill) = event
                 && let Some(fill_key) = fill_queue.event_fill_keys.get(&fill.event_id).copied()
-                && self.is_fill_applied(fill, fill_key)
             {
-                self.processed_fills.mark(fill_key);
+                if self.is_fill_applied(fill, fill_key) {
+                    self.processed_fills.mark(fill_key);
+                } else if let Some(venue_position_id) = fill.position_id {
+                    log::error!(
+                        "Skipping reconciliation for venue position {venue_position_id}: historical fill {} was not applied",
+                        fill.trade_id,
+                    );
+
+                    unapplied_fill_position_ids.insert(venue_position_id);
+                }
             }
         }
 
@@ -1128,20 +1187,6 @@ impl ExecutionManager {
                 )
                 .collect();
 
-            let positions_with_fills: IndexSet<PositionId> = mass_status
-                .fill_reports()
-                .values()
-                .flatten()
-                .filter_map(|f| f.venue_position_id)
-                .chain(
-                    mass_status
-                        .order_reports()
-                        .values()
-                        .filter(|r| !r.filled_qty.is_zero())
-                        .filter_map(|r| r.venue_position_id),
-                )
-                .collect();
-
             for (instrument_id, reports) in mass_status.position_reports() {
                 if !self.should_reconcile_instrument(&instrument_id) {
                     log::debug!(
@@ -1151,16 +1196,22 @@ impl ExecutionManager {
                 }
 
                 for report in reports {
+                    if report.venue_position_id.is_some_and(|venue_position_id| {
+                        unapplied_fill_position_ids.contains(&venue_position_id)
+                    }) {
+                        continue;
+                    }
+
                     if let Some(position_events) = self.reconcile_position_report(
                         &report,
                         mass_status.account_id,
                         &instruments_with_unattributed_fills,
-                        &positions_with_fills,
                     ) {
                         for event in position_events {
                             exec_engine.borrow_mut().process(&event);
                             events.push(event);
                         }
+
                         positions_created += 1;
                     }
                 }
@@ -1188,6 +1239,121 @@ impl ExecutionManager {
             events,
             external_orders,
         }
+    }
+
+    fn create_orphan_fill_order_report(
+        fills: &[&FillReport],
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<OrderStatusReport> {
+        let Some(first) = fills.first() else {
+            anyhow::bail!("fill group is empty");
+        };
+        let venue_position_id = first
+            .venue_position_id
+            .ok_or_else(|| anyhow::anyhow!("venue position ID is missing"))?;
+
+        for fill in fills.iter().skip(1) {
+            anyhow::ensure!(
+                fill.account_id == first.account_id,
+                "account ID differs across fill group"
+            );
+            anyhow::ensure!(
+                fill.instrument_id == first.instrument_id,
+                "instrument ID differs across fill group"
+            );
+            anyhow::ensure!(
+                fill.venue_order_id == first.venue_order_id,
+                "venue order ID differs across fill group"
+            );
+            anyhow::ensure!(
+                fill.client_order_id == first.client_order_id,
+                "client order ID differs across fill group"
+            );
+            anyhow::ensure!(
+                fill.order_side == first.order_side,
+                "order side differs across fill group"
+            );
+            anyhow::ensure!(
+                fill.venue_position_id == first.venue_position_id,
+                "venue position ID differs across fill group"
+            );
+        }
+
+        anyhow::ensure!(
+            first.instrument_id == instrument.id(),
+            "instrument metadata does not match fill group"
+        );
+
+        let (quantity, notional) = fills.iter().try_fold(
+            (Decimal::ZERO, Decimal::ZERO),
+            |(quantity, notional), fill| {
+                let fill_quantity = fill.last_qty.as_decimal();
+                let quantity = quantity.checked_add(fill_quantity).ok_or_else(|| {
+                    anyhow::anyhow!("fill quantity overflow while aggregating fill group")
+                })?;
+
+                let fill_notional = fill_quantity
+                    .checked_mul(fill.last_px.as_decimal())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("fill notional overflow while aggregating fill group")
+                    })?;
+
+                let notional = notional.checked_add(fill_notional).ok_or_else(|| {
+                    anyhow::anyhow!("fill notional overflow while aggregating fill group")
+                })?;
+
+                Ok::<_, anyhow::Error>((quantity, notional))
+            },
+        )?;
+
+        anyhow::ensure!(
+            quantity > Decimal::ZERO,
+            "fill group quantity is not positive"
+        );
+
+        let order_qty = Quantity::from_decimal_dp(quantity, instrument.size_precision())?;
+        let avg_px = notional
+            .checked_div(quantity)
+            .ok_or_else(|| anyhow::anyhow!("fill group average price is not representable"))?;
+
+        let ts_accepted = fills
+            .iter()
+            .map(|fill| fill.ts_event)
+            .min()
+            .expect("non-empty fill group");
+
+        let ts_last = fills
+            .iter()
+            .map(|fill| fill.ts_event)
+            .max()
+            .expect("non-empty fill group");
+
+        let ts_init = fills
+            .iter()
+            .map(|fill| fill.ts_init)
+            .max()
+            .expect("non-empty fill group");
+
+        let report = OrderStatusReport::new(
+            first.account_id,
+            first.instrument_id,
+            first.client_order_id,
+            first.venue_order_id,
+            first.order_side.into(),
+            OrderType::Market,
+            TimeInForce::Gtc,
+            OrderStatus::Filled,
+            order_qty,
+            order_qty,
+            ts_accepted,
+            ts_last,
+            ts_init,
+            None,
+        )
+        .with_avg_px(avg_px)
+        .with_venue_position_id(venue_position_id);
+
+        Ok(report)
     }
 
     fn should_project_reconciliation_fill(
@@ -1328,12 +1494,22 @@ impl ExecutionManager {
                 .then_some(*venue_order_id)
         }));
 
+        if !mass_status.reports_complete() {
+            log::error!(
+                "Bounded reconciliation report set is incomplete; projecting {} historical order(s) without position or portfolio effects",
+                venue_order_ids.len(),
+            );
+
+            return venue_order_ids;
+        }
+
         let mut order_only = IndexSet::new();
         let mut groups = Vec::new();
 
         for venue_order_id in venue_order_ids {
             let report = order_reports.get(&venue_order_id);
             let fills = fill_reports.get(&venue_order_id);
+
             if report.and_then(|report| report.venue_position_id).is_some()
                 || fills.is_some_and(|fills| fills.iter().any(FillReport::has_venue_position_id))
             {
@@ -1359,6 +1535,7 @@ impl ExecutionManager {
                 order_only.insert(venue_order_id);
                 continue;
             };
+
             let coherent_fills = fills.is_none_or(|fills| {
                 fills.iter().all(|fill| {
                     fill.account_id == account_id
@@ -1379,6 +1556,7 @@ impl ExecutionManager {
                 order_only.insert(venue_order_id);
                 continue;
             }
+
             let strategy_id = cached_order.as_ref().map_or_else(
                 || {
                     self.external_order_claims
@@ -1390,12 +1568,14 @@ impl ExecutionManager {
             );
             let reduce_only = report.is_some_and(|report| report.reduce_only)
                 || cached_order.as_ref().is_some_and(Order::is_reduce_only);
+
             let cached_filled_qty = cached_order
                 .as_ref()
                 .map_or(Decimal::ZERO, |order| order.filled_qty().as_decimal());
             let reported_fill_qty = fills.map_or(Decimal::ZERO, |fills| {
                 fills.iter().map(|fill| fill.last_qty.as_decimal()).sum()
             });
+
             let unretained_fills: Vec<&FillReport> = fills
                 .into_iter()
                 .flatten()
@@ -1411,14 +1591,17 @@ impl ExecutionManager {
                 .iter()
                 .map(|fill| fill.last_qty.as_decimal())
                 .sum();
+
             let inferred_qty = report.map_or(Decimal::ZERO, |report| {
                 (report.filled_qty.as_decimal() - cached_filled_qty - reported_fill_qty)
                     .max(Decimal::ZERO)
             });
             let quantity = unretained_fill_qty + inferred_qty;
+
             if quantity.is_zero() {
                 continue;
             }
+
             let inferred_ts = (!inferred_qty.is_zero())
                 .then(|| report.map(|report| report.ts_last))
                 .flatten();
@@ -1434,6 +1617,7 @@ impl ExecutionManager {
                 .chain(inferred_ts)
                 .max()
                 .unwrap_or(mass_status.ts_init);
+
             groups.push(HistoricalFillGroup {
                 venue_order_id,
                 account_id,
@@ -1448,14 +1632,6 @@ impl ExecutionManager {
         }
 
         groups.sort_by_key(|group| group.ts_event);
-        if !mass_status.reports_complete() {
-            order_only.extend(groups.iter().map(|group| group.venue_order_id));
-            log::error!(
-                "Bounded reconciliation report set is incomplete; projecting {} historical order(s) without position or portfolio effects",
-                order_only.len(),
-            );
-            return order_only;
-        }
 
         let mut quantities: IndexMap<AccountInstrumentStrategyKey, Option<Decimal>> =
             IndexMap::new();
@@ -1466,12 +1642,14 @@ impl ExecutionManager {
 
         for group in &groups {
             let key = (group.account_id, group.instrument_id, group.strategy_id);
+
             if interval_ends
                 .get(&key)
                 .is_some_and(|end| group.ts_event <= *end)
             {
                 ambiguous_keys.insert(key);
             }
+
             interval_ends
                 .entry(key)
                 .and_modify(|end| *end = (*end).max(group.ts_last))
@@ -4174,14 +4352,12 @@ impl ExecutionManager {
         report: &PositionStatusReport,
         account_id: AccountId,
         instruments_with_unattributed_fills: &IndexSet<InstrumentId>,
-        positions_with_fills: &IndexSet<PositionId>,
     ) -> Option<Vec<OrderEventAny>> {
         if report.venue_position_id.is_some() {
             self.reconcile_position_report_hedging(
                 report,
                 account_id,
                 instruments_with_unattributed_fills,
-                positions_with_fills,
             )
         } else {
             self.reconcile_position_report_netting(report, account_id)
@@ -4193,17 +4369,8 @@ impl ExecutionManager {
         report: &PositionStatusReport,
         account_id: AccountId,
         instruments_with_unattributed_fills: &IndexSet<InstrumentId>,
-        positions_with_fills: &IndexSet<PositionId>,
     ) -> Option<Vec<OrderEventAny>> {
         let venue_position_id = report.venue_position_id?;
-
-        // Skip if batch already has fills for this position (will be created from fills)
-        if positions_with_fills.contains(&venue_position_id) {
-            log::debug!(
-                "Skipping hedge position {venue_position_id} reconciliation: fills already in batch"
-            );
-            return None;
-        }
 
         // Skip if fills exist for this instrument but lack venue_position_id
         // (can't determine which hedge position they belong to)
@@ -5846,6 +6013,55 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[rstest]
+    fn test_create_orphan_fill_order_report_rejects_mixed_position_ids() {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let account_id = AccountId::from("STUB-001");
+        let venue_order_id = VenueOrderId::from("V-ORPHAN-1");
+        let first = FillReport::new(
+            account_id,
+            instrument.id(),
+            venue_order_id,
+            TradeId::from("T-ORPHAN-1"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("100.00"),
+            Money::from("0.10 USDT"),
+            LiquiditySide::Taker,
+            None,
+            Some(PositionId::from("P-LONG")),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+        );
+
+        let second = FillReport::new(
+            account_id,
+            instrument.id(),
+            venue_order_id,
+            TradeId::from("T-ORPHAN-2"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("101.00"),
+            Money::from("0.10 USDT"),
+            LiquiditySide::Maker,
+            None,
+            Some(PositionId::from("P-SHORT")),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+            None,
+        );
+
+        let error =
+            ExecutionManager::create_orphan_fill_order_report(&[&first, &second], &instrument)
+                .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "venue position ID differs across fill group"
+        );
     }
 
     #[rstest]

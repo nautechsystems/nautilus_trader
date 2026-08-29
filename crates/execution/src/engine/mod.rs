@@ -3166,17 +3166,28 @@ impl ExecutionEngine {
             );
         }
 
-        if let Some(position_id) = cached_position_id {
-            if let Some(fill_position_id) = fill.position_id
-                && fill_position_id != position_id
-            {
-                log::warn!(
-                    "Incorrect position ID assigned to fill: \
-                     cached={position_id}, assigned={fill_position_id}; \
-                     re-assigning from cache",
+        if let Some(cached_position_id) = cached_position_id
+            && let Some(fill_position_id) = fill.position_id
+            && cached_position_id != fill_position_id
+        {
+            if oms_type == OmsType::Hedging {
+                log::error!(
+                    "Cannot apply hedging fill {} for {}: venue position ID {fill_position_id} conflicts with cached position ID {cached_position_id}",
+                    fill.trade_id,
+                    fill.client_order_id(),
                 );
+
+                return None;
             }
 
+            log::warn!(
+                "Incorrect position ID assigned to fill: \
+                 cached={cached_position_id}, assigned={fill_position_id}; \
+                 re-assigning from cache",
+            );
+        }
+
+        if let Some(position_id) = cached_position_id {
             if self.config.debug {
                 log::debug!("Assigned {position_id} to {}", fill.client_order_id());
             }
@@ -3188,9 +3199,10 @@ impl ExecutionEngine {
             return Some(position_id);
         }
 
-        let position_id = match oms_type {
-            OmsType::Hedging => self.determine_hedging_position_id(fill, order),
-            OmsType::Netting => self.determine_netting_position_id(fill),
+        let position_id = match (oms_type, fill.position_id) {
+            (OmsType::Hedging, Some(position_id)) => position_id,
+            (OmsType::Hedging, None) => self.determine_hedging_position_id(fill, order),
+            (OmsType::Netting, _) => self.determine_netting_position_id(fill),
             _ => self.determine_netting_position_id(fill),
         };
 
@@ -3281,14 +3293,6 @@ impl ExecutionEngine {
         fill: &OrderFilled,
         order: Option<&OrderAny>,
     ) -> PositionId {
-        // Check if position ID already exists
-        if let Some(position_id) = fill.position_id {
-            if self.config.debug {
-                log::debug!("Already had a position ID of: {position_id}");
-            }
-            return position_id;
-        }
-
         let cache = self.cache.borrow();
 
         let cached_order;
