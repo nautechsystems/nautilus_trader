@@ -3742,7 +3742,8 @@ mod tests {
         ratelimiter::quota::Quota,
         transport::TransportError,
         websocket::{
-            InitialConnectRetryPolicy, TransportBackend, WebSocketClient, WebSocketConfig,
+            InitialConnectRetryPolicy, ReconnectHeaders, TransportBackend, WebSocketClient,
+            WebSocketConfig,
         },
     };
 
@@ -4650,6 +4651,35 @@ mod tests {
         );
 
         server_task.await.unwrap();
+    }
+
+    #[rstest]
+    #[case(
+        "invalid header",
+        "value",
+        "Invalid WebSocket reconnect header name: invalid HTTP header name"
+    )]
+    #[case(
+        "x-test",
+        "invalid\nvalue",
+        "Invalid WebSocket reconnect header value: failed to parse header value"
+    )]
+    fn test_reconnect_headers_reject_invalid_update(
+        #[case] name: &str,
+        #[case] value: &str,
+        #[case] expected_message: &str,
+    ) {
+        let initial = vec![("x-existing".to_string(), "initial".to_string())];
+        let headers = ReconnectHeaders::new(initial.clone());
+
+        let error = headers.update(name, value).unwrap_err();
+
+        let TransportError::Io(error) = error else {
+            panic!("expected I/O error, was {error:?}");
+        };
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert_eq!(error.to_string(), expected_message);
+        assert_eq!(headers.snapshot().unwrap(), initial);
     }
 
     #[tokio::test]

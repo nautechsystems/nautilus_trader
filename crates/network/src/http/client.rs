@@ -905,6 +905,37 @@ mod tests {
         (addr, task)
     }
 
+    async fn spawn_chunked_response_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0u8; 1024];
+
+            loop {
+                let read = stream.read(&mut chunk).await.unwrap();
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&chunk[..read]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+
+            stream
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n\
+                      5\r\nfirst\r\n6\r\nsecond\r\n0\r\n\r\n",
+                )
+                .await
+                .unwrap();
+        });
+
+        (addr, task)
+    }
+
     async fn spawn_rejecting_connect_proxy() -> (SocketAddr, oneshot::Receiver<String>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -1199,6 +1230,37 @@ mod tests {
         assert!(
             err.to_string().contains("exceeds maximum"),
             "unexpected error: {err}",
+        );
+    }
+
+    #[tokio::test]
+    async fn test_chunked_response_body_exceeding_cap_is_rejected() {
+        let (addr, server_task) = spawn_chunked_response_server().await;
+        let max_response_bytes = 8;
+        let client = InnerHttpClient {
+            max_response_bytes,
+            ..Default::default()
+        };
+
+        let error = client
+            .send_request(
+                reqwest::Method::GET,
+                format!("http://{addr}"),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .expect_err("chunked response body should be rejected");
+        server_task.await.unwrap();
+
+        let HttpClientError::Error(message) = error else {
+            panic!("expected HTTP error, was {error:?}");
+        };
+        assert_eq!(
+            message,
+            format!("HTTP response body exceeds maximum of {max_response_bytes} bytes")
         );
     }
 

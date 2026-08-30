@@ -223,6 +223,8 @@ mod tests {
         pki_types::{PrivatePkcs1KeyDer, PrivatePkcs8KeyDer, PrivateSec1KeyDer, ServerName},
         server::WebPkiClientVerifier,
     };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_rustls::TlsAcceptor;
 
     use super::*;
 
@@ -288,6 +290,58 @@ zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
             key_der: PrivatePkcs8KeyDer::from(key_pair.serialize_der()).into(),
             cert_der: cert.der().clone(),
         }
+    }
+
+    #[tokio::test]
+    async fn test_tcp_tls_wraps_stream_and_transfers_data() {
+        install_cryptographic_provider();
+        let server_identity = generate_identity();
+        let mut roots = rustls::RootCertStore::empty();
+        roots.add(server_identity.cert_der.clone()).unwrap();
+        let client_config = rustls::ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(
+                vec![server_identity.cert_der],
+                server_identity.key_der.clone_key(),
+            )
+            .unwrap();
+        let request = Request::builder()
+            .uri("wss://localhost/socket")
+            .body(())
+            .unwrap();
+        let (client_socket, server_socket) = tokio::io::duplex(1024);
+
+        let server_task = tokio::spawn(async move {
+            let mut stream = TlsAcceptor::from(Arc::new(server_config))
+                .accept(server_socket)
+                .await
+                .unwrap();
+            let mut request = [0u8; 4];
+            stream.read_exact(&mut request).await.unwrap();
+            stream.write_all(b"pong").await.unwrap();
+            request
+        });
+
+        let mut stream = tcp_tls(
+            &request,
+            Mode::Tls,
+            client_socket,
+            Some(Arc::new(client_config)),
+        )
+        .await
+        .unwrap();
+        let is_tls = matches!(&stream, MaybeTlsStream::Rustls(_));
+        stream.write_all(b"ping").await.unwrap();
+        let mut response = [0u8; 4];
+        stream.read_exact(&mut response).await.unwrap();
+        let received = server_task.await.unwrap();
+
+        assert!(is_tls);
+        assert_eq!(received, *b"ping");
+        assert_eq!(response, *b"pong");
     }
 
     #[rstest]

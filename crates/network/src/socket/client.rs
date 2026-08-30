@@ -2013,7 +2013,10 @@ mod tests {
 mod rust_tests {
     use std::{
         pin::Pin,
-        sync::{Arc, Condvar, Mutex as StdMutex, atomic::AtomicUsize},
+        sync::{
+            Arc, Condvar, Mutex as StdMutex,
+            atomic::{AtomicBool, AtomicUsize},
+        },
         task::{Context, Poll, Waker},
     };
 
@@ -2241,6 +2244,30 @@ mod rust_tests {
             }
             *self.waker.lock().unwrap() = Some(cx.waker().clone());
             Poll::Pending
+        }
+    }
+
+    struct LimitProbeReader {
+        remaining: usize,
+        read_after_limit: Arc<AtomicBool>,
+    }
+
+    impl AsyncRead for LimitProbeReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if self.remaining == 0 {
+                self.read_after_limit.store(true, Ordering::SeqCst);
+                return Poll::Ready(Ok(()));
+            }
+
+            let read_len = self.remaining.min(buf.remaining());
+            buf.initialize_unfilled_to(read_len).fill(b'x');
+            buf.advance(read_len);
+            self.remaining -= read_len;
+            Poll::Ready(Ok(()))
         }
     }
 
@@ -2866,6 +2893,29 @@ mod rust_tests {
         .unwrap();
 
         assert_eq!(received.lock().unwrap().as_slice(), &[b"first".to_vec()]);
+    }
+
+    #[tokio::test]
+    async fn test_read_loop_closes_when_unframed_buffer_exceeds_limit() {
+        let connection_state = Arc::new(AtomicU8::new(ConnectionMode::Active.as_u8()));
+        let read_after_limit = Arc::new(AtomicBool::new(false));
+        let reader = LimitProbeReader {
+            remaining: MAX_READ_BUFFER_BYTES + 1,
+            read_after_limit: Arc::clone(&read_after_limit),
+        };
+
+        SocketClientInner::run_read_loop(
+            connection_state,
+            ReadSessionFence::new(),
+            reader,
+            None,
+            b"\r\n".to_vec(),
+            None,
+            Duration::from_secs(1),
+        )
+        .await;
+
+        assert!(!read_after_limit.load(Ordering::SeqCst));
     }
 
     #[rstest]
