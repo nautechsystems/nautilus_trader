@@ -338,6 +338,24 @@ pub enum OrderDeniedReason {
         /// The execution client's venue.
         client_venue: Venue,
     },
+    /// The routed execution client does not enforce reduce-only for this order.
+    #[error("REDUCE_ONLY_NOT_ENFORCED: client_id={client_id}, instrument_id={instrument_id}")]
+    ReduceOnlyNotEnforced {
+        /// The selected execution client.
+        client_id: ClientId,
+        /// The submitted instrument.
+        instrument_id: InstrumentId,
+    },
+    /// Reduce-only enforcement is not established for the external execution route.
+    #[error(
+        "REDUCE_ONLY_ENFORCEMENT_NOT_ESTABLISHED: client_id={client_id}, instrument_id={instrument_id}"
+    )]
+    ReduceOnlyEnforcementNotEstablished {
+        /// The external execution client.
+        client_id: ClientId,
+        /// The submitted instrument.
+        instrument_id: InstrumentId,
+    },
     /// Submitting the order to the execution client failed.
     #[error("SUBMIT_FAILED: {detail}")]
     SubmitFailed {
@@ -473,6 +491,12 @@ impl OrderDeniedCode {
             }
             Self::NoExecutionClient => "No execution client was found for the routed command.",
             Self::ClientVenueMismatch => "The execution client does not handle the order venue.",
+            Self::ReduceOnlyNotEnforced => {
+                "The routed execution client does not enforce reduce-only for this order."
+            }
+            Self::ReduceOnlyEnforcementNotEstablished => {
+                "Reduce-only enforcement is not established for the external execution route."
+            }
             Self::SubmitFailed => "Submitting the order to the execution client failed.",
             Self::InvalidClientOrderId => "The client order ID is invalid for the venue.",
             Self::InvalidPositionId => {
@@ -724,6 +748,10 @@ mod tests {
             order_venue: Venue::from("XCME"),
             client_venue: Venue::from("IB"),
         };
+        let external_capability = OrderDeniedReason::ReduceOnlyEnforcementNotEstablished {
+            client_id: ClientId::from("EXTERNAL"),
+            instrument_id: InstrumentId::from("AUD/USD.SIM"),
+        };
         let submit_failed = OrderDeniedReason::SubmitFailed {
             detail: "transport closed".to_string(),
         };
@@ -735,6 +763,10 @@ mod tests {
         assert_eq!(
             missing_client.to_string(),
             "NO_EXECUTION_CLIENT: client_id=SIM, venue=SIM"
+        );
+        assert_eq!(
+            external_capability.to_string(),
+            "REDUCE_ONLY_ENFORCEMENT_NOT_ESTABLISHED: client_id=EXTERNAL, instrument_id=AUD/USD.SIM"
         );
         assert_eq!(
             mismatch.to_string(),
@@ -922,6 +954,14 @@ mod tests {
                 client_id: ClientId::from("IB"),
                 order_venue: Venue::from("XCME"),
                 client_venue: Venue::from("IB"),
+            },
+            OrderDeniedReason::ReduceOnlyNotEnforced {
+                client_id: ClientId::from("IB"),
+                instrument_id: InstrumentId::from("ES.XCME"),
+            },
+            OrderDeniedReason::ReduceOnlyEnforcementNotEstablished {
+                client_id: ClientId::from("IB"),
+                instrument_id: InstrumentId::from("ES.XCME"),
             },
             OrderDeniedReason::SubmitFailed {
                 detail: "boom".to_string(),

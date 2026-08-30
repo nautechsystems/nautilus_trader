@@ -28,8 +28,8 @@ use nautilus_common::{
     logging::{CMD, EVT, RECV},
     messages::{
         execution::{
-            BatchModifyOrders, ModifyOrder, PARAMS_CLOSE_POSITION, SubmitOrder, SubmitOrderList,
-            TradingCommand,
+            BatchModifyOrders, ModifyOrder, PARAMS_CLOSE_POSITION, PARAMS_EMERGENCY_EXIT,
+            SubmitOrder, SubmitOrderList, TradingCommand,
         },
         system::trading::TradingStateChanged,
     },
@@ -38,7 +38,7 @@ use nautilus_common::{
     runner::{TradingCommandMessage, try_get_trading_cmd_sender},
     throttler::{RateLimit, Throttler},
 };
-use nautilus_core::{UUID4, WeakCell};
+use nautilus_core::{Params, UUID4, WeakCell};
 use nautilus_execution::trailing::{
     trailing_stop_calculate_with_bid_ask, trailing_stop_calculate_with_last,
 };
@@ -432,6 +432,8 @@ impl RiskEngine {
     }
 
     /// Sets the trading state for risk control enforcement.
+    ///
+    /// [`TradingState::Halted`] denies new order commands except verified emergency position exits.
     pub fn set_trading_state(&mut self, state: TradingState) {
         if state == self.trading_state {
             log::warn!("No change to trading state: already set to {state:?}");
@@ -592,7 +594,8 @@ impl RiskEngine {
         }
     }
 
-    fn handle_submit_order(&mut self, command: SubmitOrder) {
+    fn handle_submit_order(&mut self, mut command: SubmitOrder) {
+        let emergency_exit = Self::consume_emergency_exit_param(&mut command.params);
         if self.config.bypass {
             Self::send_to_execution(TradingCommand::SubmitOrder(command));
             return;
@@ -655,6 +658,12 @@ impl RiskEngine {
         };
 
         let full_position_exit = self.is_full_position_exit(&command, &instrument, &order);
+        let halted_disposition =
+            if self.is_emergency_position_exit(emergency_exit, &command, &order) {
+                HaltedSubmitDisposition::VerifiedEmergencyExit
+            } else {
+                HaltedSubmitDisposition::Deny
+            };
 
         if !self.check_order(&instrument, &order, full_position_exit) {
             return; // Denied
@@ -665,7 +674,19 @@ impl RiskEngine {
         }
 
         // Route through execution gateway for TradingState checks & throttling
-        self.execution_gateway(&instrument, TradingCommand::SubmitOrder(command));
+        if halted_disposition == HaltedSubmitDisposition::VerifiedEmergencyExit
+            && self.trading_state == TradingState::Halted
+        {
+            command
+                .params
+                .get_or_insert_with(Params::new)
+                .insert(PARAMS_EMERGENCY_EXIT.to_string(), true.into());
+        }
+        self.execution_gateway(
+            &instrument,
+            TradingCommand::SubmitOrder(command),
+            halted_disposition,
+        );
     }
 
     fn is_full_position_exit(
@@ -696,7 +717,7 @@ impl RiskEngine {
             return false;
         }
 
-        self.full_position_exit_reduces(command, order)
+        self.reduces_identified_open_position(command, order)
     }
 
     fn has_full_position_exit_intent(command: &SubmitOrder) -> bool {
@@ -724,14 +745,38 @@ impl RiskEngine {
             && order.quantity().is_positive()
     }
 
-    fn full_position_exit_reduces(&self, command: &SubmitOrder, order: &OrderAny) -> bool {
-        let Some(position_id) = command.position_id else {
-            return false;
-        };
+    fn is_emergency_position_exit(
+        &self,
+        has_intent: bool,
+        command: &SubmitOrder,
+        order: &OrderAny,
+    ) -> bool {
+        has_intent
+            && order.is_reduce_only()
+            && order.quantity().is_positive()
+            && command.instrument_id == order.instrument_id()
+            && self
+                .identified_open_position(command, order)
+                .is_some_and(|(side, quantity)| {
+                    order.would_reduce_only(side, quantity) && order.quantity() <= quantity
+                })
+    }
+
+    fn reduces_identified_open_position(&self, command: &SubmitOrder, order: &OrderAny) -> bool {
+        self.identified_open_position(command, order)
+            .is_some_and(|(side, quantity)| order.would_reduce_only(side, quantity))
+    }
+
+    fn identified_open_position(
+        &self,
+        command: &SubmitOrder,
+        order: &OrderAny,
+    ) -> Option<(PositionSide, Quantity)> {
+        let position_id = command.position_id?;
         let position = {
             let cache = self.cache.borrow();
             if cache.position_id(&order.client_order_id()).copied() != Some(position_id) {
-                return false;
+                return None;
             }
             cache.position(&position_id).map(|position| {
                 (
@@ -742,21 +787,32 @@ impl RiskEngine {
                 )
             })
         };
-        let Some((is_open, position_instrument_id, position_side, position_quantity)) = position
-        else {
-            return false;
-        };
+        let (is_open, position_instrument_id, position_side, position_quantity) = position?;
 
-        is_open
+        (is_open
             && position_instrument_id == order.instrument_id()
             && matches!(
                 (order.order_side(), position_side),
                 (OrderSide::Buy, PositionSide::Short) | (OrderSide::Sell, PositionSide::Long)
-            )
-            && order.would_reduce_only(position_side, position_quantity)
+            ))
+        .then_some((position_side, position_quantity))
     }
 
-    fn handle_submit_order_list(&mut self, command: SubmitOrderList) {
+    fn consume_emergency_exit_param(params: &mut Option<Params>) -> bool {
+        let emergency_exit = params
+            .as_mut()
+            .and_then(|params| params.shift_remove(PARAMS_EMERGENCY_EXIT))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+
+        if params.as_ref().is_some_and(|params| params.is_empty()) {
+            *params = None;
+        }
+        emergency_exit
+    }
+
+    fn handle_submit_order_list(&mut self, mut command: SubmitOrderList) {
+        Self::consume_emergency_exit_param(&mut command.params);
         if self.config.bypass {
             Self::send_to_execution(TradingCommand::SubmitOrderList(command));
             return;
@@ -840,7 +896,11 @@ impl RiskEngine {
             return; // Denied
         }
 
-        self.execution_gateway(&representative, TradingCommand::SubmitOrderList(command));
+        self.execution_gateway(
+            &representative,
+            TradingCommand::SubmitOrderList(command),
+            HaltedSubmitDisposition::Deny,
+        );
     }
 
     fn handle_modify_order(&mut self, command: ModifyOrder) {
@@ -2260,10 +2320,22 @@ impl RiskEngine {
         msgbus::send_order_event(endpoint, denied);
     }
 
-    fn execution_gateway(&mut self, instrument: &InstrumentAny, command: TradingCommand) {
+    fn execution_gateway(
+        &mut self,
+        instrument: &InstrumentAny,
+        command: TradingCommand,
+        halted_disposition: HaltedSubmitDisposition,
+    ) {
         match self.trading_state {
-            TradingState::Halted => match command {
-                TradingCommand::SubmitOrder(submit_order) => {
+            TradingState::Halted => match (command, halted_disposition) {
+                (
+                    TradingCommand::SubmitOrder(submit_order),
+                    HaltedSubmitDisposition::VerifiedEmergencyExit,
+                ) => {
+                    self.throttled_submit
+                        .send(TradingCommand::SubmitOrder(submit_order));
+                }
+                (TradingCommand::SubmitOrder(submit_order), HaltedSubmitDisposition::Deny) => {
                     let order = {
                         let cache = self.cache.borrow();
                         cache
@@ -2275,7 +2347,7 @@ impl RiskEngine {
                         self.deny_order(order, &OrderDeniedReason::TradingHalted.to_string());
                     }
                 }
-                TradingCommand::SubmitOrderList(submit_order_list) => {
+                (TradingCommand::SubmitOrderList(submit_order_list), _) => {
                     let orders: Vec<OrderAny> = self.cache.borrow().orders_for_ids(
                         &submit_order_list.order_list.client_order_ids,
                         &submit_order_list,
@@ -2366,4 +2438,10 @@ impl RiskEngine {
             log::debug!("{RECV}{EVT} {event:?}");
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HaltedSubmitDisposition {
+    Deny,
+    VerifiedEmergencyExit,
 }

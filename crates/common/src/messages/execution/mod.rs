@@ -44,6 +44,9 @@ pub use self::{
 /// Parameter indicating that a conditional order should close the whole position at trigger time.
 pub const PARAMS_CLOSE_POSITION: &str = "close_position";
 
+/// Parameter indicating that a reduce-only order is an emergency position exit.
+pub const PARAMS_EMERGENCY_EXIT: &str = "emergency_exit";
+
 /// Execution report variants for reconciliation.
 #[derive(Clone, Debug, Display)]
 pub enum ExecutionReport {

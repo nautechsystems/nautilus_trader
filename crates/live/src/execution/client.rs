@@ -41,6 +41,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
+    orders::OrderAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -205,6 +206,10 @@ impl ExecutionClient for LiveExecutionClient {
 
     fn handles_order_venue(&self, venue: Venue) -> bool {
         self.client.borrow().handles_order_venue(venue)
+    }
+
+    fn enforces_reduce_only(&self, command: &SubmitOrder, order: &OrderAny) -> bool {
+        self.client.borrow().enforces_reduce_only(command, order)
     }
 
     fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
@@ -380,5 +385,71 @@ impl ExecutionClient for LiveExecutionClient {
         self.client
             .borrow()
             .calculate_commission(instrument, last_qty, last_px, liquidity_side)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::UUID4;
+    use nautilus_execution::engine::stubs::StubExecutionClient;
+    use nautilus_model::{
+        enums::{OrderSide, OrderType},
+        identifiers::TraderId,
+        instruments::stubs::audusd_sim,
+        orders::{Order, OrderTestBuilder},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::incapable(false)]
+    #[case::capable(true)]
+    fn test_enforces_reduce_only_forwards_to_wrapped_client(#[case] capable: bool) {
+        let instrument = audusd_sim();
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let client_id = ClientId::from("STUB");
+        let mut wrapped = StubExecutionClient::new(
+            client_id,
+            AccountId::from("TEST-ACCOUNT"),
+            instrument.id().venue,
+            OmsType::Netting,
+            None,
+        );
+
+        if capable {
+            wrapped = wrapped.with_enforces_reduce_only();
+        }
+
+        let facade = LiveExecutionClient::new(Box::new(wrapped));
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(1))
+            .reduce_only(true)
+            .build();
+        let command = SubmitOrder {
+            trader_id,
+            strategy_id,
+            position_id: None,
+            params: None,
+            client_order_id: order.client_order_id(),
+            order_init: order.init_event().clone(),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            client_id: Some(client_id),
+            instrument_id: instrument.id(),
+            exec_algorithm_id: None,
+            correlation_id: None,
+            causation_id: None,
+        };
+
+        assert_eq!(
+            ExecutionClient::enforces_reduce_only(&facade, &command, &order),
+            capable
+        );
     }
 }
