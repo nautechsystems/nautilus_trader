@@ -218,6 +218,7 @@ SIM_CARGO_CONFIG := --config 'target."cfg(all())".rustflags=["--cfg","madsim"]'
 CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug build-wheel py-stubs check-code \
 	check-code-sim check-code-standard-precision \
 	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
+	clippy-strict-audit \
 	docs docs-rust docsrs-check cargo-build cargo-check check-features hawk cargo-test \
 	cargo-test-extras cargo-test-postgres-ci cargo-test-doc cargo-test-core-local cargo-test-core-selected \
 	cargo-test-core cargo-test-adapters cargo-test-sim cargo-test-core-debug \
@@ -507,9 +508,16 @@ clippy-fix:  #-- Run clippy linter with automatic fixes (workspace lints)
 clippy-fix-nightly:  #-- Run clippy linter with the pinned nightly toolchain and automatic fixes (workspace lints + additional strictness)
 	cargo +$(NIGHTLY_TOOLCHAIN) clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings
 
+.PHONY: clippy-strict-audit
+clippy-strict-audit:  #-- Report candidate strict Clippy lints without failing on findings
+	python3 -B scripts/clippy-strict-audit.py \
+		--features "$(CARGO_FEATURES)" \
+		--profile "$(CARGO_CI_PROFILE)"
+
 .PHONY: clippy-pedantic-crate-%
-clippy-pedantic-crate-%:  #-- Run clippy linter for a specific Rust crate (usage: make clippy-crate-<crate_name>)
+clippy-pedantic-crate-%:  #-- Audit pedantic and panic-prone lints for one crate (usage: make clippy-pedantic-crate-<crate_name>)
 	cargo clippy --all-targets --all-features -p $* -- -D warnings \
+		-W clippy::pedantic \
 		-W clippy::todo \
 		-W clippy::unwrap_used \
 		-W clippy::expect_used
@@ -835,6 +843,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/ci/test-validate-wheel-upload.bash
 	$Q bash scripts/ci/test-verify-published-registries-crates.bash
 	$Q bash scripts/test-check-cargo-cooldown.bash
+	$Q bash scripts/test-clippy-strict-audit.bash
 	$Q bash scripts/test-update-cargo-dependencies.bash
 	$Q python3 -B scripts/ci/test_check_commit_message.py
 	@printf "$(GREEN)Script tests passed$(RESET)\n"

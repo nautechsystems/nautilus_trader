@@ -556,8 +556,8 @@ codegen-units = 1
 # These lints are auto-fixable and enforced in pre-commit hooks.
 # Run `make clippy-fix` to auto-fix most issues.
 #
-# Additional non-auto-fixable lints (todo, unwrap_used, expect_used) are
-# available via the `make clippy-fix-nightly` target.
+# Use `make clippy-strict-audit` to report candidate strict lints without
+# changing the required workspace gate.
 # -----------------------------------------------------------------------------
 
 [workspace.lints.clippy]
@@ -684,6 +684,7 @@ exit = "warn"
 suspicious_doc_comments = "warn"
 large_stack_arrays = "warn"
 panic_in_result_fn = "warn"
+unimplemented = "warn"
 mem_forget = "warn"
 multiple_unsafe_ops_per_block = "warn"
 unchecked_time_subtraction = "warn"
