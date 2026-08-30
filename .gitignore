@@ -42,6 +42,7 @@ logs/
 # Benchmarking and coverage
 .benchmarks*
 .coverage*
+*.profraw
 htmlcov/
 perf.data
 perf.data.old
