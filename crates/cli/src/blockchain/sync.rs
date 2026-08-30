@@ -74,21 +74,20 @@ pub(crate) async fn run_sync_dex(
     let rpc_http_url = rpc_url
         .or_else(|| check_infura_rpc_provider(&chain.name))
         .or_else(|| std::env::var("RPC_HTTP_URL").ok())
-        .unwrap_or_else(|| {
-            panic!(
+        .ok_or_else(|| {
+            anyhow::anyhow!(
                 "No RPC URL provided for {name}. Set --rpc-url, INFURA_API_KEY, or RPC_HTTP_URL",
                 name = chain.name
             )
-        });
+        })?;
 
     // Mask potential API key in URL for logging (key is typically the last path segment)
-    let masked_url = if let Some(idx) = rpc_http_url.rfind('/') {
-        let (base, key) = rpc_http_url.split_at(idx + 1);
+    let masked_url = if let Some((base, key)) = rpc_http_url.rsplit_once('/') {
         if key.is_empty() {
             rpc_http_url.clone()
         } else {
             let masked_key = mask_api_key(key);
-            format!("{base}{masked_key}")
+            format!("{base}/{masked_key}")
         }
     } else {
         // URL without path separator - mask entirely as it may contain credentials

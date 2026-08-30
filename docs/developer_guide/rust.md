@@ -214,7 +214,27 @@ Use `// nautilus-import-ok` only where a macro, generated path, or conditional i
 fully qualified Nautilus type. Put the marker on the affected line or directly above the narrow
 block.
 
-## Errors and logging
+## Error handling and contracts
+
+### Design by contract
+
+Use the narrowest mechanism that expresses the contract:
+
+| Situation                                          | Mechanism                                    |
+| -------------------------------------------------- | -------------------------------------------- |
+| Compile-time state or ownership rule.              | Types, lifetimes, newtypes, and visibility.  |
+| Public input precondition.                         | `check_*` from `nautilus_core::correctness`. |
+| Validated value construction.                      | `new_checked()` with a `new()` wrapper.      |
+| Recoverable parse, I/O, or network failure.        | `Result<T, E>`.                              |
+| Internal invariant safe to omit in release builds. | `debug_assert!`, covered by a targeted test. |
+| Soundness or always-on invariant.                  | `assert!` or a checked error path.           |
+
+Place an assertion where the code first relies on the invariant. Never use `debug_assert!` for
+public input validation or a soundness condition because release builds remove it.
+
+Prefix debug assertion messages with `Invariant:` and state the positive rule. The shared
+`Condition failed: ...` prefix marks a caller input violation; `Invariant: ...` marks an internal
+contract bug.
 
 ### Error boundaries
 
@@ -240,7 +260,33 @@ parse_timestamp(value).context("failed to parse timestamp")?;
 connect().context("BitMEX websocket did not become active")?;
 ```
 
-### Logging
+### Panic policy
+
+Panics are valid for internal invariant violations that callers cannot reasonably recover from.
+Keep an API infallible when returning `Result` would only require callers to handle a programming
+defect. Use an always-on assertion for an invariant that protects soundness or prevents unsafe code
+from continuing with invalid state.
+
+Return `Result` at boundaries that accept untrusted input or can fail because of configuration,
+I/O, external data, task cancellation, or resource lifecycle. These are operational failures even
+when a specific call site expects them never to occur. For validated values, follow the
+[`new()` and `new_checked()` constructor pattern](#constructor-patterns): expose a fallible path for
+untrusted values and use the convenience wrapper where its caller contract permits a panic.
+Document reachable panics in public Rust APIs, and make each panic message name the violated
+invariant.
+
+Treat findings for these lints from `make clippy-strict-audit` as review prompts:
+
+- `clippy::panic`
+- `clippy::unwrap_used`
+- `clippy::expect_used`
+
+The audit also reports `clippy::panic_in_result_fn`, which the required workspace Clippy gate
+already enforces. Remove a panic when the failure is recoverable; retain a justified invariant
+panic, with a scoped lint reason when needed. The audit uses forced warnings, so its totals include
+deliberate sites with local lint allowances and diagnostics from macro expansions.
+
+## Logging
 
 - Fully qualify log macros, for example `log::debug!` and `log::info!`.
 - Start messages with a capitalized word and omit terminal periods.
@@ -288,6 +334,32 @@ Code on the deterministic simulation path follows the
 [DST determinism contract](../concepts/dst.md#determinism-contract). Route clocks, random values,
 task spawning, and network access through the project seams. Use `biased;` in `tokio::select!`
 blocks on that path.
+
+## Runtime ownership and access
+
+### Cache order access
+
+`Cache` hides its `SharedCell` order storage behind lifetime-scoped accessors. Use `order_ref()` or
+`try_order_ref()` for scoped reads, `order_mut()` for an exclusive write borrow, and `order_owned()`
+or `try_order_owned()` when a snapshot must cross a boundary. The `try_*` forms return
+`OrderLookupError` when the order is absent.
+
+`order_mut()` requires `&mut Cache`, so adapter-facing `CacheView` code cannot mutate orders. Drop an
+`OrderRef` or `OrderRefMut` before dispatching events or taking a borrow that can re-enter the same
+order, then look up the order again for post-event state.
+
+### Runtime invariants
+
+The actor registry, component registry, and message bus use `thread_local!` storage. Objects
+registered on one thread are not visible from another. `LiveNodeHandle` is the intended
+cross-thread control surface.
+
+Keep an `ActorRef` within one synchronous scope. Do not store it in a struct, hold it across
+`.await`, or send it to another thread. Capture the actor ID in long-lived callbacks and look up the
+actor each time the callback runs.
+
+The component registry rejects aliased mutable access with a scoped borrow guard. Do not make
+component lifecycle operations re-entrant.
 
 ## Construction and conversion
 
@@ -375,37 +447,6 @@ in O(n) average time; `swap_remove` runs in O(1) average time but can move the l
 
 `AHash` is not cryptographically secure. Use `HashMap` or `HashSet` where untrusted keys make
 hash-flooding resistance part of the security boundary.
-
-### Cache order access
-
-`Cache` hides its `SharedCell` order storage behind lifetime-scoped accessors. Use `order_ref()` or
-`try_order_ref()` for scoped reads, `order_mut()` for an exclusive write borrow, and `order_owned()`
-or `try_order_owned()` when a snapshot must cross a boundary. The `try_*` forms return
-`OrderLookupError` when the order is absent.
-
-`order_mut()` requires `&mut Cache`, so adapter-facing `CacheView` code cannot mutate orders. Drop an
-`OrderRef` or `OrderRefMut` before dispatching events or taking a borrow that can re-enter the same
-order, then look up the order again for post-event state.
-
-## Design by contract
-
-Use the narrowest mechanism that expresses the contract:
-
-| Situation                                     | Mechanism                                    |
-| --------------------------------------------- | -------------------------------------------- |
-| Compile-time state or ownership rule.         | Types, lifetimes, newtypes, and visibility.  |
-| Public input precondition.                    | `check_*` from `nautilus_core::correctness`. |
-| Validated value construction.                 | `new_checked()` with a `new()` wrapper.      |
-| Recoverable parse, I/O, or network failure.   | `Result<T, E>`.                              |
-| Internal invariant the compiler cannot prove. | `debug_assert!`, covered by a targeted test. |
-| Soundness or always-on invariant.             | `assert!` or a checked error path.           |
-
-Place an assertion where the code first relies on the invariant. Never use `debug_assert!` for
-public input validation or a soundness condition because release builds remove it.
-
-Prefix debug assertion messages with `Invariant:` and state the positive rule. The shared
-`Condition failed: ...` prefix marks a caller input violation; `Invariant: ...` marks an internal
-contract bug.
 
 ## Documentation
 
@@ -657,19 +698,6 @@ Unsafe code must make its proof obligations reviewable:
 
 For raw vectors crossing FFI, follow the [FFI memory contract](ffi.md). Foreign code owns the
 allocation after transfer and must call the matching `vec_drop_*` function exactly once.
-
-### Runtime invariants
-
-The actor registry, component registry, and message bus use `thread_local!` storage. Objects
-registered on one thread are not visible from another. `LiveNodeHandle` is the intended
-cross-thread control surface.
-
-Keep an `ActorRef` within one synchronous scope. Do not store it in a struct, hold it across
-`.await`, or send it to another thread. Capture the actor ID in long-lived callbacks and look up the
-actor each time the callback runs.
-
-The component registry rejects aliased mutable access with a scoped borrow guard. Do not make
-component lifecycle operations re-entrant.
 
 ## Other generated artifacts
 
