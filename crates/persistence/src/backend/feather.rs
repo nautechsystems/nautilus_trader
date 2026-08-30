@@ -784,10 +784,7 @@ impl FeatherWriter {
             let file_stem = instrument_id.as_deref().unwrap_or(type_name);
             path = path.join(format!("{file_stem}_{timestamp}.feather"));
         } else if let Some(ref instrument_id) = instrument_id {
-            let safe_id = urisafe_instrument_id(instrument_id);
-            path = path.join(type_str.clone());
-            path = path.join(safe_id.clone());
-            path = path.join(format!("{safe_id}_{timestamp}.feather"));
+            path = self.per_instrument_path(&type_str, instrument_id, timestamp);
         } else {
             path = path.join(format!("{type_str}_{timestamp}.feather"));
         }
@@ -856,22 +853,35 @@ impl FeatherWriter {
         }
 
         let timestamp = self.clock.borrow().timestamp_ns();
-        let mut path = Path::from(self.base_path.clone());
-
-        if let Some(ref instrument_id) = instrument_id {
-            let safe_id = urisafe_instrument_id(instrument_id);
-            path = path.join(type_str);
-            path = path.join(safe_id.clone());
-            path = path.join(format!("{safe_id}_{timestamp}.feather"));
+        let path = if let Some(ref instrument_id) = instrument_id {
+            self.per_instrument_path(type_str, instrument_id, timestamp)
         } else {
-            path = path.join(format!("{type_str}_{timestamp}.feather"));
-        }
+            Path::from(self.base_path.clone()).join(format!("{type_str}_{timestamp}.feather"))
+        };
 
         Ok(FileWriterPath {
             path,
             type_str: type_str.to_string(),
             instrument_id,
         })
+    }
+
+    fn per_instrument_path(
+        &self,
+        type_str: &str,
+        instrument_id: &str,
+        timestamp: UnixNanos,
+    ) -> Path {
+        let safe_id = urisafe_instrument_id(instrument_id);
+        let filename = if type_str.contains('/') {
+            format!("{safe_id}_{timestamp}.feather")
+        } else {
+            format!("{type_str}_{timestamp}.feather")
+        };
+        Path::from(self.base_path.clone())
+            .join(type_str)
+            .join(safe_id)
+            .join(filename)
     }
 
     /// Writes a Data enum value to the appropriate writer.
@@ -1343,7 +1353,7 @@ mod tests {
         let path = manager.get_writer_path(&quote).unwrap();
         let safe_id = instrument_id.replace('/', "");
         let expected_path = Path::from(format!(
-            "{base_path}/quotes/{safe_id}/{safe_id}_{timestamp}.feather"
+            "{base_path}/quotes/{safe_id}/quotes_{timestamp}.feather"
         ));
         assert_eq!(path.path, expected_path);
         assert!(manager.writers.contains_key(&path));
@@ -1356,6 +1366,75 @@ mod tests {
         assert!(manager.writers.contains_key(&path));
         let writer = manager.writers.get(&path).unwrap();
         assert!(writer.size > 0);
+    }
+
+    #[tokio::test]
+    async fn test_per_instrument_paths_support_long_instrument_id() {
+        let temp_dir = TempDir::new().unwrap();
+        let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+        let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let timestamp = clock.borrow().timestamp_ns();
+        let mut per_instrument = HashSet::new();
+        per_instrument.insert(QuoteTick::path_prefix().to_string());
+        let mut manager = FeatherWriter::new(
+            String::new(),
+            Arc::clone(&store),
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            Some(per_instrument),
+            None,
+        );
+        let instrument_id = format!("{}.VENUE", "A".repeat(240));
+        let quote = QuoteTick::new(
+            InstrumentId::from(instrument_id.as_str()),
+            Price::from("100.0"),
+            Price::from("100.0"),
+            Quantity::from("100.0"),
+            Quantity::from("100.0"),
+            UnixNanos::from(1_000_000_000_000_000_000),
+            UnixNanos::from(1_000_000_000_000_000_000),
+        );
+
+        manager.write(quote).await.unwrap();
+        let path = manager.get_writer_path(&quote).unwrap();
+        let regenerated_path = manager.regen_writer_path(&path);
+        manager.close().await.unwrap();
+        let persisted = store.head(&path.path).await.unwrap();
+
+        let safe_id = urisafe_instrument_id(&instrument_id);
+        let expected_path = Path::from(format!("quotes/{safe_id}/quotes_{timestamp}.feather"));
+        assert_eq!(path.path, expected_path);
+        assert_eq!(regenerated_path.path, expected_path);
+        assert_eq!(persisted.location, expected_path);
+    }
+
+    #[rstest]
+    fn test_per_instrument_path_preserves_nested_type_prefix() {
+        let store: Arc<dyn ObjectStore> = Arc::new(LocalFileSystem::new());
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let manager = FeatherWriter::new(
+            String::new(),
+            store,
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            None,
+            None,
+        );
+
+        let path = manager.per_instrument_path(
+            "custom/RustTestCustomData",
+            "RUST.TEST",
+            UnixNanos::default(),
+        );
+
+        let expected_path = Path::from("")
+            .join("custom/RustTestCustomData")
+            .join("RUST.TEST")
+            .join("RUST.TEST_0.feather");
+        assert_eq!(path, expected_path);
     }
 
     #[rstest]
