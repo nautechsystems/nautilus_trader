@@ -68,6 +68,7 @@ Released on TBD (UTC).
 - Fixed rate-limit requests consuming quota before all applicable limits were available
 - Fixed reconnect-buffered socket messages stalling or being overtaken by newer messages
 - Fixed Python factory re-entry through `LiveNodeBuilder` causing process aborts
+- Fixed live order snapshots not being persisted to PostgreSQL
 - Fixed live position snapshots not being persisted to PostgreSQL
 - Fixed Betfair order and fill reconciliation with more than 250 market IDs
 - Fixed Betfair stream readiness, liveness, subscription replay, and reconnect reconciliation

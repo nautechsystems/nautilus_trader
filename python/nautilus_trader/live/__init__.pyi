@@ -127,6 +127,8 @@ class LiveExecutionEngineConfig:
     @property
     def manage_own_order_books(self) -> bool: ...
     @property
+    def snapshot_orders(self) -> bool: ...
+    @property
     def snapshot_positions(self) -> bool: ...
     @property
     def snapshot_positions_interval_secs(self) -> float | None: ...
@@ -231,6 +233,7 @@ class LiveExecutionEngineConfig:
         purge_account_events_lookback_mins: int | None = None,
         own_books_audit_interval_secs: float | None = None,
         debug: bool | None = None,
+        snapshot_orders: bool | None = None,
         snapshot_positions: bool | None = None,
     ) -> LiveExecutionEngineConfig: ...
 

@@ -155,7 +155,12 @@ from nautilus_trader.model import TraderId
 node = (
     LiveNode.builder("LiveNode", TraderId("TRADER-001"), Environment.LIVE)
     .with_cache_database_factory(RedisCacheConfig(host="localhost", port=6379))
-    .with_exec_engine_config(LiveExecutionEngineConfig(snapshot_positions=True))
+    .with_exec_engine_config(
+        LiveExecutionEngineConfig(
+            snapshot_orders=True,
+            snapshot_positions=True,
+        ),
+    )
     .with_load_state(True)
     .with_save_state(True)
     .build()
@@ -171,6 +176,9 @@ Pass `PostgresCacheConfig` instead to back the cache with Postgres. Any other ob
 `NotImplementedError` from `with_cache_database_factory`, and a failed database connection fails
 `run()`. Database-backed nodes must use `run()` because `run_async()` rejects cache database
 backings that would block the host event loop.
+
+With `snapshot_orders=True`, the execution engine persists an order snapshot during submission
+processing and after each state change. Order snapshots require a Redis or Postgres cache backing.
 
 With `snapshot_positions=True`, the execution engine publishes a snapshot when a position opens,
 changes, or closes. Set `snapshot_positions_interval_secs` independently to add periodic snapshots
@@ -385,6 +393,7 @@ and caveats, see [Runtime checks](../concepts/reconciliation.md#runtime-checks).
 | ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.                             |
 | `generate_missing_orders`          | True    | Generate LIMIT orders during reconciliation to align position discrepancies (strategy `EXTERNAL`, tag `RECONCILIATION`). |
+| `snapshot_orders`                  | False   | Persist order snapshots during submission processing and after each state change when cache backing is configured.       |
 | `snapshot_positions`               | False   | Publish position snapshots on open, change, and close, and persist them when cache backing is configured.                |
 | `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                                           |
 | `debug`                            | False   | Enable debug logging for execution.                                                                                      |

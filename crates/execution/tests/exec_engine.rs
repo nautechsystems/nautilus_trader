@@ -30,7 +30,7 @@ use std::{
 };
 
 use ahash::AHashSet;
-use cache_database::FailNthAddOrderDatabase;
+use cache_database::{FailNthAddOrderDatabase, FailNthAddOrderDatabaseControl};
 use nautilus_common::{
     cache::{Cache, CacheSnapshotRef},
     clients::ExecutionClient,
@@ -16107,6 +16107,126 @@ fn test_snapshot_open_position_states_publishes_snapshot_without_quote() {
     assert_eq!(snapshots[0].position.id, position.id);
     assert_eq!(snapshots[0].ts_snapshot, ts_snapshot);
     assert!(snapshots[0].unrealized_pnl.is_none());
+}
+
+#[rstest]
+fn test_order_lifecycle_snapshots_persist() {
+    let (mut engine, control) = order_snapshot_engine();
+    let (instrument, order) = prepare_accepted_order(&mut engine);
+    let fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::from("T-SNAPSHOT-ORDER"),
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from("1.0"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+
+    engine.process(&fill);
+
+    let snapshots = control.order_snapshots();
+    assert_eq!(snapshots.len(), 3);
+    assert_eq!(
+        snapshots
+            .iter()
+            .map(|snapshot| (snapshot.status, snapshot.filled_qty))
+            .collect::<Vec<_>>(),
+        [
+            (OrderStatus::Submitted, Quantity::from(0)),
+            (OrderStatus::Accepted, Quantity::from(0)),
+            (OrderStatus::Filled, Quantity::from(100_000)),
+        ],
+    );
+    assert!(
+        snapshots
+            .iter()
+            .all(|snapshot| snapshot.client_order_id == order.client_order_id())
+    );
+}
+
+#[rstest]
+fn test_order_submit_denial_snapshots_persist() {
+    let (mut engine, control) = order_snapshot_engine();
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let client_id = ClientId::from("IB");
+    let instrument = futures_contract_xcme();
+    let client = StubExecutionClient::new(
+        client_id,
+        AccountId::from("IB-001"),
+        Venue::from("IB"),
+        OmsType::Netting,
+        None,
+    );
+    engine.register_client(Box::new(client)).unwrap();
+    engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .quantity(Quantity::from(1))
+        .build();
+    let command = SubmitOrder {
+        trader_id,
+        strategy_id,
+        position_id: None,
+        params: None,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        client_id: Some(client_id),
+        instrument_id: instrument.id,
+        exec_algorithm_id: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    engine.execute(TradingCommand::SubmitOrder(command));
+
+    let snapshots = control.order_snapshots();
+    assert_eq!(snapshots.len(), 2);
+    assert_eq!(
+        snapshots
+            .iter()
+            .map(|snapshot| (snapshot.status, snapshot.filled_qty))
+            .collect::<Vec<_>>(),
+        [
+            (OrderStatus::Initialized, Quantity::from(0)),
+            (OrderStatus::Denied, Quantity::from(0)),
+        ],
+    );
+    assert!(
+        snapshots
+            .iter()
+            .all(|snapshot| snapshot.client_order_id == order.client_order_id())
+    );
+}
+
+fn order_snapshot_engine() -> (ExecutionEngine, FailNthAddOrderDatabaseControl) {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let (database, control) = FailNthAddOrderDatabase::create();
+    cache.borrow_mut().set_database(Box::new(database));
+    let config = ExecutionEngineConfig {
+        snapshot_orders: true,
+        ..Default::default()
+    };
+    let engine = ExecutionEngine::new(clock, cache, Some(config));
+    (engine, control)
 }
 
 #[rstest]

@@ -1205,8 +1205,9 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn snapshot_order_state(&self, _order: &OrderAny) -> anyhow::Result<()> {
-        todo!()
+    fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
+        let snapshot = OrderSnapshot::from(order.clone());
+        self.add_order_snapshot(&snapshot)
     }
 
     fn snapshot_position_state(

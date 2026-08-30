@@ -1502,7 +1502,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_add_order_snapshot() {
+    async fn test_snapshot_order_state() {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
         let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
@@ -1522,9 +1522,9 @@ mod serial_tests {
             .quantity(Quantity::from("1.0"))
             .tags(vec![Ustr::from("tag-1"), Ustr::from("tag-2")])
             .build();
-        let snapshot: OrderSnapshot = order.into();
+        let expected = OrderSnapshot::from(order.clone());
 
-        pg_cache.add_order_snapshot(&snapshot).unwrap();
+        pg_cache.snapshot_order_state(&order).unwrap();
 
         wait_until(
             || {
@@ -1541,7 +1541,7 @@ mod serial_tests {
             .unwrap()
             .unwrap();
 
-        assert_eq!(loaded.tags, snapshot.tags);
+        assert_entirely_equal(loaded, expected);
         pg_cache.flush().unwrap();
         pg_cache.close().unwrap();
     }

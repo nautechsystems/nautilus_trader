@@ -400,10 +400,9 @@ pub struct LiveExecutionEngineConfig {
     /// If the cache should be loaded on initialization.
     #[builder(default = true)]
     pub load_cache: bool,
-    /// If order state snapshot lists should be persisted to a backing database.
+    /// If order state snapshots should be persisted to a configured cache database.
     ///
-    /// Not implemented on the current live runtime; `validate_runtime_support` rejects any value
-    /// other than the default.
+    /// Snapshots are persisted during order submission processing and after each state change.
     #[builder(default)]
     pub snapshot_orders: bool,
     /// If position state snapshots should be published and, with cache backing, persisted.
@@ -1062,11 +1061,6 @@ impl LiveExecutionEngineConfig {
 
         let default = Self::default();
         collector.collect(check_supported_field(
-            "LiveExecutionEngineConfig.snapshot_orders",
-            self.snapshot_orders == default.snapshot_orders,
-            RUST_RUNTIME_UNSUPPORTED,
-        ));
-        collector.collect(check_supported_field(
             "LiveExecutionEngineConfig.purge_from_database",
             self.purge_from_database == default.purge_from_database,
             RUST_RUNTIME_UNSUPPORTED,
@@ -1450,6 +1444,7 @@ mean_dispatch_ns_clear = 700
     fn test_live_exec_engine_config_converts_to_exec_engine_config() {
         let config = LiveExecutionEngineConfig {
             load_cache: false,
+            snapshot_orders: true,
             snapshot_positions_interval_secs: Some(30.0),
             filter_unclaimed_external_orders: true,
             purge_closed_orders_interval_mins: Some(5),
@@ -1464,6 +1459,7 @@ mean_dispatch_ns_clear = 700
         let converted: ExecutionEngineConfig = config.into();
 
         assert!(!converted.load_cache);
+        assert!(converted.snapshot_orders);
         assert_eq!(converted.snapshot_positions_interval_secs, Some(30.0));
         assert!(converted.filter_unclaimed_external_orders);
         assert_eq!(converted.purge_closed_orders_interval_mins, Some(5));
@@ -1600,7 +1596,7 @@ mean_dispatch_ns_clear = 700
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_exec_engine_snapshot_orders() {
+    fn test_validate_runtime_support_accepts_exec_engine_snapshot_orders() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecutionEngineConfig {
                 snapshot_orders: true,
@@ -1609,11 +1605,7 @@ mean_dispatch_ns_clear = 700
             ..Default::default()
         };
 
-        let error = config.validate_runtime_support().unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "LiveExecutionEngineConfig.snapshot_orders is not supported by the Rust live runtime yet"
-        );
+        assert!(config.validate_runtime_support().is_ok());
     }
 
     #[rstest]
