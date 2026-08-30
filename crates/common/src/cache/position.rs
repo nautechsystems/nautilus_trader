@@ -429,18 +429,15 @@ impl Cache {
     /// Gets position snapshot IDs for the `instrument_id`.
     #[must_use]
     pub fn position_snapshot_ids(&self, instrument_id: &InstrumentId) -> AHashSet<PositionId> {
-        // Get snapshot position IDs that match the instrument
-        let mut result = AHashSet::new();
-
-        for (position_id, _) in &self.position_snapshots {
-            // Check if this position is for the requested instrument
-            if let Some(position_cell) = self.positions.get(position_id)
-                && position_cell.borrow().instrument_id == *instrument_id
-            {
-                result.insert(*position_id);
-            }
-        }
-        result
+        self.position_snapshots
+            .keys()
+            .filter(|position_id| {
+                self.positions
+                    .get(position_id)
+                    .is_some_and(|position| position.borrow().instrument_id == *instrument_id)
+            })
+            .copied()
+            .collect()
     }
 }
 

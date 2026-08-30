@@ -124,44 +124,28 @@ impl QuoteCache {
         let cached = self.quotes.get(&instrument_id);
 
         // Resolve each field: use provided value or fall back to cache
-        let bid_price = match (bid_price, cached) {
-            (Some(p), _) => p,
-            (None, Some(q)) => q.bid_price,
-            (None, None) => {
-                anyhow::bail!(
-                    "Cannot process partial quote for {instrument_id}: missing bid_price and no cached value"
-                )
-            }
+        let Some(bid_price) = bid_price.or_else(|| cached.map(|quote| quote.bid_price)) else {
+            anyhow::bail!(
+                "Cannot process partial quote for {instrument_id}: missing bid_price and no cached value"
+            );
         };
 
-        let ask_price = match (ask_price, cached) {
-            (Some(p), _) => p,
-            (None, Some(q)) => q.ask_price,
-            (None, None) => {
-                anyhow::bail!(
-                    "Cannot process partial quote for {instrument_id}: missing ask_price and no cached value"
-                )
-            }
+        let Some(ask_price) = ask_price.or_else(|| cached.map(|quote| quote.ask_price)) else {
+            anyhow::bail!(
+                "Cannot process partial quote for {instrument_id}: missing ask_price and no cached value"
+            );
         };
 
-        let bid_size = match (bid_size, cached) {
-            (Some(s), _) => s,
-            (None, Some(q)) => q.bid_size,
-            (None, None) => {
-                anyhow::bail!(
-                    "Cannot process partial quote for {instrument_id}: missing bid_size and no cached value"
-                )
-            }
+        let Some(bid_size) = bid_size.or_else(|| cached.map(|quote| quote.bid_size)) else {
+            anyhow::bail!(
+                "Cannot process partial quote for {instrument_id}: missing bid_size and no cached value"
+            );
         };
 
-        let ask_size = match (ask_size, cached) {
-            (Some(s), _) => s,
-            (None, Some(q)) => q.ask_size,
-            (None, None) => {
-                anyhow::bail!(
-                    "Cannot process partial quote for {instrument_id}: missing ask_size and no cached value"
-                )
-            }
+        let Some(ask_size) = ask_size.or_else(|| cached.map(|quote| quote.ask_size)) else {
+            anyhow::bail!(
+                "Cannot process partial quote for {instrument_id}: missing ask_size and no cached value"
+            );
         };
 
         let quote = QuoteTick::new(
