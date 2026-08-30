@@ -65,6 +65,13 @@ they do not alter the standard-precision fixture, engine configuration, actions,
 - Aggregation: median of three point estimates. Spread is `(maximum - minimum) / median`; the noise
   band is the observed minimum to maximum range for that row.
 
+Before changing production code, establish a fresh noise spread for the selected timed boundary.
+Normalize its profiled cost to that boundary, then estimate the share the candidate can realistically
+remove. Stop after profiling when that conservative estimate is at or below the spread. When it is
+only marginally above, reduce noise or choose a larger target before implementing the candidate.
+Reconsider a rejected candidate only after a material implementation, dependency, toolchain, or
+representative-workload change, or after reducing the noise spread enough to resolve its prior result.
+
 ## How to reproduce
 
 ```bash
@@ -344,6 +351,303 @@ oversized values, counter mutation before validation, checked and unchecked over
 reset behavior, and the existing Rust parity fixtures. All 31 tests in the `ids_generator` module
 passed, along with focused rustfmt and Clippy checks. The later test strengthening and this benchmark
 documentation do not alter the library code compiled into the measured candidate executable.
+
+## Rejected L1 order-map value replacement
+
+A fifth 2026-08-30 follow-up used the signed `Optimize IdsGenerator trade ID formatting` commit
+`e67a439364f5ea2c08e836e85507374ceeb31157` as its baseline. Fresh one-millisecond `gprofng`
+profiles covered all four canonical scenarios under both benchmark boundaries. As percentages of
+total captured CPU samples, inclusive samples for `IndexMap<u64, BookOrder>::insert_full` under
+`BookLadder::replace_l1` were:
+
+| Scenario                | Full load/setup/run | Preloaded `run()` |
+| ----------------------- | ------------------: | ----------------: |
+| Replay only             |               3.71% |             5.29% |
+| Scheduled market orders |               3.06% |             3.66% |
+| Passive limit orders    |               2.72% |             3.24% |
+| Bar EMA cross           |               1.38% |             1.21% |
+
+The insertion appeared beneath `BookLadder::replace_l1` in the call tree for the canonical quote-
+and trade-tick paths. Profile mode included setup and fingerprint work, so these shares selected the
+target but do not support the elapsed-time comparison. The candidate directly replaced the sole
+stored order value when its ID matched the replacement ID, preserving the existing key and FIFO
+slot. Different IDs and multi-order levels retained the prior clear-and-add path. Price replacement,
+cache and batch reset, zero-size clearing, B-tree reinsertion, and public APIs remained unchanged.
+
+| Item                 | Baseline                                                           | Candidate                                                          |
+| -------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Repository revision  | `e67a439364f5ea2c08e836e85507374ceeb31157`                         | Baseline revision plus the measured patch                          |
+| Measured source tree | `ea1da17cb0d66fb911c035e8665ea871448f621c`                         | `e410781943a9c867c5786aff75aefe33a0cc10d4`                         |
+| Executable SHA-256   | `acc072d1d9a2acd445992f68130903de6fc81680c03e02665581222076bfe9bc` | `d0eb66474ad835514d77493984b404dc5a8a744b0363ab1af3850784086590cb` |
+| ELF build ID         | `a55d3682b2e6f094043a152c52cd5116195f0a08`                         | `0b8e55224e259f5210344cdf6fc50dc03e5d6462`                         |
+
+Both executables were built with the command in [How to reproduce](#how-to-reproduce), copied to
+immutable paths, and reused unchanged. Both used Rust and Cargo 1.98.0, LLVM 22.1.8, standard
+precision, the default empty `nautilus-backtest` feature set, and the `bench-lto` profile. The host
+was the Threadripper 9980X system described above with Linux 7.0.0-28-generic. All 128 governors
+remained `powersave`; no host control changed. ASLR was disabled per process, and the benchmark
+thread was not pinned.
+
+Canonical replay-only `run_preloaded` was selected before viewing candidate timings because the
+target had its largest profile share there, at 5.29%, and this boundary excludes setup from the
+returned duration. Three fresh baseline sessions measured 14.343661167, 14.200984417, and
+13.595796071 ms. Their 14.200984417 ms median and 5.266290514% full spread set the predeclared
+threshold.
+
+Three paired sessions alternated the immutable executables. Each run used an isolated Criterion
+home, a 3-second warm-up, a 5-second measurement target, and 50 samples. Accepted sessions recorded
+no competing Cargo or Rust compiler work and minimum CPU idle from 96.47% to 97.22%. Sessions with
+competing Rust work or CPU idle below the predeclared 95% floor were discarded.
+
+| Pair order         | Baseline median | Candidate median |     Reduction |
+| ------------------ | --------------: | ---------------: | ------------: |
+| Baseline/candidate | 14.705979833 ms |  14.134475857 ms |  3.886201278% |
+| Candidate/baseline | 14.955419750 ms |  13.287750143 ms | 11.150938155% |
+| Baseline/candidate | 15.101249333 ms |  14.345504000 ms |  5.004521922% |
+
+The median reduction was 5.004521922%. The result is no measurable change because pairs one and
+three did not clear the 5.266290514% baseline spread. The immutable candidate matched all eight
+exact canonical fingerprints in a clean session with 95.79% to 97.89% CPU idle. Focused tests
+covered the same-ID direct replacement, different-ID fallback, and multi-order fallback with exact
+order, price, size, side, and cache assertions. The production candidate and its focused tests were
+removed. All three focused cases, the canonical workload matrix, rustfmt, Clippy, and Rustdoc with
+the `defi` feature passed. This benchmark record also passed markdownlint and table normalization.
+
+Do not select this same-ID direct value replacement again under the same implementation, toolchain,
+workload, and noise conditions. Reconsider it only after a material implementation, dependency,
+toolchain, or representative-workload change, or after reducing baseline spread enough to resolve
+the observed range.
+
+## Command-queue drain profiling follow-up
+
+A sixth 2026-08-30 follow-up used the signed `Document OrderBook L1 value replacement rejection`
+commit `466cb9e9036e207de33c83294dcf294c5a29f3a9` as its baseline. Fresh one-millisecond `gprofng`
+profiles covered all four canonical scenarios under both benchmark boundaries. Book-ladder work,
+its B-tree operations, and order-map operations were excluded before target selection.
+
+The largest remaining production lead was `BacktestEngine::drain_command_queues`. The table reports
+its inclusive share of all captured CPU samples. Build-process observations count matching Cargo,
+Rust compiler, Clippy, and Make process rows in the one-second host samples.
+
+| Scenario                | Boundary         | CPU samples | Drain share | Average CPU idle | Build-process observations |
+| ----------------------- | ---------------- | ----------: | ----------: | ---------------: | -------------------------: |
+| Replay only             | `run_preloaded`  |    14.970 s |       6.75% |           95.74% |                          0 |
+| Replay only             | `load_build_run` |    15.681 s |       5.17% |           97.07% |                          0 |
+| Scheduled market orders | `run_preloaded`  |    15.352 s |       5.03% |           97.07% |                          0 |
+| Scheduled market orders | `load_build_run` |    15.135 s |       4.08% |           96.85% |                          0 |
+| Passive limit orders    | `run_preloaded`  |    15.590 s |       3.81% |           94.15% |                        102 |
+| Passive limit orders    | `load_build_run` |    15.419 s |       3.07% |           91.65% |                        104 |
+| Bar EMA cross           | `run_preloaded`  |    15.225 s |       1.81% |           82.88% |                        195 |
+| Bar EMA cross           | `load_build_run` |    15.656 s |       1.65% |           95.01% |                         55 |
+
+Profile mode includes setup and fingerprint work outside the elapsed `iter_custom` boundary, so
+these percentages identify a target but do not support an elapsed-time claim. Every profile
+completed the canonical fingerprint checks. The later profiles ran alongside unrelated builds;
+`gprofng` sampled only the benchmark process, while the host observations above record the shared
+load that can affect elapsed-time repeatability.
+
+| Item                 | Baseline                                                           |
+| -------------------- | ------------------------------------------------------------------ |
+| Repository revision  | `466cb9e9036e207de33c83294dcf294c5a29f3a9`                         |
+| Measured source tree | `53e7fff4bdb1b79ab8655d8c7344c77c84f45b3c`                         |
+| Executable SHA-256   | `01395c683933c2ebdbc81c12297b82815f37c2e2436a91432a66cd3e8b46a909` |
+| ELF build ID         | `9727c4118397d3b55eef571912620d76b6dffce9`                         |
+
+The executable was built once with the command in [How to reproduce](#how-to-reproduce), copied to
+an immutable path, and reused unchanged. It used Rust and Cargo 1.98.0, LLVM 22.1.8, standard
+precision, the default empty `nautilus-backtest` feature set, and the `bench-lto` profile. The host
+was the Threadripper 9980X system described above with Linux 7.0.0-28-generic. All 128 governors
+remained `powersave`; no host control changed. ASLR was disabled per process, and the benchmark
+thread was not pinned.
+
+Canonical replay-only `run_preloaded` was selected because command-queue draining had its largest
+profile share there and this boundary excludes setup from the returned duration. Within the
+repeated run path, the direct work in the trading and data command drains accounted for 0.826
+seconds against 10.516 seconds inclusive in `BacktestEngine::run`, a 7.854697604% actionable upper
+bound. An empty-queue fast path would retain the thread-local borrows, emptiness tests, execution
+event drain, and settling checks. The predeclared realistic removal estimate was 60% of the upper
+bound, or 4.712818562% end to end.
+
+Three fresh baseline runs used isolated homes, a 3-second warm-up, a 5-second measurement target,
+50 samples, and the same immutable executable. Normal shared-host work continued during every run.
+
+| Run  | Baseline median | Average CPU idle | Build-process observations |
+| ---: | --------------: | ---------------: | -------------------------: |
+|    1 | 14.415631417 ms |           63.86% |                        319 |
+|    2 | 15.378694250 ms |           59.64% |                        359 |
+|    3 | 15.223379333 ms |           56.09% |                        251 |
+
+The 15.223379333 ms median and 6.326209262% full spread set the admission threshold. The
+4.712818562% realistic removal estimate did not clear that threshold, so no production candidate,
+candidate executable, paired comparison, or candidate fingerprint run was created. This campaign
+establishes change-detection limits under normal shared-host load, not quiet-host absolute timing.
+Reconsider an empty command-queue fast path after reducing the fresh spread below its conservative
+effect estimate, or select a larger eligible non-book cost.
+
+## Shared-host repeatability calibration
+
+A seventh 2026-08-30 follow-up calibrated the replay-only measurement protocol at signed commit
+`c16fceaac8f82954645e52a66705313510e1781a`. This calibration compared measurement controls on a
+permanently shared host. It did not profile another target or change production code, tests, or the
+benchmark harness.
+
+The adoption rule was fixed before timing. A candidate protocol had to preserve the canonical
+fingerprints and reduce the five-run full spread by at least 50% relative to the unpinned control.
+Fixed affinity was preferred when it qualified because it retained the existing duration. Longer
+sampling could replace qualifying fixed affinity only by halving its spread again; if fixed affinity
+failed, longer sampling could still qualify by halving the control spread.
+
+| Item                 | Value                                                               |
+| -------------------- | ------------------------------------------------------------------- |
+| Repository revision  | `c16fceaac8f82954645e52a66705313510e1781a`                          |
+| Measured source tree | `a0a49e5e7070f8bb583527856e259bff86c5a393`                          |
+| Executable SHA-256   | `4ec258a07cb061a71bce87ae7795ed882eecb2e0045f090ca7a792cf2a0b57fb`  |
+| ELF build ID         | `968af998aa4aa2b2c5098251765b53eb267547ae`                          |
+| Rust                 | `rustc 1.98.0`, LLVM 22.1.8                                         |
+| Cargo                | `cargo 1.98.0`                                                      |
+| Cargo features       | Default empty `nautilus-backtest` feature set; standard precision   |
+| Profile              | `bench-lto`: release, fat LTO, one codegen unit, full debug symbols |
+
+The executable was built once from the clean source tree and copied to a read-only path:
+
+```bash
+CARGO_BUILD_JOBS=16 cargo build --locked -p nautilus-backtest \
+    --profile bench-lto --bench engine
+```
+
+The source and copied executable hashes matched. Every run rechecked the same hash before and after
+execution. All 15 runs used the copied executable, ASLR disabled per process, isolated Criterion
+homes, and canonical replay-only `run_preloaded`. The benchmark preflight verified all four
+scenarios under both canonical boundaries before registering the filtered case, and every run
+completed those exact fingerprint checks.
+
+The host remained the Threadripper 9980X system described above with Ubuntu 24.04.4 LTS and Linux
+7.0.0-28-generic. SMT and boost remained enabled, and the 128 logical CPUs retained the `powersave`
+governor. No host control changed. Affinity used logical CPU 63, the highest-numbered first SMT
+thread in the process's allowed `0-127` set. It maps to core 63 on socket 0 and NUMA node 0; logical
+CPU 127 is its SMT sibling.
+
+| Configuration                       | Affinity | Warm-up | Measurement | Samples |
+| ----------------------------------- | -------- | ------: | ----------: | ------: |
+| Existing control                    | Unpinned |     3 s |         5 s |      50 |
+| Fixed affinity                      | CPU 63   |     3 s |         5 s |      50 |
+| Fixed affinity plus longer sampling | CPU 63   |     3 s |        15 s |     100 |
+
+The interleaved order by round was:
+
+- `control/fixed/long`
+- `fixed/long/control`
+- `long/control/fixed`
+- `control/long/fixed`
+- `long/fixed/control`
+
+Normal concurrent host work continued throughout. Average CPU idle and CPU 63 utilization come
+from one-second `mpstat` samples over each full Criterion process. Build-process observations sum
+matching Cargo, Rust compiler, Clippy, and Make process rows across one-second samples; no run was
+rejected for host load or timing.
+
+| Round/order | Configuration                       | Median run time | Average CPU idle | CPU 63 utilization | Build-process observations |
+| ----------: | ----------------------------------- | --------------: | ---------------: | -----------------: | -------------------------: |
+|         1/1 | Existing control                    | 15.281284250 ms |           87.02% |              1.18% |                        174 |
+|         1/2 | Fixed affinity                      | 14.741385667 ms |           86.02% |            100.00% |                        132 |
+|         1/3 | Fixed affinity plus longer sampling | 14.840072056 ms |           88.40% |            100.00% |                        266 |
+|         2/1 | Fixed affinity                      | 14.789702917 ms |           87.18% |            100.00% |                        112 |
+|         2/2 | Fixed affinity plus longer sampling | 14.746318111 ms |           89.07% |            100.00% |                        236 |
+|         2/3 | Existing control                    | 15.264372500 ms |           90.55% |              2.01% |                        109 |
+|         3/1 | Fixed affinity plus longer sampling | 15.266930222 ms |           92.77% |            100.00% |                        165 |
+|         3/2 | Existing control                    | 14.932666667 ms |           91.21% |              2.30% |                        100 |
+|         3/3 | Fixed affinity                      | 15.200084333 ms |           92.88% |             96.27% |                         71 |
+|         4/1 | Existing control                    | 15.107950083 ms |           94.19% |              2.10% |                         51 |
+|         4/2 | Fixed affinity plus longer sampling | 15.194157611 ms |           90.58% |            100.00% |                        220 |
+|         4/3 | Fixed affinity                      | 15.242091583 ms |           88.26% |             95.81% |                        128 |
+|         5/1 | Fixed affinity plus longer sampling | 15.004388833 ms |           91.78% |            100.00% |                        115 |
+|         5/2 | Fixed affinity                      | 15.308534250 ms |           96.43% |            100.00% |                          4 |
+|         5/3 | Existing control                    | 14.459969083 ms |           96.18% |              2.01% |                         10 |
+
+Median range is the minimum to maximum of the five Criterion median point estimates. Full spread is
+`(maximum - minimum) / median` across those estimates.
+
+| Configuration                       | Median range                 | Median of medians | Full spread  | Spread reduction | Decision    |
+| ----------------------------------- | ---------------------------- | ----------------: | -----------: | ---------------: | ----------- |
+| Existing control                    | 14.459969083-15.281284250 ms |   15.107950083 ms | 5.436311095% |                - | Retain      |
+| Fixed affinity                      | 14.741385667-15.308534250 ms |   15.200084333 ms | 3.731219978% |    31.364855458% | Not adopted |
+| Fixed affinity plus longer sampling | 14.746318111-15.266930222 ms |   15.004388833 ms | 3.469732202% |    36.174877754% | Not adopted |
+
+Neither candidate cleared the required 2.718155548% maximum spread. Retain the existing unpinned
+3-second warm-up, 5-second measurement, and 50-sample controls on this permanently shared host.
+Future optimization admission for this workload requires a conservative expected end-to-end effect
+of at least twice the retained fresh spread, or 10.872622191%. This is the practical detection floor
+until another calibration establishes a qualifying protocol.
+
+## Pending queue snapshot follow-up
+
+An eighth 2026-08-30 follow-up used the signed `Document OrderBook L1 value replacement rejection`
+commit `1f7d5a12896f6f53cce917293cb574d5b58d255f` as its baseline. An existing one-millisecond
+`gprofng` profile of canonical passive limit orders ranked
+`OrderMatchingEngine::adjust_l1_queue_on_price_move` at 2.365 seconds inclusive across a 15.289-second
+process. Its main `BacktestEngine::run` descendant accounted for 1.863 seconds within the function's
+10.096-second run stack and included 0.990 seconds in
+`IndexMap<ClientOrderId, PriceRaw>::get_index_of` and 0.612 seconds in `Cache::order`. Profile mode
+included setup and fingerprint work, and samples could not distinguish every map operation, so these
+figures selected the target but do not support the elapsed-time claim.
+
+The candidate captures each pending client order ID with its stored price in a reusable scratch
+vector before adjusting L1 queue positions. Iteration retains the `IndexMap` order and the same
+captured price while avoiding the second lookup by client order ID. Side filtering, crossed and
+equal-price transitions, closed-order and stale-entry cleanup, and pending snapshot promotion remain
+unchanged. The scratch vector retains capacity for the peak pending-order count.
+
+| Item                               | Baseline                                                           | Candidate                                                          |
+| ---------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Repository revision                | `1f7d5a12896f6f53cce917293cb574d5b58d255f`                         | Baseline revision plus the measured patch                          |
+| Measured source tree               | `dbcfb4da69522cea9197dc0be059f3f9aa234057`                         | `39d520056c7f922639414657217064fa57172522`                         |
+| Canonical executable SHA-256       | `d0930d5c6f11900edb49cb4e4b244d1dcbb7c07d2e7fd97fb58b80231d11412c` | `e2ec640cc5e5d2e79aaa30984955c6186ab39363ba5e0c6abf2a3dc78714f461` |
+| Canonical ELF build ID             | `b37a4bf1ad9b6c800e26bcc00ebb4ad30f0262e2`                         | `19d3cf907eba11fb8d179b6648b52419c161bc49`                         |
+| Matching-engine executable SHA-256 | `0d8784d3939b27da3918400399e0a9b11fa2a66aedcf79b8eb483b649cac67c0` | `be1e964c8017a80c7e60eb64e173fde339da51002778c42362d82c34d982eac0` |
+| Matching-engine ELF build ID       | `b187b760a3b5e73269dfbc76010207912fdf47b1`                         | `9472e9a6489e67585e28c99b32e8982264977f54`                         |
+
+Both canonical executables were built once with the command in
+[How to reproduce](#how-to-reproduce), copied to immutable paths, and reused unchanged. Both used
+Rust and Cargo 1.98.0, LLVM 22.1.8, standard precision, the default empty `nautilus-backtest`
+feature set, and the `bench-lto` profile. The host was the Threadripper 9980X system described above
+with Linux 7.0.0-28-generic. All 128 governors remained `powersave`; no host control changed. ASLR
+was disabled per process, and the benchmark thread was not pinned.
+
+Five fresh baseline sessions measured 24.635, 24.909, 25.066, 25.099, and 25.110 ms. Their
+25.066 ms median and 1.895% full spread established the fresh noise bound. The adoption threshold
+was fixed at twice that spread, or 3.790%, before candidate timing. Canonical passive limit-order
+`run_preloaded` was selected because it exercised the profiled queue path and excluded setup from
+the returned duration.
+
+Three paired sessions alternated the immutable executables. Each run used an isolated Criterion
+home, a 3-second warm-up, a 5-second measurement target, and 50 samples. The accepted pairs finished
+before unrelated Cargo work appeared and recorded 96.47% average CPU idle.
+
+| Pair order         | Baseline median | Candidate median | Reduction |
+| ------------------ | --------------: | ---------------: | --------: |
+| Baseline/candidate |       25.129 ms |        22.245 ms |   11.477% |
+| Candidate/baseline |       24.769 ms |        22.566 ms |    8.894% |
+| Baseline/candidate |       24.800 ms |        21.729 ms |   12.383% |
+
+The median baseline and candidate results were 24.800 and 22.245 ms, a 10.302% reduction. Every
+pair cleared the 3.790% adoption threshold, so the optimization was retained. The immutable
+executables matched all eight exact canonical fingerprints.
+
+Separate matching-engine measurements used the existing
+`matching_engine/queue_position/quote_l1_pending/{1,32,256}` cases. The table reports the median of
+three Criterion point estimates for each immutable executable.
+
+| Pending orders | Baseline median | Candidate median | Reduction |
+| -------------: | --------------: | ---------------: | --------: |
+|              1 |       161.58 us |        170.36 us |    -5.43% |
+|             32 |       607.23 us |        367.94 us |    39.41% |
+|            256 |       4.1747 ms |        2.1106 ms |    49.44% |
+
+The one-order result did not reproduce the end-to-end direction and is not used as evidence for the
+optimization. The 32-order and 256-order cases show that the removed lookup scales with pending
+queue size; the canonical passive workload supplies the adoption evidence. The canonical workload
+matrix, focused L1 queue-position and queue-invariant tests, rustfmt, and Clippy passed after the
+change. This documentation does not alter either measured executable.
 
 ## v1.231.0 and v2 comparison
 

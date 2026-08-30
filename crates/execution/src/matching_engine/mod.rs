@@ -129,6 +129,7 @@ pub struct OrderMatchingEngine {
     queue_ids_by_price: IndexMap<PriceRaw, IndexSet<ClientOrderId>>,
     queue_excess: IndexMap<ClientOrderId, QuantityRaw>,
     queue_id_scratch: Vec<ClientOrderId>,
+    queue_pending_scratch: Vec<(ClientOrderId, PriceRaw)>,
     queue_stale_scratch: Vec<ClientOrderId>,
     queue_entry_scratch: Vec<(ClientOrderId, QuantityRaw, QuantityRaw)>,
     prev_bid_price_raw: PriceRaw,
@@ -221,6 +222,7 @@ impl OrderMatchingEngine {
             queue_ids_by_price: IndexMap::new(),
             queue_excess: IndexMap::new(),
             queue_id_scratch: Vec::new(),
+            queue_pending_scratch: Vec::new(),
             queue_stale_scratch: Vec::new(),
             queue_entry_scratch: Vec::new(),
             prev_bid_price_raw: 0,
@@ -285,6 +287,7 @@ impl OrderMatchingEngine {
         self.queue_ids_by_price.clear();
         self.queue_excess.clear();
         self.queue_id_scratch.clear();
+        self.queue_pending_scratch.clear();
         self.queue_stale_scratch.clear();
         self.queue_entry_scratch.clear();
         self.prev_bid_price_raw = 0;
@@ -986,14 +989,14 @@ impl OrderMatchingEngine {
             self.remove_queue_position(id);
         }
 
-        keys.clear();
-        keys.extend(self.queue_pending.keys().copied());
+        let mut pending = Self::take_cleared(&mut self.queue_pending_scratch);
+        pending.extend(
+            self.queue_pending
+                .iter()
+                .map(|(&client_order_id, &price_raw)| (client_order_id, price_raw)),
+        );
 
-        for client_order_id in keys.iter().copied() {
-            let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
-                continue;
-            };
-
+        for (client_order_id, order_price_raw) in pending.iter().copied() {
             let cache = self.cache.borrow();
             let order_info = cache.order(&client_order_id).and_then(|order| {
                 if order.is_closed() {
@@ -1034,6 +1037,7 @@ impl OrderMatchingEngine {
         }
 
         self.queue_id_scratch = keys;
+        self.queue_pending_scratch = pending;
         self.queue_stale_scratch = stale;
     }
 
