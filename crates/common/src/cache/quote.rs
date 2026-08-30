@@ -194,11 +194,11 @@ mod tests {
 
     use super::*;
 
-    fn make_quote(instrument_id: InstrumentId, _bid: f64, _ask: f64) -> QuoteTick {
+    fn make_quote(instrument_id: InstrumentId, bid: &str, ask: &str) -> QuoteTick {
         QuoteTick::new(
             instrument_id,
-            Price::from("100.0"),
-            Price::from("101.0"),
+            Price::from(bid),
+            Price::from(ask),
             Quantity::from("10.0"),
             Quantity::from("20.0"),
             UnixNanos::default(),
@@ -217,7 +217,7 @@ mod tests {
     fn test_insert_and_get() {
         let mut cache = QuoteCache::new();
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
-        let quote = make_quote(instrument_id, 100.0, 101.0);
+        let quote = make_quote(instrument_id, "100.0", "101.0");
 
         assert_eq!(cache.insert(instrument_id, quote), None);
         assert_eq!(cache.len(), 1);
@@ -229,8 +229,8 @@ mod tests {
     fn test_insert_returns_previous_value() {
         let mut cache = QuoteCache::new();
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
-        let quote1 = make_quote(instrument_id, 100.0, 101.0);
-        let quote2 = make_quote(instrument_id, 102.0, 103.0);
+        let quote1 = make_quote(instrument_id, "100.0", "101.0");
+        let quote2 = make_quote(instrument_id, "102.0", "103.0");
 
         cache.insert(instrument_id, quote1);
         let previous = cache.insert(instrument_id, quote2);
@@ -244,7 +244,7 @@ mod tests {
     fn test_remove() {
         let mut cache = QuoteCache::new();
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
-        let quote = make_quote(instrument_id, 100.0, 101.0);
+        let quote = make_quote(instrument_id, "100.0", "101.0");
 
         cache.insert(instrument_id, quote);
         assert_eq!(cache.remove(&instrument_id), Some(quote));
@@ -267,8 +267,8 @@ mod tests {
         let id1 = InstrumentId::from("BTCUSDT.BINANCE");
         let id2 = InstrumentId::from("ETHUSDT.BINANCE");
 
-        cache.insert(id1, make_quote(id1, 100.0, 101.0));
-        cache.insert(id2, make_quote(id2, 200.0, 201.0));
+        cache.insert(id1, make_quote(id1, "100.0", "101.0"));
+        cache.insert(id2, make_quote(id2, "200.0", "201.0"));
 
         assert_eq!(cache.len(), 2);
 
@@ -287,9 +287,9 @@ mod tests {
         let id2 = InstrumentId::from("ETHUSDT.BINANCE");
         let id3 = InstrumentId::from("XRPUSDT.BINANCE");
 
-        let quote1 = make_quote(id1, 100.0, 101.0);
-        let quote2 = make_quote(id2, 200.0, 201.0);
-        let quote3 = make_quote(id3, 0.5, 0.51);
+        let quote1 = make_quote(id1, "100.0", "101.0");
+        let quote2 = make_quote(id2, "200.0", "201.0");
+        let quote3 = make_quote(id3, "0.50", "0.51");
 
         cache.insert(id1, quote1);
         cache.insert(id2, quote2);
@@ -311,7 +311,7 @@ mod tests {
     fn test_clone() {
         let mut cache = QuoteCache::new();
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
-        let quote = make_quote(instrument_id, 100.0, 101.0);
+        let quote = make_quote(instrument_id, "100.0", "101.0");
 
         cache.insert(instrument_id, quote);
 
@@ -349,28 +349,45 @@ mod tests {
     }
 
     #[rstest]
-    fn test_process_partial_quote_without_cache() {
+    #[case::bid_price("bid_price")]
+    #[case::ask_price("ask_price")]
+    #[case::bid_size("bid_size")]
+    #[case::ask_size("ask_size")]
+    fn test_process_partial_quote_without_cache(#[case] missing_field: &str) {
         let mut cache = QuoteCache::new();
         let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let mut bid_price = Some(Price::from("100.0"));
+        let mut ask_price = Some(Price::from("101.0"));
+        let mut bid_size = Some(Quantity::from("10.0"));
+        let mut ask_size = Some(Quantity::from("20.0"));
 
-        // Missing bid_price on first update should fail
-        let result = cache.process(
-            instrument_id,
-            None,
-            Some(Price::from("101.0")),
-            Some(Quantity::from("10.0")),
-            Some(Quantity::from("20.0")),
-            UnixNanos::default(),
-            UnixNanos::default(),
-        );
+        match missing_field {
+            "bid_price" => bid_price = None,
+            "ask_price" => ask_price = None,
+            "bid_size" => bid_size = None,
+            "ask_size" => ask_size = None,
+            _ => unreachable!(),
+        }
 
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("missing bid_price")
+        let error = cache
+            .process(
+                instrument_id,
+                bid_price,
+                ask_price,
+                bid_size,
+                ask_size,
+                UnixNanos::default(),
+                UnixNanos::default(),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Cannot process partial quote for {instrument_id}: missing {missing_field} and no cached value"
+            )
         );
+        assert!(cache.is_empty());
     }
 
     #[rstest]
@@ -414,6 +431,43 @@ mod tests {
         assert_eq!(quote.ask_size, first_quote.ask_size);
 
         // Cache should be updated with new quote
+        assert_eq!(cache.get(&instrument_id), Some(&quote));
+    }
+
+    #[rstest]
+    fn test_process_partial_quote_uses_cached_bid_side() {
+        let mut cache = QuoteCache::new();
+        let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+        let first_quote = cache
+            .process(
+                instrument_id,
+                Some(Price::from("100.0")),
+                Some(Price::from("101.0")),
+                Some(Quantity::from("10.0")),
+                Some(Quantity::from("20.0")),
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+            )
+            .unwrap();
+
+        let quote = cache
+            .process(
+                instrument_id,
+                None,
+                Some(Price::from("101.5")),
+                None,
+                Some(Quantity::from("25.0")),
+                UnixNanos::from(3),
+                UnixNanos::from(4),
+            )
+            .unwrap();
+
+        assert_eq!(quote.bid_price, first_quote.bid_price);
+        assert_eq!(quote.ask_price, Price::from("101.5"));
+        assert_eq!(quote.bid_size, first_quote.bid_size);
+        assert_eq!(quote.ask_size, Quantity::from("25.0"));
+        assert_eq!(quote.ts_event, UnixNanos::from(3));
+        assert_eq!(quote.ts_init, UnixNanos::from(4));
         assert_eq!(cache.get(&instrument_id), Some(&quote));
     }
 

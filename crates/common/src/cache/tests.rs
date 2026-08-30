@@ -25,6 +25,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet, RandomState};
 use bytes::Bytes;
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{
@@ -531,6 +532,95 @@ fn test_cache_api_returns_owned_snapshots_for_populated_queries(mut cache: Cache
 }
 
 #[rstest]
+#[case::long(OrderSide::Buy, "10.00 USD")]
+#[case::short(OrderSide::Sell, "-20.00 USD")]
+fn test_calculate_unrealized_pnl_uses_exit_side(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+    #[case] order_side: OrderSide,
+    #[case] expected_pnl: &str,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(order_side)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-PNL")),
+        Some(PositionId::new("P-PNL")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let position = Position::new(&instrument, fill.into());
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    cache.add_quote(quote).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::from(expected_pnl))
+    );
+}
+
+#[rstest]
+fn test_calculate_unrealized_pnl_for_flat_position_returns_zero(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::new("T-PNL-FLAT")),
+        Some(PositionId::new("P-PNL-FLAT")),
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    let mut position = Position::new(&instrument, fill.into());
+    position.side = PositionSide::Flat;
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("1.00010"),
+        Price::from("1.00020"),
+        Quantity::from(100_000),
+        Quantity::from(100_000),
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+    );
+
+    cache.add_quote(quote).unwrap();
+
+    assert_eq!(
+        cache.calculate_unrealized_pnl(&position),
+        Some(Money::zero(position.settlement_currency))
+    );
+}
+
+#[rstest]
 fn test_build_index_when_empty(mut cache: Cache) {
     cache.build_index();
 }
@@ -645,6 +735,190 @@ fn test_build_index_preserves_orderless_position_strategy_bucket(
 }
 
 #[rstest]
+fn test_build_index_restores_state_rich_query_surface(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let account = AccountAny::default();
+    let account_id = account.id();
+    let account_venue = account_id.get_issuer();
+    let strategy_id = StrategyId::from("S-BUILD-INDEX");
+    let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+    let exec_spawn_id = ClientOrderId::from("O-BUILD-SPAWN");
+
+    cache.add_account(account).unwrap();
+
+    let mut open_order_builder = OrderTestBuilder::new(OrderType::Limit);
+    open_order_builder
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-BUILD-OPEN"))
+        .strategy_id(strategy_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from("2"))
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(exec_spawn_id);
+    let mut open_order = open_order_builder.build();
+    cache
+        .add_order(open_order.clone(), None, None, false)
+        .unwrap();
+    promote_to_open(
+        &mut cache,
+        &mut open_order,
+        account_id,
+        VenueOrderId::from("V-BUILD-OPEN"),
+    );
+
+    let closed_order = closed_order_in_cache(&mut cache, &instrument, "O-BUILD-CLOSED");
+
+    let mut inflight_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-BUILD-INFLIGHT"))
+        .strategy_id(strategy_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("3"))
+        .build();
+    cache
+        .add_order(inflight_order.clone(), None, None, false)
+        .unwrap();
+    let submitted = TestOrderEventStubs::submitted(&inflight_order, account_id);
+    update_order_with_event(&mut cache, &mut inflight_order, submitted);
+
+    let emulated_order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-BUILD-EMULATED"))
+        .strategy_id(strategy_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("4"))
+        .trigger_price(Price::from("1.00010"))
+        .emulation_trigger(TriggerType::LastPrice)
+        .build();
+    cache
+        .add_order(emulated_order.clone(), None, None, false)
+        .unwrap();
+
+    let open_position = snapshot_test_position();
+    let open_position_id = open_position.id;
+    cache
+        .add_position_without_order(&open_position, OmsType::Hedging)
+        .unwrap();
+    let mut closed_position = snapshot_test_position();
+    closed_position.id = PositionId::new("P-BUILD-CLOSED");
+    closed_position.side = PositionSide::Flat;
+    closed_position.ts_closed = Some(UnixNanos::from(1));
+    let closed_position_id = closed_position.id;
+    cache
+        .add_position_without_order(&closed_position, OmsType::Netting)
+        .unwrap();
+    cache.update_position(&closed_position).unwrap();
+
+    assert!(open_order.is_open());
+    assert!(closed_order.is_closed());
+    assert!(inflight_order.is_inflight());
+    assert!(cache.is_order_emulated(&emulated_order.client_order_id()));
+    assert!(open_position.is_open());
+    assert!(closed_position.is_closed());
+    assert!(cache.check_integrity());
+
+    let order_ids = cache
+        .client_order_ids(None, None, None, None)
+        .into_iter()
+        .collect::<AHashSet<_>>();
+    let open_order_ids = order_id_set(&cache.orders_open(None, None, None, None, None));
+    let closed_order_ids = order_id_set(&cache.orders_closed(None, None, None, None, None));
+    let active_order_ids = order_id_set(&cache.orders_active_local(None, None, None, None, None));
+    let emulated_order_ids = order_id_set(&cache.orders_emulated(None, None, None, None, None));
+    let inflight_order_ids = order_id_set(&cache.orders_inflight(None, None, None, None, None));
+    let exec_algorithm_order_ids = order_id_set(&cache.orders_for_exec_algorithm(
+        &exec_algorithm_id,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ));
+    let exec_spawn_order_ids = order_id_set(&cache.orders_for_exec_spawn(&exec_spawn_id));
+    let open_position_ids = cache.position_open_ids(None, None, None, None);
+    let closed_position_ids = cache.position_closed_ids(None, None, None, None);
+    let open_venue_order_id = open_order.venue_order_id().unwrap();
+
+    cache.clear_index();
+    cache.build_index();
+
+    assert_eq!(
+        cache
+            .client_order_ids(None, None, None, None)
+            .into_iter()
+            .collect::<AHashSet<_>>(),
+        order_ids
+    );
+    assert_eq!(
+        order_id_set(&cache.orders_open(None, None, None, None, None)),
+        open_order_ids
+    );
+    assert_eq!(
+        order_id_set(&cache.orders_closed(None, None, None, None, None)),
+        closed_order_ids
+    );
+    assert_eq!(
+        order_id_set(&cache.orders_active_local(None, None, None, None, None)),
+        active_order_ids
+    );
+    assert_eq!(
+        order_id_set(&cache.orders_emulated(None, None, None, None, None)),
+        emulated_order_ids
+    );
+    assert_eq!(
+        order_id_set(&cache.orders_inflight(None, None, None, None, None)),
+        inflight_order_ids
+    );
+    assert_eq!(
+        order_id_set(&cache.orders_for_exec_algorithm(
+            &exec_algorithm_id,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )),
+        exec_algorithm_order_ids
+    );
+    assert_eq!(
+        order_id_set(&cache.orders_for_exec_spawn(&exec_spawn_id)),
+        exec_spawn_order_ids
+    );
+    assert_eq!(
+        cache.position_open_ids(None, None, None, None),
+        open_position_ids
+    );
+    assert_eq!(
+        cache.position_closed_ids(None, None, None, None),
+        closed_position_ids
+    );
+    assert_eq!(
+        cache.account_for_venue(&account_venue).unwrap().id(),
+        account_id
+    );
+    assert_eq!(
+        cache.client_order_id(&open_venue_order_id),
+        Some(&open_order.client_order_id())
+    );
+    assert_eq!(
+        cache.venue_order_id(&open_order.client_order_id()),
+        Some(&open_venue_order_id)
+    );
+    assert_eq!(
+        cache.strategy_id_for_order(&open_order.client_order_id()),
+        Some(&strategy_id)
+    );
+    assert_eq!(
+        cache.strategy_id_for_position(&open_position_id),
+        Some(&open_position.strategy_id)
+    );
+    assert_eq!(cache.oms_type(&open_position_id), Some(OmsType::Hedging));
+    assert_eq!(cache.oms_type(&closed_position_id), Some(OmsType::Netting));
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
 fn test_oms_type_returns_actual_position_oms(mut cache: Cache) {
     let position = snapshot_test_position();
     let position_id = position.id;
@@ -732,6 +1006,72 @@ fn test_cache_positions_skips_malformed_position_oms() {
 fn test_check_integrity_when_empty(mut cache: Cache) {
     let result = cache.check_integrity();
     assert!(result);
+}
+
+#[derive(Clone, Copy)]
+enum IntegrityCorruption {
+    AccountForward,
+    OrderForward,
+    OrderReverse,
+    PositionForward,
+    PositionReverse,
+}
+
+#[rstest]
+#[case::account_forward(IntegrityCorruption::AccountForward)]
+#[case::order_forward(IntegrityCorruption::OrderForward)]
+#[case::order_reverse(IntegrityCorruption::OrderReverse)]
+#[case::position_forward(IntegrityCorruption::PositionForward)]
+#[case::position_reverse(IntegrityCorruption::PositionReverse)]
+fn test_check_integrity_detects_missing_or_stale_index_entries(
+    mut cache: Cache,
+    #[case] corruption: IntegrityCorruption,
+) {
+    let account = AccountAny::default();
+    let account_id = account.id();
+    let account_venue = account_id.get_issuer();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    let position = snapshot_test_position();
+    let position_id = position.id;
+
+    cache.add_account(account).unwrap();
+    cache.add_order(order, None, None, false).unwrap();
+    cache
+        .add_position_without_order(&position, OmsType::Netting)
+        .unwrap();
+    assert!(cache.check_integrity());
+
+    match corruption {
+        IntegrityCorruption::AccountForward => {
+            cache.index.venue_account.remove(&account_venue);
+        }
+        IntegrityCorruption::OrderForward => {
+            cache.index.order_strategy.remove(&client_order_id);
+        }
+        IntegrityCorruption::OrderReverse => {
+            cache
+                .index
+                .orders
+                .insert(ClientOrderId::from("O-INTEGRITY-STALE"));
+        }
+        IntegrityCorruption::PositionForward => {
+            cache.index.position_strategy.remove(&position_id);
+        }
+        IntegrityCorruption::PositionReverse => {
+            cache
+                .index
+                .positions
+                .insert(PositionId::from("P-INTEGRITY-STALE"));
+        }
+    }
+
+    assert!(!cache.check_integrity());
 }
 
 #[rstest]
@@ -7899,6 +8239,17 @@ fn snapshot_test_position() -> Position {
 }
 
 type OrderClientClaimBatches = Arc<Mutex<Vec<Vec<(ClientOrderId, ClientId)>>>>;
+type CacheDatabaseCalls = Arc<Mutex<CacheDatabaseCallLog>>;
+
+#[derive(Default)]
+struct CacheDatabaseCallLog {
+    actor_loads: Vec<ActorId>,
+    strategy_loads: Vec<StrategyId>,
+    actor_updates: Vec<(ActorId, AHashMap<String, Bytes>)>,
+    strategy_updates: Vec<(StrategyId, AHashMap<String, Bytes>)>,
+    order_snapshots: Vec<OrderAny>,
+    position_snapshots: Vec<(Position, UnixNanos, Option<Money>)>,
+}
 
 #[derive(Default)]
 struct SnapshotBlobTestDatabase {
@@ -7907,6 +8258,9 @@ struct SnapshotBlobTestDatabase {
     positions: AHashMap<PositionId, Position>,
     order_positions: AHashMap<ClientOrderId, PositionId>,
     order_client_claims: OrderClientClaimBatches,
+    actor_state: AHashMap<String, Bytes>,
+    strategy_state: AHashMap<String, Bytes>,
+    database_calls: CacheDatabaseCalls,
     fail_add: bool,
     fail_add_order: bool,
     fail_add_position: bool,
@@ -7914,6 +8268,7 @@ struct SnapshotBlobTestDatabase {
     fail_index_order_position: bool,
     fail_update_order: bool,
     fail_update_position: bool,
+    fail_persistence_io: bool,
 }
 
 impl SnapshotBlobTestDatabase {
@@ -7980,6 +8335,24 @@ impl SnapshotBlobTestDatabase {
             },
             order_client_claims,
         )
+    }
+
+    fn database_recorder() -> (Self, CacheDatabaseCalls) {
+        let database_calls = Arc::new(Mutex::new(CacheDatabaseCallLog::default()));
+        (
+            Self {
+                database_calls: database_calls.clone(),
+                ..Default::default()
+            },
+            database_calls,
+        )
+    }
+
+    fn fail_persistence_io() -> Self {
+        Self {
+            fail_persistence_io: true,
+            ..Default::default()
+        }
     }
 
     fn fail_update_order() -> Self {
@@ -8084,12 +8457,30 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(None)
     }
 
-    fn load_actor(&self, _actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        Ok(AHashMap::new())
+    fn load_actor(&self, actor_id: &ActorId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        self.database_calls
+            .lock()
+            .unwrap()
+            .actor_loads
+            .push(*actor_id);
+
+        if self.fail_persistence_io {
+            anyhow::bail!("state I/O failed");
+        }
+        Ok(self.actor_state.clone())
     }
 
-    fn load_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        Ok(AHashMap::new())
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        self.database_calls
+            .lock()
+            .unwrap()
+            .strategy_loads
+            .push(*strategy_id);
+
+        if self.fail_persistence_io {
+            anyhow::bail!("state I/O failed");
+        }
+        Ok(self.strategy_state.clone())
     }
 
     fn load_signals(&self, _name: &str) -> anyhow::Result<Vec<Signal>> {
@@ -8259,17 +8650,33 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
 
     fn update_actor(
         &self,
-        _actor_id: &ActorId,
-        _state: &AHashMap<String, Bytes>,
+        actor_id: &ActorId,
+        state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .unwrap()
+            .actor_updates
+            .push((*actor_id, state.clone()));
+        if self.fail_persistence_io {
+            anyhow::bail!("state I/O failed");
+        }
         Ok(())
     }
 
     fn update_strategy(
         &self,
-        _strategy_id: &StrategyId,
-        _state: &AHashMap<String, Bytes>,
+        strategy_id: &StrategyId,
+        state: &AHashMap<String, Bytes>,
     ) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .unwrap()
+            .strategy_updates
+            .push((*strategy_id, state.clone()));
+        if self.fail_persistence_io {
+            anyhow::bail!("state I/O failed");
+        }
         Ok(())
     }
 
@@ -8291,22 +8698,248 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(())
     }
 
-    fn snapshot_order_state(&self, _order: &OrderAny) -> anyhow::Result<()> {
+    fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .unwrap()
+            .order_snapshots
+            .push(order.clone());
+
+        if self.fail_persistence_io {
+            anyhow::bail!("state I/O failed");
+        }
         Ok(())
     }
 
     fn snapshot_position_state(
         &self,
-        _position: &Position,
-        _ts_snapshot: UnixNanos,
-        _unrealized_pnl: Option<Money>,
+        position: &Position,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
     ) -> anyhow::Result<()> {
+        self.database_calls
+            .lock()
+            .unwrap()
+            .position_snapshots
+            .push((position.clone(), ts_snapshot, unrealized_pnl));
+
+        if self.fail_persistence_io {
+            anyhow::bail!("state I/O failed");
+        }
         Ok(())
     }
 
     fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {
         Ok(())
     }
+}
+
+#[rstest]
+fn test_component_and_state_snapshots_without_database_are_noops() {
+    let mut cache = Cache::default();
+    let actor_id = ActorId::from("ACTOR-NO-DATABASE");
+    let strategy_id = StrategyId::from("S-NO-DATABASE");
+    let state = IndexMap::from([("key".to_string(), vec![1, 2, 3])]);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let position = snapshot_test_position();
+
+    assert_eq!(cache.load_actor_state(&actor_id).unwrap(), None);
+    assert_eq!(cache.load_strategy_state(&strategy_id).unwrap(), None);
+    cache.update_actor_state(&actor_id, &state).unwrap();
+    cache.update_strategy_state(&strategy_id, &state).unwrap();
+    cache.snapshot_order_state(&order).unwrap();
+    cache
+        .snapshot_position_state(
+            &position,
+            UnixNanos::from(1),
+            Some(Money::from("1.00 USD")),
+            None,
+        )
+        .unwrap();
+}
+
+#[rstest]
+fn test_component_and_state_snapshots_forward_exact_values() {
+    let (mut database, calls) = SnapshotBlobTestDatabase::database_recorder();
+    database.actor_state = AHashMap::from([
+        ("actor-a".to_string(), Bytes::from_static(&[1, 2])),
+        ("actor-b".to_string(), Bytes::from_static(&[3, 4])),
+    ]);
+    database.strategy_state = AHashMap::from([
+        ("strategy-a".to_string(), Bytes::from_static(&[5, 6])),
+        ("strategy-b".to_string(), Bytes::from_static(&[7, 8])),
+    ]);
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let actor_id = ActorId::from("ACTOR-STATE");
+    let strategy_id = StrategyId::from("S-STATE");
+    let actor_update = IndexMap::from([
+        ("actor-c".to_string(), vec![9, 10]),
+        ("actor-d".to_string(), vec![11, 12]),
+    ]);
+    let strategy_update = IndexMap::from([
+        ("strategy-c".to_string(), vec![13, 14]),
+        ("strategy-d".to_string(), vec![15, 16]),
+    ]);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+        .client_order_id(ClientOrderId::from("O-STATE-SNAPSHOT"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let open_position = snapshot_test_position();
+    let mut closed_position = open_position.clone();
+    closed_position.id = PositionId::from("P-STATE-CLOSED");
+    closed_position.side = PositionSide::Flat;
+    closed_position.ts_closed = Some(UnixNanos::from(20));
+    let open_snapshot_ts = UnixNanos::from(21);
+    let closed_snapshot_ts = UnixNanos::from(22);
+    let open_pnl = Money::from("1.25 USD");
+    let closed_pnl = Money::from("2.50 USD");
+
+    let loaded_actor = cache.load_actor_state(&actor_id).unwrap().unwrap();
+    let loaded_strategy = cache.load_strategy_state(&strategy_id).unwrap().unwrap();
+    cache.update_actor_state(&actor_id, &actor_update).unwrap();
+    cache
+        .update_strategy_state(&strategy_id, &strategy_update)
+        .unwrap();
+    cache.snapshot_order_state(&order).unwrap();
+    cache
+        .snapshot_position_state(&open_position, open_snapshot_ts, Some(open_pnl), None)
+        .unwrap();
+    cache
+        .snapshot_position_state(
+            &closed_position,
+            UnixNanos::from(23),
+            Some(Money::from("3.75 USD")),
+            None,
+        )
+        .unwrap();
+    cache
+        .snapshot_position_state(
+            &closed_position,
+            closed_snapshot_ts,
+            Some(closed_pnl),
+            Some(false),
+        )
+        .unwrap();
+
+    assert_eq!(loaded_actor.len(), 2);
+    assert_eq!(loaded_actor.get("actor-a"), Some(&vec![1, 2]));
+    assert_eq!(loaded_actor.get("actor-b"), Some(&vec![3, 4]));
+    assert_eq!(loaded_strategy.len(), 2);
+    assert_eq!(loaded_strategy.get("strategy-a"), Some(&vec![5, 6]));
+    assert_eq!(loaded_strategy.get("strategy-b"), Some(&vec![7, 8]));
+
+    let calls = calls.lock().unwrap();
+    assert_eq!(calls.actor_loads, vec![actor_id]);
+    assert_eq!(calls.strategy_loads, vec![strategy_id]);
+    assert_eq!(
+        calls.actor_updates,
+        vec![(
+            actor_id,
+            AHashMap::from([
+                ("actor-c".to_string(), Bytes::from_static(&[9, 10])),
+                ("actor-d".to_string(), Bytes::from_static(&[11, 12])),
+            ]),
+        )]
+    );
+    assert_eq!(
+        calls.strategy_updates,
+        vec![(
+            strategy_id,
+            AHashMap::from([
+                ("strategy-c".to_string(), Bytes::from_static(&[13, 14]),),
+                ("strategy-d".to_string(), Bytes::from_static(&[15, 16]),),
+            ]),
+        )]
+    );
+    assert_eq!(calls.order_snapshots.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&calls.order_snapshots[0]).unwrap(),
+        serde_json::to_value(&order).unwrap()
+    );
+    assert_eq!(calls.position_snapshots.len(), 2);
+
+    let (recorded_open_position, recorded_open_ts, recorded_open_pnl) =
+        &calls.position_snapshots[0];
+    assert_eq!(
+        serde_json::to_value(recorded_open_position).unwrap(),
+        serde_json::to_value(&open_position).unwrap()
+    );
+    assert_eq!(recorded_open_ts, &open_snapshot_ts);
+    assert_eq!(recorded_open_pnl, &Some(open_pnl));
+
+    let (recorded_closed_position, recorded_closed_ts, recorded_closed_pnl) =
+        &calls.position_snapshots[1];
+    assert_eq!(
+        serde_json::to_value(recorded_closed_position).unwrap(),
+        serde_json::to_value(&closed_position).unwrap()
+    );
+    assert_eq!(recorded_closed_ts, &closed_snapshot_ts);
+    assert_eq!(recorded_closed_pnl, &Some(closed_pnl));
+}
+
+#[rstest]
+fn test_component_and_state_snapshot_errors_propagate() {
+    let mut cache = Cache::new(
+        None,
+        Some(Box::new(SnapshotBlobTestDatabase::fail_persistence_io())),
+    );
+    let actor_id = ActorId::from("ACTOR-STATE-ERROR");
+    let strategy_id = StrategyId::from("S-STATE-ERROR");
+    let state = IndexMap::from([("key".to_string(), vec![1, 2, 3])]);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let position = snapshot_test_position();
+
+    assert_eq!(
+        cache.load_actor_state(&actor_id).unwrap_err().to_string(),
+        "state I/O failed"
+    );
+    assert_eq!(
+        cache
+            .load_strategy_state(&strategy_id)
+            .unwrap_err()
+            .to_string(),
+        "state I/O failed"
+    );
+    assert_eq!(
+        cache
+            .update_actor_state(&actor_id, &state)
+            .unwrap_err()
+            .to_string(),
+        "state I/O failed"
+    );
+    assert_eq!(
+        cache
+            .update_strategy_state(&strategy_id, &state)
+            .unwrap_err()
+            .to_string(),
+        "state I/O failed"
+    );
+    assert_eq!(
+        cache.snapshot_order_state(&order).unwrap_err().to_string(),
+        "state I/O failed"
+    );
+    assert_eq!(
+        cache
+            .snapshot_position_state(
+                &position,
+                UnixNanos::from(1),
+                Some(Money::from("1.00 USD")),
+                None,
+            )
+            .unwrap_err()
+            .to_string(),
+        "state I/O failed"
+    );
 }
 
 #[rstest]
@@ -9091,6 +9724,64 @@ fn test_position_snapshot_count_unknown_position(cache: Cache) {
 }
 
 #[rstest]
+fn test_position_snapshot_revision_tracks_replacement_and_purge(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+    let mut other_position = snapshot_test_position();
+    other_position.id = PositionId::from("P-REVISION-OTHER");
+
+    cache.snapshot_position(&position).unwrap();
+    cache.snapshot_position(&other_position).unwrap();
+
+    assert_eq!(cache.position_snapshot_revision(&position_id), 0);
+    assert_eq!(cache.position_snapshot_revision(&other_position.id), 0);
+
+    cache.settle_position_snapshots(&position, Some(Money::from("7.00 USD")));
+
+    assert_eq!(cache.position_snapshot_revision(&position_id), 1);
+    assert_eq!(cache.position_snapshot_revision(&other_position.id), 0);
+    assert_eq!(cache.position_snapshot_count(&position_id), 1);
+
+    cache.purge_position(position_id);
+
+    assert_eq!(cache.position_snapshot_revision(&position_id), 2);
+    assert_eq!(cache.position_snapshot_revision(&other_position.id), 0);
+    assert_eq!(cache.position_snapshot_count(&position_id), 0);
+    assert_eq!(cache.position_snapshot_count(&other_position.id), 1);
+}
+
+#[rstest]
+fn test_position_snapshot_ids_filter_live_positions_by_instrument(mut cache: Cache) {
+    let audusd_id = audusd_sim().id;
+    let gbpusd_id = gbpusd_sim().id;
+    let audusd_position = snapshot_test_position();
+    let mut gbpusd_position = snapshot_test_position();
+    gbpusd_position.id = PositionId::from("P-SNAPSHOT-GBPUSD");
+    gbpusd_position.instrument_id = gbpusd_id;
+    let mut stale_position = snapshot_test_position();
+    stale_position.id = PositionId::from("P-SNAPSHOT-STALE");
+
+    cache
+        .add_position_without_order(&audusd_position, OmsType::Netting)
+        .unwrap();
+    cache
+        .add_position_without_order(&gbpusd_position, OmsType::Hedging)
+        .unwrap();
+    cache.snapshot_position(&audusd_position).unwrap();
+    cache.snapshot_position(&gbpusd_position).unwrap();
+    cache.snapshot_position(&stale_position).unwrap();
+
+    assert_eq!(
+        cache.position_snapshot_ids(&audusd_id),
+        AHashSet::from([audusd_position.id])
+    );
+    assert_eq!(
+        cache.position_snapshot_ids(&gbpusd_id),
+        AHashSet::from([gbpusd_position.id])
+    );
+}
+
+#[rstest]
 fn test_position_snapshots_from_preserves_order_and_skip(mut cache: Cache) {
     let position = snapshot_test_position();
     let position_id = position.id;
@@ -9760,6 +10451,123 @@ fn promote_to_open(
     update_order_with_event(cache, order, accepted);
 }
 
+#[rstest]
+fn test_exec_spawn_totals_exclude_closed_orders_when_active_only(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let account_id = AccountId::from("SIM-001");
+    let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+    let exec_spawn_id = ClientOrderId::from("O-SPAWN-ACTIVE");
+
+    let mut active_builder = OrderTestBuilder::new(OrderType::Limit);
+    active_builder
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-SPAWN-CHILD-ACTIVE"))
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from("2"))
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(exec_spawn_id);
+    let mut active_order = active_builder.build();
+
+    let mut closed_builder = OrderTestBuilder::new(OrderType::Limit);
+    closed_builder
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-SPAWN-CHILD-CLOSED"))
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from("3"))
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(exec_spawn_id);
+    let mut closed_order = closed_builder.build();
+
+    cache
+        .add_order(active_order.clone(), None, None, false)
+        .unwrap();
+    cache
+        .add_order(closed_order.clone(), None, None, false)
+        .unwrap();
+    promote_to_open(
+        &mut cache,
+        &mut active_order,
+        account_id,
+        VenueOrderId::from("V-SPAWN-ACTIVE"),
+    );
+    promote_to_open(
+        &mut cache,
+        &mut closed_order,
+        account_id,
+        VenueOrderId::from("V-SPAWN-CLOSED"),
+    );
+    let closed_fill = TestOrderEventStubs::filled(
+        &closed_order,
+        &instrument,
+        Some(TradeId::from("T-SPAWN-CLOSED")),
+        None,
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    update_order_with_event(&mut cache, &mut closed_order, closed_fill);
+
+    assert!(active_order.is_open());
+    assert!(closed_order.is_closed());
+    assert_eq!(
+        cache.exec_spawn_total_quantity(&exec_spawn_id, false),
+        Some(Quantity::from("5"))
+    );
+    assert_eq!(
+        cache.exec_spawn_total_filled_qty(&exec_spawn_id, false),
+        Some(Quantity::from("3"))
+    );
+    assert_eq!(
+        cache.exec_spawn_total_leaves_qty(&exec_spawn_id, false),
+        Some(Quantity::from("2"))
+    );
+    assert_eq!(
+        cache.exec_spawn_total_quantity(&exec_spawn_id, true),
+        Some(Quantity::from("2"))
+    );
+    assert_eq!(
+        cache.exec_spawn_total_filled_qty(&exec_spawn_id, true),
+        Some(Quantity::from("0"))
+    );
+    assert_eq!(
+        cache.exec_spawn_total_leaves_qty(&exec_spawn_id, true),
+        Some(Quantity::from("2"))
+    );
+
+    let active_fill = TestOrderEventStubs::filled(
+        &active_order,
+        &instrument,
+        Some(TradeId::from("T-SPAWN-ACTIVE")),
+        None,
+        Some(Price::from("1.00000")),
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+    update_order_with_event(&mut cache, &mut active_order, active_fill);
+
+    assert!(active_order.is_closed());
+    assert_eq!(cache.exec_spawn_total_quantity(&exec_spawn_id, true), None);
+    assert_eq!(
+        cache.exec_spawn_total_filled_qty(&exec_spawn_id, true),
+        None
+    );
+    assert_eq!(
+        cache.exec_spawn_total_leaves_qty(&exec_spawn_id, true),
+        None
+    );
+}
+
 fn order_id_set(orders: &[OrderRef<'_>]) -> AHashSet<ClientOrderId> {
     orders.iter().map(|o| o.client_order_id()).collect()
 }
@@ -10274,14 +11082,16 @@ fn test_position_filters_with_state_and_side(mut cache: Cache) {
         None,
         None,
         None,
-        None,
+        Some(Money::from("0 EUR")),
         None,
         None,
     ) {
         OrderEventAny::Filled(f) => f,
         _ => unreachable!(),
     };
-    let pos_a_long = Position::new(&InstrumentAny::CurrencyPair(instr_a), fill_a);
+    let mut pos_a_long = Position::new(&InstrumentAny::CurrencyPair(instr_a), fill_a);
+    pos_a_long.id = PositionId::new("POS-A");
+    assert_eq!(pos_a_long.side, PositionSide::Long);
 
     let order_b = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instr_b.id)
@@ -10296,7 +11106,7 @@ fn test_position_filters_with_state_and_side(mut cache: Cache) {
         None,
         None,
         None,
-        None,
+        Some(Money::from("0 EUR")),
         None,
         None,
     ) {
@@ -10304,7 +11114,8 @@ fn test_position_filters_with_state_and_side(mut cache: Cache) {
         _ => unreachable!(),
     };
     let mut pos_b_short = Position::new(&InstrumentAny::CurrencyPair(instr_b), fill_b);
-    pos_b_short.side = PositionSide::Short;
+    pos_b_short.id = PositionId::new("POS-B");
+    assert_eq!(pos_b_short.side, PositionSide::Short);
 
     let mut pos_a_closed = pos_a_long.clone();
     pos_a_closed.id = PositionId::new("POS-A-CLOSED");
@@ -10342,9 +11153,19 @@ fn test_position_filters_with_state_and_side(mut cache: Cache) {
             .position_closed_ids(Some(&venue_b), None, None, None)
             .is_empty()
     );
+    assert_eq!(
+        cache.position(&pos_a_long.id).unwrap().side,
+        PositionSide::Long
+    );
+    assert_eq!(
+        cache.position(&pos_b_short.id).unwrap().side,
+        PositionSide::Short
+    );
+    assert_eq!(
+        cache.position(&pos_a_closed.id).unwrap().side,
+        PositionSide::Flat
+    );
 
-    // Counts with filters (side-filter coverage is symmetric with `count_orders_in_bucket`
-    // and is exercised by `test_orders_count_with_filters_and_side`).
     assert_eq!(cache.positions_open_count(None, None, None, None, None), 2);
     assert_eq!(
         cache.positions_open_count(Some(&venue_a), None, None, None, None),
@@ -10354,6 +11175,53 @@ fn test_position_filters_with_state_and_side(mut cache: Cache) {
     assert_eq!(
         cache.positions_closed_count(None, None, None, None, None),
         1
+    );
+    assert_eq!(
+        cache.positions_open_count(None, None, None, None, Some(PositionSide::Long)),
+        1
+    );
+    assert_eq!(
+        cache.positions_open_count(None, None, None, None, Some(PositionSide::Short)),
+        1
+    );
+    assert_eq!(
+        cache.positions_open_count(None, None, None, None, Some(PositionSide::Flat)),
+        0
+    );
+    assert_eq!(
+        cache.positions_closed_count(None, None, None, None, Some(PositionSide::Flat)),
+        1
+    );
+    assert_eq!(
+        cache.positions_total_count(None, None, None, None, Some(PositionSide::Long)),
+        1
+    );
+    assert_eq!(
+        cache.positions_total_count(None, None, None, None, Some(PositionSide::Short)),
+        1
+    );
+    assert_eq!(
+        cache.positions_total_count(None, None, None, None, Some(PositionSide::Flat)),
+        1
+    );
+    assert!(cache.has_positions_open(None, None, None, None, Some(PositionSide::Long)));
+    assert!(cache.has_positions_open(None, None, None, None, Some(PositionSide::Short)));
+    assert!(!cache.has_positions_open(None, None, None, None, Some(PositionSide::Flat)));
+    assert!(cache.has_positions_closed(None, None, None, None, Some(PositionSide::Flat)));
+    assert!(cache.has_positions(None, None, None, None, Some(PositionSide::Long)));
+    assert!(cache.has_positions(None, None, None, None, Some(PositionSide::Short)));
+    assert!(cache.has_positions(None, None, None, None, Some(PositionSide::Flat)));
+    assert_eq!(
+        cache.positions_open_count(Some(&venue_a), None, None, None, Some(PositionSide::Long),),
+        1
+    );
+    assert_eq!(
+        cache.positions_open_count(Some(&venue_a), None, None, None, Some(PositionSide::Short),),
+        0
+    );
+    assert!(cache.has_positions_open(Some(&venue_a), None, None, None, Some(PositionSide::Long),));
+    assert!(
+        !cache.has_positions_open(Some(&venue_a), None, None, None, Some(PositionSide::Short),)
     );
 
     // Unknown filter -> empty / 0
