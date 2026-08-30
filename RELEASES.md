@@ -68,18 +68,22 @@ Released on TBD (UTC).
 - Fixed rate-limit requests consuming quota before all applicable limits were available
 - Fixed reconnect-buffered socket messages stalling or being overtaken by newer messages
 - Fixed Python factory re-entry through `LiveNodeBuilder` causing process aborts
+- Fixed live position snapshots not being persisted to PostgreSQL
 - Fixed Betfair order and fill reconciliation with more than 250 market IDs
 - Fixed Betfair stream readiness, liveness, subscription replay, and reconnect reconciliation
 - Fixed Betfair modify recovery after ambiguous REST outcomes and instruction failures
 - Fixed Betfair terminal order identity across reconnects, late fills, void corrections, and replacements
 - Fixed Binance Futures fill reconciliation treating history outside venue retention as complete
+- Fixed Binance Futures hedge-mode position reconciliation across REST snapshots and partial WebSocket fills
 - Fixed Binance Futures whole-position exits denied by placeholder bounds (#4746), thanks for reporting @hashtagdenis
 - Fixed Binance Spot and Futures execution reconciliation when no data client is configured
 - Fixed Bybit option batch limits and WebSocket batch amend payloads
 - Fixed Bybit rate limiting causing expired requests, venue rejections, and inconsistent order state
+- Fixed Deribit lazy-load subscriptions racing instrument cache updates
 - Fixed Hyperliquid execution disconnect cleanup
 - Fixed Hyperliquid market order prices in order list submits
 - Fixed Interactive Brokers adaptive limit orders parsed as market orders (#4830), thanks @mameikagou
+- Fixed Interactive Brokers restored-order cancel callback routing (#4852), thanks @gapurov
 - Fixed L2/L3 matching against deleted book touches (#4819), thanks @SoYuCry
 - Fixed Lighter Testnet orders by omitting mainnet-only integrator attribution (#4834), thanks @Buff2out
 - Fixed OKX WebSocket submissions omitting `reduceOnly` (#4827), thanks for reporting @silarin
@@ -92,11 +96,18 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Added Python memory leak checks for backtest, live node, model, and persistence lifecycles
+- Added strict Clippy audit tooling
 - Allowed `DataActor` implementations without native `Component` state
 - Improved Betfair stream lifecycle test synchronization (#4849), thanks @folknor
 - Improved dYdX retry timeout test coverage (#4835), thanks @folknor
+- Improved Lighter async task ownership across execution and WebSocket reconnects
+- Improved Polymarket auto-load and data task ownership across reconnects
 - Optimized `BacktestEngine` processing when simulation modules and liquidation are disabled
+- Optimized `IdsGenerator` trade ID formatting
+- Optimized `MatchingEngine` L1 pending order queue scans
 - Optimized `OrderMatchingEngine` queue tracking and liquidity consumption
+- Optimized `OrderBook` L1 level reuse
 - Optimized risk, execution, and portfolio processing for accounts and positions with long histories
 - Optimized Betfair subscription test teardown (#4837), thanks @folknor
 - Optimized Hyperliquid startup reconciliation to skip inactive dexes (#4861), thanks for reporting @nah294
@@ -105,18 +116,21 @@ Released on TBD (UTC).
 - Upgraded Miri to `nightly-2026-08-23`
 - Upgraded `cargo-hawk` to v0.1.13
 - Upgraded `shellcheck-py` pre-commit hook to v0.11.0.1-1
+- Upgraded `alloy` crate to v2.4.1
+- Upgraded `alloy-primitives` crate to v1.7.1
 - Upgraded `arrow` crate to v59.2.0
 - Upgraded `arrow-row` crate to v59.2.0
 - Upgraded `blake3` crate to v1.8.7
-- Upgraded `databento` crate to v0.59.0
+- Upgraded `databento` crate to v0.60.0
 - Upgraded `datafusion` crate to v55.0.0
 - Upgraded `either` crate to v1.18.0
 - Upgraded `log` crate to v0.4.34
 - Upgraded `parquet` crate to v59.2.0
-- Upgraded `uuid` crate to v1.25.0
-- Upgraded `ruff` package (dev) to v0.16.3
+- Upgraded `uuid` crate to v1.26.0
+- Upgraded `maturin` build backend and package (dev) to v1.15.0
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.16.4
 - Upgraded `simplejson` package (visualization) to v4.1.1
-- Upgraded `ty` package (dev) to v0.0.73
+- Upgraded `ty` package (dev) to v0.0.74
 - Upgraded `uvicorn` package (dev) to v0.52.4
 
 ### Documentation Updates

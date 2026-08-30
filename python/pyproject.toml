@@ -40,7 +40,7 @@ docs = "https://nautilustrader.io/docs"
 
 [build-system]
 # Keep the maturin pin exact; scripts/maturin-version.bash uses it for CI wheel builds.
-requires = ["maturin==1.14.1", "patchelf"]
+requires = ["maturin==1.15.0", "patchelf"]
 build-backend = "maturin"
 
 [tool.maturin]
@@ -65,7 +65,10 @@ include = ["**/*.pyi"]
 
 [tool.uv]
 required-version = ">=0.12,<0.13"
+environments = ["sys_platform != 'win32' or platform_machine == 'AMD64'"]
 exclude-newer = "7 days"
+# Remove after maturin 1.15.0 clears the global release cooldown
+exclude-newer-package = { maturin = "2026-08-24T12:12:00Z" }
 # Block sdist builds for every third-party package in python/uv.lock so
 # unexpected loss of wheel publishing fails `uv lock` instead of silently
 # building from source. Kept in sync with python/uv.lock by
@@ -146,7 +149,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.14.1", "ruff>=0.16.3", "ty>=0.0.73"]
+dev = ["maturin==1.15.0", "ruff>=0.16.4", "ty>=0.0.74"]
 test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",

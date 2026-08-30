@@ -124,7 +124,7 @@ nautilus-tardis = { path = "crates/adapters/tardis", version = "0.63.0", default
 # - object_store must stay in line with datafusion (pre-1.0: minor bumps can break)
 # -----------------------------------------------------------------------------
 ahash = { version = "0.8.12", features = ["serde"] }
-alloy-primitives = { version = "1.6.1", default-features = false, features = [
+alloy-primitives = { version = "1.7.1", default-features = false, features = [
   "std",
   "serde",
 ] }
@@ -314,13 +314,13 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 unbounded-interval-tree = { version = "1.1.2", default-features = false }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.25.0", features = ["v4", "serde"] }
+uuid = { version = "1.26.0", features = ["v4", "serde"] }
 webpki-roots = "1.0.9"
 
 # -----------------------------------------------------------------------------
 # Adapter dependencies
 # -----------------------------------------------------------------------------
-alloy = { version = "=2.2.0", default-features = false, features = [
+alloy = { version = "=2.4.1", default-features = false, features = [
   "sol-types",
   "contract",
   "signers",
@@ -335,7 +335,7 @@ bollard = { version = "0.21.1", default-features = false, features = [
 bzip2 = "0.6.1"
 cosmrs = { version = "0.22.0", default-features = false, features = ["bip32"] }
 csv = "1.4.0"
-databento = { version = "0.59.0", default-features = false, features = [
+databento = { version = "0.60.0", default-features = false, features = [
   "historical",
   "live",
 ] }
@@ -423,8 +423,7 @@ days = 3
 # version. Pin the exact version, never a range, so the entry stops applying
 # once the crate moves again. Prune entries after the version ages out.
 [workspace.metadata.cooldown.allow]
-blake3 = "1.8.7" # Drops arrayref after its maintainer account was compromised
-h2 = "0.4.17" # Includes RUSTSEC-2026-0258 DoS fix
+chacha20 = "0.10.2" # Fixes an SSE4.1 intrinsic used by the SSE2 backend
 
 # -----------------------------------------------------------------------------
 # Profiles
