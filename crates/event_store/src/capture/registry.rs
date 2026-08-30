@@ -409,6 +409,8 @@ impl EncoderRegistry {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use bytes::Bytes;
     use rstest::rstest;
     use ustr::Ustr;
@@ -420,6 +422,25 @@ mod tests {
 
     #[derive(Debug)]
     struct Other;
+
+    #[derive(Debug)]
+    struct StatefulEncoder {
+        prefix: u8,
+    }
+
+    impl Encode for StatefulEncoder {
+        fn encode(&self, message: &dyn Any) -> Result<EncodedPayload, EncodeError> {
+            let sample = message
+                .downcast_ref::<Sample>()
+                .ok_or(EncodeError::TypeMismatch {
+                    expected: std::any::type_name::<Sample>(),
+                })?;
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                self.prefix,
+                sample.0,
+            ])))
+        }
+    }
 
     #[rstest]
     fn unknown_type_returns_none() {
@@ -464,6 +485,52 @@ mod tests {
 
         assert_eq!(tag.as_str(), "New");
         assert_eq!(encoded.payload.as_ref(), &[3, 3]);
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[rstest]
+    fn register_encoder_replaces_encoder_and_preserves_extractors() {
+        let mut registry = EncoderRegistry::new();
+        registry.register::<Sample, _>(Ustr::from("Old"), |s| {
+            Ok(EncodedPayload::without_indices(Bytes::copy_from_slice(&[
+                s.0,
+            ])))
+        });
+        let correlation_id = UUID4::new();
+        let causation_id = UUID4::new();
+        registry.register_headers::<Sample, _>(move |_| Headers {
+            correlation_id: Some(correlation_id),
+            causation_id: Some(causation_id),
+        });
+        let identity = UUID4::new();
+        registry.register_identity::<Sample, _>(move |_| Some(identity));
+
+        registry.register_encoder::<Sample>(
+            Ustr::from("Stateful"),
+            Arc::new(StatefulEncoder { prefix: 0xA5 }),
+        );
+        let sample = Sample(7);
+        let (payload_type, encoded) = registry.encode(&sample).expect("encode").expect("hit");
+        let headers = registry
+            .headers_for_any(&sample as &dyn Any)
+            .expect("headers");
+
+        assert_eq!(payload_type.as_str(), "Stateful");
+        assert_eq!(
+            encoded,
+            EncodedPayload::without_indices(Bytes::from_static(&[0xA5, 7])),
+        );
+        assert_eq!(
+            headers,
+            Headers {
+                correlation_id: Some(correlation_id),
+                causation_id: Some(causation_id),
+            },
+        );
+        assert_eq!(
+            registry.identity_for_any(&sample as &dyn Any),
+            Some(identity)
+        );
         assert_eq!(registry.len(), 1);
     }
 

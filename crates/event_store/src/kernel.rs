@@ -2592,6 +2592,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(madsim))]
     #[rstest]
     fn submit_run_started_returns_timeout_when_writer_stalls() {
         // A backend whose append_batch never returns simulates a stuck writer. The
@@ -2632,6 +2633,7 @@ mod tests {
         stub.release();
     }
 
+    #[cfg(not(madsim))]
     #[rstest]
     fn submit_run_started_returns_halted_when_writer_halts_during_wait() {
         // A halt signal fired before the writer can commit must surface
@@ -2701,17 +2703,20 @@ mod tests {
     /// Stub backend whose `append_batch` blocks until `release()` is called. Used to
     /// hold the writer's high-watermark at zero so the boot path's wait loop can
     /// exercise its timeout and halt branches deterministically.
+    #[cfg(not(madsim))]
     #[derive(Debug, Default, Clone)]
     struct StallBackend {
         inner: Arc<Mutex<StallInner>>,
         gate: Arc<(Mutex<bool>, std::sync::Condvar)>,
     }
 
+    #[cfg(not(madsim))]
     #[derive(Debug, Default)]
     struct StallInner {
         manifest: Option<RunManifest>,
     }
 
+    #[cfg(not(madsim))]
     impl StallBackend {
         fn release(&self) {
             let (lock, cvar) = &*self.gate;
@@ -2720,6 +2725,7 @@ mod tests {
         }
     }
 
+    #[cfg(not(madsim))]
     impl crate::EventStore for StallBackend {
         fn open_run(&mut self, manifest: RunManifest) -> Result<(), EventStoreError> {
             self.inner.lock().expect("inner").manifest = Some(manifest);

@@ -455,10 +455,6 @@ mod imp {
         /// # Errors
         ///
         /// Returns [`EventStoreError::Backend`] when the backend has no open run.
-        #[expect(
-            clippy::needless_pass_by_value,
-            reason = "synchronous writer keeps ownership of the marker backend"
-        )]
         pub fn spawn(
             backend: Box<dyn MarkerBackend + Send>,
             _clock: &'static AtomicTime,
@@ -518,6 +514,10 @@ mod imp {
         /// # Panics
         ///
         /// Panics if the writer mutex is poisoned.
+        #[expect(
+            clippy::needless_pass_by_value,
+            reason = "matches the threaded writer API, which transfers ownership"
+        )]
         pub fn put_dict(&self, entry: StreamDictEntry) -> Result<bool, EventStoreError> {
             let mut inner = self.inner.lock().expect("marker writer mutex poisoned");
 

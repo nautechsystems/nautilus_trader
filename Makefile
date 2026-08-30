@@ -201,9 +201,10 @@ CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEAT
 # `#[allow(clippy::useless_conversion)]` in crates/model/src/types/quantity.rs and confirming
 # clippy reports it under this selection.
 STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-default-features --lib --tests --features "ffi,python"
-SIM_PACKAGES := -p nautilus-common -p nautilus-core -p nautilus-network \
-	-p nautilus-execution -p nautilus-live
-SIM_FILTERSET := package(nautilus-common) + package(nautilus-network) + \
+SIM_PACKAGES := -p nautilus-common -p nautilus-core -p nautilus-event-store \
+	-p nautilus-network -p nautilus-execution -p nautilus-live
+SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
+	package(nautilus-network) + \
 	package(nautilus-execution) + \
 	(package(nautilus-live) & test(test_startup_reconciliation_times_out_waiting_for_mass_status)) + \
 	(package(nautilus-core) & test(~virtual_time))
@@ -975,10 +976,11 @@ endif
 # DST simulation smoke test. Nextest compiles every selected lib/test target
 # before applying its filter, so the standard-precision run is also the compile
 # gate without a separate build. Two feature-coherent runs execute every test
-# that is sim-compatible today: all of nautilus-common,
-# nautilus-network, and nautilus-execution (transport-bound tests are gated
-# out at the source), the LiveNode startup reconciliation timeout regression,
-# plus the cross-crate seam pinning tests in nautilus-core.
+# that is sim-compatible today: all of nautilus-common, nautilus-event-store,
+# nautilus-network, and nautilus-execution. Transport-bound and thread-blocking
+# tests are gated out at the source. The lane also runs the LiveNode startup
+# reconciliation timeout regression and the cross-crate seam pinning tests in
+# nautilus-core.
 # Each leg runs with the standard fixed-precision build first, then again
 # under `high-precision` for the crates that consume `nautilus-model` types,
 # so the seam-routed code paths are exercised under both `QuantityRaw` /

@@ -506,10 +506,6 @@ mod imp {
         /// # Errors
         ///
         /// Returns [`EventStoreError::Backend`] when the backend has no open run.
-        #[expect(
-            clippy::needless_pass_by_value,
-            reason = "synchronous writer keeps ownership of the backend and halt callback"
-        )]
         pub fn spawn(
             backend: Box<dyn EventStore + Send>,
             clock: &'static AtomicTime,

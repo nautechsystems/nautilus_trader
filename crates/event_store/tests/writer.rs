@@ -18,11 +18,13 @@
 //! entries durably reach the redb file, the manifest seals on close, and the writer
 //! reports the correct high-watermark over a multi-batch run.
 
+#[cfg(not(madsim))]
+use std::sync::{
+    Condvar,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::{
-    sync::{
-        Arc, Condvar, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -32,10 +34,14 @@ use nautilus_core::{
     UnixNanos,
     time::{get_atomic_clock_realtime, get_atomic_clock_static},
 };
+#[cfg(not(madsim))]
 use nautilus_event_store::{
-    AppendEntry, EntryDraft, EventStore, EventStoreEntry, EventStoreWriter, HaltCallback,
-    HaltReason, Headers, IndexKey, IndexKind, MemoryBackend, RedbBackend, RegisteredComponents,
-    RunManifest, RunStatus, ScanDirection, SubmitError, Topic, WriterConfig, codec,
+    AppendEntry, EventStoreEntry, MemoryBackend, ScanDirection, SubmitError,
+};
+use nautilus_event_store::{
+    EntryDraft, EventStore, EventStoreWriter, HaltCallback, HaltReason, Headers, IndexKey,
+    IndexKind, RedbBackend, RegisteredComponents, RunManifest, RunStatus, Topic, WriterConfig,
+    codec,
 };
 use redb::{ReadableDatabase, ReadableTable};
 use rstest::rstest;
@@ -104,6 +110,7 @@ fn open_backend_with(tmp: &TempDir, run_id: &str) -> RedbBackend {
     backend
 }
 
+#[cfg(not(madsim))]
 #[derive(Debug)]
 struct BlockingMemoryBackend {
     inner: Arc<Mutex<MemoryBackend>>,
@@ -111,6 +118,7 @@ struct BlockingMemoryBackend {
     appends_started: Arc<AtomicUsize>,
 }
 
+#[cfg(not(madsim))]
 impl BlockingMemoryBackend {
     fn new(
         inner: Arc<Mutex<MemoryBackend>>,
@@ -125,6 +133,7 @@ impl BlockingMemoryBackend {
     }
 }
 
+#[cfg(not(madsim))]
 impl EventStore for BlockingMemoryBackend {
     fn open_run(&mut self, _: RunManifest) -> Result<(), nautilus_event_store::EventStoreError> {
         unreachable!("test wrapper does not forward open_run")
@@ -293,6 +302,7 @@ fn writer_high_watermark_advances_only_after_backend_ack() {
     assert_eq!(final_hwm, 11);
 }
 
+#[cfg(not(madsim))]
 #[rstest]
 fn writer_halts_instead_of_dropping_when_backend_blocks_past_channel_capacity() {
     let inner = Arc::new(Mutex::new(MemoryBackend::new()));
