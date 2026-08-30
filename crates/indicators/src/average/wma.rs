@@ -24,7 +24,8 @@ use nautilus_model::{
 
 use crate::indicator::{Indicator, MovingAverage};
 
-const MAX_PERIOD: usize = 8_192;
+/// Maximum supported rolling window period (bounded by the fixed-capacity input buffer).
+pub const MAX_PERIOD: usize = 8_192;
 
 /// An indicator which calculates a weighted moving average across a rolling window.
 #[repr(C)]
@@ -65,6 +66,7 @@ impl WeightedMovingAverage {
     ///
     /// This function panics if:
     /// - `period` is zero.
+    /// - `period` exceeds `MAX_PERIOD`.
     /// - `weights.len()` does not equal `period`.
     /// - `weights` sum is effectively zero.
     #[must_use]
@@ -78,6 +80,7 @@ impl WeightedMovingAverage {
     ///
     /// Returns an error if **any** of the validation rules fails:
     /// - `period` must be **positive**.
+    /// - `period` must not exceed `MAX_PERIOD`.
     /// - `weights` must be **exactly** `period` elements long.
     /// - `weights` must contain at least one non-zero value (∑wᵢ > ε).
     pub fn new_checked(
@@ -88,6 +91,8 @@ impl WeightedMovingAverage {
         const EPS: f64 = f64::EPSILON;
 
         check_predicate_true(period > 0, "`period` must be positive")?;
+
+        check_predicate_true(period <= MAX_PERIOD, "`period` must not exceed MAX_PERIOD")?;
 
         check_predicate_true(
             period == weights.len(),
@@ -185,7 +190,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        average::wma::WeightedMovingAverage,
+        average::wma::{MAX_PERIOD, WeightedMovingAverage},
         indicator::{Indicator, MovingAverage},
         stubs::*,
         testing::assert_approx_equal,
@@ -582,5 +587,31 @@ mod tests {
         wma.update_raw(20.0);
         let expected = 20.0f64.mul_add(1.0, 10.0 * 1.0) / 2.0;
         assert_eq!(wma.value(), expected);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn new_period_exceeds_max_panics() {
+        let period = MAX_PERIOD + 1;
+        let _ = WeightedMovingAverage::new(period, vec![1.0; period], None);
+    }
+
+    #[rstest]
+    fn new_checked_period_exceeds_max_errors() {
+        let period = MAX_PERIOD + 1;
+        assert!(WeightedMovingAverage::new_checked(period, vec![1.0; period], None).is_err());
+    }
+
+    #[rstest]
+    fn new_period_at_max_initializes() {
+        // The boundary itself stays valid: the buffer holds exactly `period`
+        // inputs, so the indicator can still reach `initialized`.
+        let period = MAX_PERIOD;
+        let mut wma = WeightedMovingAverage::new(period, vec![1.0; period], None);
+        for i in 0..period {
+            wma.update_raw(i as f64);
+        }
+        assert_eq!(wma.count(), period);
+        assert!(wma.initialized());
     }
 }
