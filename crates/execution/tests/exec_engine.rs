@@ -16046,6 +16046,7 @@ fn test_snapshot_open_position_states_publishes_position_state_snapshot() {
         ts_init: UnixNanos::default(),
     };
     cache.borrow_mut().add_quote(quote).unwrap();
+    assert!(!cache.borrow().has_backing());
 
     let ts_snapshot = UnixNanos::from(123_456_789);
     clock.borrow_mut().advance_time(ts_snapshot, true);
@@ -16109,16 +16110,33 @@ fn test_snapshot_open_position_states_publishes_snapshot_without_quote() {
 }
 
 #[rstest]
-fn test_snapshot_timer_fires_callback_publishes_position_state_snapshot() {
+fn test_snapshot_timer_publishes_and_persists_all_open_positions() {
     *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
 
     let clock = Rc::new(RefCell::new(TestClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
+    let (database, control) = FailNthAddOrderDatabase::create();
+    cache.borrow_mut().set_database(Box::new(database));
 
     let position = stub_position_long(audusd_sim());
+    let instrument_other = InstrumentAny::from(gbpusd_sim());
+    let order_other = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_other.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(1))
+        .build();
+    let fill_other = OrderFilledTestBuilder::new(&order_other, &instrument_other)
+        .position_id(PositionId::from("P-SNAPSHOT-OTHER"))
+        .last_px(Price::from("1.0002"))
+        .build();
+    let position_other = Position::new(&instrument_other, fill_other.into());
     cache
         .borrow_mut()
         .add_position(&position, OmsType::Netting)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_position(&position_other, OmsType::Netting)
         .unwrap();
 
     let quote = QuoteTick {
@@ -16141,8 +16159,12 @@ fn test_snapshot_timer_fires_callback_publishes_position_state_snapshot() {
 
     let topic = switchboard::get_snapshot_position_topic(position.id);
     let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_ref().into();
+    let topic_other = switchboard::get_snapshot_position_topic(position_other.id);
+    let pattern_other: msgbus::MStr<msgbus::Pattern> = topic_other.as_ref().into();
     let (handler, saver) = get_any_saving_handler::<PositionStateSnapshot>(None);
+
     msgbus::subscribe_any(pattern, handler.clone(), None);
+    msgbus::subscribe_any(pattern_other, handler.clone(), None);
 
     let events = clock
         .borrow_mut()
@@ -16153,10 +16175,110 @@ fn test_snapshot_timer_fires_callback_publishes_position_state_snapshot() {
     }
 
     msgbus::unsubscribe_any(pattern, &handler);
+    msgbus::unsubscribe_any(pattern_other, &handler);
 
     let snapshots = saver.get_messages();
-    assert_eq!(snapshots.len(), 1);
-    assert_eq!(snapshots[0].position.id, position.id);
+    assert_eq!(
+        snapshots
+            .iter()
+            .map(|snapshot| snapshot.position.id)
+            .collect::<HashSet<_>>(),
+        HashSet::from([position.id, position_other.id]),
+    );
+    assert_eq!(
+        control
+            .position_snapshots()
+            .iter()
+            .map(|snapshot| snapshot.position_id)
+            .collect::<HashSet<_>>(),
+        HashSet::from([position.id, position_other.id]),
+    );
+}
+
+#[rstest]
+fn test_position_lifecycle_snapshots_publish_and_persist() {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let (database, control) = FailNthAddOrderDatabase::create();
+    cache.borrow_mut().set_database(Box::new(database));
+    let config = ExecutionEngineConfig {
+        snapshot_positions: true,
+        ..Default::default()
+    };
+    let mut engine = ExecutionEngine::new(clock, cache, Some(config));
+    let instrument = audusd_sim();
+    let position_id = PositionId::new(format!("{}-{}", instrument.id, StrategyId::test_default()));
+    setup_netting_snapshot_engine(&mut engine, &instrument);
+
+    let topic = switchboard::get_snapshot_position_topic(position_id);
+    let pattern: msgbus::MStr<msgbus::Pattern> = topic.as_ref().into();
+    let (handler, saver) = get_any_saving_handler::<PositionStateSnapshot>(None);
+    msgbus::subscribe_any(pattern, handler.clone(), None);
+
+    for (order_id, venue_order_id, trade_id, side, quantity) in [
+        (
+            "O-SNAPSHOT-OPEN",
+            "V-SNAPSHOT-OPEN",
+            "T-SNAPSHOT-OPEN",
+            OrderSide::Buy,
+            100_000,
+        ),
+        (
+            "O-SNAPSHOT-CHANGE",
+            "V-SNAPSHOT-CHANGE",
+            "T-SNAPSHOT-CHANGE",
+            OrderSide::Buy,
+            50_000,
+        ),
+        (
+            "O-SNAPSHOT-CLOSE",
+            "V-SNAPSHOT-CLOSE",
+            "T-SNAPSHOT-CLOSE",
+            OrderSide::Sell,
+            150_000,
+        ),
+    ] {
+        process_filled_order(
+            &mut engine,
+            TraderId::test_default(),
+            StrategyId::test_default(),
+            &instrument,
+            order_id,
+            venue_order_id,
+            trade_id,
+            side,
+            quantity,
+            position_id,
+        );
+    }
+
+    msgbus::unsubscribe_any(pattern, &handler);
+
+    let published = saver.get_messages();
+    let persisted = control.position_snapshots();
+    let expected_states = [
+        (PositionSide::Long, Quantity::from(100_000)),
+        (PositionSide::Long, Quantity::from(150_000)),
+        (PositionSide::Flat, Quantity::from(0)),
+    ];
+    assert_eq!(published.len(), 3);
+    assert_eq!(persisted.len(), 3);
+    assert_eq!(
+        published
+            .iter()
+            .map(|snapshot| (snapshot.position.side, snapshot.position.quantity))
+            .collect::<Vec<_>>(),
+        expected_states,
+    );
+    assert_eq!(
+        persisted
+            .iter()
+            .map(|snapshot| (snapshot.side, snapshot.quantity))
+            .collect::<Vec<_>>(),
+        expected_states,
+    );
 }
 
 #[rstest]

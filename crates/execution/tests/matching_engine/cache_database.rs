@@ -45,6 +45,7 @@ use ustr::Ustr;
 struct FailNthAddOrderState {
     fail_add_order_on: Option<usize>,
     add_order_calls: usize,
+    position_snapshots: Vec<PositionSnapshot>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -57,6 +58,14 @@ impl FailNthAddOrderDatabaseControl {
         let mut state = self.state.lock().unwrap();
         state.fail_add_order_on = call;
         state.add_order_calls = 0;
+    }
+
+    #[allow(
+        dead_code,
+        reason = "used by the exec_engine test target sharing this module"
+    )]
+    pub(super) fn position_snapshots(&self) -> Vec<PositionSnapshot> {
+        self.state.lock().unwrap().position_snapshots.clone()
     }
 }
 
@@ -356,10 +365,19 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
 
     fn snapshot_position_state(
         &self,
-        _position: &Position,
-        _ts_snapshot: UnixNanos,
-        _unrealized_pnl: Option<Money>,
+        position: &Position,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
     ) -> anyhow::Result<()> {
+        let mut snapshot = PositionSnapshot::from(position, unrealized_pnl);
+        snapshot.ts_init = ts_snapshot;
+
+        self.control
+            .state
+            .lock()
+            .unwrap()
+            .position_snapshots
+            .push(snapshot);
         Ok(())
     }
 

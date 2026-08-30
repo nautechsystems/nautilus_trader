@@ -402,19 +402,18 @@ pub struct LiveExecutionEngineConfig {
     pub load_cache: bool,
     /// If order state snapshot lists should be persisted to a backing database.
     ///
-    /// Not implemented on the current live runtime; `validate_runtime_support` rejects
-    /// any value other than the default because the live kernel does not yet wire a
-    /// cache database adapter.
+    /// Not implemented on the current live runtime; `validate_runtime_support` rejects any value
+    /// other than the default.
     #[builder(default)]
     pub snapshot_orders: bool,
-    /// If position state snapshot lists should be persisted to a backing database.
+    /// If position state snapshots should be published and, with cache backing, persisted.
     ///
-    /// Not implemented on the current live runtime; `validate_runtime_support` rejects
-    /// any value other than the default because the live kernel does not yet wire a
-    /// cache database adapter.
+    /// Snapshots are published when positions open, change, or close. A configured cache database
+    /// backing also persists them.
     #[builder(default)]
     pub snapshot_positions: bool,
-    /// The interval (seconds) at which additional position state snapshots are persisted.
+    /// The interval (seconds) at which additional position state snapshots are published and,
+    /// with cache backing, persisted.
     /// If `None` then no additional snapshots will be taken.
     pub snapshot_positions_interval_secs: Option<f64>,
     /// Client IDs declared for external stream processing.
@@ -1068,11 +1067,6 @@ impl LiveExecutionEngineConfig {
             RUST_RUNTIME_UNSUPPORTED,
         ));
         collector.collect(check_supported_field(
-            "LiveExecutionEngineConfig.snapshot_positions",
-            self.snapshot_positions == default.snapshot_positions,
-            RUST_RUNTIME_UNSUPPORTED,
-        ));
-        collector.collect(check_supported_field(
             "LiveExecutionEngineConfig.purge_from_database",
             self.purge_from_database == default.purge_from_database,
             RUST_RUNTIME_UNSUPPORTED,
@@ -1620,6 +1614,19 @@ mean_dispatch_ns_clear = 700
             error.to_string(),
             "LiveExecutionEngineConfig.snapshot_orders is not supported by the Rust live runtime yet"
         );
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_accepts_exec_engine_snapshot_positions() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                snapshot_positions: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        assert!(config.validate_runtime_support().is_ok());
     }
 
     #[rstest]

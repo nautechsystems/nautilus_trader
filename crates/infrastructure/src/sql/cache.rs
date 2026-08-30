@@ -384,19 +384,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
 
-        log::debug!("Closing connection pool");
-
-        tokio::task::block_in_place(|| {
-            get_runtime().block_on(async {
-                pool.close().await;
-
-                if let Err(e) = tx.send(()) {
-                    log::error!("Error closing pool: {e:?}");
-                }
-            });
-        });
-
-        // Cancel message handling task
+        // The close command follows all pending writes on the FIFO channel and drains the buffer
         if let Err(e) = self.tx.send(DatabaseQuery::Close) {
             log::warn!("Error sending close: {e:?}");
         }
@@ -407,6 +395,18 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             if let Err(e) = get_runtime().block_on(&mut self.handle) {
                 log::error!("Error awaiting task 'cache-write': {e:?}");
             }
+        });
+
+        log::debug!("Closing connection pool");
+
+        tokio::task::block_in_place(|| {
+            get_runtime().block_on(async {
+                pool.close().await;
+
+                if let Err(e) = tx.send(()) {
+                    log::error!("Error closing pool: {e:?}");
+                }
+            });
         });
 
         log::debug!("Closed");
@@ -1211,11 +1211,17 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn snapshot_position_state(
         &self,
-        _position: &Position,
-        _ts_snapshot: UnixNanos,
-        _unrealized_pnl: Option<Money>,
+        position: &Position,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
     ) -> anyhow::Result<()> {
-        todo!()
+        let mut snapshot = if position.fill_voids.is_empty() {
+            PositionSnapshot::from(position, unrealized_pnl)
+        } else {
+            PositionSnapshot::from_replay_state(position, unrealized_pnl)
+        };
+        snapshot.ts_init = ts_snapshot;
+        self.add_position_snapshot(&snapshot)
     }
 
     fn heartbeat(&self, _timestamp: UnixNanos) -> anyhow::Result<()> {

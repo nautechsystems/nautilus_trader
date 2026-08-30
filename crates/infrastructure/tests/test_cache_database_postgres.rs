@@ -40,10 +40,11 @@ mod serial_tests {
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::{
-            OrderEventAny, OrderFilled, OrderSnapshot, PositionSnapshot,
+            OrderEventAny, OrderFilled, OrderSnapshot,
             account::stubs::{
                 cash_account_state_million_usd, wallet_account_state, wallet_account_state_changed,
             },
+            order::spec::OrderFillVoidedSpec,
         },
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
@@ -1754,10 +1755,94 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_add_position_snapshot() {
+    async fn test_snapshot_position_state_replays_later_fill_after_restart() {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
-        let client_order_id = ClientOrderId::new("O-19700101-000000-001-002-1");
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
+        let position_id = PositionId::new("P-PG-ROUTINE-SNAPSHOT");
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let opening_order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-ROUTINE-SNAPSHOT-1"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .build();
+        let OrderEventAny::Filled(opening_fill) = TestOrderEventStubs::filled(
+            &opening_order,
+            &instrument,
+            Some(TradeId::new("T-PG-ROUTINE-SNAPSHOT-1")),
+            Some(position_id),
+            Some(Price::from("100.0")),
+            Some(Quantity::from("1.0")),
+            None,
+            None,
+            None,
+            Some(AccountId::new("SIM-001")),
+        ) else {
+            unreachable!();
+        };
+        let mut position = Position::new(&instrument, opening_fill);
+
+        pg_cache.add_position(&position).unwrap();
+        pg_cache
+            .snapshot_position_state(&position, UnixNanos::from(1_000_000_000), None)
+            .unwrap();
+
+        let next_order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-PG-ROUTINE-SNAPSHOT-2"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.5"))
+            .build();
+        let OrderEventAny::Filled(next_fill) = TestOrderEventStubs::filled(
+            &next_order,
+            &instrument,
+            Some(TradeId::new("T-PG-ROUTINE-SNAPSHOT-2")),
+            Some(position_id),
+            Some(Price::from("101.0")),
+            Some(Quantity::from("0.5")),
+            None,
+            None,
+            None,
+            Some(AccountId::new("SIM-001")),
+        ) else {
+            unreachable!();
+        };
+        position.apply(&next_fill);
+        pg_cache.update_position(&position).unwrap();
+        pg_cache.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let snapshot = restarted
+            .load_position_snapshot(&position_id)
+            .unwrap()
+            .expect("routine position snapshot should survive restart");
+        let loaded = restarted
+            .load_position(&position_id)
+            .await
+            .unwrap()
+            .expect("position should replay fills newer than its routine snapshot");
+
+        assert_eq!(snapshot.quantity, Quantity::from("1.0"));
+        assert!(snapshot.replay_state.is_none());
+        assert_eq!(loaded.quantity, Quantity::from("1.5"));
+        assert_eq!(loaded.events.len(), 2);
+        assert_entirely_equal(&loaded, &position);
+
+        restarted.flush().unwrap();
+        restarted.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_snapshot_position_state_survives_restart_with_fill_void() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+
+        let client_order_id = ClientOrderId::new("O-PG-POSITION-SNAPSHOT");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
 
         // Add foreign key dependencies: instrument and currencies
@@ -1774,27 +1859,70 @@ mod serial_tests {
             .quantity(Quantity::from("1.0"))
             .build();
 
-        let filled = TestOrderEventStubs::filled(
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
             &order,
             &instrument,
-            Some(TradeId::new("T-19700101-000000-001-001-1")),
-            None,
+            Some(TradeId::new("T-PG-POSITION-SNAPSHOT")),
+            Some(PositionId::new("P-PG-POSITION-SNAPSHOT")),
             Some(Price::from("100.0")),
             Some(Quantity::from("1.0")),
             None,
             None,
             None,
             Some(AccountId::new("SIM-001")),
-        );
-        let position = Position::new(&instrument, filled.into());
-        let snapshot = PositionSnapshot::from(&position, None);
+        ) else {
+            unreachable!();
+        };
+        let mut position = Position::new(&instrument, fill.clone());
+        let voided_qty = Quantity::from("0.4");
+        let fill_void = OrderFillVoidedSpec::builder()
+            .trader_id(fill.trader_id)
+            .strategy_id(fill.strategy_id)
+            .instrument_id(fill.instrument_id)
+            .client_order_id(fill.client_order_id)
+            .venue_order_id(fill.venue_order_id)
+            .account_id(fill.account_id)
+            .trade_id(fill.trade_id)
+            .voided_qty(voided_qty)
+            .order_side(fill.order_side)
+            .order_type(fill.order_type)
+            .last_px(fill.last_px)
+            .currency(fill.currency)
+            .liquidity_side(fill.liquidity_side)
+            .position_id(position.id)
+            .build();
+        position
+            .apply_fill_void(fill_void, voided_qty, None)
+            .unwrap();
 
-        pg_cache.add_position_snapshot(&snapshot).unwrap();
-
-        let result = pg_cache.load_position_snapshot(&position.id);
-
-        assert!(result.is_ok());
-        pg_cache.flush().unwrap();
+        let ts_snapshot = UnixNanos::from(2_000_000_000);
+        let unrealized_pnl = Money::from("12.34 USDT");
+        pg_cache.add_position(&position).unwrap();
+        pg_cache
+            .snapshot_position_state(&position, ts_snapshot, Some(unrealized_pnl))
+            .unwrap();
         pg_cache.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let snapshot = restarted
+            .load_position_snapshot(&position.id)
+            .unwrap()
+            .expect("position snapshot should survive restart");
+        let loaded = restarted
+            .load_position(&position.id)
+            .await
+            .unwrap()
+            .expect("position should load from the persisted snapshot");
+
+        assert_eq!(snapshot.position_id, position.id);
+        assert_eq!(snapshot.ts_init, ts_snapshot);
+        assert_eq!(snapshot.unrealized_pnl, Some(unrealized_pnl));
+        assert!(snapshot.replay_state.is_some());
+        assert_eq!(loaded.quantity, Quantity::from("0.6"));
+        assert_eq!(loaded.fill_voids.len(), 1);
+        assert_entirely_equal(&loaded, &position);
+
+        restarted.flush().unwrap();
+        restarted.close().unwrap();
     }
 }

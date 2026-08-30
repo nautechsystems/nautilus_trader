@@ -148,12 +148,14 @@ adapter when it starts:
 ```python
 from nautilus_trader.common import Environment
 from nautilus_trader.infrastructure import RedisCacheConfig
+from nautilus_trader.config import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import TraderId
 
 node = (
     LiveNode.builder("LiveNode", TraderId("TRADER-001"), Environment.LIVE)
     .with_cache_database_factory(RedisCacheConfig(host="localhost", port=6379))
+    .with_exec_engine_config(LiveExecutionEngineConfig(snapshot_positions=True))
     .with_load_state(True)
     .with_save_state(True)
     .build()
@@ -169,6 +171,11 @@ Pass `PostgresCacheConfig` instead to back the cache with Postgres. Any other ob
 `NotImplementedError` from `with_cache_database_factory`, and a failed database connection fails
 `run()`. Database-backed nodes must use `run()` because `run_async()` rejects cache database
 backings that would block the host event loop.
+
+With `snapshot_positions=True`, the execution engine publishes a snapshot when a position opens,
+changes, or closes. Set `snapshot_positions_interval_secs` independently to add periodic snapshots
+of every open position. Redis and Postgres cache backings persist both paths. Without backing, the
+snapshots remain available on the in-process message bus but are not persisted.
 
 `with_load_state` and `with_save_state` control actor and strategy state persistence, which requires
 a Redis backing. The Postgres adapter backs cache state only: with registered actors or strategies,
@@ -378,6 +385,7 @@ and caveats, see [Runtime checks](../concepts/reconciliation.md#runtime-checks).
 | ---------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `allow_overfills`                  | False   | Allow fills exceeding order quantity (logs warning). Useful when reconciliation races fills.                             |
 | `generate_missing_orders`          | True    | Generate LIMIT orders during reconciliation to align position discrepancies (strategy `EXTERNAL`, tag `RECONCILIATION`). |
+| `snapshot_positions`               | False   | Publish position snapshots on open, change, and close, and persist them when cache backing is configured.                |
 | `snapshot_positions_interval_secs` | None    | Interval (seconds) between position snapshots.                                                                           |
 | `debug`                            | False   | Enable debug logging for execution.                                                                                      |
 

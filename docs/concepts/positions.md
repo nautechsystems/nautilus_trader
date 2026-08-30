@@ -218,12 +218,12 @@ corrected history actually closes, keeping each counted once. See
 
 :::note
 This closed-cycle archive differs from optional position state snapshots. Setting
-`snapshot_positions=true` publishes state when a position opens or changes, while
+`snapshot_positions=True` publishes state when a position opens, changes, or closes, while
 `snapshot_positions_interval_secs` periodically publishes all open positions. A cache with a
-backing database also persists these snapshots. The Rust live runtime has no cache database adapter,
-so it rejects `snapshot_positions=true`; the interval setting still publishes snapshots. See
-[`LiveExecutionEngineConfig`](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecutionEngineConfig)
-for the supported settings.
+Redis or Postgres backing also persists these snapshots. Without cache backing, both paths publish
+snapshots on the in-process message bus without persisting them. See
+[`LiveExecutionEngineConfig`](/docs/python-api-latest/live.html#nautilus_trader.live.LiveExecutionEngineConfig) for
+these settings.
 :::
 
 ### Example scenario
