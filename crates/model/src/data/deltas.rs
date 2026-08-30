@@ -23,6 +23,7 @@ use std::{
 use nautilus_core::{
     UnixNanos,
     correctness::{FAILED, check_predicate_true},
+    serialization::Serializable,
 };
 use serde::{Deserialize, Serialize};
 
@@ -136,10 +137,6 @@ impl Hash for OrderBookDeltas {
     }
 }
 
-// TODO: Implement
-// impl Serializable for OrderBookDeltas {}
-
-// TODO: Exact format for Debug and Display TBD
 impl Display for OrderBookDeltas {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -155,6 +152,8 @@ impl Display for OrderBookDeltas {
     }
 }
 
+impl Serializable for OrderBookDeltas {}
+
 impl HasTsInit for OrderBookDeltas {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
@@ -168,6 +167,10 @@ mod tests {
         hash::{Hash, Hasher},
     };
 
+    use nautilus_core::serialization::{
+        Serializable,
+        msgpack::{FromMsgPack, ToMsgPack},
+    };
     use rstest::rstest;
     use serde_json;
 
@@ -289,6 +292,16 @@ mod tests {
         ];
 
         OrderBookDeltas::new(instrument_id, deltas)
+    }
+
+    /// Asserts all fields match, as `PartialEq` only compares `instrument_id` and `sequence`.
+    fn assert_deltas_eq(left: &OrderBookDeltas, right: &OrderBookDeltas) {
+        assert_eq!(left.instrument_id, right.instrument_id);
+        assert_eq!(left.deltas, right.deltas);
+        assert_eq!(left.flags, right.flags);
+        assert_eq!(left.sequence, right.sequence);
+        assert_eq!(left.ts_event, right.ts_event);
+        assert_eq!(left.ts_init, right.ts_init);
     }
 
     #[rstest]
@@ -531,6 +544,24 @@ mod tests {
         assert_eq!(deltas.sequence, deserialized.sequence);
         assert_eq!(deltas.ts_event, deserialized.ts_event);
         assert_eq!(deltas.ts_init, deserialized.ts_init);
+    }
+
+    #[rstest]
+    fn test_json_serialization(stub_deltas: OrderBookDeltas) {
+        let deltas = stub_deltas;
+        let serialized = deltas.to_json_bytes().unwrap();
+        let deserialized = OrderBookDeltas::from_json_bytes(serialized.as_ref()).unwrap();
+
+        assert_deltas_eq(&deserialized, &deltas);
+    }
+
+    #[rstest]
+    fn test_msgpack_serialization(stub_deltas: OrderBookDeltas) {
+        let deltas = stub_deltas;
+        let serialized = deltas.to_msgpack_bytes().unwrap();
+        let deserialized = OrderBookDeltas::from_msgpack_bytes(serialized.as_ref()).unwrap();
+
+        assert_deltas_eq(&deserialized, &deltas);
     }
 
     #[rstest]
