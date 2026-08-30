@@ -610,7 +610,7 @@ impl LiveNode {
                     claims,
                     response,
                 } = command;
-                let result = self.register_external_order_claims_inner(strategy_id, &claims);
+                let result = self.register_external_order_claims(strategy_id, &claims);
                 let _ = response.send(result);
             }
             SystemCommand::DeregisterExternalOrderClaims(command) => {
@@ -618,7 +618,7 @@ impl LiveNode {
                     strategy_id,
                     response,
                 } = command;
-                let result = self.deregister_external_order_claims_inner(strategy_id);
+                let result = self.deregister_external_order_claims(strategy_id);
                 let _ = response.send(result);
             }
         }
@@ -2726,14 +2726,6 @@ impl LiveNode {
         strategy_id: StrategyId,
         claims: &[InstrumentId],
     ) -> anyhow::Result<()> {
-        self.register_external_order_claims_inner(strategy_id, claims)
-    }
-
-    fn register_external_order_claims_inner(
-        &mut self,
-        strategy_id: StrategyId,
-        claims: &[InstrumentId],
-    ) -> anyhow::Result<()> {
         let mut exec_engine = self
             .kernel
             .exec_engine
@@ -2799,13 +2791,6 @@ impl LiveNode {
     /// Returns an error without changing either tier if the execution engine is already borrowed
     /// or the two tiers do not contain identical claim sets for the strategy.
     pub fn deregister_external_order_claims(
-        &mut self,
-        strategy_id: StrategyId,
-    ) -> anyhow::Result<()> {
-        self.deregister_external_order_claims_inner(strategy_id)
-    }
-
-    fn deregister_external_order_claims_inner(
         &mut self,
         strategy_id: StrategyId,
     ) -> anyhow::Result<()> {
@@ -5987,7 +5972,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Cannot register external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+            "Cannot register external order claims: handle calls require an active event loop servicing the runner channels, and are unavailable after manual start or in event-store replay mode"
         );
     }
 
@@ -6011,7 +5996,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Cannot deregister external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+            "Cannot deregister external order claims: handle calls require an active event loop servicing the runner channels, and are unavailable after manual start or in event-store replay mode"
         );
     }
 
@@ -6038,7 +6023,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Cannot register external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+            "Cannot register external order claims: handle calls require an active event loop servicing the runner channels, and are unavailable after manual start or in event-store replay mode"
         );
     }
 
@@ -6067,7 +6052,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Cannot register external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+            "Cannot register external order claims: handle calls require an active event loop servicing the runner channels, and are unavailable after manual start or in event-store replay mode"
         );
     }
 

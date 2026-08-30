@@ -228,7 +228,8 @@ impl LiveNodeHandle {
     /// # Errors
     ///
     /// Returns an error if the handle is unattached, the node is not running, the node is running
-    /// without an active event loop servicing the runner channels (as after [`LiveNode::start`]),
+    /// without an active event loop servicing the runner channels (as after manual
+    /// [`LiveNode::start`] or in event-store replay mode),
     /// the command channel is closed before enqueue, the event loop exits before responding, or
     /// claim preflight fails.
     ///
@@ -248,7 +249,7 @@ impl LiveNodeHandle {
 
         if !self.event_loop_servicing.load(Ordering::Acquire) {
             anyhow::bail!(
-                "Cannot register external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+                "Cannot register external order claims: handle calls require an active event loop servicing the runner channels, and are unavailable after manual start or in event-store replay mode"
             );
         }
 
@@ -280,7 +281,8 @@ impl LiveNodeHandle {
     /// # Errors
     ///
     /// Returns an error if the handle is unattached, the node is not running, the node is running
-    /// without an active event loop servicing the runner channels (as after [`LiveNode::start`]),
+    /// without an active event loop servicing the runner channels (as after manual
+    /// [`LiveNode::start`] or in event-store replay mode),
     /// the command channel is closed before enqueue, the event loop exits before responding, or
     /// claim preflight fails.
     ///
@@ -299,7 +301,7 @@ impl LiveNodeHandle {
 
         if !self.event_loop_servicing.load(Ordering::Acquire) {
             anyhow::bail!(
-                "Cannot deregister external order claims: node was started without an active event loop; use LiveNode::run or LiveNode::run_with_mode"
+                "Cannot deregister external order claims: handle calls require an active event loop servicing the runner channels, and are unavailable after manual start or in event-store replay mode"
             );
         }
 
