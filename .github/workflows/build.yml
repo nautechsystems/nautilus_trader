@@ -1469,6 +1469,7 @@ jobs:
       id-token: write # Required for crates.io Trusted Publishing
     needs:
       - publish-wheels-master
+      - release-cargo-publish-preflight
       - tag-release
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
