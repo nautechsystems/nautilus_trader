@@ -1,12 +1,18 @@
 # Backtest Engine Benchmarks
 
-The canonical absolute baseline was measured on 2026-08-10. Its tables report the median of three
-interleaved runs on the same host. Refresh the full matrix after a substantive backtest engine
-change or dependency upgrade. Later sections can record focused comparisons without replacing the
-full matrix. Absolute numbers vary by machine; treat a result inside the recorded noise band as
-equivalent.
+This document records the native canonical benchmark, its dated optimization decisions, the
+v1.231.0 and v2 comparison, and the benchmark's CI role. Use the native sections to reproduce the
+workload or evaluate another optimization under equivalent controls. Use the version comparison to
+inspect the released Cython and Rust/PyO3 results and their raw evidence.
 
-## Canonical workload
+The latest native profile, collected on 2026-08-30 at commit `3dee76e70e4dc66cf705a90629924ec22e5cb3ab`,
+found no safe production candidate above the 10.872622191% shared-host detection floor. The dated
+records remain relevant because they define retained optimizations, rejected variants, and the
+conditions required to reconsider them.
+
+## Native canonical benchmark
+
+### Workload
 
 The matrix loads the first 10,000 rows of the checked-in
 `test_data/btc-perp-20211231-20220201_1m.csv` file. It normalizes prices and volumes to the
@@ -29,7 +35,7 @@ canonical results. The complete result digest is exact within the active precisi
 workloads lock separate standard and `high-precision` digests because portfolio statistics
 preserve exact `f64` bits; event counts, action counts, and account digests remain the same.
 
-## Environment
+### Absolute baseline environment
 
 | Item                 | Value                                                                      |
 | -------------------- | -------------------------------------------------------------------------- |
@@ -48,7 +54,7 @@ The measured source tree contains staged changes on top of the repository revisi
 made after the measurement add feature-specific result expectations outside the returned timing;
 they do not alter the standard-precision fixture, engine configuration, actions, or `run()` path.
 
-## Measurement controls
+### Measurement controls
 
 - CPU governor: observed `powersave`; no host state was changed.
 - Governor policy: the repository recommends `performance` for published numbers. Because this
@@ -72,7 +78,7 @@ only marginally above, reduce noise or choose a larger target before implementin
 Reconsider a rejected candidate only after a material implementation, dependency, toolchain, or
 representative-workload change, or after reducing the noise spread enough to resolve its prior result.
 
-## How to reproduce
+### Reproduce the matrix
 
 ```bash
 CARGO_BUILD_JOBS=16 cargo build --locked -p nautilus-backtest \
@@ -100,12 +106,15 @@ Criterion's `median.point_estimate` from each named baseline supplies the three 
 For policy and the general noise-reduction recipe, see
 [`BENCHMARKING.md`](../../../BENCHMARKING.md) at the repository root.
 
-## Absolute baseline
+### 2026-08-10 absolute baseline
 
 Lower is better. Each case processes 20,000 data events.
 
-This historical full matrix predates the [L1 replacement follow-up](#l1-replacement-follow-up),
-which remeasures its replay-only preloaded case.
+The table reports the median of three interleaved runs on the same host. Refresh the full matrix
+after a substantive backtest-engine change or dependency upgrade. Focused comparisons do not
+replace it. Absolute values vary by machine; treat a result inside its recorded noise band as
+equivalent. This matrix predates the 2026-08-29 L1 replacement, which remeasured the replay-only
+preloaded case.
 
 | Scenario                | Preloaded `run()` median | Noise band, spread      | Full load/setup/run median | Noise band, spread      |
 | ----------------------- | -----------------------: | ----------------------- | -------------------------: | ----------------------- |
@@ -114,11 +123,11 @@ which remeasures its replay-only preloaded case.
 | Passive limit orders    |                39.318 ms | 38.887-43.839 ms, 12.6% |                  46.627 ms | 45.375-46.839 ms, 3.1%  |
 | Bar EMA cross           |                37.326 ms | 37.103-41.650 ms, 12.2% |                  44.734 ms | 42.925-44.753 ms, 4.1%  |
 
-## Profile
+### Initial profile
 
-The host's `perf_event_paranoid=4` blocked `cargo flamegraph`; no kernel setting or privilege was
-changed. GNU `gprofng` 2.42 supplied unprivileged one-millisecond clock sampling instead. The
-experiment is host-local at `/tmp/nautilus-backtest-bar-ema.er`.
+The host's `perf_event_paranoid=4` blocked `cargo flamegraph`; no kernel setting or privilege
+changed. GNU `gprofng` 2.42 supplied unprivileged one-millisecond clock sampling. The original
+collection used this command, with the measured executable identified by its SHA-256 above:
 
 ```bash
 setarch "$(uname -m)" -R gprofng collect app -p 1 -t 25s -F off \
@@ -130,8 +139,8 @@ setarch "$(uname -m)" -R gprofng collect app -p 1 -t 25s -F off \
 gprofng display text -functions /tmp/nautilus-backtest-bar-ema.er
 ```
 
-The executable name contains a Cargo-generated artifact hash. The SHA-256 in the environment table
-identifies the captured binary; after rebuilding, substitute the new `engine-*` path.
+The executable name contains a Cargo-generated artifact hash. After rebuilding, substitute the new
+`engine-*` path and use a new output directory.
 
 The profile captured 13.502 seconds of CPU samples. Criterion's profile mode observes benchmark
 setup and post-run fingerprint checks even though `iter_custom` excludes them from the reported
@@ -146,10 +155,38 @@ at the same recorded close, so this target applies to the mixed quote-and-bar wo
 an isolated bar path. The profile alone did not justify a code change. The 2026-08-10 baseline
 includes no production optimization.
 
-## L1 replacement follow-up
+## Optimization record
 
-A 2026-08-29 follow-up profiled all four canonical scenarios under both exact benchmark boundaries
-on the same host. As percentages of total captured CPU samples, inclusive time for
+The 2026-08-29 and 2026-08-30 campaigns used profiles to select targets and elapsed-time
+comparisons to make adoption decisions. Unless a campaign states otherwise, its comparison used
+the Threadripper 9980X host above with Ubuntu 24.04.4 LTS and Linux 7.0.0-28-generic. All 128 logical
+CPU governors remained `powersave`; ASLR was disabled per process, and the benchmark thread was not
+pinned. No campaign changed a host control. Rust and Cargo 1.98.0 with LLVM 22.1.8 built each
+measured executable once for reuse with standard precision, the default empty `nautilus-backtest`
+feature set, and `bench-lto`. Campaigns that copied executables to immutable paths record their
+SHA-256 and ELF build IDs below.
+
+Each candidate comparison established a fresh baseline spread before candidate timing, alternated
+baseline and candidate executables, and checked the exact canonical fingerprints. The campaign
+section records stricter host-load acceptance rules, different sampling controls, or any missing
+artifact identity. A profile share selects a target; it never establishes an elapsed-time change.
+
+| Date       | Target or protocol                      | Fresh decision threshold | Result                                 | Decision               |
+| ---------- | --------------------------------------- | -----------------------: | -------------------------------------- | ---------------------- |
+| 2026-08-29 | Redundant L1 deletion                   |                  0.6843% | 20.32% median reduction                | Retained               |
+| 2026-08-29 | L1 level and order-map allocation reuse |                    1.56% | 7.42% median reduction                 | Retained               |
+| 2026-08-29 | Same-price L1 B-tree node reuse         |             7.178740975% | All pairs within the baseline spread   | Removed                |
+| 2026-08-29 | Trade ID stack formatting               |             4.478442932% | 16.351% median reduction               | Retained               |
+| 2026-08-30 | Same-ID L1 order-map value replacement  |             5.266290514% | 5.004521922% median reduction          | Removed                |
+| 2026-08-30 | Empty command-queue fast path           |             6.326209262% | 4.712818562% estimated removable share | Not implemented        |
+| 2026-08-30 | Shared-host measurement controls        |     50% spread reduction | Neither candidate protocol qualified   | Existing controls kept |
+| 2026-08-30 | Pending queue snapshot                  |                   3.790% | 10.302% median reduction               | Retained               |
+| 2026-08-30 | Current-HEAD target search              |            10.872622191% | No eligible target                     | No candidate           |
+
+### 2026-08-29: L1 replacement
+
+This campaign profiled all four canonical scenarios under both exact benchmark boundaries. As
+percentages of total captured CPU samples, inclusive time for
 `process_trade_ticks_from_bar` ranged from 13.67% to 47.12%, and inclusive time for
 `OrderBook::update_trade_tick` ranged from 7.78% to 29.75%. `OrderBook::update_book_bid` and
 `update_book_ask` removed the current top order immediately before `BookLadder::add(order, 0)`
@@ -157,11 +194,8 @@ cleared the ladder and inserted the replacement.
 
 The candidate removed that redundant deletion. The baseline was the signed commit
 `Optimize BacktestEngine inactive service paths`. Three paired sessions alternated immutable
-baseline and candidate executables for the `run_preloaded` boundary and `replay_only` scenario.
-Each executable was built once from its source tree and reused unchanged. Both used `rustc 1.98.0`,
-Cargo 1.98.0, standard precision with default crate features, and the `bench-lto` profile. The
-governor remained `powersave`, no host control changed, and ASLR was disabled per benchmark process.
-Each run used a 3-second warm-up, a 5-second measurement target, and 50 samples.
+baseline and candidate executables for canonical replay-only `run_preloaded`. Each run used a
+3-second warm-up, a 5-second measurement target, and 50 samples.
 
 | Pair order         | Baseline median | Candidate median | Reduction |
 | ------------------ | --------------: | ---------------: | --------: |
@@ -174,13 +208,11 @@ The median reduction was 20.32%. A fresh three-run pre-edit replay-only session 
 matched every exact result fingerprint for all four scenarios under both boundaries after the
 change. The remaining seven canonical cases were fingerprint-verified but not re-timed.
 
-## L1 level reuse follow-up
+### 2026-08-29: L1 level reuse
 
-A second 2026-08-29 follow-up used the signed `Optimize OrderBook L1 replacement` commit as its
-baseline. This section supersedes the [L1 replacement follow-up](#l1-replacement-follow-up) as the
-current replay-only preloaded reference. Fresh one-millisecond `gprofng` profiles covered all four
-scenarios under both benchmark boundaries. As percentages of total captured CPU samples, inclusive
-samples for `BookLadder::add` remained material in every case:
+The baseline was the signed `Optimize OrderBook L1 replacement` commit. Fresh one-millisecond
+`gprofng` profiles covered all four scenarios under both benchmark boundaries. As percentages of
+total captured CPU samples, inclusive samples for `BookLadder::add` remained material in every case:
 
 | Scenario                | Full load/setup/run | Preloaded `run()` |
 | ----------------------- | ------------------: | ----------------: |
@@ -207,14 +239,9 @@ replacement remains available to later cache-backed updates and deletes.
 | Executable SHA-256   | `8c26d4b18dfe6743f095714f30b4a826f1de29c7bb8a7983ffc1ceb72bd9706d` | `22fc1721f71e6bf8b6c4b823ad8722b7b4e89c3b7350d86a2c109ac738a7abbb` |
 | ELF build ID         | `0b1066eccb0b8ff5a287c200527a097e13783b7f`                         | `af4947418d7bbde1c1ef9535ab68f9e4e8be6a84`                         |
 
-Later test and documentation additions do not alter the library source compiled into the measured candidate executable.
-
-Both executables were built once with the build command in [How to reproduce](#how-to-reproduce)
-under the `bench-lto` profile and reused unchanged. Both used `rustc 1.98.0` with LLVM 22.1.8,
-Cargo 1.98.0, standard precision, and the default empty `nautilus-backtest` feature set. The host was
-the Threadripper 9980X system described above with Linux 7.0.0-28-generic. All 128 governors remained
-`powersave`; no host control changed. ASLR was disabled per process, and the benchmark thread was not
-pinned. The paired run found no concurrent Rust build and recorded 95% to 99% CPU idle in its host samples.
+Later test and documentation additions do not alter the library source compiled into the measured
+candidate executable. The paired run found no concurrent Rust build and recorded 95% to 99% CPU
+idle in its host samples.
 
 Three sessions alternated the immutable executables for canonical replay-only `run_preloaded`.
 Each run used a 3-second warm-up, a 5-second measurement target, and 50 samples.
@@ -233,11 +260,11 @@ both boundaries before and after the production change. Focused quote-tick tests
 replacement, incomplete-batch reset, zero-size clearing, and deletion after replacement. The other
 seven canonical cases were fingerprint-verified but not re-timed.
 
-## Rejected same-price L1 node reuse
+### 2026-08-29: Rejected same-price L1 node reuse
 
-A third 2026-08-29 follow-up used the signed `Optimize OrderBook L1 level reuse` commit
-`f87112bd2e356ce621fe4b09bfd329c70adf6735` as its baseline. Fresh one-millisecond `gprofng`
-profiles again covered all four canonical scenarios under both boundaries. Inclusive samples for
+The baseline was the signed `Optimize OrderBook L1 level reuse` commit
+`f87112bd2e356ce621fe4b09bfd329c70adf6735`. Fresh one-millisecond `gprofng` profiles covered all
+four canonical scenarios under both boundaries. Inclusive samples for
 `BookLadder::replace_l1` ranged from 8.94% to 35.74% of total captured CPU samples. Its B-tree
 insertion ranged from 3.00% to 13.27%, and removing the current node ranged from 1.34% to 5.09%.
 
@@ -253,12 +280,8 @@ remove, clear, and reinsert path.
 | Executable SHA-256   | `4c949cc095beae17d7047084bf8df588d06af438fbe4c8c9fc765f61ff52f9b6` | `b898927bb34d0ed0c0a584f78d8f627dd4ca6d72580841d2dbaf3be2806d06ed` |
 | ELF build ID         | `15677b977ae773c38763608ec3fd4c2f30629f6e`                         | `bea9f4f9f30208c5d4edcbffc965548800a573d4`                         |
 
-Both executables were built once with the command in [How to reproduce](#how-to-reproduce) and
-reused unchanged. Both used Rust and Cargo 1.98.0, standard precision, the default empty
-`nautilus-backtest` feature set, and the `bench-lto` profile. The Threadripper 9980X host retained
-its `powersave` governors, ASLR was disabled per process, no host control changed, and accepted
-sessions recorded no concurrent Cargo work and 95% to 98% CPU idle. Runs with concurrent Cargo work
-or CPU idle below the predeclared 95% floor were discarded.
+Accepted sessions recorded no concurrent Cargo work and 95% to 98% CPU idle. Runs with concurrent
+Cargo work or CPU idle below the predeclared 95% floor were discarded.
 
 Canonical replay-only `run_preloaded` was selected before viewing timing results because it had the
 largest `BookLadder::replace_l1` inclusive share at 35.74% and excluded setup from the returned
@@ -285,13 +308,12 @@ implementation, standard-library, toolchain, or representative-workload change, 
 baseline spread enough to resolve the observed range. A different measured cost within
 `BookLadder::replace_l1` remains eligible for investigation.
 
-## Trade ID formatting follow-up
+### 2026-08-29: Trade ID formatting
 
-A fourth 2026-08-29 follow-up used the signed `Document OrderBook L1 optimization rejection`
-commit `30dbec8ea3b10796c333247d5214e3886758e53f` as its baseline. Fresh one-millisecond `gprofng`
-profiles covered all four canonical scenarios under both benchmark boundaries. This section
-supersedes the [L1 level reuse follow-up](#l1-level-reuse-follow-up) as the current replay-only
-preloaded reference. As percentages of total captured CPU samples, inclusive samples for
+The baseline was the signed `Document OrderBook L1 optimization rejection` commit
+`30dbec8ea3b10796c333247d5214e3886758e53f`. Fresh one-millisecond `gprofng` profiles covered all
+four canonical scenarios under both benchmark boundaries. As percentages of total captured CPU
+samples, inclusive samples for
 `IdsGenerator::generate_trade_id` and for the allocation-backed formatting entry point were:
 
 | Scenario                | Full load/setup/run ID generation | Full load/setup/run formatting | Preloaded `run()` ID generation | Preloaded `run()` formatting |
@@ -319,13 +341,6 @@ behavior.
 | Executable SHA-256   | `e96730816eb9c6f3c57c98b06acad2da9cea76989cf084794f257da39e86c4bb` | `acbfd21e0acec786e808f487e8f37f23a7157f1702f33760441783068671f4b1` |
 | ELF build ID         | `4e634bb099808fb65fd385bc0ef9d860d7872b6a`                         | `28332a01915deb7ad09a6e51148853e98aac859e`                         |
 
-Both executables were built once with the command in [How to reproduce](#how-to-reproduce), copied
-to immutable paths, and reused unchanged. Both used Rust and Cargo 1.98.0, LLVM 22.1.8, standard
-precision, the default empty `nautilus-backtest` feature set, and the `bench-lto` profile. The host
-was the Threadripper 9980X system described above with Linux 7.0.0-28-generic. All 128 governors
-remained `powersave`; no host control changed. ASLR was disabled per process, and the benchmark
-thread was not pinned.
-
 Three fresh baseline sessions measured 16.147417250, 16.537059000, and 16.888020000 ms. Their
 16.537059000 ms median and 4.478442932% full spread set the predeclared threshold.
 Canonical replay-only `run_preloaded` was selected before viewing candidate timing because it had
@@ -352,12 +367,12 @@ reset behavior, and the existing Rust parity fixtures. All 31 tests in the `ids_
 passed, along with focused rustfmt and Clippy checks. The later test strengthening and this benchmark
 documentation do not alter the library code compiled into the measured candidate executable.
 
-## Rejected L1 order-map value replacement
+### 2026-08-30: Rejected L1 order-map value replacement
 
-A fifth 2026-08-30 follow-up used the signed `Optimize IdsGenerator trade ID formatting` commit
-`e67a439364f5ea2c08e836e85507374ceeb31157` as its baseline. Fresh one-millisecond `gprofng`
-profiles covered all four canonical scenarios under both benchmark boundaries. As percentages of
-total captured CPU samples, inclusive samples for `IndexMap<u64, BookOrder>::insert_full` under
+The baseline was the signed `Optimize IdsGenerator trade ID formatting` commit
+`e67a439364f5ea2c08e836e85507374ceeb31157`. Fresh one-millisecond `gprofng` profiles covered all
+four canonical scenarios under both benchmark boundaries. As percentages of total captured CPU
+samples, inclusive samples for `IndexMap<u64, BookOrder>::insert_full` under
 `BookLadder::replace_l1` were:
 
 | Scenario                | Full load/setup/run | Preloaded `run()` |
@@ -380,13 +395,6 @@ cache and batch reset, zero-size clearing, B-tree reinsertion, and public APIs r
 | Measured source tree | `ea1da17cb0d66fb911c035e8665ea871448f621c`                         | `e410781943a9c867c5786aff75aefe33a0cc10d4`                         |
 | Executable SHA-256   | `acc072d1d9a2acd445992f68130903de6fc81680c03e02665581222076bfe9bc` | `d0eb66474ad835514d77493984b404dc5a8a744b0363ab1af3850784086590cb` |
 | ELF build ID         | `a55d3682b2e6f094043a152c52cd5116195f0a08`                         | `0b8e55224e259f5210344cdf6fc50dc03e5d6462`                         |
-
-Both executables were built with the command in [How to reproduce](#how-to-reproduce), copied to
-immutable paths, and reused unchanged. Both used Rust and Cargo 1.98.0, LLVM 22.1.8, standard
-precision, the default empty `nautilus-backtest` feature set, and the `bench-lto` profile. The host
-was the Threadripper 9980X system described above with Linux 7.0.0-28-generic. All 128 governors
-remained `powersave`; no host control changed. ASLR was disabled per process, and the benchmark
-thread was not pinned.
 
 Canonical replay-only `run_preloaded` was selected before viewing candidate timings because the
 target had its largest profile share there, at 5.29%, and this boundary excludes setup from the
@@ -418,12 +426,12 @@ workload, and noise conditions. Reconsider it only after a material implementati
 toolchain, or representative-workload change, or after reducing baseline spread enough to resolve
 the observed range.
 
-## Command-queue drain profiling follow-up
+### 2026-08-30: Command-queue drain profile
 
-A sixth 2026-08-30 follow-up used the signed `Document OrderBook L1 value replacement rejection`
-commit `466cb9e9036e207de33c83294dcf294c5a29f3a9` as its baseline. Fresh one-millisecond `gprofng`
-profiles covered all four canonical scenarios under both benchmark boundaries. Book-ladder work,
-its B-tree operations, and order-map operations were excluded before target selection.
+The baseline was the signed `Document OrderBook L1 value replacement rejection` commit
+`466cb9e9036e207de33c83294dcf294c5a29f3a9`. Fresh one-millisecond `gprofng` profiles covered all
+four canonical scenarios under both benchmark boundaries. Book-ladder work, its B-tree operations,
+and order-map operations were excluded before target selection.
 
 The largest remaining production lead was `BacktestEngine::drain_command_queues`. The table reports
 its inclusive share of all captured CPU samples. Build-process observations count matching Cargo,
@@ -453,13 +461,6 @@ load that can affect elapsed-time repeatability.
 | Executable SHA-256   | `01395c683933c2ebdbc81c12297b82815f37c2e2436a91432a66cd3e8b46a909` |
 | ELF build ID         | `9727c4118397d3b55eef571912620d76b6dffce9`                         |
 
-The executable was built once with the command in [How to reproduce](#how-to-reproduce), copied to
-an immutable path, and reused unchanged. It used Rust and Cargo 1.98.0, LLVM 22.1.8, standard
-precision, the default empty `nautilus-backtest` feature set, and the `bench-lto` profile. The host
-was the Threadripper 9980X system described above with Linux 7.0.0-28-generic. All 128 governors
-remained `powersave`; no host control changed. ASLR was disabled per process, and the benchmark
-thread was not pinned.
-
 Canonical replay-only `run_preloaded` was selected because command-queue draining had its largest
 profile share there and this boundary excludes setup from the returned duration. Within the
 repeated run path, the direct work in the trading and data command drains accounted for 0.826
@@ -484,12 +485,11 @@ establishes change-detection limits under normal shared-host load, not quiet-hos
 Reconsider an empty command-queue fast path after reducing the fresh spread below its conservative
 effect estimate, or select a larger eligible non-book cost.
 
-## Shared-host repeatability calibration
+### 2026-08-30: Shared-host repeatability calibration
 
-A seventh 2026-08-30 follow-up calibrated the replay-only measurement protocol at signed commit
-`c16fceaac8f82954645e52a66705313510e1781a`. This calibration compared measurement controls on a
-permanently shared host. It did not profile another target or change production code, tests, or the
-benchmark harness.
+This calibration compared replay-only measurement controls at signed commit
+`c16fceaac8f82954645e52a66705313510e1781a` on a permanently shared host. It did not profile
+another target or change production code, tests, or the benchmark harness.
 
 The adoption rule was fixed before timing. A candidate protocol had to preserve the canonical
 fingerprints and reduce the five-run full spread by at least 50% relative to the unpinned control.
@@ -508,17 +508,11 @@ failed, longer sampling could still qualify by halving the control spread.
 | Cargo features       | Default empty `nautilus-backtest` feature set; standard precision   |
 | Profile              | `bench-lto`: release, fat LTO, one codegen unit, full debug symbols |
 
-The executable was built once from the clean source tree and copied to a read-only path:
-
-```bash
-CARGO_BUILD_JOBS=16 cargo build --locked -p nautilus-backtest \
-    --profile bench-lto --bench engine
-```
-
-The source and copied executable hashes matched. Every run rechecked the same hash before and after
-execution. All 15 runs used the copied executable, ASLR disabled per process, isolated Criterion
-homes, and canonical replay-only `run_preloaded`. The benchmark preflight verified all four
-scenarios under both canonical boundaries before registering the filtered case, and every run
+The clean source tree was built with the command in [Reproduce the matrix](#reproduce-the-matrix),
+and the executable was copied to a read-only path. The source and copied executable hashes matched;
+every run rechecked the executable hash before and after execution. All 15 runs used isolated
+Criterion homes and canonical replay-only `run_preloaded`. The benchmark preflight verified all
+four scenarios under both canonical boundaries before registering the filtered case, and every run
 completed those exact fingerprint checks.
 
 The host remained the Threadripper 9980X system described above with Ubuntu 24.04.4 LTS and Linux
@@ -579,14 +573,13 @@ Future optimization admission for this workload requires a conservative expected
 of at least twice the retained fresh spread, or 10.872622191%. This is the practical detection floor
 until another calibration establishes a qualifying protocol.
 
-## Pending queue snapshot follow-up
+### 2026-08-30: Pending queue snapshot
 
-An eighth 2026-08-30 follow-up used the signed `Document OrderBook L1 value replacement rejection`
-commit `1f7d5a12896f6f53cce917293cb574d5b58d255f` as its baseline. An existing one-millisecond
-`gprofng` profile of canonical passive limit orders ranked
-`OrderMatchingEngine::adjust_l1_queue_on_price_move` at 2.365 seconds inclusive across a 15.289-second
-process. Its main `BacktestEngine::run` descendant accounted for 1.863 seconds within the function's
-10.096-second run stack and included 0.990 seconds in
+The baseline was the signed `Document OrderBook L1 value replacement rejection` commit
+`1f7d5a12896f6f53cce917293cb574d5b58d255f`. A one-millisecond `gprofng` profile of canonical
+passive limit orders ranked `OrderMatchingEngine::adjust_l1_queue_on_price_move` at 2.365 seconds
+inclusive across a 15.289-second process. Its main `BacktestEngine::run` descendant accounted for
+1.863 seconds within the function's 10.096-second run stack and included 0.990 seconds in
 `IndexMap<ClientOrderId, PriceRaw>::get_index_of` and 0.612 seconds in `Cache::order`. Profile mode
 included setup and fingerprint work, and samples could not distinguish every map operation, so these
 figures selected the target but do not support the elapsed-time claim.
@@ -605,13 +598,6 @@ unchanged. The scratch vector retains capacity for the peak pending-order count.
 | Canonical ELF build ID             | `b37a4bf1ad9b6c800e26bcc00ebb4ad30f0262e2`                         | `19d3cf907eba11fb8d179b6648b52419c161bc49`                         |
 | Matching-engine executable SHA-256 | `0d8784d3939b27da3918400399e0a9b11fa2a66aedcf79b8eb483b649cac67c0` | `be1e964c8017a80c7e60eb64e173fde339da51002778c42362d82c34d982eac0` |
 | Matching-engine ELF build ID       | `b187b760a3b5e73269dfbc76010207912fdf47b1`                         | `9472e9a6489e67585e28c99b32e8982264977f54`                         |
-
-Both canonical executables were built once with the command in
-[How to reproduce](#how-to-reproduce), copied to immutable paths, and reused unchanged. Both used
-Rust and Cargo 1.98.0, LLVM 22.1.8, standard precision, the default empty `nautilus-backtest`
-feature set, and the `bench-lto` profile. The host was the Threadripper 9980X system described above
-with Linux 7.0.0-28-generic. All 128 governors remained `powersave`; no host control changed. ASLR
-was disabled per process, and the benchmark thread was not pinned.
 
 Five fresh baseline sessions measured 24.635, 24.909, 25.066, 25.099, and 25.110 ms. Their
 25.066 ms median and 1.895% full spread established the fresh noise bound. The adoption threshold
@@ -649,14 +635,92 @@ queue size; the canonical passive workload supplies the adoption evidence. The c
 matrix, focused L1 queue-position and queue-invariant tests, rustfmt, and Clippy passed after the
 change. This documentation does not alter either measured executable.
 
+### 2026-08-30: Current-HEAD profile
+
+This profile covered the canonical matrix at signed commit
+`3dee76e70e4dc66cf705a90629924ec22e5cb3ab`. The revision contains the retained pending-queue
+optimization from parent `680e3c6a53` and the subsequent live-position snapshot persistence change.
+The run built new executables from the source tree and did not reuse the parent's profiles,
+binaries, or timings.
+
+| Item                               | Value                                                              |
+| ---------------------------------- | ------------------------------------------------------------------ |
+| Repository revision                | `3dee76e70e4dc66cf705a90629924ec22e5cb3ab`                         |
+| Measured source tree               | `e1e5d3a986578700ea928f674805224ce12c8dcd`                         |
+| Canonical executable SHA-256       | `fd89586f7f42a4f0dea753762470733b0dc981ef1b94255d27c0099c4a1d4f81` |
+| Canonical ELF build ID             | `f2bcddb09432240a71dac65a7743448edea2ba2e`                         |
+| Matching-engine executable SHA-256 | `3e5b63e9345172e8194bc34381e444f9817f989f5a6a15d6a58753b66b9af10e` |
+| Matching-engine ELF build ID       | `95edb939922685399a5ff94cac73f8b165caadd5`                         |
+
+Both executables used Rust and Cargo 1.98.0, LLVM 22.1.8, standard precision, and the `bench-lto`
+profile. Each executable was copied to a read-only path and its SHA-256 was checked before and after
+use. The canonical build completed without another compiler or broad test running. The
+matching-engine build overlapped unrelated sibling-checkout builds, so its build duration is
+discarded. Timings below come only from direct execution of the copied immutable executable under
+the declared shared-load regime. Direct execution listed the exact one-pending-order case before
+measurement.
+
+The 3.790% threshold in the preceding section came from twice the 1.895% spread of that quiet
+canonical baseline session. It applies only to that retained comparison. The earlier shared-host
+calibration set a 10.872622191% floor from twice its 5.436311095% spread. Repeated compiler and test
+activity prevented a stable quiet window during this follow-up, so target admission used the
+10.872622191% uncontrolled shared-load floor before any candidate timing. No result from this round
+uses 3.790% as its adoption threshold.
+
+`gprofng` collected a fresh 15-second profile for every canonical scenario and timing boundary from
+the immutable current-HEAD executable. The first profile averaged 97.61% CPU idle without another
+compiler or build process. The remaining seven used the declared shared-load regime, averaged
+78.44%-91.00% idle, and recorded their concurrent build context. All eight runs preserved the
+executable hash and passed the exact canonical fingerprints.
+
+| Boundary         | Scenario                | Largest relevant profile result                              | Inclusive share | Decision                                                                                   |
+| ---------------- | ----------------------- | ------------------------------------------------------------ | --------------: | ------------------------------------------------------------------------------------------ |
+| `run_preloaded`  | Replay only             | `BookLadder::replace_l1`                                     |          36.65% | No safe small candidate; same-price node reuse and same-ID map replacement remain rejected |
+| `load_build_run` | Replay only             | `BookLadder::replace_l1`                                     |          27.64% | Same rejected L1 replacement variants                                                      |
+| `run_preloaded`  | Scheduled market orders | `BookLadder::replace_l1`                                     |          22.47% | Same rejected L1 replacement variants                                                      |
+| `load_build_run` | Scheduled market orders | `BookLadder::replace_l1`                                     |          18.93% | Same rejected L1 replacement variants                                                      |
+| `run_preloaded`  | Passive limit orders    | `BookLadder::replace_l1`; pending-queue adjustment was 7.24% |          18.24% | L1 variants rejected; pending-queue path already retained and below the floor              |
+| `load_build_run` | Passive limit orders    | `BookLadder::replace_l1`; pending-queue adjustment was 6.07% |          16.10% | L1 variants rejected; pending-queue path already retained and below the floor              |
+| `run_preloaded`  | Bar EMA cross           | Canonical-result array normalization                         |          17.97% | Outside the elapsed timer; largest production result was below the floor                   |
+| `load_build_run` | Bar EMA cross           | Canonical-result array normalization                         |          16.35% | Outside the elapsed timer; largest production result was below the floor                   |
+
+The fresh load-path `parse_price` share reached 8.70%, `IdsGenerator::generate_trade_id` reached
+6.96%, and command-queue draining remained below the shared-load floor. The ID generator is already
+optimized, and the command-queue empty fast path remains unchanged. Link-time optimization folded
+identical standard-hash monomorphizations under one displayed symbol, including calls from distinct
+order and book maps, so those samples do not identify one source-level target. No different
+production bottleneck had a conservative removable share comfortably above 10.872622191%. This
+round therefore stops without a production candidate or paired candidate timing.
+
+The retained pending-queue microbenchmark needed a repeatability bound before its earlier -5.43%
+one-order point estimate could be classified. Five fresh current-HEAD sessions ran the existing
+`matching_engine/queue_position/quote_l1_pending/1` case from the immutable matching-engine
+executable. Each session used a separate Criterion result directory, a 3-second warm-up, a 5-second
+measurement target, 50 samples, and per-process ASLR disablement. The shared host averaged 60.07%
+CPU idle during these sessions.
+
+| Session | Criterion point estimate |
+| ------: | -----------------------: |
+|       1 |               175.885 us |
+|       2 |               174.181 us |
+|       3 |               178.234 us |
+|       4 |               183.288 us |
+|       5 |               178.874 us |
+
+The 178.234 us median and 174.181-183.288 us range give a 5.109% full spread. Twice that spread is
+10.218%, still below the existing 10.873% shared-load admission floor. The prior -5.43% direction is
+within practical repeatability noise and does not establish a one-order regression. It also does not
+prove that a smaller effect is absent. The 32-order and 256-order scaling results remain explanatory;
+the retained canonical end-to-end comparison remains the adoption evidence.
+
 ## v1.231.0 and v2 comparison
 
-The 2026-08-27 comparison uses the Python
+The 2026-08-27 comparison used the Python
 [`benchmark-backtest-versions.py`](../../../scripts/benchmark-backtest-versions.py) driver to run
 the released v1.231.0 Cython engine and the v2 Rust/PyO3 engine at revision
-`908c571caec0af086c1d1a8edbcf7bcbb07d6621`. The checked-in
-[`v1-v2-results.json`](v1-v2-results.json) file contains every elapsed sample, the full workload
-matrix, full runtime identities once per version, an identity digest for every sample, host state,
+`908c571caec0af086c1d1a8edbcf7bcbb07d6621`. The raw
+[`v1-v2-results.json`](v1-v2-results.json) record contains every elapsed sample, the full workload
+matrix, full runtime identities once per version, per-sample identity digests, host state,
 fingerprints, medians, spreads, ratios, and gaps.
 
 ### Runtime identity
@@ -673,9 +737,9 @@ fingerprints, medians, spreads, ratios, and gaps.
 | Embedded revision  | Not available                                                      | Matches the requested v2 source revision                           |
 | Install provenance | Loaded extension byte-matches the wheel member and records its URL | Loaded extension byte-matches the wheel member and records its URL |
 
-The driver SHA-256 is
-`b3636a7b1ff8a121580495c7c8da2eb61f7ae8d3ea95b5c49c9589f2aa5818a9`. The result file SHA-256 is
-`4ff2ae000c93333f70d0769f90ce0323710dd7ac7b389e7f21e28cdd183fac45`.
+The measured driver SHA-256 was
+`b3636a7b1ff8a121580495c7c8da2eb61f7ae8d3ea95b5c49c9589f2aa5818a9`. The checked-in result file
+still has SHA-256 `4ff2ae000c93333f70d0769f90ce0323710dd7ac7b389e7f21e28cdd183fac45`.
 
 ### Measurement method
 
@@ -684,15 +748,17 @@ multiple instruments and streams, market and passive orders, cancellation, GTD e
 type triggers. `run_preloaded` times only `BacktestEngine.run()` after setup and data loading.
 `load_build_run` includes fixture generation, engine construction, data registration, and `run()`.
 
-Each case receives one warmup and one timed sample in each of five interleaved sessions. Sessions
-alternate the v1/v2 execution order and rotate or reverse the case order. The driver checks the
-complete wheel, extension, source, and runtime identity before the matrix. Source identity includes
-the revision plus content hashes for staged diffs, unstaged diffs, and untracked files. After every
-timed sample, its worker repeats that proof and checks its canonical digest against the initial
-identity. The driver also checks the complete event, order, position, and account fingerprint after
-every timed iteration. All 320 timed iterations matched across versions. The tables report the
-median of the five session samples. Spread is `(maximum - minimum) / median`, so rows with a wide
-spread need more samples before they support a close comparison.
+Each of five interleaved sessions gave every case one warmup and one timed sample. Sessions
+alternated v1/v2 execution order and rotated or reversed case order. Before the matrix, the driver
+checked the complete wheel, extension, source, and runtime identity. Source identity included the
+revision and content hashes for staged diffs, unstaged diffs, and untracked files. After every timed
+sample, the worker repeated that proof, checked its canonical digest against the initial identity,
+and verified the complete event, order, position, and account fingerprint. All 320 timed iterations
+matched across versions.
+
+The tables report the median of five session samples. Spread is
+`(maximum - minimum) / median`; rows with a wide spread need more samples before they support a
+close comparison.
 
 The host had an AMD Ryzen Threadripper 9980X with 64 cores and 128 threads, Linux
 7.0.0-28-generic, and the `performance` governor. The benchmark process ran with ASLR disabled. The
@@ -743,40 +809,32 @@ Lower is better. A negative gap means v2 was faster.
 | `gtd_expiry`                 |  36.109 ms |     11.6% |  15.364 ms |     11.9% | 0.425x | -57.5% |
 | `order_type_trigger_sweep`   |  22.527 ms |     12.7% |  11.520 ms |     10.3% | 0.511x | -48.9% |
 
-V2 was faster in 30 of the 32 boundary and scenario combinations. The two slower rows are the same
+V2 was faster in 30 of the 32 boundary and scenario combinations. Both slower rows are the same
 4,000-fill accumulating-position case. V2 was slower in every session for that case: the preloaded
 gap ranged from 52.6% to 68.8%, and the full-path gap ranged from 47.3% to 60.5%. The 250-fill and
 1,000-fill variants remained faster in v2, which places the observed crossover between 1,000 and
 4,000 accumulated fills. Eight rows had a spread above 25.0%; the widest was 272.9% for the v2
 full-path quote-and-trade medium case. Four samples ranged from 11.648 to 12.656 ms, while one was
-44.461 ms. Its 0.446x median ratio is not a close comparison. The raw samples remain the appropriate
-evidence for close comparisons.
+44.461 ms. Its 0.446x median ratio does not support a close comparison; use the raw samples for one.
 
 ### Accumulating-position profile
 
-Both slower rows use the same 4,000-fill workload. A native Criterion mirror profiles the preloaded
-engine path, and a separate Python profile covers fixture generation, engine construction, data
+Both slower rows use the same 4,000-fill workload. A native Criterion mirror profiled the preloaded
+engine path. A separate Python profile covered fixture generation, engine construction, data
 registration, `run()`, and the untimed fingerprint check. The native benchmark executable used the
 standard `bench` profile with full debug information and had SHA-256
 `c483f46b083b7fc2bba51e5ee0d4988dc66857b2ef75bb5ee0bf8043b6c42447`.
 
 #### Preloaded native profile
 
-```bash
-gprofng collect app -p 1 -t 25s -F off -a usedldobjects \
-    -O /tmp/nautilus-backtest-v2-accumulating-native-final.er \
-    target/release/deps/engine-a1a9bcaf3d07bace \
-    --bench --profile-time 15 \
-    '^backtest_engine/position_history/accumulating_market_orders/4000$'
-
-gprofng display text -functions \
-    /tmp/nautilus-backtest-v2-accumulating-native-final.er
-```
-
-The experiment recorded 12.589 seconds of CPU samples over 12.609 seconds. It attributed 8.059
-seconds exclusive, or 64.0%, to full `Position` cloning. `Cache::position_owned` accounted for
-4.073 seconds inclusive, or 32.4%; `Cache::update_position` accounted for 4.494 seconds inclusive,
-or 35.7%; and `ExecutionEngine::update_position` accounted for 5.943 seconds inclusive, or 47.2%.
+GNU `gprofng` 2.42 collected one-millisecond samples from
+`backtest_engine/position_history/accumulating_market_orders/4000`, with a 25-second collection
+ceiling, a 15-second Criterion profile interval, descendant following disabled, and loaded-object
+metadata enabled. The experiment recorded 12.589 seconds of CPU samples over 12.609 seconds. It
+attributed 8.059 seconds exclusive, or 64.0%, to full `Position` cloning. `Cache::position_owned`
+accounted for 4.073 seconds inclusive, or 32.4%. `Cache::update_position` accounted for 4.494
+seconds inclusive, or 35.7%. `ExecutionEngine::update_position` accounted for 5.943 seconds
+inclusive, or 47.2%.
 `BacktestEngine::run` accounted for 11.781 seconds inclusive, or 93.6%.
 
 GNU `gprofng` 2.42 warned that the collection interval changed from 1,000 microseconds to zero at
@@ -787,42 +845,11 @@ discarded.
 
 #### Full-path Python profile
 
-Python's built-in deterministic profiler separately measured one warmup and 20 fingerprinted
-full-path iterations:
-
-```bash
-benchmark_profile_python=/tmp/nautilus-backtest-compare.FvurtH/env-v2-release-clean/bin/python
-benchmark_profile_artifact=/tmp/nautilus-backtest-compare.FvurtH/wheels-v2-correct/nautilus_trader-2.0.0rc4-cp312-cp312-manylinux_2_39_x86_64.whl
-
-"$benchmark_profile_python" scripts/benchmark-backtest-versions.py identity \
-    --artifact "$benchmark_profile_artifact" \
-    --source-commit 908c571caec0af086c1d1a8edbcf7bcbb07d6621 \
-    --source-root . \
-    --expected-version 2.0.0rc4 \
-    --expected-backend pyo3 \
-    > /tmp/nautilus-backtest-v2-profile-identity-final.json
-benchmark_profile_identity_digest=$(
-    "$benchmark_profile_python" -c \
-        'import hashlib,json,sys; value=json.load(open(sys.argv[1])); payload=json.dumps(value,sort_keys=True,separators=(",", ":")).encode(); print("sha256:"+hashlib.sha256(payload).hexdigest())' \
-        /tmp/nautilus-backtest-v2-profile-identity-final.json
-)
-
-"$benchmark_profile_python" -m cProfile \
-    -o /tmp/nautilus-backtest-v2-accumulating-full-release-final.prof \
-    scripts/benchmark-backtest-versions.py worker \
-    --scenario accumulating_market_large \
-    --boundary load_build_run \
-    --iterations 20 \
-    --expected-identity-digest "$benchmark_profile_identity_digest" \
-    --artifact "$benchmark_profile_artifact" \
-    --source-commit 908c571caec0af086c1d1a8edbcf7bcbb07d6621 \
-    --source-root . \
-    --expected-version 2.0.0rc4 \
-    --expected-backend pyo3
-```
-
-The profile has SHA-256 `ebafc46de8b29bf83a5435e7844f5cb9acff942a62579978098a8befc2a5d638`.
-The recorded identity digest resolved to
+Python's deterministic profiler measured one warmup and 20 fingerprinted `load_build_run`
+iterations of `accumulating_market_large`. The driver first proved the v2 wheel, source commit,
+version, PyO3 backend, and runtime identity, then required that identity digest for the profiled
+worker. The profile has SHA-256
+`ebafc46de8b29bf83a5435e7844f5cb9acff942a62579978098a8befc2a5d638`. The identity digest was
 `sha256:e4cdc9e2d20be719289b6c9caa76fc9341c7cf8d857c5bfb9b07aa15bd350f40`. Every profile iteration
 recorded the same full identity as the elapsed run and produced the same semantic fingerprint.
 Across 21 runs including warmup, `BacktestEngine.run()` ranked first among timed workload operations
@@ -834,22 +861,22 @@ these durations are not comparable to the wall-clock table; their ranking shows 
 boundary remains dominated by `run()`.
 
 The wall-clock tables above remain the performance evidence. Together, the profiles identify
-position ownership and cloning as the first target for a separate optimization pass; this change
-does not modify production behavior.
+position ownership and cloning as the first target for a separate optimization pass. No production
+behavior changed during this profiling pass.
 
-## CI decision
+## CI policy
 
 Keep the canonical Rust workloads in the existing nightly Criterion run. The
-[`codspeed-criterion-compat` limitations](https://github.com/CodSpeedHQ/codspeed-rust/blob/main/crates/criterion_compat/README.md#known-limitations)
-state that `iter_custom` is unsupported, but this matrix needs `iter_custom` to return only the
-preloaded `run()` duration while constructing a fresh engine for every iteration. CodSpeed's
+[pinned `codspeed-criterion-compat` 5.0.1 limitations](https://github.com/CodSpeedHQ/codspeed-rust/blob/v5.0.1/crates/criterion_compat/README.md#not-supported)
+list `iter_custom` as unsupported, but this matrix needs `iter_custom` to return only the preloaded
+`run()` duration while constructing a fresh engine for every iteration. CodSpeed's
 [instrument documentation](https://codspeed.io/docs/instruments) also distinguishes its
 single-run, hardware-agnostic simulation from wall-clock measurements on CodSpeed-managed
 bare-metal runners. Neither mode reproduces this fixed-machine absolute baseline.
 
 `nautilus-backtest` and its registered `engine` benchmark already run through the nightly
 Criterion workflow, so no registration change is required. Nightly uses the default non-LTO
-`bench` profile with debug information disabled; its timings are not comparable to the fixed-host
+`bench` profile with full debug information; its timings are not comparable to the fixed-host
 `bench-lto` table. The canonical preflight checks every fingerprint during benchmark registration,
 and the integration test enforces them in the normal test lane. A mismatch also aborts the backtest
 benchmark binary, but the existing crate loop does not reliably propagate an intermediate crate
