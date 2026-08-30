@@ -68,9 +68,7 @@ pub trait Clock: Clone {
 impl Reference for Duration {
     /// The internal duration between this point and another.
     fn duration_since(&self, earlier: Self) -> Nanos {
-        self.checked_sub(earlier)
-            .unwrap_or_else(|| Self::new(0, 0))
-            .into()
+        (*self).saturating_sub(earlier).into()
     }
 
     /// The internal duration between this point and another.

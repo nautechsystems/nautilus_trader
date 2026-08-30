@@ -61,7 +61,7 @@ impl TcpConnector for RealTcpConnector {
     type Stream = TcpStream;
 
     fn connect(&self, addr: &str) -> impl Future<Output = Result<Self::Stream>> + Send {
-        TcpStream::connect(addr.to_string())
+        TcpStream::connect(addr)
     }
 }
 

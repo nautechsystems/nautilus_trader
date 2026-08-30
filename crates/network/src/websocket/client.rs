@@ -271,16 +271,14 @@ impl WebSocketClientInner {
             state_sink.clone(),
         );
 
-        let heartbeat_task = if let Some(heartbeat_interval) = config.heartbeat_interval_secs {
-            Some(Self::spawn_heartbeat_task(
+        let heartbeat_task = config.heartbeat_interval_secs.map(|heartbeat_interval| {
+            Self::spawn_heartbeat_task(
                 connection_mode.clone(),
                 heartbeat_interval,
                 config.heartbeat_payload.clone(),
                 writer_tx.clone(),
-            ))
-        } else {
-            None
-        };
+            )
+        });
 
         let reconnect_max_attempts = None; // Stream mode does not reconnect
         let connect_timeout = Duration::from_secs(10);
@@ -386,8 +384,6 @@ impl WebSocketClientInner {
             TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
         })?;
 
-        let reconnect_headers = ReconnectHeaders::new(config.headers.clone());
-
         let cancellation_token = initial_connect_options
             .cancellation_token
             .unwrap_or_default();
@@ -454,6 +450,8 @@ impl WebSocketClientInner {
             log::info!("WebSocket connection established after {attempt} attempts");
         }
         let (writer, reader) = transport;
+        let mut config = config;
+        let reconnect_headers = ReconnectHeaders::new(std::mem::take(&mut config.headers));
 
         let connection_mode = Arc::new(AtomicU8::new(ConnectionMode::Reconnect.as_u8()));
         let connection_epoch = Arc::new(AtomicU64::new(0));
@@ -507,9 +505,6 @@ impl WebSocketClientInner {
                 writer_tx.clone(),
             )
         });
-
-        let mut config = config;
-        config.headers.clear();
 
         Ok(Self {
             config,
@@ -3715,7 +3710,7 @@ mod tests {
 
     use axum::{Router, routing::post};
     use futures_util::{SinkExt, StreamExt};
-    use log::{Level, LevelFilter, Log, Metadata, Record};
+    use log::Level;
     use nautilus_common::testing::wait_until_async;
     use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
@@ -3738,6 +3733,7 @@ mod tests {
         SocketState, SocketStateSink,
         error::SendError,
         http::{HttpClient, Method},
+        logging::tests::capture_logs_for,
         mode::ConnectionMode,
         ratelimiter::quota::Quota,
         transport::TransportError,
@@ -3749,19 +3745,15 @@ mod tests {
 
     const SECRET_MARKER: &str = "OUTBOUND_SECRET_MARKER";
     const PING_TRIGGER: &str = "send-test-ping";
+    const NETWORK_LOG_TARGETS: &[&str] = &[
+        "nautilus_network::http::client",
+        "nautilus_network::websocket::client",
+    ];
 
     struct TestServer {
         task: JoinHandle<()>,
         port: u16,
     }
-
-    struct NetworkLogCapture {
-        messages: Mutex<Vec<String>>,
-    }
-
-    static NETWORK_LOG_CAPTURE: NetworkLogCapture = NetworkLogCapture {
-        messages: Mutex::new(Vec::new()),
-    };
 
     #[derive(Debug, Clone)]
     struct TestCallback {
@@ -3786,41 +3778,6 @@ mod tests {
 
             Ok(response)
         }
-    }
-
-    impl NetworkLogCapture {
-        fn clear(&self) {
-            self.messages.lock().unwrap().clear();
-        }
-
-        fn messages(&self) -> Vec<String> {
-            self.messages.lock().unwrap().clone()
-        }
-    }
-
-    impl Log for NetworkLogCapture {
-        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-            matches!(metadata.level(), Level::Trace | Level::Warn)
-                && matches!(
-                    metadata.target(),
-                    "nautilus_network::http::client" | "nautilus_network::websocket::client"
-                )
-        }
-
-        fn log(&self, record: &Record<'_>) {
-            if self.enabled(record.metadata()) {
-                let message = record.args().to_string();
-                if message.starts_with("Sending ")
-                    || message.starts_with("Received ")
-                    || message.starts_with("Replaced ")
-                    || message.starts_with("WebSocket connection attempt ")
-                {
-                    self.messages.lock().unwrap().push(message);
-                }
-            }
-        }
-
-        fn flush(&self) {}
     }
 
     impl TestServer {
@@ -3975,12 +3932,9 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_network_logs_omit_payload_bodies() {
-        log::set_logger(&NETWORK_LOG_CAPTURE).expect("test logger already installed");
-        log::set_max_level(LevelFilter::Trace);
-
         let server = TestServer::setup().await;
         let client = setup_test_client(server.port).await;
-        NETWORK_LOG_CAPTURE.clear();
+        let capture = capture_logs_for(NETWORK_LOG_TARGETS).await;
         let binary = format!("{SECRET_MARKER}:binary").into_bytes();
         let binary_marker = format!("{binary:?}");
 
@@ -4004,11 +3958,10 @@ mod tests {
 
         tokio::time::timeout(Duration::from_secs(2), async {
             loop {
-                if NETWORK_LOG_CAPTURE
-                    .messages()
-                    .iter()
-                    .any(|message| message == "Received ping frame (27 bytes)")
-                {
+                if capture.messages().iter().any(|(level, message)| {
+                    matches!(level, Level::Trace | Level::Warn)
+                        && message == "Received ping frame (27 bytes)"
+                }) {
                     break;
                 }
                 tokio::task::yield_now().await;
@@ -4103,7 +4056,18 @@ mod tests {
             "expected a 503 upgrade rejection, was: {retry_error:?}"
         );
 
-        let messages = NETWORK_LOG_CAPTURE.messages();
+        let messages: Vec<_> = capture
+            .messages()
+            .into_iter()
+            .filter(|(level, message)| {
+                matches!(level, Level::Trace | Level::Warn)
+                    && (message.starts_with("Sending ")
+                        || message.starts_with("Received ")
+                        || message.starts_with("Replaced ")
+                        || message.starts_with("WebSocket connection attempt "))
+            })
+            .map(|(_, message)| message)
+            .collect();
         let invalid_header_message = invalid_header_error.to_string();
 
         // Asserted positively so the blanket secret assertion below cannot pass vacuously by

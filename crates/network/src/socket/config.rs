@@ -50,7 +50,7 @@ pub struct SocketHeartbeat {
 }
 
 /// Configuration for a TCP socket connection.
-#[derive(bon::Builder)]
+#[derive(Clone, bon::Builder)]
 #[builder(finish_fn(name = build_inner, vis = ""))]
 pub struct SocketConfig {
     /// The server address as `host:port` or a URL.
@@ -244,27 +244,6 @@ impl Debug for SocketConfig {
             .field("heartbeat_timeout_secs", &self.heartbeat_timeout_secs)
             .field("certs_dir", &self.certs_dir)
             .finish()
-    }
-}
-
-impl Clone for SocketConfig {
-    fn clone(&self) -> Self {
-        Self {
-            url: self.url.clone(),
-            mode: self.mode,
-            suffix: self.suffix.clone(),
-            message_handler: self.message_handler.clone(),
-            heartbeat: self.heartbeat.clone(),
-            connect_timeout_ms: self.connect_timeout_ms,
-            reconnect_delay_initial_ms: self.reconnect_delay_initial_ms,
-            reconnect_delay_max_ms: self.reconnect_delay_max_ms,
-            reconnect_backoff_factor: self.reconnect_backoff_factor,
-            reconnect_jitter_ms: self.reconnect_jitter_ms,
-            connection_max_retries: self.connection_max_retries,
-            reconnect_max_attempts: self.reconnect_max_attempts,
-            heartbeat_timeout_secs: self.heartbeat_timeout_secs,
-            certs_dir: self.certs_dir.clone(),
-        }
     }
 }
 

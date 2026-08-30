@@ -777,7 +777,7 @@ mod encode_url_params_tests {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
-    use std::{net::SocketAddr, num::NonZeroU32, sync::Mutex};
+    use std::{net::SocketAddr, num::NonZeroU32};
 
     use axum::{
         Router,
@@ -789,7 +789,7 @@ mod tests {
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
     use http::status::StatusCode;
-    use log::{Level, LevelFilter, Log, Metadata, Record};
+    use log::Level;
     #[cfg(all(feature = "simulation", madsim))]
     use madsim::task as test_task;
     use rstest::rstest;
@@ -801,6 +801,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::logging::tests::capture_logs;
 
     async fn capture_request(request: Request) -> impl IntoResponse {
         let (parts, body) = request.into_parts();
@@ -817,42 +818,6 @@ mod tests {
 
         ([("x-response-id", "response-42")], capture)
     }
-
-    #[derive(Default)]
-    struct CapturingTraceLogger {
-        messages: Mutex<Vec<(Level, String)>>,
-    }
-
-    impl CapturingTraceLogger {
-        fn clear(&self) {
-            self.messages.lock().unwrap().clear();
-        }
-
-        fn messages(&self) -> Vec<(Level, String)> {
-            self.messages.lock().unwrap().clone()
-        }
-    }
-
-    impl Log for CapturingTraceLogger {
-        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-            metadata.level() <= Level::Trace
-        }
-
-        fn log(&self, record: &Record<'_>) {
-            if self.enabled(record.metadata()) {
-                self.messages
-                    .lock()
-                    .unwrap()
-                    .push((record.level(), record.args().to_string()));
-            }
-        }
-
-        fn flush(&self) {}
-    }
-
-    static CAPTURING_TRACE_LOGGER: CapturingTraceLogger = CapturingTraceLogger {
-        messages: Mutex::new(Vec::new()),
-    };
 
     fn create_router() -> Router {
         Router::new()
@@ -1547,9 +1512,7 @@ mod tests {
         const USERINFO_SECRET: &str = "trace-userinfo-secret";
         const PATH_SECRET: &str = "trace-path-secret";
         const QUERY_SECRET: &str = "trace-query-secret";
-        let _ = log::set_logger(&CAPTURING_TRACE_LOGGER);
-        log::set_max_level(LevelFilter::Trace);
-        CAPTURING_TRACE_LOGGER.clear();
+        let capture = capture_logs().await;
         let addr = start_test_server().await.unwrap();
         let url = format!(
             "http://rpc-user:{USERINFO_SECRET}@{addr}/{PATH_SECRET}?api_key={QUERY_SECRET}"
@@ -1560,7 +1523,7 @@ mod tests {
             .request_with_url_redacted(Method::GET, url.clone(), None, None, None, None, None)
             .await
             .expect("credentialized endpoint should return an HTTP response");
-        let messages = CAPTURING_TRACE_LOGGER.messages();
+        let messages = capture.messages();
 
         assert_eq!(response.status.as_u16(), StatusCode::NOT_FOUND.as_u16());
         assert!(messages.iter().any(|(level, message)| {

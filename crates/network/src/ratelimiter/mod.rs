@@ -182,8 +182,7 @@ where
     /// Keyed quotas override the base quota for specific keys.
     #[must_use]
     pub fn new_with_quota(base_quota: Option<Quota>, keyed_quotas: Vec<(K, Quota)>) -> Self {
-        let clock = MonotonicClock {};
-        Self::new_with_clock(base_quota, keyed_quotas, clock)
+        Self::new_with_clock(base_quota, keyed_quotas, MonotonicClock)
     }
 }
 
