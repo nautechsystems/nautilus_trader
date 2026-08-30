@@ -411,6 +411,7 @@ impl LiveNode {
 
         self.kernel.reset_shutdown_flag();
         self.kernel.start_async().await;
+        self.seed_registered_accounts();
 
         if self.kernel.is_event_store_replay() {
             log::info!(
@@ -1051,6 +1052,7 @@ impl LiveNode {
         self.handle.set_starting();
         self.kernel.reset_shutdown_flag();
         self.kernel.start_async().await;
+        self.seed_registered_accounts();
 
         if self.kernel.is_event_store_replay() {
             log::info!(
@@ -1929,7 +1931,6 @@ impl LiveNode {
 
         let cache = self.kernel.cache();
         if !cache.borrow().has_backing() {
-            self.seed_registered_accounts();
             return Ok(());
         }
 
@@ -1940,7 +1941,6 @@ impl LiveNode {
             .is_some_and(|config| config.flush_on_start)
         {
             cache.borrow_mut().flush_db();
-            self.seed_registered_accounts();
             return Ok(());
         }
 
@@ -1953,7 +1953,12 @@ impl LiveNode {
                 .context("Failed to load persistent cache")?;
         }
 
-        self.seed_registered_accounts();
+        // Deliberately no tracker seeding here: `prepare_cache` runs before
+        // `set_starting` bumps the lifecycle generation, so a seed taken now
+        // would tag database-loaded accounts with the PREVIOUS lifecycle and
+        // wrongly release a waiter from it. The unconditional seed after
+        // `kernel.start_async` covers every account loaded here, at the
+        // started generation.
         Ok(())
     }
 
@@ -2149,9 +2154,14 @@ impl LiveNode {
 
     async fn connect_exec_clients(&mut self, deadline: dst::time::Instant) -> anyhow::Result<()> {
         let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-        dst::time::timeout(remaining, self.kernel.connect_exec_clients())
+        let result = dst::time::timeout(remaining, self.kernel.connect_exec_clients())
             .await
-            .map_err(|_| anyhow::anyhow!("exec-connect timeout"))
+            .map_err(|_| anyhow::anyhow!("exec-connect timeout"));
+        // Seed on the timeout path too: clients connect concurrently, so an
+        // aggregate timeout can leave an already-connected client's account
+        // cached with no later observation point before the tracker closes.
+        self.seed_registered_accounts();
+        result
     }
 
     /// Connects execution clients and checks all engines are connected.
@@ -4085,6 +4095,7 @@ mod tests {
             Arc,
             atomic::{AtomicBool, Ordering},
         },
+        task::{Context, Poll, Waker},
     };
 
     use bytes::Bytes;
@@ -4179,6 +4190,79 @@ mod tests {
         venue: Venue,
         outcome: FillReportClientOutcome,
         commands: Rc<RefCell<Vec<GenerateFillReports>>>,
+    }
+
+    #[derive(Debug)]
+    struct DirectAccountClient {
+        account_state: AccountState,
+        connected: Cell<bool>,
+        // When set, `connect` parks until the test releases it, so a test can
+        // prove an already-parked waiter is woken by the post-connect seed
+        // rather than satisfied by the fast path.
+        gate: Option<Arc<tokio::sync::Notify>>,
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl ExecutionClient for DirectAccountClient {
+        fn is_connected(&self) -> bool {
+            self.connected.get()
+        }
+
+        fn client_id(&self) -> ClientId {
+            ClientId::from(self.account_state.account_id.inner().as_str())
+        }
+
+        fn account_id(&self) -> AccountId {
+            self.account_state.account_id
+        }
+
+        fn venue(&self) -> Venue {
+            Venue::from(self.account_state.account_id.inner().as_str())
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Netting
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+            _info: Option<Params>,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            if let Some(gate) = &self.gate {
+                gate.notified().await;
+            }
+            msgbus::send_account_state(
+                MessagingSwitchboard::portfolio_update_account(),
+                &self.account_state,
+            );
+            self.connected.set(true);
+            Ok(())
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.connected.set(false);
+            Ok(())
+        }
     }
 
     #[async_trait::async_trait(?Send)]
@@ -5885,16 +5969,30 @@ mod tests {
     #[derive(Debug)]
     struct ReplayKernelEventStore {
         fail_restore: bool,
+        account_state: Option<AccountState>,
+        restore_after: u32,
+        restore_count: Rc<Cell<u32>>,
     }
 
     impl KernelEventStore for ReplayKernelEventStore {
         fn restore_parent_cache(
             &mut self,
             _instance_id: UUID4,
-            _cache: &mut Cache,
+            cache: &mut Cache,
         ) -> anyhow::Result<()> {
             if self.fail_restore {
                 anyhow::bail!("replay restore failed");
+            }
+
+            let restore_count = self.restore_count.get() + 1;
+            self.restore_count.set(restore_count);
+            if restore_count >= self.restore_after
+                && let Some(account_state) = &self.account_state
+            {
+                cache.add_account(AccountAny::Margin(MarginAccount::new(
+                    account_state.clone(),
+                    true,
+                )))?;
             }
 
             Ok(())
@@ -5965,10 +6063,97 @@ mod tests {
             .with_load_state(true)
             .with_name("TestKernel")
             .with_event_store(move |_instance_id: UUID4, _clock: Rc<RefCell<dyn Clock>>| {
-                Ok(Box::new(ReplayKernelEventStore { fail_restore }) as Box<dyn KernelEventStore>)
+                Ok(Box::new(ReplayKernelEventStore {
+                    fail_restore,
+                    account_state: None,
+                    restore_after: 1,
+                    restore_count: Rc::new(Cell::new(0)),
+                }) as Box<dyn KernelEventStore>)
             });
 
         builder.build().unwrap()
+    }
+
+    fn live_node_with_replay_account(account_id: AccountId) -> LiveNode {
+        LiveNodeBuilder::new(TraderId::default(), Environment::Live)
+            .unwrap()
+            .with_exec_engine_config(crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            })
+            .with_load_state(true)
+            .with_name("ReplayAccountNode")
+            .with_event_store(move |_instance_id, _clock| {
+                Ok(Box::new(ReplayKernelEventStore {
+                    fail_restore: false,
+                    account_state: Some(registration_account_state(account_id)),
+                    restore_after: 1,
+                    restore_count: Rc::new(Cell::new(0)),
+                }) as Box<dyn KernelEventStore>)
+            })
+            .build()
+            .unwrap()
+    }
+
+    fn live_node_with_account_restored_on_second_start(account_id: AccountId) -> LiveNode {
+        LiveNodeBuilder::new(TraderId::default(), Environment::Live)
+            .unwrap()
+            .with_exec_engine_config(crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            })
+            .with_load_state(true)
+            .with_name("LifecycleReplayAccountNode")
+            .with_event_store(move |_instance_id, _clock| {
+                Ok(Box::new(ReplayKernelEventStore {
+                    fail_restore: false,
+                    account_state: Some(registration_account_state(account_id)),
+                    restore_after: 2,
+                    restore_count: Rc::new(Cell::new(0)),
+                }) as Box<dyn KernelEventStore>)
+            })
+            .build()
+            .unwrap()
+    }
+
+    fn add_direct_account_client(
+        node: &mut LiveNode,
+        account_id: AccountId,
+        gate: Option<Arc<tokio::sync::Notify>>,
+    ) {
+        let client = LiveExecutionClient::new(Box::new(DirectAccountClient {
+            account_state: registration_account_state(account_id),
+            connected: Cell::new(false),
+            gate,
+        }));
+        node.kernel
+            .exec_engine()
+            .borrow_mut()
+            .register_client(Box::new(client.clone()))
+            .unwrap();
+        node.exec_clients.push(client);
+    }
+
+    fn assert_waiter_pending<F: Future>(future: Pin<&mut F>) {
+        let waker = Waker::noop();
+        let mut context = Context::from_waker(waker);
+        assert!(matches!(future.poll(&mut context), Poll::Pending));
+    }
+
+    fn account_registration_node_config() -> LiveNodeConfig {
+        LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_connection: Duration::from_secs(1),
+            timeout_reconciliation: Duration::ZERO,
+            timeout_portfolio: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            timeout_shutdown: Duration::ZERO,
+            ..Default::default()
+        }
     }
 
     #[rstest]
@@ -7400,6 +7585,222 @@ mod tests {
 
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(handle.should_stop());
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_waiter_released_after_event_store_restores_account() {
+        let account_id = AccountId::from("REGISTER-REPLAY-001");
+        let mut node = live_node_with_replay_account(account_id);
+        let handle = node.handle();
+        let wait_handle = handle.clone();
+        let cache = node.kernel.cache();
+
+        let (start_result, wait_result) = tokio::join!(node.start(), async move {
+            while wait_handle.state() == NodeState::Idle {
+                tokio::task::yield_now().await;
+            }
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                wait_handle.await_account_registered(account_id),
+            )
+            .await
+        });
+
+        start_result.unwrap();
+        wait_result
+            .expect("restored account registration should arrive before timeout")
+            .unwrap();
+        assert!(cache.borrow().account(&account_id).is_some());
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_waiter_released_after_direct_connect_insertion() {
+        let account_id = AccountId::from("REGISTER-DIRECT-001");
+        let mut node = LiveNode::build(
+            "DirectAccountNode".to_string(),
+            Some(account_registration_node_config()),
+        )
+        .unwrap();
+        let gate = Arc::new(tokio::sync::Notify::new());
+        add_direct_account_client(&mut node, account_id, Some(Arc::clone(&gate)));
+        let handle = node.handle();
+        let wait_handle = handle.clone();
+        let cache = node.kernel.cache();
+
+        // The gated client holds `connect` open until the waiter is provably
+        // parked, so the release below is what wakes it - the fast path
+        // cannot have satisfied it.
+        let (start_result, wait_result) = tokio::join!(node.start(), async move {
+            while wait_handle.state() == NodeState::Idle {
+                tokio::task::yield_now().await;
+            }
+            let mut waiter = Box::pin(wait_handle.await_account_registered(account_id));
+            assert_waiter_pending(waiter.as_mut());
+            gate.notify_one();
+            tokio::time::timeout(Duration::from_secs(1), waiter).await
+        });
+
+        start_result.unwrap();
+        wait_result
+            .expect("direct account registration should arrive before timeout")
+            .unwrap();
+        assert!(cache.borrow().account(&account_id).is_some());
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_waiter_released_when_exec_connect_times_out() {
+        // Clients connect concurrently: one inserts its account and completes,
+        // the other holds the aggregate connect past the deadline. The seed on
+        // the timeout path is what releases the waiter; without it the account
+        // is cached but the tracker closes with the waiter still parked.
+        let account_id = AccountId::from("REGISTER-TIMEOUT-001");
+        let mut node = LiveNode::build(
+            "TimeoutAccountNode".to_string(),
+            Some(account_registration_node_config()),
+        )
+        .unwrap();
+        add_direct_account_client(&mut node, account_id, None);
+        let never = Arc::new(tokio::sync::Notify::new());
+        add_direct_account_client(
+            &mut node,
+            AccountId::from("REGISTER-TIMEOUT-HELD-001"),
+            Some(never),
+        );
+        let handle = node.handle();
+        let wait_handle = handle.clone();
+        let cache = node.kernel.cache();
+
+        let (start_result, wait_result) = tokio::join!(node.start(), async move {
+            while wait_handle.state() == NodeState::Idle {
+                tokio::task::yield_now().await;
+            }
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                wait_handle.await_account_registered(account_id),
+            )
+            .await
+        });
+
+        start_result.expect_err("held client should time out the aggregate connect");
+        wait_result
+            .expect("connected client's account should release the waiter before timeout")
+            .unwrap();
+        assert!(cache.borrow().account(&account_id).is_some());
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_waiter_released_after_replay_run_restores_account() {
+        // Same restoration mechanism as the start() test, through the
+        // run_with_mode replay branch, which returns before the select loop
+        // and carries its own post-start seed.
+        let account_id = AccountId::from("REGISTER-REPLAY-RUN-001");
+        let mut node = live_node_with_replay_account(account_id);
+        let handle = node.handle();
+        let wait_handle = handle.clone();
+        let cache = node.kernel.cache();
+
+        let (run_result, wait_result) = tokio::join!(node.run(), async move {
+            while wait_handle.state() == NodeState::Idle {
+                tokio::task::yield_now().await;
+            }
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                wait_handle.await_account_registered(account_id),
+            )
+            .await
+        });
+
+        run_result.unwrap();
+        wait_result
+            .expect("restored account registration should arrive before timeout")
+            .unwrap();
+        assert!(cache.borrow().account(&account_id).is_some());
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_waiter_rejects_later_lifecycle_replay_registration() {
+        let account_id = AccountId::from("REGISTER-LIFECYCLE-001");
+        let mut node = live_node_with_account_restored_on_second_start(account_id);
+        let handle = node.handle();
+
+        node.start().await.unwrap();
+        let mut waiter = Box::pin(handle.await_account_registered(account_id));
+        assert_waiter_pending(waiter.as_mut());
+
+        node.stop().await.unwrap();
+        node.start().await.unwrap();
+
+        let error = waiter.await.unwrap_err();
+        assert!(error.to_string().contains("Node stopped before account"));
+        assert!(node.kernel.cache().borrow().account(&account_id).is_some());
+        node.stop().await.unwrap();
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_waiter_succeeds_for_event_drained_before_tracker_close() {
+        let mut node = LiveNode::build(
+            "DrainedAccountNode".to_string(),
+            Some(account_registration_node_config()),
+        )
+        .unwrap();
+        let handle = node.handle();
+        let account_id = AccountId::from("REGISTER-DRAIN-001");
+
+        node.start().await.unwrap();
+        let mut waiter = Box::pin(handle.await_account_registered(account_id));
+        assert_waiter_pending(waiter.as_mut());
+        get_exec_event_sender()
+            .send(registration_account_event(account_id))
+            .unwrap();
+
+        node.stop().await.unwrap();
+
+        waiter.await.unwrap();
+        assert!(node.kernel.cache().borrow().account(&account_id).is_some());
+        node.dispose();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_account_wait_fast_path_succeeds_after_normal_stop() {
+        let mut node = LiveNode::build(
+            "StoppedAccountNode".to_string(),
+            Some(account_registration_node_config()),
+        )
+        .unwrap();
+        let handle = node.handle();
+        let account_id = AccountId::from("REGISTER-STOPPED-001");
+        node.kernel
+            .cache()
+            .borrow_mut()
+            .add_account(AccountAny::Margin(MarginAccount::new(
+                registration_account_state(account_id),
+                true,
+            )))
+            .unwrap();
+
+        node.start().await.unwrap();
+        node.stop().await.unwrap();
+
+        tokio::time::timeout(Duration::ZERO, handle.await_account_registered(account_id))
+            .await
+            .expect("cached account wait should be immediately ready after stop")
+            .unwrap();
+        node.dispose();
     }
 
     #[rstest]

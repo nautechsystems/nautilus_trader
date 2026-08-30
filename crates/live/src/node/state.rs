@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU8, Ordering},
@@ -116,7 +116,7 @@ pub(super) enum RunningTransition {
 
 #[derive(Debug)]
 struct RegistrationState {
-    registered: HashSet<AccountId>,
+    registered: HashMap<AccountId, u64>,
     lifecycle_generation: u64,
     stopped: bool,
 }
@@ -132,7 +132,7 @@ impl RegistrationTracker {
         let (changed, _) = tokio::sync::watch::channel(0);
         Self {
             state: Mutex::new(RegistrationState {
-                registered: HashSet::new(),
+                registered: HashMap::new(),
                 lifecycle_generation: 0,
                 stopped: false,
             }),
@@ -143,7 +143,14 @@ impl RegistrationTracker {
     pub(super) fn seed(&self, account_ids: impl IntoIterator<Item = AccountId>) {
         let mut state = self.state.lock().expect("registration tracker poisoned");
         let previous_len = state.registered.len();
-        state.registered.extend(account_ids);
+        let lifecycle_generation = state.lifecycle_generation;
+        for account_id in account_ids {
+            state
+                .registered
+                .entry(account_id)
+                .or_insert(lifecycle_generation);
+        }
+
         if state.registered.len() != previous_len {
             self.notify();
         }
@@ -151,7 +158,14 @@ impl RegistrationTracker {
 
     pub(super) fn mark_registered(&self, account_id: AccountId) {
         let mut state = self.state.lock().expect("registration tracker poisoned");
-        if state.registered.insert(account_id) {
+        let previous_len = state.registered.len();
+        let lifecycle_generation = state.lifecycle_generation;
+        state
+            .registered
+            .entry(account_id)
+            .or_insert(lifecycle_generation);
+
+        if state.registered.len() != previous_len {
             self.notify();
         }
     }
@@ -311,7 +325,8 @@ impl LiveNodeHandle {
     ///
     /// # Errors
     ///
-    /// Returns an error if the handle is unattached or the node stops before registration.
+    /// Returns an error if the handle is unattached, the account is absent while the node is
+    /// `Idle` or `Stopped`, or the node stops before registration.
     pub async fn await_account_registered(&self, account_id: AccountId) -> anyhow::Result<()> {
         let Some(registration) = &self.registration else {
             anyhow::bail!("Cannot await account registration with an unattached node handle");
@@ -323,7 +338,12 @@ impl LiveNodeHandle {
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Account registration tracker is unavailable"))?;
 
-            if state.registered.contains(&account_id) {
+            let lifecycle_generation = state.lifecycle_generation;
+            if state
+                .registered
+                .get(&account_id)
+                .is_some_and(|generation| *generation <= lifecycle_generation)
+            {
                 return Ok(());
             }
 
@@ -338,7 +358,7 @@ impl LiveNodeHandle {
                 );
             }
 
-            state.lifecycle_generation
+            lifecycle_generation
         };
 
         loop {
@@ -354,7 +374,11 @@ impl LiveNodeHandle {
                     .lock()
                     .map_err(|_| anyhow::anyhow!("Account registration tracker is unavailable"))?;
 
-                if state.registered.contains(&account_id) {
+                if state
+                    .registered
+                    .get(&account_id)
+                    .is_some_and(|generation| *generation <= lifecycle_generation)
+                {
                     return Ok(());
                 }
 
