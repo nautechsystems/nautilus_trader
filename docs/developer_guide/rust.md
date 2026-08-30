@@ -131,6 +131,12 @@ Use the narrowest visibility that serves the caller. The workspace denies unreac
 
 - Keep imports at the top of the file or module. Use a local import only when its narrow scope
   materially improves clarity.
+- Group module-wide constants and global state near the top of the module. Put `const` items before
+  `static` and `thread_local!` declarations. Keep a narrowly used constant or static next to its
+  consumers instead.
+- Place enums by role rather than in one module-wide enum block. Keep a primary or public enum with
+  the module's primary types, a small state enum next to the global whose state it represents, and
+  a private helper enum below its first caller.
 - Keep the primary type and its inherent implementation near the top of a module. In adapters,
   place private route types, decision enums, and parsing functions below the main client
   implementations.

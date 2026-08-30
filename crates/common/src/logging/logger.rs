@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Core logger lifecycle, filtering, event formatting, and dispatch.
+
 use std::{
     cell::RefCell,
     fmt::{Display, Write as _},
@@ -72,28 +74,6 @@ const REPEATED_USTR_CACHE_CAP: usize = 8;
 thread_local! {
     static REPEATED_USTR_CACHE: RefCell<RepeatedUstrCache> =
         const { RefCell::new(RepeatedUstrCache::new()) };
-}
-
-#[derive(Clone, Copy)]
-struct RepeatedUstrCacheEntry {
-    ptr: usize,
-    len: usize,
-    value: Ustr,
-}
-
-#[derive(Clone, Copy)]
-struct RepeatedUstrCache {
-    entries: [Option<RepeatedUstrCacheEntry>; REPEATED_USTR_CACHE_CAP],
-    next: usize,
-}
-
-impl RepeatedUstrCache {
-    const fn new() -> Self {
-        Self {
-            entries: [None; REPEATED_USTR_CACHE_CAP],
-            next: 0,
-        }
-    }
 }
 
 /// Storage for structured log fields.
@@ -665,6 +645,28 @@ fn intern_repeated(value: &str) -> Ustr {
         cache_state.next = (insert_idx + 1) % REPEATED_USTR_CACHE_CAP;
         interned
     })
+}
+
+#[derive(Clone, Copy)]
+struct RepeatedUstrCacheEntry {
+    ptr: usize,
+    len: usize,
+    value: Ustr,
+}
+
+#[derive(Clone, Copy)]
+struct RepeatedUstrCache {
+    entries: [Option<RepeatedUstrCacheEntry>; REPEATED_USTR_CACHE_CAP],
+    next: usize,
+}
+
+impl RepeatedUstrCache {
+    const fn new() -> Self {
+        Self {
+            entries: [None; REPEATED_USTR_CACHE_CAP],
+            next: 0,
+        }
+    }
 }
 
 fn intern_component_value(value: &log::kv::Value<'_>) -> Ustr {
@@ -1291,6 +1293,7 @@ pub(crate) fn shutdown_graceful() {
     *lifecycle = LoggerLifecycle::Terminated;
 }
 
+/// Returns whether the process-global logger is running.
 pub(crate) fn is_running() -> bool {
     *LOGGER_LIFECYCLE
         .lock()
@@ -1340,6 +1343,7 @@ fn sync_sender_to_disk(tx: &std::sync::mpsc::Sender<LogEvent>) -> anyhow::Result
         .map_err(|e| anyhow::anyhow!("failed to receive logging sync acknowledgement: {e}"))?
 }
 
+/// Logs a message with the given level, color, and component.
 pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, message: T) {
     let color = Value::from(color as u8);
 

@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Stdout, stderr, and rotating file log writers.
+
 use std::{
     borrow::Cow,
     collections::VecDeque,
@@ -40,6 +42,7 @@ pub trait LogWriter {
     fn enabled(&self, line: &LogLine) -> bool;
 }
 
+/// Writes eligible log lines to stdout with optional buffering and ANSI colors.
 #[derive(Debug)]
 pub struct StdoutWriter {
     pub is_colored: bool,
@@ -100,6 +103,7 @@ impl LogWriter for StdoutWriter {
     }
 }
 
+/// Writes error log lines to stderr.
 #[derive(Debug)]
 pub struct StderrWriter {
     pub is_colored: bool,
@@ -135,7 +139,7 @@ impl LogWriter for StderrWriter {
     }
 }
 
-/// File rotation config.
+/// Configures size-based log file rotation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FileRotateConfig {
@@ -195,6 +199,7 @@ impl From<(u64, u32)> for FileRotateConfig {
     }
 }
 
+/// Configures file log output.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.common", from_py_object)
@@ -263,6 +268,7 @@ impl FileWriterConfig {
     }
 }
 
+/// Writes sanitized plain-text or JSON log lines with optional file rotation.
 #[derive(Debug)]
 pub struct FileWriter {
     pub json_format: bool,

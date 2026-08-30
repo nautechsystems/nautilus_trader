@@ -181,7 +181,7 @@ impl LoggerConfig {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pymethods]
 impl FileWriterConfig {
-    /// Creates a new `FileWriterConfig` instance.
+    /// Configures file log output.
     #[new]
     #[pyo3(signature = (directory=None, file_name=None, file_format=None, file_rotate=None))]
     #[must_use]
@@ -348,7 +348,7 @@ pub fn py_logger_log(level: LogLevel, color: LogColor, component: &str, message:
     logger::log(level, color, Ustr::from(component), message);
 }
 
-/// Logs the standard Nautilus system header.
+/// Logs the Nautilus startup header with system, identifier, and version details.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "log_header")]
@@ -356,7 +356,7 @@ pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, 
     headers::log_header(trader_id, machine_id, instance_id, Ustr::from(component));
 }
 
-/// Logs system information.
+/// Logs current memory and swap usage.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "log_sysinfo")]

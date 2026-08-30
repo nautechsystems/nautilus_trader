@@ -205,6 +205,7 @@ pub fn init_logging(
     Logger::init_with_config(trader_id, instance_id, config, file_config)
 }
 
+/// Maps a [`LogLevel`] to a [`LevelFilter`].
 #[must_use]
 pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
     match log_level {
