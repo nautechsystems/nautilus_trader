@@ -99,6 +99,7 @@ no-build-package = [
   "maturin",
   "mdit-py-plugins",
   "mdurl",
+  "memray",
   "myst-parser",
   "narwhals",
   "numpy",
@@ -113,10 +114,12 @@ no-build-package = [
   "pytest",
   "pytest-asyncio",
   "pytest-cov",
+  "pytest-memray",
   "pytest-xdist",
   "python-dateutil",
   "pyyaml",
   "requests",
+  "rich",
   "roman-numerals",
   "ruff",
   "simplejson",
@@ -132,6 +135,7 @@ no-build-package = [
   "sphinxcontrib-jsmath",
   "sphinxcontrib-qthelp",
   "sphinxcontrib-serializinghtml",
+  "textual",
   "ty",
   "typing-extensions",
   "tzdata",
@@ -147,6 +151,7 @@ test = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-cov>=7.1.0",
+  "pytest-memray>=1.10.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   "pytest-xdist[psutil]>=3.8.0",
   "uvicorn>=0.52.4",
   "uvloop>=0.22.1; sys_platform != 'win32'",
@@ -386,6 +391,12 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "SLF001",
   "TC001",
   "TC003",
+] # Root-relative form used by repository-wide checks
+"memray_tests/**/*.py" = [
+  "S101",
+] # Memory tests use assertions like the main test suite
+"python/memray_tests/**/*.py" = [
+  "S101",
 ] # Root-relative form used by repository-wide checks
 "tests/unit/persistence/test_option_greeks_replay.py" = ["ERA001"]
 "python/tests/unit/persistence/test_option_greeks_replay.py" = [

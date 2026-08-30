@@ -40,8 +40,8 @@ integration, scheduled checks, and publication.
 - [`nightly-merge.yml`](workflows/nightly-merge.yml): fast-forwards `nightly` to the latest
   successful `develop` commit.
 - [`nightly-miri.yml`](workflows/nightly-miri.yml): runs Miri against selected crates.
-- [`nightly-tests.yml`](workflows/nightly-tests.yml): runs standard-precision Clippy, extended
-  network tests, and Cargo publication checks.
+- [`nightly-tests.yml`](workflows/nightly-tests.yml): runs Python memory leak tests,
+  standard-precision Clippy, extended network tests, and Cargo publication checks.
 - [`openssf-scorecard.yml`](workflows/openssf-scorecard.yml): publishes OpenSSF Scorecard results
   and uploads SARIF.
 - [`performance.yml`](workflows/performance.yml): runs Rust tests and registered benchmarks on
