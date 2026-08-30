@@ -1,12 +1,13 @@
 # Rust
 
-Rust's strong type system, ownership model, and predictable performance make it a natural fit for
-the mission-critical core of NautilusTrader. Safe Rust prevents data races and many memory errors at
-compile time; `unsafe` code must make the invariants the compiler cannot check explicit.
+NautilusTrader uses Rust for its mission-critical core because the language combines a strong type
+system, an ownership model, and predictable performance. Safe Rust prevents data races and many
+memory errors at compile time. `unsafe` code must make explicit the invariants that the compiler
+cannot check.
 
 Use this reference when changing hand-written Rust source, Cargo manifests, PyO3 bindings, or Rust
-tests. `rustfmt` and the workspace lints own general Rust style. This page documents
-NautilusTrader-specific choices that are easy to miss during review.
+tests. `rustfmt` and the workspace lints own general Rust style; this page documents the
+NautilusTrader-specific rules that supplement them.
 
 ## Sources of truth
 
@@ -29,6 +30,62 @@ NautilusTrader-specific choices that are easy to miss during review.
 
 Match nearby code when the tools do not settle a choice. Change generator inputs and regenerate
 outputs instead of editing generated files directly.
+
+## Module layout
+
+Arrange each hand-written module so its primary behavior appears before its supporting
+implementation details.
+
+### Module roots and declarations
+
+Preserve the surrounding module-root style when adding child modules. In each contiguous
+declaration block in a `mod.rs` file, order out-of-line module declarations by these sections:
+
+1. `#[macro_use]` modules.
+1. Public modules.
+1. Restricted modules such as `pub(crate)`.
+1. Non-test `#[cfg(...)]`-gated modules.
+1. Private modules.
+1. Test-only modules.
+
+Alphabetize declarations within each section and leave one blank line between sections. The
+formatting hook enforces this order in `mod.rs` files.
+
+Use the narrowest visibility that serves the caller. The workspace denies unreachable `pub` items.
+
+### Imports
+
+Keep imports at the top of the file or module. Use a local import only when its narrow scope
+materially improves clarity.
+
+### Constants and global state
+
+Group module-wide constants and global state near the top of the module. Put `const` items before
+`static` and `thread_local!` declarations. Keep a narrowly used constant or static next to its
+consumers instead.
+
+### Primary types and implementations
+
+Keep the primary type and its inherent implementation near the top of a module.
+
+### Enums
+
+Place enums by role rather than collecting them in one module-wide block:
+
+- Keep a primary or public enum with the module's primary types.
+- Keep a small state enum next to the global whose state it represents.
+- Place a private supporting enum below its first caller.
+
+### Supporting definitions
+
+Place private functions and types below their callers. In adapters, place private route types,
+decision enums, and parsing functions below the main client implementations.
+
+### Box-style banner comments
+
+Do not add box-style banner or separator comments to divide module contents. Use modules and
+implementation blocks to express structure. The standard copyright and license header is the
+exception.
 
 ## Cargo manifests
 
@@ -100,52 +157,13 @@ Place the optional `publish`, `build`, and `include` fields after `homepage.work
 - Order library crate types as `rlib`, `staticlib`, then `cdylib` when a crate produces more than
   one type.
 
-## Source layout
-
-### File header requirements
+## File header requirements
 
 Copy the standard copyright and license header from a neighboring hand-written Rust file. Generated
 files retain their generator header instead. The copyright hook checks the year.
 
 Change a generator input and rerun the generator instead of editing generated Rust, C headers,
 Python stubs, or wrapper doc comments.
-
-### Module declarations
-
-Use `mod.rs` as the root of a module with child modules. In each contiguous declaration block, order
-external modules by these sections:
-
-1. `#[macro_use]` modules.
-1. Public modules.
-1. Restricted modules such as `pub(crate)`.
-1. Feature-gated modules.
-1. Private modules.
-1. Test-only modules.
-
-Alphabetize declarations within each section and leave one blank line between sections. The
-formatting hook enforces this order in `mod.rs` files.
-
-Use the narrowest visibility that serves the caller. The workspace denies unreachable `pub` items.
-
-### Item placement
-
-- Keep imports at the top of the file or module. Use a local import only when its narrow scope
-  materially improves clarity.
-- Group module-wide constants and global state near the top of the module. Put `const` items before
-  `static` and `thread_local!` declarations. Keep a narrowly used constant or static next to its
-  consumers instead.
-- Place enums by role rather than in one module-wide enum block. Keep a primary or public enum with
-  the module's primary types, a small state enum next to the global whose state it represents, and
-  a private helper enum below its first caller.
-- Keep the primary type and its inherent implementation near the top of a module. In adapters,
-  place private route types, decision enums, and parsing functions below the main client
-  implementations.
-- Place private functions and types below their callers.
-
-### Box-style banner comments
-
-Do not use box-style banner or separator comments. Use modules and implementation blocks to express
-structure.
 
 ## Formatting and attributes
 
@@ -293,7 +311,7 @@ Use the shared `FAILED` constant with `CorrectnessResultExt::expect_display` so 
 the standard `Condition failed: ...` prefix. Document the error on `new_checked()` and the panic on
 `new()`.
 
-Types with long constructors dominated by optional fields should expose a `bon` builder instead of
+For types with long constructors dominated by optional fields, use a `bon` builder instead of
 public positional `new()` and `new_checked()` methods. Put `#[bon::bon]` on the inherent
 implementation and make the builder's finish method delegate to a private validation function or
 perform the validation directly. Keep one validation and defaulting path.
@@ -345,17 +363,17 @@ Choose a hash collection by iteration semantics and trust boundary:
 | Keys chosen by an untrusted third party.       | `HashMap` or `HashSet`.   |
 | External API requires a standard collection.   | `HashMap` or `HashSet`.   |
 
-`AHash` iteration varies between processes. Fix the order when it leaves the process or advances the
-seeded RNG: emitted events, commands and traffic sent to a venue, persisted output, and random number
-consumption. A sequence that no production caller consumes does not need it.
+Default `AHashMap` and `AHashSet` instances randomize their hasher state, so their iteration order is
+not stable. When iteration order affects emitted events, commands and traffic sent to a venue,
+persisted output, or random number consumption, make the order deterministic. An iteration whose
+order no caller observes does not need stabilization.
 
-Either mechanism satisfies this: hold the collection in `IndexMap` or `IndexSet`, or keep the hash
-collection and sort at the point of use. Prefer sorting when the collection is hot on lookup or
-removal, since `shift_remove` is O(n); prefer `IndexMap` when insertion order is itself the
-meaningful sequence. Use `shift_remove` when removal must preserve insertion order and `swap_remove`
-when it need not.
+Use `IndexMap` or `IndexSet` when insertion order is both deterministic and the required sequence.
+Otherwise, keep the hash collection and sort at the point of use. Prefer sorting when ordered
+traversal is infrequent or order-preserving removal is hot. `shift_remove` preserves relative order
+in O(n) average time; `swap_remove` runs in O(1) average time but can move the last entry.
 
-`AHashMap` and `AHashSet` use a non-cryptographic hasher. Do not use them where untrusted keys make
+`AHash` is not cryptographically secure. Use `HashMap` or `HashSet` where untrusted keys make
 hash-flooding resistance part of the security boundary.
 
 ### Cache order access
