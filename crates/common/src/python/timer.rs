@@ -32,10 +32,10 @@ use crate::timer::TimeEvent;
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl TimeEvent {
-    /// Represents a time event occurring at the event timestamp.
+    /// Represents a named timer event.
     ///
-    /// A `TimeEvent` carries metadata such as the event's name, a unique event ID,
-    /// and timestamps indicating when the event was scheduled to occur and when it was initialized.
+    /// `ts_event` records the scheduled event time, while `ts_init` records
+    /// when the event instance was initialized.
     #[new]
     fn py_new(name: &str, event_id: UUID4, ts_event: u64, ts_init: u64) -> Self {
         Self::new(Ustr::from(name), event_id, ts_event.into(), ts_init.into())
