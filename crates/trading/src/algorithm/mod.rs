@@ -35,6 +35,8 @@
 //! 5. Spawned orders are submitted through the `RiskEngine`.
 //! 6. The algorithm receives fill events and manages remaining quantity.
 
+use std::fmt::Display;
+
 pub mod config;
 pub mod core;
 pub mod twap;
@@ -436,8 +438,8 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
-    /// rejected (before acceptance), the deducted quantity is automatically
-    /// restored to the primary order.
+    /// rejected (before acceptance), or refused before submission, the deducted
+    /// quantity is automatically restored to the primary order.
     fn spawn_market(
         &mut self,
         primary: &mut OrderAny,
@@ -495,8 +497,8 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
-    /// rejected (before acceptance), the deducted quantity is automatically
-    /// restored to the primary order.
+    /// rejected (before acceptance), or refused before submission, the deducted
+    /// quantity is automatically restored to the primary order.
     #[expect(clippy::too_many_arguments)]
     fn spawn_limit(
         &mut self,
@@ -566,8 +568,8 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// If `reduce_primary` is true, the primary order's quantity will be reduced
     /// by the spawned quantity. If the spawned order is subsequently denied or
-    /// rejected (before acceptance), the deducted quantity is automatically
-    /// restored to the primary order.
+    /// rejected (before acceptance), or refused before submission, the deducted
+    /// quantity is automatically restored to the primary order.
     ///
     /// `_emulation_trigger` is accepted for signature parity and is not applied:
     /// a `MARKET_TO_LIMIT` order is always initialized with `NoTrigger` and
@@ -681,12 +683,12 @@ pub trait ExecutionAlgorithm: DataActor {
         publish_order_event(&event);
     }
 
-    /// Restores the primary order quantity after a spawned order is denied or rejected.
+    /// Restores the primary order quantity after a spawned order fails before acceptance.
     ///
     /// This is called when a spawned order fails before acceptance. The quantity
     /// that was deducted from the primary order is restored (up to the spawned
     /// order's `leaves_qty` to handle partial fills).
-    fn restore_primary_order_quantity(&mut self, order: &OrderAny)
+    fn restore_primary_order_quantity(&mut self, order: &OrderAny, refused_before_submission: bool)
     where
         Self: ExecutionAlgorithmNative,
     {
@@ -763,8 +765,13 @@ pub trait ExecutionAlgorithm: DataActor {
 
         publish_order_event(&event);
 
+        let outcome = if refused_before_submission {
+            "refused before submission"
+        } else {
+            "denied/rejected"
+        };
         log::info!(
-            "Restored primary order {} quantity to {} after spawned order {} was denied/rejected",
+            "Restored primary order {} quantity to {} after spawned order {} was {outcome}",
             primary.client_order_id(),
             restored_qty,
             order.client_order_id()
@@ -773,7 +780,10 @@ pub trait ExecutionAlgorithm: DataActor {
 
     /// Submits an order to the execution engine via the risk engine.
     ///
-    /// Execution algorithms cannot submit orders carrying a live emulation trigger.
+    /// Orders carrying a live emulation trigger are refused before submission.
+    /// For spawned orders with a pending primary reduction, refusal restores the
+    /// primary order quantity, consumes the pending reduction, and publishes
+    /// `OrderUpdated`.
     ///
     /// # Errors
     ///
@@ -795,10 +805,8 @@ pub trait ExecutionAlgorithm: DataActor {
             .is_some_and(|trigger| trigger != TriggerType::NoTrigger)
         {
             let client_order_id = order.client_order_id();
-            self.restore_primary_order_quantity(&order);
-            anyhow::bail!(
-                "Execution algorithm cannot submit order {client_order_id} with a live emulation trigger"
-            );
+            self.restore_primary_order_quantity(&order, true);
+            return Err(EmulatedOrderSubmissionError { client_order_id }.into());
         }
 
         let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
@@ -1270,14 +1278,14 @@ pub trait ExecutionAlgorithm: DataActor {
         match &event {
             OrderEventAny::Initialized(e) => self.on_order_initialized(e.clone()),
             OrderEventAny::Denied(e) => {
-                self.restore_primary_order_quantity(&order);
+                self.restore_primary_order_quantity(&order, false);
                 self.on_order_denied(*e);
             }
             OrderEventAny::Emulated(e) => self.on_order_emulated(*e),
             OrderEventAny::Released(e) => self.on_order_released(*e),
             OrderEventAny::Submitted(e) => self.on_order_submitted(*e),
             OrderEventAny::Rejected(e) => {
-                self.restore_primary_order_quantity(&order);
+                self.restore_primary_order_quantity(&order, false);
                 self.on_order_rejected(*e);
             }
             OrderEventAny::Accepted(e) => {
@@ -1485,6 +1493,23 @@ pub trait ExecutionAlgorithm: DataActor {
     #[allow(unused_variables)]
     fn on_position_event(&mut self, event: PositionEvent) {}
 }
+
+#[derive(Debug)]
+pub(crate) struct EmulatedOrderSubmissionError {
+    client_order_id: ClientOrderId,
+}
+
+impl Display for EmulatedOrderSubmissionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Execution algorithm cannot submit order {} with a live emulation trigger",
+            self.client_order_id
+        )
+    }
+}
+
+impl std::error::Error for EmulatedOrderSubmissionError {}
 
 fn publish_order_initialized(order: &OrderAny) {
     let event = OrderEventAny::Initialized(order.init_event().clone());
@@ -2591,7 +2616,13 @@ mod tests {
             &event_handler,
         );
         let cache = algo.core.cache_ref();
-        let error = result.unwrap_err().to_string();
+        let error = result.unwrap_err();
+        assert!(
+            error
+                .downcast_ref::<EmulatedOrderSubmissionError>()
+                .is_some()
+        );
+        let error = error.to_string();
         assert!(error.contains("live emulation trigger"), "{error}");
         assert!(error.contains(client_order_id.as_str()), "{error}");
         assert!(risk_messages.get_messages().is_empty());

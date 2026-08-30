@@ -55,8 +55,8 @@ use pyo3::{
 use ustr::Ustr;
 
 use crate::algorithm::{
-    ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, ExecutionAlgorithmNative,
-    ImportableExecutionAlgorithmConfig,
+    EmulatedOrderSubmissionError, ExecutionAlgorithm, ExecutionAlgorithmConfig,
+    ExecutionAlgorithmCore, ExecutionAlgorithmNative, ImportableExecutionAlgorithmConfig,
 };
 
 /// Inner state of `PyExecutionAlgorithm`, shared by the Python and Rust registries.
@@ -1100,8 +1100,13 @@ impl PyExecutionAlgorithm {
         client_id: Option<ClientId>,
     ) -> PyResult<()> {
         let order = pyobject_to_order_any(py, order)?;
-        ExecutionAlgorithm::submit_order(self, order, position_id, client_id)
-            .map_err(to_pyruntime_err)
+        ExecutionAlgorithm::submit_order(self, order, position_id, client_id).map_err(|e| {
+            if e.downcast_ref::<EmulatedOrderSubmissionError>().is_some() {
+                to_pyvalue_err(e)
+            } else {
+                to_pyruntime_err(e)
+            }
+        })
     }
 
     #[pyo3(name = "modify_order")]
@@ -1471,11 +1476,12 @@ mod tests {
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        enums::OrderType,
+        enums::{OrderSide, OrderType, TriggerType},
         identifiers::{
             ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, Venue,
         },
         orders::OrderTestBuilder,
+        types::{Price, Quantity},
     };
     use pyo3::{
         ffi::c_str,
@@ -1485,6 +1491,53 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+
+    #[rstest]
+    fn test_python_submit_order_maps_emulation_refusal_to_value_error() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            *get_message_bus().borrow_mut() = MessageBus::default();
+
+            let mut algorithm = PyExecutionAlgorithm::new(None);
+            let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+            let cache = Rc::new(RefCell::new(Cache::default()));
+            Component::register(&mut algorithm, TraderId::from("TRADER-001"), clock, cache)
+                .unwrap();
+
+            let client_order_id = ClientOrderId::from("O-EMULATED-SUBMISSION");
+            let emulated_order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+                .client_order_id(client_order_id)
+                .side(OrderSide::Buy)
+                .price(Price::from("1.00000"))
+                .quantity(Quantity::from("100"))
+                .emulation_trigger(TriggerType::BidAsk)
+                .build();
+            let emulated_order =
+                nautilus_model::python::orders::order_any_to_pyobject(py, emulated_order).unwrap();
+
+            let e = algorithm
+                .py_submit_order(py, emulated_order, None, None)
+                .unwrap_err();
+            assert!(e.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            let message = e.to_string();
+            assert!(message.contains(client_order_id.as_str()), "{message}");
+            assert!(message.contains("live emulation trigger"), "{message}");
+
+            let mut unregistered_algorithm = PyExecutionAlgorithm::new(None);
+            let order = OrderTestBuilder::new(OrderType::Market)
+                .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("100"))
+                .build();
+            let order = nautilus_model::python::orders::order_any_to_pyobject(py, order).unwrap();
+            let e = unregistered_algorithm
+                .py_submit_order(py, order, None, None)
+                .unwrap_err();
+            assert!(e.is_instance_of::<pyo3::exceptions::PyRuntimeError>(py));
+        });
+    }
 
     fn sample_queue_state_changed() -> QueueStateChanged {
         QueueStateChanged::new(
