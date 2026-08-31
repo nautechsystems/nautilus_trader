@@ -220,3 +220,40 @@ def test_reset_successfully_returns_indicator_to_fresh_state(hma: HullMovingAver
     # Assert
     assert not hma.initialized
     assert hma.value == 0
+
+
+# The inner `WeightedMovingAverage` buffers into a fixed-capacity `ArrayDeque`
+# sized by `MAX_PERIOD` in `crates/indicators/src/average/wma.rs`.
+MAX_PERIOD = 8192
+
+
+def test_new_at_max_period_constructs() -> None:
+    """
+    Test construction at the period upper bound succeeds.
+    """
+    # Act
+    hma = HullMovingAverage(MAX_PERIOD)
+
+    # Assert
+    assert hma.period == MAX_PERIOD
+
+
+def test_new_above_max_period_raises_value_error() -> None:
+    """
+    Test construction above the period upper bound raises rather than aborts.
+
+    Release wheels compile with `panic = "abort"`, so this has to come back
+    through the checked constructor as a `ValueError` instead of unwinding.
+    """
+    # Act, Assert
+    with pytest.raises(ValueError, match="exceeds MAX_PERIOD"):
+        HullMovingAverage(MAX_PERIOD + 1)
+
+
+def test_new_with_zero_period_raises_value_error() -> None:
+    """
+    Test construction with a zero period raises rather than aborts.
+    """
+    # Act, Assert
+    with pytest.raises(ValueError, match="period must be > 0"):
+        HullMovingAverage(0)

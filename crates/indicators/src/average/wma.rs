@@ -25,7 +25,7 @@ use nautilus_model::{
 use crate::indicator::{Indicator, MovingAverage};
 
 /// Maximum supported rolling window period (bounded by the fixed-capacity input buffer).
-pub const MAX_PERIOD: usize = 8_192;
+pub(crate) const MAX_PERIOD: usize = 8_192;
 
 /// An indicator which calculates a weighted moving average across a rolling window.
 #[repr(C)]
