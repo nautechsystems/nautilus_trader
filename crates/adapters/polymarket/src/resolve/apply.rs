@@ -16,10 +16,11 @@
 use std::sync::Arc;
 
 use nautilus_common::messages::DataEvent;
-use nautilus_core::{AtomicMap, time::AtomicTime};
+use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 use nautilus_model::{
     data::{Data as NautilusData, InstrumentClose, InstrumentStatus},
     enums::{InstrumentCloseType, MarketStatusAction},
+    identifiers::InstrumentId,
     types::Price,
 };
 use parking_lot::Mutex;
@@ -61,6 +62,8 @@ pub(crate) struct ResolveContext {
     pub(crate) data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     pub(crate) watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
     pub(crate) apply_mutex: Arc<Mutex<()>>,
+    pub(crate) active_status_subs: Arc<AtomicSet<InstrumentId>>,
+    pub(crate) active_close_subs: Arc<AtomicSet<InstrumentId>>,
 }
 
 pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
@@ -215,6 +218,7 @@ pub(crate) fn merge_resolve_watch_entry(ctx: &ResolveContext, entry: ResolveWatc
                     current
                         .open_position_ids
                         .extend(incoming.open_position_ids.iter().copied());
+                    current.has_data_subscription |= incoming.has_data_subscription;
                 } else {
                     existing.tracked.insert(token_id.clone(), incoming.clone());
                 }
@@ -233,6 +237,17 @@ pub(crate) fn merge_resolve_watch_entry(ctx: &ResolveContext, entry: ResolveWatc
     });
 }
 
+fn clear_data_resolution_subscription_intent(ctx: &ResolveContext, condition_id: &str) {
+    for subscriptions in [&ctx.active_status_subs, &ctx.active_close_subs] {
+        subscriptions.rcu(|entries| {
+            entries.retain(|instrument_id| {
+                !crate::providers::extract_condition_id(instrument_id)
+                    .is_ok_and(|candidate| candidate == condition_id)
+            });
+        });
+    }
+}
+
 pub(crate) fn apply_condition_resolution(
     ctx: &ResolveContext,
     condition_id: &str,
@@ -245,6 +260,7 @@ pub(crate) fn apply_condition_resolution(
             log::debug!(
                 "Ignoring resolution for condition_id={condition_id}: no local watch entry"
             );
+            clear_data_resolution_subscription_intent(ctx, condition_id);
             return 0;
         };
 
@@ -261,25 +277,32 @@ pub(crate) fn apply_condition_resolution(
     let tracked_instruments: Vec<TrackedInstrument> = entry.tracked.values().cloned().collect();
 
     for tracked in &tracked_instruments {
-        let status = InstrumentStatus::new(
-            tracked.instrument_id,
-            MarketStatusAction::Close,
-            ts_init,
-            ts_init,
-            Some(reason),
-            None,
-            Some(false),
-            None,
-            None,
-        );
-
-        if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
-            log::error!(
-                "Failed to emit instrument status for {}: {e}",
-                tracked.instrument_id
+        let position_owned = !tracked.open_position_ids.is_empty();
+        if position_owned || ctx.active_status_subs.contains(&tracked.instrument_id) {
+            let status = InstrumentStatus::new(
+                tracked.instrument_id,
+                MarketStatusAction::Close,
+                ts_init,
+                ts_init,
+                Some(reason),
+                None,
+                Some(false),
+                None,
+                None,
             );
-            merge_resolve_watch_entry(ctx, entry);
-            return 0;
+
+            if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
+                log::error!(
+                    "Failed to emit instrument status for {}: {e}",
+                    tracked.instrument_id
+                );
+                merge_resolve_watch_entry(ctx, entry);
+                return 0;
+            }
+        }
+
+        if !(position_owned || ctx.active_close_subs.contains(&tracked.instrument_id)) {
+            continue;
         }
 
         let close_price = if tracked.token_id == winning_asset_id {
@@ -310,6 +333,8 @@ pub(crate) fn apply_condition_resolution(
         }
     }
 
+    clear_data_resolution_subscription_intent(ctx, condition_id);
+
     tracked_instruments.len()
 }
 
@@ -336,6 +361,8 @@ mod tests {
             data_sender: data_tx,
             watchlist: Arc::new(AtomicMap::new()),
             apply_mutex: Arc::new(Mutex::new(())),
+            active_status_subs: Arc::new(AtomicSet::new()),
+            active_close_subs: Arc::new(AtomicSet::new()),
         };
 
         (ctx, data_rx)
@@ -355,6 +382,7 @@ mod tests {
                 token_id: token_yes.clone(),
                 price_precision: 3,
                 open_position_ids: AHashSet::from_iter([PositionId::new("P-EXISTING")]),
+                has_data_subscription: false,
             },
         );
         ctx.watchlist.insert(
@@ -375,6 +403,7 @@ mod tests {
                 token_id: token_yes.clone(),
                 price_precision: 3,
                 open_position_ids: AHashSet::from_iter([PositionId::new("P-INCOMING")]),
+                has_data_subscription: false,
             },
         );
         incoming_tracked.insert(
@@ -384,6 +413,7 @@ mod tests {
                 token_id: token_no,
                 price_precision: 3,
                 open_position_ids: AHashSet::from_iter([PositionId::new("P-NO")]),
+                has_data_subscription: false,
             },
         );
 
@@ -416,5 +446,56 @@ mod tests {
             yes.open_position_ids
                 .contains(&PositionId::new("P-INCOMING"))
         );
+    }
+
+    #[rstest]
+    fn data_status_subscription_emits_status_without_close() {
+        let (ctx, mut data_rx) = make_resolve_context();
+        ctx.active_status_subs
+            .insert(InstrumentId::from("0xCOND-0xYES.POLYMARKET"));
+        ctx.watchlist.insert(
+            "0xCOND".to_string(),
+            ResolveWatchEntry {
+                condition_id: "0xCOND".to_string(),
+                expiration_ns: UnixNanos::default(),
+                tracked: ahash::AHashMap::from_iter([(
+                    "0xYES".to_string(),
+                    TrackedInstrument {
+                        instrument_id: InstrumentId::from("0xCOND-0xYES.POLYMARKET"),
+                        token_id: "0xYES".to_string(),
+                        price_precision: 3,
+                        open_position_ids: AHashSet::new(),
+                        has_data_subscription: true,
+                    },
+                )]),
+                paused: false,
+            },
+        );
+
+        assert_eq!(
+            apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes"),
+            1
+        );
+        assert!(matches!(
+            data_rx.try_recv(),
+            Ok(DataEvent::InstrumentStatus(_))
+        ));
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn resolution_without_watch_entry_clears_terminal_data_subscription_intent() {
+        let (ctx, _data_rx) = make_resolve_context();
+        let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
+        ctx.active_status_subs.insert(instrument_id);
+        ctx.active_close_subs.insert(instrument_id);
+
+        assert_eq!(
+            apply_condition_resolution(&ctx, "0xCOND", "0xYES", "Yes"),
+            0
+        );
+
+        assert!(!ctx.active_status_subs.contains(&instrument_id));
+        assert!(!ctx.active_close_subs.contains(&instrument_id));
     }
 }

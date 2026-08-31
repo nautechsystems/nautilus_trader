@@ -450,8 +450,6 @@ fn yes_instrument_id() -> InstrumentId {
 #[derive(Clone, Copy)]
 enum UnsupportedGenericSubscription {
     BookDepth10,
-    InstrumentStatus,
-    InstrumentClose,
 }
 
 async fn wait_for_market_payload_count(
@@ -658,14 +656,6 @@ async fn test_subscribe_instrument_does_not_replay_cached_definition() {
     UnsupportedGenericSubscription::BookDepth10,
     "Polymarket does not support OrderBookDepth10 subscriptions; use managed L2_MBP order book deltas"
 )]
-#[case::instrument_status(
-    UnsupportedGenericSubscription::InstrumentStatus,
-    "Polymarket does not support generic instrument status subscriptions; resolution status is owned by position tracking"
-)]
-#[case::instrument_close(
-    UnsupportedGenericSubscription::InstrumentClose,
-    "Polymarket does not support generic instrument close subscriptions; resolution close is owned by position tracking"
-)]
 #[tokio::test]
 async fn test_unsupported_generic_subscription_returns_exact_reason(
     #[case] subscription: UnsupportedGenericSubscription,
@@ -691,32 +681,42 @@ async fn test_unsupported_generic_subscription_returns_exact_reason(
                 None,
             ))
         }
-        UnsupportedGenericSubscription::InstrumentStatus => {
-            client.subscribe_instrument_status(SubscribeInstrumentStatus::new(
-                instrument_id,
-                Some(*POLYMARKET_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-        }
-        UnsupportedGenericSubscription::InstrumentClose => {
-            client.subscribe_instrument_close(SubscribeInstrumentClose::new(
-                instrument_id,
-                Some(*POLYMARKET_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-        }
     };
 
     let error = result.expect_err("subscription should be unsupported");
     assert_eq!(error.to_string(), expected);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_instrument_status_and_close_subscriptions_are_accepted_without_position() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx) = create_test_data_client(addr);
+    let instrument_id = yes_instrument_id();
+
+    client
+        .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+            instrument_id,
+            Some(*POLYMARKET_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("instrument status subscription should establish resolution monitoring");
+    client
+        .subscribe_instrument_close(SubscribeInstrumentClose::new(
+            instrument_id,
+            Some(*POLYMARKET_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("instrument close subscription should establish resolution monitoring");
 }
 
 #[rstest]

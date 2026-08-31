@@ -96,6 +96,8 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            active_instrument_status_subs: self.active_instrument_status_subs.clone(),
+            active_instrument_close_subs: self.active_instrument_close_subs.clone(),
             closed_condition_ids: self.closed_condition_ids.clone(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
@@ -182,6 +184,8 @@ impl PolymarketDataClient {
             active_quote_subs: self.active_quote_subs.clone(),
             active_delta_subs: self.active_delta_subs.clone(),
             active_trade_subs: self.active_trade_subs.clone(),
+            active_instrument_status_subs: self.active_instrument_status_subs.clone(),
+            active_instrument_close_subs: self.active_instrument_close_subs.clone(),
             closed_condition_ids: self.closed_condition_ids.clone(),
             resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
@@ -430,6 +434,8 @@ impl PolymarketDataClient {
         self.active_quote_subs = std::sync::Arc::new(AtomicSet::new());
         self.active_delta_subs = std::sync::Arc::new(AtomicSet::new());
         self.active_trade_subs = std::sync::Arc::new(AtomicSet::new());
+        self.active_instrument_status_subs = std::sync::Arc::new(AtomicSet::new());
+        self.active_instrument_close_subs = std::sync::Arc::new(AtomicSet::new());
         self.pending_snapshot_after_tick_change = std::sync::Arc::new(AtomicSet::new());
         self.new_market_inflight_keys = std::sync::Arc::new(DashMap::new());
         self.ws_open_tokens = std::sync::Arc::new(AtomicSet::new());
@@ -800,6 +806,8 @@ mod tests {
         client.active_quote_subs.insert(instrument_id);
         client.active_delta_subs.insert(instrument_id);
         client.active_trade_subs.insert(instrument_id);
+        client.active_instrument_status_subs.insert(instrument_id);
+        client.active_instrument_close_subs.insert(instrument_id);
         client
             .ws_open_tokens
             .insert(Ustr::from(inst.raw_symbol().as_str()));
@@ -834,6 +842,8 @@ mod tests {
         client.active_quote_subs.insert(instrument_id);
         client.active_delta_subs.insert(instrument_id);
         client.active_trade_subs.insert(instrument_id);
+        client.active_instrument_status_subs.insert(instrument_id);
+        client.active_instrument_close_subs.insert(instrument_id);
         client.ws_open_tokens.insert(Ustr::from("0xCOND-0xTOKEN"));
         client
             .new_market_inflight_keys
@@ -871,6 +881,8 @@ mod tests {
         assert!(client.active_quote_subs.is_empty());
         assert!(client.active_delta_subs.is_empty());
         assert!(client.active_trade_subs.is_empty());
+        assert!(client.active_instrument_status_subs.is_empty());
+        assert!(client.active_instrument_close_subs.is_empty());
         assert!(client.ws_open_tokens.is_empty());
         assert!(client.order_books.is_empty());
         assert!(client.last_quotes.is_empty());

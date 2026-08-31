@@ -74,6 +74,8 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
         data_sender: client.data_sender.clone(),
         watchlist: client.resolve_poll_watchlist.clone(),
         apply_mutex: client.resolve_watch_apply_mutex.clone(),
+        active_status_subs: client.active_instrument_status_subs.clone(),
+        active_close_subs: client.active_instrument_close_subs.clone(),
     };
     let future = async move {
         let mut summary = ResolveRequestSummary {

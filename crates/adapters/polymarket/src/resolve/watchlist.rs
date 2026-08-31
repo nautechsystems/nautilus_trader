@@ -31,6 +31,7 @@ pub(crate) struct TrackedInstrument {
     pub(crate) token_id: String,
     pub(crate) price_precision: u8,
     pub(crate) open_position_ids: AHashSet<PositionId>,
+    pub(crate) has_data_subscription: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,9 +101,76 @@ fn binary_option_context(
         token_id: token_id.clone(),
         price_precision: instrument.price_precision(),
         open_position_ids: AHashSet::new(),
+        has_data_subscription: false,
     };
 
     Some((condition_id, token_id, expiration_ns, tracked))
+}
+
+pub(crate) fn upsert_data_resolve_watch_entry_from_instrument(
+    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    instrument: &InstrumentAny,
+) {
+    let Some((condition_id, token_id, expiration_ns, tracked)) = binary_option_context(instrument)
+    else {
+        return;
+    };
+
+    watchlist.rcu(|entries| {
+        let entry = entries
+            .entry(condition_id.clone())
+            .or_insert_with(|| ResolveWatchEntry {
+                condition_id: condition_id.clone(),
+                expiration_ns,
+                tracked: ahash::AHashMap::new(),
+                paused: false,
+            });
+        entry.expiration_ns = expiration_ns;
+        entry
+            .tracked
+            .entry(token_id.clone())
+            .and_modify(|existing| existing.has_data_subscription = true)
+            .or_insert_with(|| TrackedInstrument {
+                has_data_subscription: true,
+                ..tracked.clone()
+            });
+    });
+}
+
+pub(crate) fn remove_data_resolve_watch_entry_from_instrument(
+    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    instrument: &InstrumentAny,
+    has_data_subscription: bool,
+) {
+    let Some((condition_id, token_id, _expiration_ns, _tracked)) =
+        binary_option_context(instrument)
+    else {
+        return;
+    };
+
+    watchlist.rcu(|entries| {
+        let remove_entry = match entries.get_mut(&condition_id) {
+            Some(entry) => {
+                let remove_token = match entry.tracked.get_mut(&token_id) {
+                    Some(tracked) => {
+                        tracked.has_data_subscription = has_data_subscription;
+                        tracked.open_position_ids.is_empty() && !tracked.has_data_subscription
+                    }
+                    None => false,
+                };
+
+                if remove_token {
+                    entry.tracked.remove(&token_id);
+                }
+                entry.tracked.is_empty()
+            }
+            None => false,
+        };
+
+        if remove_entry {
+            entries.remove(&condition_id);
+        }
+    });
 }
 
 pub(crate) fn upsert_resolve_watch_entry_from_instrument(
@@ -156,7 +224,7 @@ fn remove_resolve_watch_instrument(
                 let remove_token = match entry.tracked.get_mut(&token_id) {
                     Some(tracked) => {
                         tracked.open_position_ids.remove(&position_id);
-                        tracked.open_position_ids.is_empty()
+                        tracked.open_position_ids.is_empty() && !tracked.has_data_subscription
                     }
                     None => false,
                 };
@@ -222,6 +290,13 @@ pub(crate) fn collect_resolve_watch_selection(
 
     for (condition_id, entry) in watchlist {
         if entry.tracked.is_empty() {
+            continue;
+        }
+
+        if entry.expiration_ns == UnixNanos::default() {
+            if mode != ResolveWatchSelectionMode::ManualFallback {
+                selection.condition_ids.push(condition_id.clone());
+            }
             continue;
         }
 
@@ -598,6 +673,49 @@ mod tests {
     }
 
     #[rstest]
+    fn data_subscription_and_position_owners_are_removed_independently() {
+        let watchlist: Arc<AtomicMap<String, ResolveWatchEntry>> = Arc::new(AtomicMap::new());
+        let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
+        let yes = seed_instrument_with_context(
+            &instruments,
+            "0xTOKEN_YES",
+            Price::from("0.001"),
+            Quantity::from("0.01"),
+            SeedInstrumentContext {
+                condition_id: Some("0xCOND-BTC"),
+                expiration_ns: Some(UnixNanos::from(1_000_000_000)),
+                ..SeedInstrumentContext::default()
+            },
+        );
+
+        upsert_data_resolve_watch_entry_from_instrument(&watchlist, &yes);
+        update_resolve_watchlist_from_position_event(
+            &watchlist,
+            &instruments,
+            &stub_position_opened_event(yes.id()),
+        );
+        remove_data_resolve_watch_entry_from_instrument(&watchlist, &yes, false);
+
+        let entries = watchlist.load();
+        let tracked = entries
+            .get("0xCOND-BTC")
+            .expect("position owner should retain condition")
+            .tracked
+            .get("0xTOKEN_YES")
+            .expect("position owner should retain instrument");
+        assert!(!tracked.has_data_subscription);
+        assert_eq!(tracked.open_position_ids.len(), 1);
+        drop(entries);
+
+        update_resolve_watchlist_from_position_event(
+            &watchlist,
+            &instruments,
+            &stub_position_closed_event(yes.id()),
+        );
+        assert!(!watchlist.contains_key(&"0xCOND-BTC".to_string()));
+    }
+
+    #[rstest]
     fn resolve_watch_selection_deduplicates_shared_condition_ids_and_pauses_timed_out_entries() {
         let now_ns = UnixNanos::from(2_000_000_000_000);
         let mut watchlist = ahash::AHashMap::new();
@@ -610,6 +728,7 @@ mod tests {
                 token_id: "0xYES".to_string(),
                 price_precision: 3,
                 open_position_ids: AHashSet::new(),
+                has_data_subscription: false,
             },
         );
         tracked.insert(
@@ -619,6 +738,7 @@ mod tests {
                 token_id: "0xNO".to_string(),
                 price_precision: 3,
                 open_position_ids: AHashSet::new(),
+                has_data_subscription: false,
             },
         );
         watchlist.insert(
@@ -667,6 +787,7 @@ mod tests {
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
                         open_position_ids: AHashSet::new(),
+                        has_data_subscription: false,
                     },
                 )]),
                 paused: true,
@@ -684,6 +805,7 @@ mod tests {
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
                         open_position_ids: AHashSet::new(),
+                        has_data_subscription: false,
                     },
                 )]),
                 paused: false,
@@ -715,6 +837,7 @@ mod tests {
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
                         open_position_ids: AHashSet::new(),
+                        has_data_subscription: false,
                     },
                 )]),
                 paused: false,

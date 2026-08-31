@@ -109,6 +109,8 @@ pub(super) struct WsMessageContext {
     pub(super) active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     pub(super) active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     pub(super) active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    pub(super) active_instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
+    pub(super) active_instrument_close_subs: Arc<AtomicSet<InstrumentId>>,
     pub(super) closed_condition_ids: Arc<Mutex<AHashSet<String>>>,
     pub(super) resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
     pub(super) resolve_watch_apply_mutex: Arc<Mutex<()>>,
@@ -138,6 +140,8 @@ impl WsMessageContext {
             data_sender: self.data_sender.clone(),
             watchlist: self.resolve_poll_watchlist.clone(),
             apply_mutex: self.resolve_watch_apply_mutex.clone(),
+            active_status_subs: self.active_instrument_status_subs.clone(),
+            active_close_subs: self.active_instrument_close_subs.clone(),
         }
     }
 }
@@ -830,6 +834,10 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
         }
 
         MarketWsMessage::MarketResolved(resolved) => {
+            ctx.closed_condition_ids
+                .lock()
+                .expect("closed_condition_ids mutex poisoned")
+                .insert(resolved.market.as_str().to_string());
             let emitted = apply_condition_resolution(
                 &ctx.resolve_context(),
                 resolved.market.as_str(),
@@ -1025,6 +1033,7 @@ mod tests {
             PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveBatchErrorMode,
             fetch_and_apply_resolutions_by_condition_ids, pause_resolve_watch_entries,
             update_resolve_watchlist_from_position_event,
+            upsert_data_resolve_watch_entry_from_instrument,
             upsert_resolve_watch_entry_from_instrument,
         },
         websocket::{
@@ -1215,6 +1224,8 @@ mod tests {
             active_quote_subs: Arc::new(AtomicSet::new()),
             active_delta_subs: Arc::new(AtomicSet::new()),
             active_trade_subs: Arc::new(AtomicSet::new()),
+            active_instrument_status_subs: Arc::new(AtomicSet::new()),
+            active_instrument_close_subs: Arc::new(AtomicSet::new()),
             closed_condition_ids: Arc::new(Mutex::new(AHashSet::new())),
             resolve_poll_watchlist: Arc::new(AtomicMap::new()),
             resolve_watch_apply_mutex: Arc::new(Mutex::new(())),
@@ -1379,6 +1390,8 @@ mod tests {
             active_quote_subs: client.active_quote_subs.clone(),
             active_delta_subs: client.active_delta_subs.clone(),
             active_trade_subs: client.active_trade_subs.clone(),
+            active_instrument_status_subs: client.active_instrument_status_subs.clone(),
+            active_instrument_close_subs: client.active_instrument_close_subs.clone(),
             closed_condition_ids: client.closed_condition_ids.clone(),
             resolve_poll_watchlist: client.resolve_poll_watchlist.clone(),
             resolve_watch_apply_mutex: client.resolve_watch_apply_mutex.clone(),
@@ -3024,16 +3037,12 @@ mod tests {
             },
         );
 
-        update_resolve_watchlist_from_position_event(
-            &ctx.resolve_poll_watchlist,
-            &ctx.instruments,
-            &stub_position_opened_event(yes.id()),
-        );
-        update_resolve_watchlist_from_position_event(
-            &ctx.resolve_poll_watchlist,
-            &ctx.instruments,
-            &stub_position_opened_event(no.id()),
-        );
+        upsert_data_resolve_watch_entry_from_instrument(&ctx.resolve_poll_watchlist, &yes);
+        upsert_data_resolve_watch_entry_from_instrument(&ctx.resolve_poll_watchlist, &no);
+        for instrument_id in [yes.id(), no.id()] {
+            ctx.active_instrument_status_subs.insert(instrument_id);
+            ctx.active_instrument_close_subs.insert(instrument_id);
+        }
 
         handle_market_message(
             make_market_resolved("0xCOND-BTC", "0xTOKEN_YES", "0xTOKEN_NO"),

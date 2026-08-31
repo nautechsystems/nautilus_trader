@@ -25,6 +25,8 @@ use nautilus_model::{
 use parking_lot::Mutex;
 use ustr::Ustr;
 
+type ResolutionSubscriptionSets = (Arc<AtomicSet<InstrumentId>>, Arc<AtomicSet<InstrumentId>>);
+
 pub(crate) fn resolve_token_id_from(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_id: InstrumentId,
@@ -61,6 +63,7 @@ pub(crate) async fn sync_ws_subscription_async(
         active_delta_subs,
         active_trade_subs,
         None,
+        None,
         ws_open_tokens,
         ws_sub_mutex,
         ws,
@@ -72,12 +75,14 @@ pub(crate) async fn sync_ws_subscription_async(
     clippy::too_many_arguments,
     reason = "shared state comes in as Arc refs"
 )]
-pub(crate) async fn sync_ws_subscription_with_terminal_async(
+pub(crate) async fn sync_ws_subscription_with_resolution_and_terminal_async(
     instrument_id: InstrumentId,
     token_id_str: String,
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    active_instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
+    active_instrument_close_subs: Arc<AtomicSet<InstrumentId>>,
     closed_condition_ids: Arc<Mutex<AHashSet<String>>>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
@@ -89,6 +94,7 @@ pub(crate) async fn sync_ws_subscription_with_terminal_async(
         active_quote_subs,
         active_delta_subs,
         active_trade_subs,
+        Some((active_instrument_status_subs, active_instrument_close_subs)),
         Some(closed_condition_ids),
         ws_open_tokens,
         ws_sub_mutex,
@@ -107,6 +113,7 @@ async fn sync_ws_subscription_inner(
     active_quote_subs: Arc<AtomicSet<InstrumentId>>,
     active_delta_subs: Arc<AtomicSet<InstrumentId>>,
     active_trade_subs: Arc<AtomicSet<InstrumentId>>,
+    active_resolution_subs: Option<ResolutionSubscriptionSets>,
     closed_condition_ids: Option<Arc<Mutex<AHashSet<String>>>>,
     ws_open_tokens: Arc<AtomicSet<Ustr>>,
     ws_sub_mutex: Arc<tokio::sync::Mutex<()>>,
@@ -122,7 +129,10 @@ async fn sync_ws_subscription_inner(
     let wants_subscribe = !is_terminal
         && (active_quote_subs.contains(&instrument_id)
             || active_delta_subs.contains(&instrument_id)
-            || active_trade_subs.contains(&instrument_id));
+            || active_trade_subs.contains(&instrument_id)
+            || active_resolution_subs.is_some_and(|(status, close)| {
+                status.contains(&instrument_id) || close.contains(&instrument_id)
+            }));
     let is_open = ws_open_tokens.contains(&token_id);
 
     if wants_subscribe && !is_open {
@@ -224,6 +234,38 @@ mod tests {
             other => panic!("unexpected command: {other:?}"),
         }
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn sync_ws_subscribes_when_resolution_intent_present_and_ws_closed() {
+        let (ws, mut rx) = make_handle();
+        let (quotes, deltas, trades, open, mutex) = make_state();
+        let status = Arc::new(AtomicSet::new());
+        let close = Arc::new(AtomicSet::new());
+        let inst = instrument_id();
+        status.insert(inst);
+
+        sync_ws_subscription_with_resolution_and_terminal_async(
+            inst,
+            inst.symbol.as_str().to_string(),
+            quotes,
+            deltas,
+            trades,
+            status,
+            close,
+            Arc::new(Mutex::new(AHashSet::new())),
+            open.clone(),
+            mutex,
+            ws,
+        )
+        .await;
+
+        assert!(open.contains(&token_ustr()));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(HandlerCommand::SubscribeMarket(ids)) if ids == vec![inst.symbol.as_str().to_string()]
+        ));
     }
 
     #[rstest]

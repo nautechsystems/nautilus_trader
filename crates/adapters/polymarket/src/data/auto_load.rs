@@ -36,11 +36,14 @@ use super::{
     runtime::{
         is_condition_closed, register_closed_condition_for_live_data, retire_closed_condition_state,
     },
-    subscriptions::{resolve_token_id_from, sync_ws_subscription_with_terminal_async},
+    subscriptions::{
+        resolve_token_id_from, sync_ws_subscription_with_resolution_and_terminal_async,
+    },
 };
 use crate::{
     common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE, filters::market_closed,
     http::query::GetGammaMarketsParams, providers::extract_condition_id,
+    resolve::upsert_data_resolve_watch_entry_from_instrument,
 };
 
 #[derive(Debug)]
@@ -97,6 +100,8 @@ impl PolymarketDataClient {
         if self.active_quote_subs.contains(&instrument_id)
             || self.active_delta_subs.contains(&instrument_id)
             || self.active_trade_subs.contains(&instrument_id)
+            || self.active_instrument_status_subs.contains(&instrument_id)
+            || self.active_instrument_close_subs.contains(&instrument_id)
         {
             return;
         }
@@ -140,6 +145,8 @@ impl PolymarketDataClient {
         let active_quote_subs = self.active_quote_subs.clone();
         let active_delta_subs = self.active_delta_subs.clone();
         let active_trade_subs = self.active_trade_subs.clone();
+        let active_instrument_status_subs = self.active_instrument_status_subs.clone();
+        let active_instrument_close_subs = self.active_instrument_close_subs.clone();
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws_client = self.ws_client.handle();
@@ -189,6 +196,8 @@ impl PolymarketDataClient {
                     active_quote_subs.contains(id)
                         || active_delta_subs.contains(id)
                         || active_trade_subs.contains(id)
+                        || active_instrument_status_subs.contains(id)
+                        || active_instrument_close_subs.contains(id)
                 });
 
                 if batch.is_empty() {
@@ -357,6 +366,21 @@ impl PolymarketDataClient {
                                         }
                                     },
                                 );
+
+                                let status_subscribed =
+                                    active_instrument_status_subs.contains(&instrument_id);
+                                let close_subscribed =
+                                    active_instrument_close_subs.contains(&instrument_id);
+
+                                if status_subscribed || close_subscribed {
+                                    let loaded = instruments.load();
+                                    if let Some(instrument) = loaded.get(&instrument_id) {
+                                        upsert_data_resolve_watch_entry_from_instrument(
+                                            &resolve_poll_watchlist,
+                                            instrument,
+                                        );
+                                    }
+                                }
                             }
                         }
                         AutoLoadOutcome::Closed => {
@@ -438,12 +462,14 @@ impl PolymarketDataClient {
                             if loaded_ids.contains(id)
                                 && let Ok(token_id) = resolve_token_id_from(&instruments, *id)
                             {
-                                sync_ws_subscription_with_terminal_async(
+                                sync_ws_subscription_with_resolution_and_terminal_async(
                                     *id,
                                     token_id,
                                     active_quote_subs.clone(),
                                     active_delta_subs.clone(),
                                     active_trade_subs.clone(),
+                                    active_instrument_status_subs.clone(),
+                                    active_instrument_close_subs.clone(),
                                     closed_condition_ids.clone(),
                                     ws_open_tokens.clone(),
                                     ws_sub_mutex.clone(),
