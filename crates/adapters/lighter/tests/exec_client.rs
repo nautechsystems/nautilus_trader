@@ -42,7 +42,7 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU8, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -176,6 +176,7 @@ struct TestServerState {
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     send_txs: Arc<tokio::sync::Mutex<Vec<Value>>>,
     rest_send_txs: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    account_type: Arc<AtomicU8>,
     maker_only_calls: Arc<AtomicUsize>,
     maker_only_api_key_indexes: Arc<tokio::sync::Mutex<Vec<i64>>>,
     maker_only_authorizations: Arc<tokio::sync::Mutex<Vec<String>>>,
@@ -219,6 +220,7 @@ impl Default for TestServerState {
             unsubscribes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             send_txs: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             rest_send_txs: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            account_type: Arc::new(AtomicU8::new(0)),
             maker_only_calls: Arc::new(AtomicUsize::new(0)),
             maker_only_api_key_indexes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             maker_only_authorizations: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -281,9 +283,11 @@ async fn order_book_details() -> Response {
     (StatusCode::OK, load_text("http_order_book_details.json")).into_response()
 }
 
-async fn account() -> Response {
-    // Standard-tier account fixture; exercises tier detection on connect.
-    (StatusCode::OK, load_text("http_account.json")).into_response()
+async fn account(State(state): State<Arc<TestServerState>>) -> Response {
+    let mut response = load_json("http_account.json");
+    response["accounts"][0]["account_type"] =
+        Value::from(state.account_type.load(Ordering::Relaxed));
+    (StatusCode::OK, response.to_string()).into_response()
 }
 
 async fn next_nonce() -> Response {
@@ -1680,8 +1684,9 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_submits_l2_only_integrator_auto_approval() {
+async fn connect_premium_account_submits_l2_only_integrator_auto_approval() {
     let (addr, state) = start_server().await;
+    state.account_type.store(1, Ordering::Relaxed);
     let (mut client, _rx, _cache) = build_client_mainnet(addr);
 
     client.connect().await.expect("connect");
@@ -1716,6 +1721,20 @@ async fn connect_submits_l2_only_integrator_auto_approval() {
         "ApprovalExpiry must use the maximum five-year TTL",
     );
     assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 0);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_standard_account_skips_integrator_auto_approval() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx, _cache) = build_client_mainnet(addr);
+
+    client.connect().await.expect("connect");
+
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
 
     client.disconnect().await.expect("disconnect");
 }
@@ -1809,6 +1828,7 @@ async fn connect_omits_attribution_on_testnet(#[case] deployment: LighterDeploym
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
     let (addr, state) = start_server().await;
+    state.account_type.store(1, Ordering::Relaxed);
     state
         .maker_only_api_key_indexes
         .lock()
@@ -1829,6 +1849,7 @@ async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
     let (addr, state) = start_server().await;
+    state.account_type.store(1, Ordering::Relaxed);
     *state.next_rest_send_tx_response.lock().await = Some(json!({
         "code": 21149,
         "message": "integrator is not approved",
@@ -2070,17 +2091,21 @@ mod serial_tests {
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
-#[case::mainnet(
+#[case::testnet(LighterEnvironment::Testnet, 0, Value::Null)]
+#[case::mainnet_standard(LighterEnvironment::Mainnet, 0, Value::Null)]
+#[case::mainnet_premium(
     LighterEnvironment::Mainnet,
+    1,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
     #[case] environment: LighterEnvironment,
+    #[case] account_type: u8,
     #[case] expected_attributes: Value,
 ) {
     let (addr, state) = start_server().await;
+    state.account_type.store(account_type, Ordering::Relaxed);
     let mut config = build_config(addr);
     config.environment = environment;
     let (mut client, mut rx, cache) = build_client_with(config);
@@ -3174,17 +3199,21 @@ async fn test_cancel_order_venue_rejection_emits_cancel_rejected_for_pending_can
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
-#[case::mainnet(
+#[case::testnet(LighterEnvironment::Testnet, 0, Value::Null)]
+#[case::mainnet_standard(LighterEnvironment::Mainnet, 0, Value::Null)]
+#[case::mainnet_premium(
     LighterEnvironment::Mainnet,
+    1,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_signs_modify_sendtx(
     #[case] environment: LighterEnvironment,
+    #[case] account_type: u8,
     #[case] expected_attributes: Value,
 ) {
     let (addr, state) = start_server().await;
+    state.account_type.store(account_type, Ordering::Relaxed);
     let mut config = build_config(addr);
     config.environment = environment;
     let (mut client, _rx, cache) = build_client_with(config);

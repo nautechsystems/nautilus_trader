@@ -211,13 +211,14 @@ repository or share it in logs.
 
 ## Integrator attribution
 
-On Lighter Mainnet, create and modify transactions carry the NautilusTrader
-integrator account index in `L2TxAttributes` to measure adapter usage. Maker and taker integrator
-fees are zero. The execution client submits the required **zero-fee** `ApproveIntegrator` approval
-during startup when the API key is not maker-only.
+On Lighter Mainnet, create and modify transactions from Plus and Premium accounts carry the
+NautilusTrader integrator account index in `L2TxAttributes` to measure adapter usage. Maker and taker
+integrator fees are zero. The execution client submits the required **zero-fee**
+`ApproveIntegrator` approval during startup when the account is Plus or Premium and the API key is
+not maker-only.
 
-Lighter Testnet and both Robinhood environments leave `L2TxAttributes` empty and omit
-`ApproveIntegrator` during startup.
+All other account tiers, sessions without an account snapshot, Lighter Testnet, and both Robinhood
+environments leave `L2TxAttributes` empty and omit `ApproveIntegrator` during startup.
 
 Robinhood Mainnet uses the account-level `NAUTILUS` referral code instead. During startup,
 the execution client authenticates with the configured L2 API key and applies `NAUTILUS` to the
@@ -225,8 +226,8 @@ account's public L1 address. Selecting Robinhood Mainnet opts the account into t
 attribution. Application failures log a warning and do not block trading. Robinhood Testnet
 performs no referral attribution.
 
-Custom venue names do not change either policy: attribution is evaluated from the typed deployment
-and environment.
+Custom venue names do not change either policy: attribution is evaluated from the typed deployment,
+environment, and fetched account tier.
 
 On Lighter Mainnet, maker-only API keys cannot submit `ApproveIntegrator`. The execution client
 detects these keys and skips automatic approval. Approval is account-scoped, so a non-maker-only
@@ -235,9 +236,10 @@ adapter.
 
 ### Revoking the approval
 
-Use revocation as cleanup when leaving the adapter on Lighter Mainnet. It sends `ApproveIntegrator`
-with `approval_expiry = 0` and zero max fees. The next Lighter Mainnet execution-client startup with
-a non-maker-only key records a new zero-fee approval.
+Use revocation as cleanup when leaving the adapter on a Lighter Mainnet account that has previously
+approved the integrator, including a Standard account approved by an older adapter version. It sends
+`ApproveIntegrator` with `approval_expiry = 0` and zero max fees. The next Plus or Premium Lighter
+Mainnet execution-client startup with a non-maker-only key records a new zero-fee approval.
 
 ```bash
 export LIGHTER_API_KEY_INDEX=5
@@ -583,9 +585,11 @@ range up to the adapter's page cap, subject to an explicit `limit`; see
 
 ## Account tiers
 
-Lighter account tiers set latency, rate limits, and fees. The execution client reads the tier from
-`GET /api/v1/account` and logs it, including unknown raw `account_type` values. It does not raise
-limits automatically because a local quota override does not grant a higher venue limit.
+Lighter account tiers set latency, rate limits, fees, and integrator attribution. The execution
+client reads the tier from `GET /api/v1/account` and logs it, including unknown raw `account_type`
+values. Only Plus and Premium accounts include integrator approval and order attribution. If the
+account snapshot is unavailable, the client also omits attribution for that session. The client does
+not raise limits automatically because a local quota override does not grant a higher venue limit.
 
 | Tier     | Latency (maker / taker) | REST weighted limit | `sendTx` limit       | Fees (maker / taker)      | Notes                                   |
 | -------- | ----------------------- | ------------------- | -------------------- | ------------------------- | --------------------------------------- |

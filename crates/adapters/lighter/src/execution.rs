@@ -188,6 +188,7 @@ pub struct LighterExecutionClient {
     core: ExecutionClientCore,
     clock: &'static AtomicTime,
     config: LighterExecutionClientConfig,
+    account_tier: Option<LighterAccountTier>,
     emitter: ExecutionEventEmitter,
     credential: Option<Credential>,
     http_client: LighterHttpClient,
@@ -305,6 +306,7 @@ impl LighterExecutionClient {
             core,
             clock,
             config,
+            account_tier: None,
             emitter,
             credential,
             http_client,
@@ -611,7 +613,7 @@ impl LighterExecutionClient {
     // active quotas are resolved from config at construction, never raised here
     // (the higher venue limits require registering the caller IP, so the tier
     // alone does not guarantee them).
-    fn detect_account_tier(&self, detail: &LighterAccountDetail) {
+    fn detect_account_tier(&self, detail: &LighterAccountDetail) -> LighterAccountTier {
         let account_index = detail.account_index;
         let code = detail.account_type;
         let tier = LighterAccountTier::from_code(code);
@@ -643,6 +645,19 @@ impl LighterExecutionClient {
                 );
             }
             None => {}
+        }
+
+        tier
+    }
+
+    fn integrator_account_index(&self) -> Option<u64> {
+        if matches!(
+            self.account_tier,
+            Some(LighterAccountTier::Plus | LighterAccountTier::Premium)
+        ) {
+            deployment::integrator_account_index(self.config.deployment, self.config.environment)
+        } else {
+            None
         }
     }
 
@@ -700,9 +715,7 @@ impl LighterExecutionClient {
     }
 
     async fn submit_integrator_auto_approval(&self) -> anyhow::Result<()> {
-        let Some(integrator_account_index) =
-            deployment::integrator_account_index(self.config.deployment, self.config.environment)
-        else {
+        let Some(integrator_account_index) = self.integrator_account_index() else {
             return Ok(());
         };
 
@@ -1620,10 +1633,7 @@ impl LighterExecutionClient {
         FanoutDispatchContext {
             clock: self.clock,
             chain_id: self.config.chain_id(),
-            integrator_account_index: deployment::integrator_account_index(
-                self.config.deployment,
-                self.config.environment,
-            ),
+            integrator_account_index: self.integrator_account_index(),
             emitter: self.emitter.clone(),
             credential: credential.clone(),
             http_client: self.http_client.clone(),
@@ -1941,10 +1951,7 @@ impl LighterExecutionClient {
             base_amount,
             price: price_ticks,
             trigger_price: trigger_price_ticks,
-            attributes: integrator_attributes(deployment::integrator_account_index(
-                self.config.deployment,
-                self.config.environment,
-            )),
+            attributes: integrator_attributes(self.integrator_account_index()),
         };
 
         let signed = sign_tx(
@@ -3999,8 +4006,18 @@ impl ExecutionClient for LighterExecutionClient {
         self.nonce_ready_connection_epoch
             .store(self.ws_client.connection_epoch(), Ordering::Release);
         let account_detail = self.fetch_account_detail().await;
+        self.account_tier = None;
+
         if let Some(detail) = &account_detail {
-            self.detect_account_tier(detail);
+            let tier = self.detect_account_tier(detail);
+            self.account_tier = Some(tier);
+
+            if !matches!(tier, LighterAccountTier::Plus | LighterAccountTier::Premium) {
+                log_debug!(
+                    "Lighter {tier} account will omit integrator approval and order attribution",
+                    color = LogColor::Blue
+                );
+            }
 
             match tokio::time::timeout(
                 REFERRAL_ATTRIBUTION_TIMEOUT,
@@ -9333,6 +9350,31 @@ mod tests {
     }
 
     #[rstest]
+    #[case::unavailable(None, None)]
+    #[case::standard(Some(LighterAccountTier::Standard), None)]
+    #[case::premium(
+        Some(LighterAccountTier::Premium),
+        Some(LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX)
+    )]
+    #[case::plus(
+        Some(LighterAccountTier::Plus),
+        Some(LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX)
+    )]
+    #[case::builder(Some(LighterAccountTier::Builder), None)]
+    #[case::unknown(Some(LighterAccountTier::Unknown(7)), None)]
+    fn integrator_account_index_follows_account_tier(
+        #[case] account_tier: Option<LighterAccountTier>,
+        #[case] expected: Option<u64>,
+    ) {
+        let mut config = test_config();
+        config.environment = LighterEnvironment::Mainnet;
+        let (mut client, _cache, _rx) = create_execution_client_with_config(config);
+        client.account_tier = account_tier;
+
+        assert_eq!(client.integrator_account_index(), expected);
+    }
+
+    #[rstest]
     fn robinhood_orders_keep_default_l2_attributes() {
         let mut config = test_config();
         config.deployment = LighterDeployment::Robinhood;
@@ -11966,7 +12008,8 @@ mod tests {
         let mut config = test_config();
         config.environment = LighterEnvironment::Mainnet;
         config.base_url_http = Some(spawn_integrator_approval_rejection_server().await);
-        let (client, _cache, _rx) = create_execution_client_with_config(config);
+        let (mut client, _cache, _rx) = create_execution_client_with_config(config);
+        client.account_tier = Some(LighterAccountTier::Premium);
 
         let err = client.submit_integrator_auto_approval().await.unwrap_err();
 

@@ -44,16 +44,17 @@
 //!
 //! # Integrator attribution
 //!
-//! On Lighter Mainnet, submitted create and modify order transactions carry the NautilusTrader
-//! integrator account index in Lighter's `L2TxAttributes`. This helps us gauge real usage of the
-//! integration and prioritize ongoing maintenance. Maker and taker integrator fees are set to zero,
-//! so attribution adds no trading cost. Lighter Testnet and both Robinhood environments leave
+//! On Lighter Mainnet, submitted create and modify order transactions from Plus and Premium
+//! accounts carry the NautilusTrader integrator account index in Lighter's `L2TxAttributes`. This
+//! helps us gauge real usage of the integration and prioritize ongoing maintenance. Maker and taker
+//! integrator fees are set to zero, so attribution adds no trading cost. All other account tiers,
+//! sessions without an account snapshot, Lighter Testnet, and both Robinhood environments leave
 //! `L2TxAttributes` empty.
 //!
 //! Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to
 //! Lighter Mainnet orders. During startup, the execution client submits the required zero-fee
-//! approval for the configured L2 account. Lighter Testnet and Robinhood clients do not submit an
-//! approval.
+//! approval for a configured Plus or Premium L2 account. Other Lighter account tiers, sessions
+//! without an account snapshot, Lighter Testnet, and Robinhood clients do not submit an approval.
 //!
 //! Robinhood Mainnet instead applies the `NAUTILUS` referral to the account's public L1 address
 //! during execution-client startup. Application failures log a warning and do not block trading.
