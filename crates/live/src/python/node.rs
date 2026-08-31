@@ -41,7 +41,7 @@ use nautilus_common::{
     logging::logger::LoggerConfig,
     msgbus::MessageBusConfig,
     python::{
-        actor::{PyDataActor, apply_class_derived_actor_id},
+        actor::{PyDataActor, prepare_python_actor},
         cache::{PyCache, get_global_cache_database_factory_registry},
         msgbus::get_global_msgbus_factory_registry,
     },
@@ -1705,45 +1705,6 @@ fn stop_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> 
         })
     }
     .map_err(to_pyruntime_err)
-}
-
-fn prepare_python_actor(
-    actor: &Bound<'_, PyAny>,
-    config: Option<&Bound<'_, PyAny>>,
-) -> anyhow::Result<ActorId> {
-    let mut py_data_actor = actor
-        .extract::<PyRefMut<PyDataActor>>()
-        .map_err(Into::<PyErr>::into)
-        .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-    if let Some(config) = config {
-        if let Some(actor_id) = config
-            .getattr("actor_id")
-            .ok()
-            .filter(|actor_id| !actor_id.is_none())
-        {
-            let actor_id = if let Ok(actor_id) = actor_id.extract::<ActorId>() {
-                actor_id
-            } else if let Ok(actor_id) = actor_id.extract::<String>() {
-                ActorId::new_checked(&actor_id)?
-            } else {
-                anyhow::bail!("Invalid `actor_id` type");
-            };
-            py_data_actor.set_actor_id(actor_id);
-        }
-
-        if let Some(log_events) = extract_bool_config_attr(config, "log_events") {
-            py_data_actor.set_log_events(log_events);
-        }
-
-        if let Some(log_commands) = extract_bool_config_attr(config, "log_commands") {
-            py_data_actor.set_log_commands(log_commands);
-        }
-    }
-
-    py_data_actor.set_python_instance(actor)?;
-    apply_class_derived_actor_id(&mut py_data_actor, actor)?;
-    Ok(py_data_actor.actor_id())
 }
 
 /// Creates a Python config instance from a config path and config dictionary.

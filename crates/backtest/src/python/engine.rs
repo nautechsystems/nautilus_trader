@@ -22,7 +22,7 @@ use nautilus_common::{
     actor::data_actor::ImportableActorConfig,
     enums::ComponentState,
     python::{
-        actor::{PyDataActor, apply_class_derived_actor_id},
+        actor::{PyDataActor, prepare_python_actor},
         cache::PyCache,
         config_error_to_pyvalue_err,
     },
@@ -907,43 +907,7 @@ impl PyBacktestEngine {
                 .ok()
                 .filter(|config| !config.is_none());
 
-            let mut py_data_actor_ref = bound
-                .extract::<PyRefMut<PyDataActor>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-            if let Some(config_obj) = config_instance.as_ref() {
-                if let Ok(actor_id) = config_obj.getattr("actor_id")
-                    && !actor_id.is_none()
-                {
-                    let actor_id_val = if let Ok(actor_id_val) = actor_id.extract::<ActorId>() {
-                        actor_id_val
-                    } else if let Ok(actor_id_str) = actor_id.extract::<String>() {
-                        ActorId::new_checked(&actor_id_str)?
-                    } else {
-                        anyhow::bail!("Invalid `actor_id` type");
-                    };
-                    py_data_actor_ref.set_actor_id(actor_id_val);
-                }
-
-                if let Ok(log_events) = config_obj.getattr("log_events")
-                    && let Ok(log_events_val) = log_events.extract::<bool>()
-                {
-                    py_data_actor_ref.set_log_events(log_events_val);
-                }
-
-                if let Ok(log_commands) = config_obj.getattr("log_commands")
-                    && let Ok(log_commands_val) = log_commands.extract::<bool>()
-                {
-                    py_data_actor_ref.set_log_commands(log_commands_val);
-                }
-            }
-
-            py_data_actor_ref.set_python_instance(bound)?;
-            apply_class_derived_actor_id(&mut py_data_actor_ref, bound)?;
-            let actor_id = py_data_actor_ref.actor_id();
-
-            Ok(actor_id)
+            prepare_python_actor(bound, config_instance.as_ref())
         })
         .map_err(to_pyruntime_err)?;
 

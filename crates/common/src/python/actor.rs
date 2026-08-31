@@ -2819,16 +2819,59 @@ impl PyDataActor {
     }
 }
 
-/// Applies the runtime Python class of `actor_obj` as the actor ID when neither the config nor
-/// `DataActor.__init__` supplied one.
+/// Prepares a Python actor for registration and returns its final actor ID.
 ///
-/// Registration paths call this so an actor whose subclass does not forward to
-/// `super().__init__()` still registers under its own class rather than the shared default.
+/// Applies optional config overrides and stores a weak reference to the Python instance used for
+/// method dispatch. Missing or unreadable attributes are ignored, and non-boolean `log_events` or
+/// `log_commands` values leave the existing settings unchanged. When neither the config nor
+/// `DataActor.__init__` supplies an ID, the runtime class name replaces the shared default so
+/// subclasses that skip the base initializer still receive distinct IDs.
 ///
 /// # Errors
 ///
-/// Returns an error if the class name is not a valid actor ID.
-pub fn apply_class_derived_actor_id(
+/// Returns an error if the actor cannot be extracted, its configured `actor_id` is neither an
+/// [`ActorId`] nor a valid ID string, its class-derived ID is invalid, or its Python instance
+/// cannot be weakly referenced.
+pub fn prepare_python_actor(
+    actor_obj: &Bound<'_, PyAny>,
+    config: Option<&Bound<'_, PyAny>>,
+) -> anyhow::Result<ActorId> {
+    let mut actor = actor_obj
+        .extract::<PyRefMut<PyDataActor>>()
+        .map_err(Into::<PyErr>::into)
+        .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
+
+    if let Some(config) = config {
+        if let Some(actor_id) = config
+            .getattr("actor_id")
+            .ok()
+            .filter(|actor_id| !actor_id.is_none())
+        {
+            let actor_id = if let Ok(actor_id) = actor_id.extract::<ActorId>() {
+                actor_id
+            } else if let Ok(actor_id) = actor_id.extract::<String>() {
+                ActorId::new_checked(&actor_id)?
+            } else {
+                anyhow::bail!("Invalid `actor_id` type");
+            };
+            actor.set_actor_id(actor_id);
+        }
+
+        if let Some(log_events) = extract_bool_config_attr(config, "log_events") {
+            actor.set_log_events(log_events);
+        }
+
+        if let Some(log_commands) = extract_bool_config_attr(config, "log_commands") {
+            actor.set_log_commands(log_commands);
+        }
+    }
+
+    actor.set_python_instance(actor_obj)?;
+    apply_class_derived_actor_id(&mut actor, actor_obj)?;
+    Ok(actor.actor_id())
+}
+
+fn apply_class_derived_actor_id(
     actor: &mut PyRefMut<'_, PyDataActor>,
     actor_obj: &Bound<'_, PyAny>,
 ) -> PyResult<()> {
@@ -2842,6 +2885,13 @@ pub fn apply_class_derived_actor_id(
     actor.set_actor_id(actor_id);
 
     Ok(())
+}
+
+fn extract_bool_config_attr(config: &Bound<'_, PyAny>, attr: &str) -> Option<bool> {
+    config
+        .getattr(attr)
+        .ok()
+        .and_then(|value| value.extract::<bool>().ok())
 }
 
 /// Returns whether the config retained by the actor supplies an actor ID.
@@ -2898,14 +2948,14 @@ mod tests {
         types::{Price, Quantity},
     };
     use pyo3::{
-        Bound, Py, PyAny, PyResult, Python,
+        Bound, Py, PyAny, PyRef, PyResult, Python,
         ffi::c_str,
         types::{PyAnyMethods, PyBytes, PyDict, PyList, PyWeakrefMethods, PyWeakrefReference},
     };
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
-    use super::PyDataActor;
+    use super::{PyDataActor, prepare_python_actor};
     use crate::{
         actor::{DataActor, data_actor::DataActorConfig, registry::actor_exists},
         cache::Cache,
@@ -3007,6 +3057,87 @@ mod tests {
             let retained = actor.getattr("config").unwrap();
 
             assert!(retained.is(&config));
+        });
+    }
+
+    #[rstest]
+    fn test_prepare_python_actor_applies_shared_registration_boundary() {
+        pyo3::Python::initialize();
+
+        Python::attach(|py| {
+            let namespace = PyDict::new(py);
+            namespace
+                .set_item("DataActor", py.get_type::<PyDataActor>())
+                .unwrap();
+            py.run(
+                c_str!(
+                    r#"
+class PreparedActor(DataActor):
+    def __init__(self, _config=None):
+        pass
+"#
+                ),
+                Some(&namespace),
+                None,
+            )
+            .unwrap();
+            let actor_class = namespace.get_item("PreparedActor").unwrap();
+
+            let configured = py
+                .eval(
+                    c_str!(
+                        "type('_Cfg', (), {'actor_id': 'CONFIGURED-001', 'log_events': False, 'log_commands': False})()"
+                    ),
+                    None,
+                    None,
+                )
+                .unwrap();
+            let configured_actor = actor_class.call1((configured.clone(),)).unwrap();
+            let configured_id = prepare_python_actor(&configured_actor, Some(&configured)).unwrap();
+            let configured_ref = configured_actor.extract::<PyRef<PyDataActor>>().unwrap();
+            let configured_wrapper = configured_ref.inner().python_instance().unwrap().unwrap();
+
+            let fallback_actor = actor_class.call0().unwrap();
+            let fallback_id = prepare_python_actor(&fallback_actor, None).unwrap();
+            let fallback_ref = fallback_actor.extract::<PyRef<PyDataActor>>().unwrap();
+
+            let invalid_logging = py
+                .eval(
+                    c_str!(
+                        "type('_Cfg', (), {'actor_id': None, 'log_events': object(), 'log_commands': object()})()"
+                    ),
+                    None,
+                    None,
+                )
+                .unwrap();
+            let invalid_logging_actor = actor_class.call1((invalid_logging.clone(),)).unwrap();
+            let invalid_logging_id =
+                prepare_python_actor(&invalid_logging_actor, Some(&invalid_logging)).unwrap();
+            let invalid_logging_ref = invalid_logging_actor
+                .extract::<PyRef<PyDataActor>>()
+                .unwrap();
+
+            let invalid = py
+                .eval(
+                    c_str!("type('_Cfg', (), {'actor_id': object()})()"),
+                    None,
+                    None,
+                )
+                .unwrap();
+            let invalid_actor = actor_class.call1((invalid.clone(),)).unwrap();
+            let error = prepare_python_actor(&invalid_actor, Some(&invalid)).unwrap_err();
+
+            assert_eq!(configured_id, ActorId::from("CONFIGURED-001"));
+            assert_eq!(configured_ref.config.actor_id, Some(configured_id));
+            assert!(!configured_ref.config.log_events);
+            assert!(!configured_ref.config.log_commands);
+            assert!(configured_wrapper.bind(py).is(&configured_actor));
+            assert_eq!(fallback_id, ActorId::from("PreparedActor"));
+            assert_eq!(fallback_ref.config.actor_id, Some(fallback_id));
+            assert_eq!(invalid_logging_id, ActorId::from("PreparedActor"));
+            assert!(invalid_logging_ref.config.log_events);
+            assert!(invalid_logging_ref.config.log_commands);
+            assert_eq!(error.to_string(), "Invalid `actor_id` type");
         });
     }
 
