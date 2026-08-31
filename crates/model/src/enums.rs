@@ -1030,7 +1030,7 @@ pub enum MarketStatusAction {
     NotAvailableForTrading = 15,
 }
 
-/// Convert the given `value` to an [`OrderSide`].
+/// Convert the given `value` to a [`MarketStatusAction`].
 impl FromU16 for MarketStatusAction {
     fn from_u16(value: u16) -> Option<Self> {
         match value {

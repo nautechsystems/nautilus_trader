@@ -196,8 +196,8 @@ pub const MAX_FLOAT_PRECISION: u8 = 16;
 /// # Errors
 ///
 /// Returns an error if `precision` exceeds the maximum allowed:
-/// - With `defi` feature: [`WEI_PRECISION`](crate::defi::WEI_PRECISION) (18)
-/// - Without `defi` feature: [`FIXED_PRECISION`]
+/// - With the `defi` feature: `WEI_PRECISION` (18)
+/// - Without the `defi` feature: [`FIXED_PRECISION`]
 pub fn check_fixed_precision(precision: u8) -> CorrectnessResult<()> {
     #[cfg(feature = "defi")]
     if precision > crate::defi::WEI_PRECISION {
