@@ -79,6 +79,13 @@ verify_checksum() {
   fi
 }
 
+TEMP_DIR=""
+TARGET_TEMP=""
+cleanup() {
+  [[ -z "$TARGET_TEMP" ]] || rm -f "$TARGET_TEMP"
+  [[ -z "$TEMP_DIR" ]] || rm -rf "$TEMP_DIR"
+}
+
 if [[ -z "${OSV_SCANNER_PREFIX:-}" ]] && command -v osv-scanner > /dev/null 2>&1; then
   INSTALLED_VERSION="$(get_version "$(command -v osv-scanner)")"
   if [[ "$INSTALLED_VERSION" == "$OSV_SCANNER_VERSION" ]]; then
@@ -115,7 +122,7 @@ fi
 ASSET="osv-scanner_${OS}_${ARCH}${EXT}"
 BASE_URL="https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}"
 
-echo "Installing osv-scanner ${OSV_SCANNER_VERSION} for ${OS}/${ARCH}..."
+echo "Installing osv-scanner ${OSV_SCANNER_VERSION} for ${OS}/${ARCH}"
 
 INSTALL_DIR_REQUESTED="$INSTALL_DIR"
 if ! mkdir -p "$INSTALL_DIR_REQUESTED" ||
@@ -138,7 +145,7 @@ if [[ -n "${OSV_SCANNER_PREFIX:-}" && -f "$TARGET" ]]; then
 fi
 
 TEMP_DIR=$(mktemp -d)
-trap 'rm -rf "$TEMP_DIR"' EXIT
+trap cleanup EXIT
 cd "$TEMP_DIR"
 
 verified=false
@@ -146,7 +153,7 @@ attempt=1
 while [ "$attempt" -le "$INSTALL_ATTEMPTS" ]; do
   rm -f "$ASSET" osv-scanner_SHA256SUMS
 
-  echo "Downloading ${ASSET} (attempt ${attempt}/${INSTALL_ATTEMPTS})..."
+  echo "Downloading ${ASSET} (attempt ${attempt}/${INSTALL_ATTEMPTS})"
   if ! download_file "$ASSET" "${BASE_URL}/${ASSET}"; then
     echo "Failed to download ${ASSET}"
   elif ! download_file osv-scanner_SHA256SUMS "${BASE_URL}/osv-scanner_SHA256SUMS"; then
@@ -185,10 +192,10 @@ fi
 
 TARGET_TEMP=$(mktemp "${INSTALL_DIR}/.osv-scanner.XXXXXX")
 if ! cp "$ASSET" "$TARGET_TEMP" || ! chmod +x "$TARGET_TEMP" || ! mv -f "$TARGET_TEMP" "$TARGET"; then
-  rm -f "$TARGET_TEMP"
   echo "Error: could not install osv-scanner to $TARGET" >&2
   exit 1
 fi
+TARGET_TEMP=""
 
 # Drop any cached path to the previous binary before resolving it again
 hash -r

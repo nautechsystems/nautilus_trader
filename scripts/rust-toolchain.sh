@@ -20,4 +20,4 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-echo -n "$VERSION"
+printf '%s' "$VERSION"

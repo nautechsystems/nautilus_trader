@@ -1,14 +1,14 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "4663eb21bec9cf4e3f2fefdd621edd66f4daae9e"
-manifest_sha256 = "fe08940305484b380503cd66b26c654b45898f45b1b0398710b5639cdd4903ab"
+revision = "235d7ff6f83af778210cd719e20d74f1d30d124a"
+manifest_sha256 = "9c13fc0ece7cc0179fc74a454ec1f9d171195aab4d0b285228261e679209c633"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
 
 [[file]]
 artifact = "markdownlint-config"
 path = ".markdownlint.jsonc"
-sha256 = "83a55eb166c92db1ad5657a03deab41bc0ee68fae22b23f91535811c3bb8943e"
+sha256 = "cd378aae2eb91d098732b00df44c565b7f61460b562ce47af1ab2e155d2a78c6"
 executable = false
 
 [[file]]
@@ -26,7 +26,7 @@ executable = false
 [[file]]
 artifact = "pre-commit-toml"
 path = ".nautilus-engineering/pre-commit/toml.yaml"
-sha256 = "5cb5e9d442d2d5f286342de0df5c4ebe22309f696c3b6607217344ef344eb4d0"
+sha256 = "41cfb8b4a4d14880cdfc265dc031e637fcccf927daa988663d699707b0b95bdd"
 executable = false
 
 [[file]]
@@ -38,7 +38,7 @@ executable = false
 [[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "f967ebbbc6a97e4ac2b3c6fe3fd4fb3e98972179771706871aab8e3dabbb009c"
+sha256 = "ecc6cf5f8a4f5814681f2056c563b3c6c50f6f8535546a54f0160f870256fee4"
 executable = false
 
 [[file]]
@@ -56,7 +56,7 @@ executable = false
 [[file]]
 artifact = "markdown-standard"
 path = "docs/developer_guide/markdown_style.md"
-sha256 = "b08f946b87cad7bf75b4dad8f3f5afffd80ab8a461d9bdbf4092176bd6dfcbd5"
+sha256 = "2ee144dd592ea5aa4f8c6d53feeb2c08e491f2dc4854932e31840047b0e9627a"
 executable = false
 
 [[file]]
@@ -68,13 +68,13 @@ executable = false
 [[file]]
 artifact = "cargo-tool-version"
 path = "scripts/cargo-tool-version.sh"
-sha256 = "7b2d3d66fc45f7c5f2dcfc47aee944f2aa125ddc33e87dfae4890285202adf3a"
+sha256 = "d59b21a6c97ba43be334e230ace18f53b8fb41e4c0c0f0ed8cd78179ea1c1411"
 executable = true
 
 [[file]]
 artifact = "cargo-cooldown-check"
 path = "scripts/check-cargo-cooldown.sh"
-sha256 = "48de4ce3d92434ef2cceb9ff0ea422282a130ace6fa52ce261d612078ebad92a"
+sha256 = "912f107a46182479dcf3e2db81b34e8e47583c96be6bb13fc438993b51bbb991"
 executable = true
 
 [[file]]
@@ -98,13 +98,13 @@ executable = true
 [[file]]
 artifact = "github-action-pin-check"
 path = "scripts/ci/check-github-action-shas.sh"
-sha256 = "70967bb1f127845e195f18319fa814c95b64378c851f79f4179ca67f58aa3360"
+sha256 = "d6ac7d779303ecc3b2c11c6cc26408a7c1ec7f2cc421991231af402281654333"
 executable = true
 
 [[file]]
 artifact = "osv-scanner-install"
 path = "scripts/install-osv-scanner.sh"
-sha256 = "1045232d9fdfabc18c6170eb364ae3f0951b4c997353e778ada43f5ea8a5ac8a"
+sha256 = "c0f7b6055dcbfc568c95606f9cef1bf0e8368c6b760f46948836f6cc3319bfb2"
 executable = true
 
 [[file]]
@@ -122,7 +122,7 @@ executable = true
 [[file]]
 artifact = "rust-toolchain-version"
 path = "scripts/rust-toolchain.sh"
-sha256 = "059461aaf186a5771b2e7e4b9ff3031189535ccb52243dd643b6e2a1a4d6a3bd"
+sha256 = "2e3e67f1442386ff26c05665c55b6a2016d5076b63b30a24fe501427a4be5032"
 executable = true
 
 [[file]]
@@ -134,7 +134,7 @@ executable = false
 [[file]]
 artifact = "tool-version"
 path = "scripts/tool-version.sh"
-sha256 = "f927cd95160b8f2b1aea74e379e62237bba806845731499900befba81f319868"
+sha256 = "2f6c54581ad2b3161ed1b554370d13b640a08b02dae166c9c298202d3f3e3738"
 executable = true
 
 [[file]]

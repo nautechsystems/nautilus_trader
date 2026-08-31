@@ -4,18 +4,42 @@
 #   # https://github.com/owner/repo
 #   uses: owner/repo/path@<sha> # <tag>
 
+# This check collects every failure before exiting, so errexit would stop at handled command
+# failures. Pipeline statuses are inspected explicitly so valid no-match results remain nonfatal.
+set -uo pipefail
+
 if [[ $# -eq 0 ]]; then
   echo "Usage: $0 <action-file>..." >&2
   exit 2
 fi
 
-USES_LINES=$(mktemp "${TMPDIR:-/tmp}/nautilus-action-uses.XXXXXX")
-ACTION_FAILURES=$(mktemp "${TMPDIR:-/tmp}/nautilus-action-failures.XXXXXX")
-trap 'rm -f "$USES_LINES" "$ACTION_FAILURES"' EXIT
+for action_file in "$@"; do
+  if [[ ! -f "$action_file" || ! -r "$action_file" ]]; then
+    echo "Action file is not a readable regular file: $action_file" >&2
+    exit 2
+  fi
+done
+
+USES_LINES=""
+ACTION_FAILURES=""
+cleanup() {
+  [[ -z "$USES_LINES" ]] || rm -f "$USES_LINES"
+  [[ -z "$ACTION_FAILURES" ]] || rm -f "$ACTION_FAILURES"
+}
+trap cleanup EXIT
+
+if ! USES_LINES=$(mktemp "${TMPDIR:-/tmp}/nautilus-action-uses.XXXXXX"); then
+  echo "Could not create the temporary action reference file" >&2
+  exit 2
+fi
+if ! ACTION_FAILURES=$(mktemp "${TMPDIR:-/tmp}/nautilus-action-failures.XXXXXX"); then
+  echo "Could not create the temporary action failure file" >&2
+  exit 2
+fi
 
 FAILED=0
 
-awk '
+if ! awk '
   FNR == 1 {
     previous = ""
   }
@@ -51,7 +75,10 @@ awk '
   {
     previous = $0
   }
-' "$@" > "$ACTION_FAILURES"
+' "$@" > "$ACTION_FAILURES"; then
+  echo "Could not inspect the GitHub Action files" >&2
+  exit 2
+fi
 
 if [[ -s "$ACTION_FAILURES" ]]; then
   cat "$ACTION_FAILURES"
@@ -62,6 +89,12 @@ grep -h '^[[:space:]]*-*[[:space:]]*uses:[[:space:]]*' "$@" |
   grep '@[0-9a-f]\{40\}' |
   sed -e 's/^[[:space:]]*-\{0,1\}[[:space:]]*uses:[[:space:]]*//' |
   sort -u > "$USES_LINES"
+pipeline_status=("${PIPESTATUS[@]}")
+if ((pipeline_status[0] > 1 || pipeline_status[1] > 1 || \
+  pipeline_status[2] != 0 || pipeline_status[3] != 0)); then
+  echo "Could not collect GitHub Action references" >&2
+  exit 2
+fi
 
 if [[ ! -s "$USES_LINES" ]]; then
   echo "No GitHub Action SHAs found."
@@ -80,7 +113,7 @@ while IFS= read -r line; do
 
   TAG=$(printf '%s\n' "$line" | cut -d'#' -f2 | tr -d ' ')
 
-  printf 'Checking %s (%s)... ' "$REPO_WITH_PATH" "$TAG"
+  printf 'Checking %s (%s): ' "$REPO_WITH_PATH" "$TAG"
 
   URL="https://github.com/$REPO.git"
   REMOTE_OUT=$(git ls-remote "$URL" "refs/tags/$TAG" "refs/tags/$TAG^{}" 2> /dev/null)

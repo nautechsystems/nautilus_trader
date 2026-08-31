@@ -36,6 +36,11 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_PATH="${SCRIPT_DIR}/check-cargo-cooldown.sh"
+cd "$REPO_ROOT"
+
 DAYS=""
 DAYS_EXPLICIT=false
 BASE=HEAD
@@ -106,7 +111,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h | --help)
-      sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,/^$/p' "$SCRIPT_PATH" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -973,7 +978,7 @@ fi
 for lock in "${LOCKS[@]}"; do
   verify_args+=(--lock "$lock")
 done
-if ! bash "$0" "${verify_args[@]}"; then
+if ! bash "$SCRIPT_PATH" "${verify_args[@]}"; then
   echo "FAIL: cooldown validation still fails after Cargo rollback." >&2
   exit 1
 fi

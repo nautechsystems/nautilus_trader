@@ -1,10 +1,10 @@
 # Shared version pins for Nautilus engineering tools
 #
 # Consumers vendor this catalog to .nautilus-engineering/tools.toml. The pin checker also verifies
-# shared hook fragments and this repository's pre-commit revisions against these versions.
+# shared hook fragments and this repository's pre-commit pins against these versions.
 
 [prek]
-version = "0.4.14"
+version = "0.5.0"
 ci = true
 
 [pre-commit-hooks]
@@ -40,10 +40,10 @@ pre-commit-revision = "v{version}"
 pre-commit-fragment = "pre-commit/yaml.yaml"
 
 [taplo]
-version = "0.9.3"
+version = "0.10.0"
 ci = true
-pre-commit-repository = "https://github.com/ComPWA/taplo-pre-commit"
-pre-commit-revision = "v{version}"
+pre-commit-dependency = "cli:taplo-cli:{version}"
+pre-commit-hooks = ["taplo-format", "taplo-lint"]
 pre-commit-fragment = "pre-commit/toml.yaml"
 
 [markdownlint-cli2]

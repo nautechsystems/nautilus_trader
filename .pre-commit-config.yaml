@@ -57,10 +57,15 @@ repos:
     hooks:
       - id: shellcheck
 
-  - repo: https://github.com/ComPWA/taplo-pre-commit
-    rev: v0.9.3
+  - repo: local
     hooks:
       - id: taplo-format
+        name: taplo-format
+        entry: taplo format
+        language: rust
+        types: [toml]
+        additional_dependencies:
+          - cli:taplo-cli:0.10.0
 
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.38.0
