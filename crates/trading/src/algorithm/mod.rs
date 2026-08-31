@@ -572,8 +572,8 @@ pub trait ExecutionAlgorithm: DataActor {
     /// quantity is automatically restored to the primary order.
     ///
     /// `_emulation_trigger` is accepted for signature parity and is not applied:
-    /// a `MARKET_TO_LIMIT` order is always initialized with `NoTrigger` and
-    /// cannot be emulated.
+    /// a `MARKET_TO_LIMIT` order is always initialized with no emulation trigger
+    /// and cannot be emulated.
     #[expect(clippy::too_many_arguments)]
     fn spawn_market_to_limit(
         &mut self,
@@ -800,10 +800,7 @@ pub trait ExecutionAlgorithm: DataActor {
         let trader_id =
             registered_trader_id(ExecutionAlgorithmNative::exec_algorithm_core_mut(self))?;
 
-        if order
-            .emulation_trigger()
-            .is_some_and(|trigger| trigger != TriggerType::NoTrigger)
-        {
+        if order.emulation_trigger().is_some() {
             let client_order_id = order.client_order_id();
             self.restore_primary_order_quantity(&order, true);
             return Err(EmulatedOrderSubmissionError { client_order_id }.into());
