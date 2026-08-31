@@ -41,6 +41,7 @@ pub mod trailing_stop_market;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod builder;
+
 #[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
 
@@ -855,7 +856,21 @@ impl OrderCore {
             return Err(OrderError::AlreadyInitialized);
         }
 
-        let new_status = self.status.transition(&event)?;
+        let is_reclose_after_fill = self.status == OrderStatus::Canceled
+            && matches!(event, OrderEventAny::Canceled(_))
+            && self
+                .events
+                .iter()
+                .rev()
+                .take_while(|event| !matches!(event, OrderEventAny::Canceled(_)))
+                .any(|event| matches!(event, OrderEventAny::Filled(_)));
+
+        let new_status = if is_reclose_after_fill {
+            OrderStatus::Canceled
+        } else {
+            self.status.transition(&event)?
+        };
+
         if let OrderEventAny::Filled(fill) = &event
             && checked_quantity_raw_sum(self.filled_qty.raw, fill.last_qty.raw).is_none()
         {
@@ -1268,6 +1283,8 @@ impl OrderCore {
         } else if new_leaves_qty.is_zero() && !self.voided_qty.is_zero() {
             self.status = OrderStatus::Voided;
             self.ts_closed = Some(event.ts_event);
+        } else if source_status == OrderStatus::Canceled {
+            self.status = OrderStatus::Canceled;
         } else {
             self.status = OrderStatus::PartiallyFilled;
 
@@ -1318,7 +1335,7 @@ impl OrderCore {
             ) || (self.status == source_status
                 && matches!(
                     source_status,
-                    OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+                    OrderStatus::Canceled | OrderStatus::PendingUpdate | OrderStatus::PendingCancel
                 )),
             "Invariant: status must reflect the fill or preserve a pending source status after fill handler (status={:?})",
             self.status
@@ -2071,6 +2088,65 @@ mod tests {
         assert_eq!(order.voided_qty(), Quantity::from(40_000));
         assert_eq!(order.leaves_qty(), Quantity::from(0));
         assert!(order.is_closed());
+    }
+
+    #[rstest]
+    fn test_canceled_order_with_voided_qty_becomes_voided_when_late_fill_exhausts_leaves() {
+        let initial_trade_id = TradeId::from("TRADE-VOID");
+        let late_trade_id = TradeId::from("TRADE-LATE");
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let accepted = OrderAcceptedSpec::builder()
+            .ts_event(UnixNanos::from(1_000))
+            .build();
+        let filled = OrderFilledSpec::builder()
+            .trade_id(initial_trade_id)
+            .last_qty(Quantity::from(60_000))
+            .ts_event(UnixNanos::from(2_000))
+            .build();
+        let fill_voided = OrderFillVoidedSpec::builder()
+            .trade_id(initial_trade_id)
+            .voided_qty(Quantity::from(20_000))
+            .ts_event(UnixNanos::from(3_000))
+            .is_reopened(false)
+            .build();
+        let canceled = OrderCanceledSpec::builder()
+            .ts_event(UnixNanos::from(4_000))
+            .build();
+        let late_fill = OrderFilledSpec::builder()
+            .trade_id(late_trade_id)
+            .last_qty(Quantity::from(40_000))
+            .ts_event(UnixNanos::from(5_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(filled)).unwrap();
+        order.apply(OrderEventAny::FillVoided(fill_voided)).unwrap();
+        order.apply(OrderEventAny::Canceled(canceled)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Canceled);
+        assert_eq!(order.filled_qty(), Quantity::from(40_000));
+        assert_eq!(order.voided_qty(), Quantity::from(20_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(40_000));
+        assert_eq!(order.ts_closed(), Some(UnixNanos::from(4_000)));
+        assert_eq!(order.last_trade_id(), Some(initial_trade_id));
+        assert!(order.is_closed());
+        assert!(!order.is_open());
+
+        order.apply(OrderEventAny::Filled(late_fill)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Voided);
+        assert_eq!(order.filled_qty(), Quantity::from(80_000));
+        assert_eq!(order.voided_qty(), Quantity::from(20_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(order.overfill_qty(), Quantity::from(0));
+        assert_eq!(order.ts_closed(), Some(UnixNanos::from(5_000)));
+        assert_eq!(order.last_trade_id(), Some(late_trade_id));
+        assert_eq!(order.trade_ids(), vec![&initial_trade_id, &late_trade_id]);
+        assert!(order.is_closed());
+        assert!(!order.is_open());
     }
 
     #[rstest]
@@ -3408,7 +3484,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_canceled_then_partial_fill_then_canceled() {
+    fn test_canceled_order_accepts_repeated_cancel_after_partial_fill() {
         let mut order: MarketOrder = OrderInitializedSpec::builder().build().try_into().unwrap();
         let submitted = OrderSubmittedSpec::builder().build();
         let accepted = OrderAcceptedSpec::builder().build();
@@ -3425,16 +3501,27 @@ mod tests {
         assert_eq!(order.status(), OrderStatus::Canceled);
         assert!(order.is_closed());
 
-        // Fill arrives after cancel (real-world race condition)
         order.apply(OrderEventAny::Filled(fill)).unwrap();
-        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.status(), OrderStatus::Canceled);
         assert_eq!(order.filled_qty(), Quantity::from(50_000));
-        assert!(order.is_open());
+        assert_eq!(order.leaves_qty(), Quantity::from(50_000));
+        assert!(order.is_closed());
+        assert!(!order.is_open());
 
-        // Re-emitted cancel restores terminal state
         order.apply(OrderEventAny::Canceled(canceled2)).unwrap();
         assert_eq!(order.status(), OrderStatus::Canceled);
+        assert_eq!(order.filled_qty(), Quantity::from(50_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(50_000));
+        assert_eq!(
+            order
+                .events()
+                .iter()
+                .filter(|event| matches!(event, OrderEventAny::Canceled(_)))
+                .count(),
+            2
+        );
         assert!(order.is_closed());
+        assert!(!order.is_open());
     }
 
     #[rstest]

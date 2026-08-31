@@ -4950,16 +4950,14 @@ fn test_cancel_order_for_already_closed_order_logs_and_does_nothing(
 }
 
 #[rstest]
-fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
-    mut execution_engine: ExecutionEngine,
-) {
+fn test_canceled_order_receiving_full_fill_completes_order(mut execution_engine: ExecutionEngine) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
     let instrument = audusd_sim();
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
-        AccountId::from("TEST-ACCOUNT"),
+        AccountId::test_default(),
         Venue::test_default(),
         OmsType::Netting,
         None,
@@ -4972,6 +4970,11 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         .cache()
         .borrow_mut()
         .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -4987,13 +4990,12 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
         .unwrap();
 
-    let order_submitted_event =
-        TestOrderEventStubs::submitted(&order, AccountId::from("TEST-ACCOUNT"));
+    let order_submitted_event = TestOrderEventStubs::submitted(&order, AccountId::test_default());
     execution_engine.process(&order_submitted_event);
 
     let order_accepted_event = TestOrderEventStubs::accepted(
         &order,
-        AccountId::from("TEST-ACCOUNT"),
+        AccountId::test_default(),
         VenueOrderId::from("V-001"),
     );
     execution_engine.process(&order_accepted_event);
@@ -5010,7 +5012,7 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
 
     let order_canceled_event = TestOrderEventStubs::canceled(
         &order,
-        AccountId::from("TEST-ACCOUNT"),
+        AccountId::test_default(),
         Some(VenueOrderId::from("V-001")), // Must match the accepted event
     );
     execution_engine.process(&order_canceled_event);
@@ -5038,7 +5040,7 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         instrument.id(),
         order.client_order_id(),
         VenueOrderId::from("V-001"), // Use the same venue_order_id as the accepted event
-        AccountId::from("TEST-ACCOUNT"),
+        AccountId::test_default(),
         TradeId::new("E-19700101-000000-001-001-1"),
         order.order_side(),
         order.order_type(),
@@ -5077,10 +5079,27 @@ fn test_canceled_order_receiving_fill_event_reopens_and_completes_order(
         order.client_order_id(),
         "Order client order ID should remain unchanged"
     );
+    assert_eq!(filled_order.filled_qty(), Quantity::from(100_000));
+    assert_eq!(filled_order.leaves_qty(), Quantity::from(0));
+    assert_eq!(
+        filled_order.commissions().get(&Currency::USD()).copied(),
+        Some(Money::from("2 USD"))
+    );
+    assert!(cache.is_order_closed(&order.client_order_id()));
+    assert!(!cache.is_order_open(&order.client_order_id()));
+    let positions = cache.positions(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    let position = &positions[0];
+    assert_eq!(position.quantity, Quantity::from(100_000));
+    assert_eq!(position.commissions(), vec![Money::from("2 USD")]);
+    assert_eq!(
+        position.trade_ids,
+        AHashSet::from_iter([TradeId::new("E-19700101-000000-001-001-1")])
+    );
 }
 
 #[rstest]
-fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partially_filled(
+fn test_canceled_order_receiving_partial_fill_remains_canceled(
     mut execution_engine: ExecutionEngine,
 ) {
     let trader_id = TraderId::test_default();
@@ -5089,7 +5108,7 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
 
     let stub_client = StubExecutionClient::new(
         ClientId::from("STUB"),
-        AccountId::from("TEST-ACCOUNT"),
+        AccountId::test_default(),
         Venue::test_default(),
         OmsType::Netting,
         None,
@@ -5102,6 +5121,11 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
         .cache()
         .borrow_mut()
         .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
         .unwrap();
 
     let order = OrderTestBuilder::new(OrderType::Market)
@@ -5117,20 +5141,19 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
         .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
         .unwrap();
 
-    let order_submitted_event =
-        TestOrderEventStubs::submitted(&order, AccountId::from("TEST-ACCOUNT"));
+    let order_submitted_event = TestOrderEventStubs::submitted(&order, AccountId::test_default());
     execution_engine.process(&order_submitted_event);
 
     let order_accepted_event = TestOrderEventStubs::accepted(
         &order,
-        AccountId::from("TEST-ACCOUNT"),
+        AccountId::test_default(),
         VenueOrderId::from("V-001"),
     );
     execution_engine.process(&order_accepted_event);
 
     let order_canceled_event = TestOrderEventStubs::canceled(
         &order,
-        AccountId::from("TEST-ACCOUNT"),
+        AccountId::test_default(),
         Some(VenueOrderId::from("V-001")), // Must match the accepted event
     );
     execution_engine.process(&order_canceled_event);
@@ -5153,13 +5176,13 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
     );
 
     let partial_fill_qty = Quantity::from(50_000); // Half of 100_000
-    let order_partially_filled_event = OrderEventAny::Filled(build_order_filled(
+    let partial_fill_event = OrderEventAny::Filled(build_order_filled(
         order.trader_id(),
         order.strategy_id(),
         instrument.id(),
         order.client_order_id(),
         VenueOrderId::from("V-001"), // Use the same venue_order_id as the accepted event
-        AccountId::from("TEST-ACCOUNT"),
+        AccountId::test_default(),
         TradeId::new("E-19700101-000000-001-001-1"),
         order.order_side(),
         order.order_type(),
@@ -5171,51 +5194,77 @@ fn test_canceled_order_receiving_partial_fill_event_reopens_and_becomes_partiall
         Some(Money::from("2 USD")),
     ));
 
-    execution_engine.process(&order_partially_filled_event);
-    let partially_filled_order = execution_engine
-        .cache()
-        .borrow()
-        .order(&order.client_order_id())
-        .map(|o| o.clone())
-        .expect("Order should still exist in cache after partial fill");
+    execution_engine.process(&partial_fill_event);
+    let position_id = {
+        let cache = execution_engine.cache().borrow();
+        let canceled_order = cache
+            .order(&order.client_order_id())
+            .expect("Order should still exist in cache after partial fill");
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        let position = &positions[0];
 
-    assert_eq!(
-        partially_filled_order.status(),
-        OrderStatus::PartiallyFilled,
-        "Canceled order should transition to PartiallyFilled status when receiving partial fill event"
-    );
+        assert_eq!(canceled_order.status(), OrderStatus::Canceled);
+        assert!(canceled_order.is_closed());
+        assert!(!canceled_order.is_open());
+        assert_eq!(canceled_order.filled_qty(), partial_fill_qty);
+        assert_eq!(canceled_order.leaves_qty(), Quantity::from(50_000));
+        assert_eq!(
+            canceled_order.commissions().get(&Currency::USD()).copied(),
+            Some(Money::from("2 USD"))
+        );
+        assert_eq!(canceled_order.quantity(), Quantity::from(100_000));
+        assert_eq!(canceled_order.client_order_id(), order.client_order_id());
+        assert!(cache.is_order_closed(&order.client_order_id()));
+        assert!(!cache.is_order_open(&order.client_order_id()));
+        assert_eq!(position.quantity, partial_fill_qty);
+        assert_eq!(position.commissions(), vec![Money::from("2 USD")]);
+        assert_eq!(
+            position.trade_ids,
+            AHashSet::from_iter([TradeId::new("E-19700101-000000-001-001-1")])
+        );
+        position.id
+    };
 
-    assert!(
-        !partially_filled_order.is_closed(),
-        "Order should be reopened (not closed) after partial fill"
-    );
-
-    assert!(
-        partially_filled_order.is_open(),
-        "Order should be open after partial fill"
-    );
-    assert_eq!(
-        partially_filled_order.filled_qty(),
-        partial_fill_qty,
-        "Order filled quantity should match the partial fill"
-    );
-
-    assert_eq!(
-        partially_filled_order.leaves_qty(),
-        Quantity::from(50_000), // Remaining quantity: 100_000 - 50_000
-        "Order leaves quantity should be correct after partial fill"
-    );
-
-    assert_eq!(
-        partially_filled_order.quantity(),
-        Quantity::from(100_000),
-        "Order total quantity should remain unchanged"
-    );
-
-    assert_eq!(
-        partially_filled_order.client_order_id(),
+    let final_fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
         order.client_order_id(),
-        "Order client order ID should remain unchanged"
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::new("E-19700101-000000-001-001-2"),
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(50_000),
+        Price::from_str("1.0").unwrap(),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        Some(position_id),
+        Some(Money::from("3 USD")),
+    ));
+    execution_engine.process(&final_fill);
+
+    let cache = execution_engine.cache().borrow();
+    let filled_order = cache.order(&order.client_order_id()).unwrap();
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(filled_order.status(), OrderStatus::Filled);
+    assert_eq!(filled_order.filled_qty(), Quantity::from(100_000));
+    assert_eq!(filled_order.leaves_qty(), Quantity::from(0));
+    assert_eq!(
+        filled_order.commissions().get(&Currency::USD()).copied(),
+        Some(Money::from("5 USD"))
+    );
+    assert!(cache.is_order_closed(&order.client_order_id()));
+    assert!(!cache.is_order_open(&order.client_order_id()));
+    assert_eq!(position.quantity, Quantity::from(100_000));
+    assert_eq!(position.commissions(), vec![Money::from("5 USD")]);
+    assert_eq!(
+        position.trade_ids,
+        AHashSet::from_iter([
+            TradeId::new("E-19700101-000000-001-001-1"),
+            TradeId::new("E-19700101-000000-001-001-2")
+        ])
     );
 }
 
