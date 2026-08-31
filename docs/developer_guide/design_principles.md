@@ -1,10 +1,14 @@
 # Design Principles
 
+These principles describe the architectural guarantees and trade-offs that users and developers
+can rely on across NautilusTrader.
+
 ## Message immutability
 
-Once a message (request, response, event, or command) is created, its fields must not be mutated.
-See [Message Bus: message integrity](../concepts/message_bus.md#message-integrity) for the
-ownership rules that follow from this.
+Messages (requests, responses, events, and commands) are immutable after creation. Their fields
+remain unchanged for the rest of the message lifetime. See
+[Message Bus: message integrity](../concepts/message_bus.md#message-integrity) for the ownership
+rules that follow from this invariant.
 
 The invariant protects several properties the system depends on:
 
@@ -25,34 +29,99 @@ The invariant protects several properties the system depends on:
 - **More robust distribution**: Serialized messages already cross process and service boundaries as
   copies. The same ownership rule keeps the in-memory model aligned with that reality.
 
+## Interned identifier storage
+
+### How string interning works
+
+String interning stores one shared copy of each distinct string in a central cache. Repeated values
+refer to the same cached bytes instead of allocating another copy. Small handles make the values
+cheap to copy and compare, while a cached hash avoids reading the full string again during hashing.
+
+NautilusTrader uses `Ustr` for its interned identifier components. Each `Ustr` is a pointer-sized
+`Copy` handle with a precomputed hash and stable direct string access. Composite types such as
+`InstrumentId` preserve the same cheap copy semantics by storing these handles.
+
+### Reclamation boundary
+
+The string cache retains every unique value for the process lifetime. This retention keeps copied
+handles and returned string slices valid without reference counting, access guards, or explicit
+lifetime parameters on identifier types. Process teardown is the normal reclamation boundary.
+
+These guarantees rule out safe reclamation of individual entries. Rust can copy a `Copy` value
+without executing code, so an atomic reference count cannot observe every copy. Designs that add
+reclamation change the identifier contract:
+
+- Reference counting requires `Clone` and `Drop`, which removes `Copy` from identifiers and types
+  that contain them.
+- Borrowed or epoch-protected storage requires lifetimes or access guards at string access points.
+- Generational handles permit reclamation but make lookup fallible and invalidate stale handles.
+- A global cache reset is safe only at a proven quiescent point after all handles, references, and
+  foreign pointers have been destroyed and no task or thread can retain one.
+
+### Storage boundaries
+
+Interning is best suited to identifiers drawn from a bounded process-scoped universe and values that
+repeat enough to benefit from deduplication. Identifiers whose distinct values can grow with every
+order, trade, or message increase the cache for the process lifetime.
+
+Fixed-capacity inline storage retains `Copy` when the external protocol supplies a suitable maximum.
+`TradeId`, for example, uses a 36-character `StackStr`. Owned or reference-counted storage provides
+dynamic capacity when reclamation matters more than `Copy`.
+
+The domain model also contains compatibility exceptions. `ClientOrderId`, `VenueOrderId`,
+`PositionId`, and `OrderListId` remain `Ustr`-backed and therefore retain every distinct value.
+Identifier storage participates in the supported by-value C ABI, so a broader redesign depends on
+conversion-based bindings replacing raw layout sharing.
+
+The storage boundary includes an up-front estimate of every unique value and all intermediate
+strings interned during parsing. The cache is shared by every `Ustr` use in the process, so its
+memory cost is the aggregate set rather than a separate budget for each identifier type.
+
+### Polymarket scale example
+
+A Polymarket instrument symbol combines a 66-byte condition ID with a 77- or 78-byte token ID, for
+a 144- or 145-byte interned symbol. With the 64-bit `ustr` 1.1.0 layout, 600,000 unique
+`InstrumentId` values require roughly 150 MiB for the retained identifier values, cache lookup
+table, and reserved string storage.
+
+The Polymarket parsing path also interns each raw token ID and each condition ID. For 600,000
+instruments from about 300,000 markets, these entries raise the estimate to roughly 300 MiB before
+instrument objects, descriptions, maps, and other metadata. The estimate assumes unique instrument
+and token IDs and includes capacity reserved by the cache's geometric allocator, so it is not an
+exact resident-set measurement.
+
+NautilusTrader accepts this bounded cost to preserve `Copy`, stable direct access, and global
+deduplication across the instrument universe. Unbounded streams of unique external IDs remain
+outside this storage model.
+
 ## Behavioral model architecture
 
-Use this pattern when adding or changing a model family that controls simulation or execution
-behavior. It keeps the supported Rust implementations explicit and exposes supported concrete
-built-in models through Python configuration.
+### Model family structure
 
-1. Define a Rust `<Family>Model` trait as the behavioral contract.
-1. Implement each built-in model as a concrete Rust type.
-1. List the core built-ins and any language bridges that need enum storage in a `<Family>ModelAny`
-   enum, then implement the trait with explicit enum dispatch.
-1. Add a `<Family>ModelHandle` when a runtime component must share a model or accept a Rust trait
-   implementation outside the enum's declared variants. Keep built-in-only storage typed as
-   `<Family>ModelAny`.
-1. Expose each supported concrete built-in as a PyO3 class, add its
-   [type stub annotations](rust.md#type-stub-annotations), and regenerate the
-   [Python artifacts](rust.md#generated-python-artifacts).
-1. Accept concrete model objects directly in backtest configuration. Do not add separate model
-   configuration and factory wrappers.
+Behavioral model families use a common representation across simulation and execution:
 
-Adapter-specific models remain in their adapter crate when adding them to a core enum would create
-a reverse dependency. Low-level Rust code can pass such a model through the corresponding handle.
-Python exposure requires an explicit bridge for that model family. A bridge may be an enum variant
-or pass its trait implementation through the handle, depending on the storage boundary. Latency and
-margin configuration accept built-in models only from Python.
+- A Rust `<Family>Model` trait defines the behavioral contract.
+- Concrete Rust types implement the built-in models.
+- A `<Family>ModelAny` enum lists the core built-ins and any language bridges that require enum
+  storage, then implements the trait through explicit enum dispatch.
+- A `<Family>ModelHandle` stores a shared trait object where runtime components accept linked Rust
+  implementations beyond the enum variants.
+
+Supported concrete built-ins are exposed as PyO3 classes. Their
+[type stub annotations](rust.md#type-stub-annotations) feed the
+[generated Python artifacts](rust.md#generated-python-artifacts). Backtest configuration accepts
+these concrete model objects directly rather than using separate model configuration and factory
+wrappers.
+
+Adapter-specific models live in their adapter crate when a core enum variant would create a reverse
+dependency. Low-level Rust code passes these models through the corresponding handle. Python
+exposure uses an explicit bridge for the model family, either as an enum variant or as a trait
+implementation passed through the handle, depending on the storage boundary. Latency and margin
+configuration accept built-in models only from Python.
 
 ### Dispatch boundary
 
-| Form                     | Accepted implementations               | Dispatch     | Use                                           |
+| Form                     | Accepted implementations               | Dispatch     | Role                                          |
 | ------------------------ | -------------------------------------- | ------------ | --------------------------------------------- |
 | Concrete type or generic | One concrete implementation            | Static       | Model internals and specialized callers.      |
 | `<Family>ModelAny`       | Declared built-ins and bridge variants | Enum match   | Built-in and bridge configuration or storage. |
@@ -60,9 +129,9 @@ margin configuration accept built-in models only from Python.
 
 `<Family>ModelAny` uses enum dispatch. `<Family>ModelHandle` uses dynamic dispatch through a trait
 object, so a built-in converted from the enum into a handle crosses a vtable before its enum match.
-Keep a built-in-only call path typed as `<Family>ModelAny` when avoiding trait-object dispatch
-matters. A handle with separate built-in and dynamic variants would be a different representation
-and requires a measured performance case before adding its complexity.
+Built-in-only storage remains typed as `<Family>ModelAny` where avoiding trait-object dispatch
+matters. The handle has no separate built-in fast path; the simpler single representation remains
+because no measured performance case justifies the additional variant and dispatch complexity.
 
 ### Native extension boundary
 
@@ -83,19 +152,20 @@ Simulation modules use the enum and handle forms at different configuration boun
 
 `SimulationModuleHandle` owns an `Rc<dyn SimulationModule>`, so cloning a handle shares the module
 and its state. Cloning a built-in enum value copies its state, while cloning a Python bridge retains
-the same Python object. Construct distinct module instances, including distinct Python objects, for
-venues or runs that require isolated state.
+the same Python object. Venues or runs that require isolated state therefore use distinct module
+instances, including distinct Python objects.
 
 #### Lifecycle
 
 The exchange runs each module through this lifecycle:
 
-1. Call `pre_process` before the exchange processes each supported market data item.
-1. Call `process` for each module in order against the same read-only exchange snapshot after
+1. `pre_process` runs before the exchange processes each supported market data item.
+1. `process` runs for each module in order against the same read-only exchange snapshot after
    commands have settled for the timestamp. Processing stops at the first failure, and the exchange
-   does not apply any adjustments from that timestamp.
-1. For each completed result in order, apply its batch as ordered `Money` adjustments, then call that
-   module's `acknowledge` exactly once with the corresponding outcomes, including for an empty batch.
+   applies no adjustments from that timestamp.
+1. For each completed result in order, the exchange applies its batch as ordered `Money`
+   adjustments, then calls that module's `acknowledge` exactly once with the corresponding outcomes,
+   including for an empty batch.
 
 #### Failure handling
 
@@ -141,7 +211,7 @@ and short values, a configurable UTC rollover time, and a configurable triple-ro
 single-currency account, the module converts the adjustment to the account base currency at the
 cached mid exchange rate.
 
-Any of these missing inputs defers the whole CFD swap batch:
+The CFD swap module defers the whole batch when any of these inputs is missing:
 
 - A matching engine.
 - A settlement price.
