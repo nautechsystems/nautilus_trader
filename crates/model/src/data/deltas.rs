@@ -294,14 +294,36 @@ mod tests {
         OrderBookDeltas::new(instrument_id, deltas)
     }
 
-    /// Asserts all fields match, as `PartialEq` only compares `instrument_id` and `sequence`.
-    fn assert_deltas_eq(left: &OrderBookDeltas, right: &OrderBookDeltas) {
-        assert_eq!(left.instrument_id, right.instrument_id);
-        assert_eq!(left.deltas, right.deltas);
-        assert_eq!(left.flags, right.flags);
-        assert_eq!(left.sequence, right.sequence);
-        assert_eq!(left.ts_event, right.ts_event);
-        assert_eq!(left.ts_init, right.ts_init);
+    // Compared field by field, as `PartialEq` covers only `instrument_id` and `sequence` here,
+    // and only `order_id` on the nested `BookOrder`.
+    fn assert_book_order_fields(expected: &BookOrder, actual: &BookOrder) {
+        assert_eq!(expected.side, actual.side);
+        assert_eq!(expected.price, actual.price);
+        assert_eq!(expected.size, actual.size);
+        assert_eq!(expected.order_id, actual.order_id);
+    }
+
+    fn assert_order_book_delta_fields(expected: &OrderBookDelta, actual: &OrderBookDelta) {
+        assert_eq!(expected.instrument_id, actual.instrument_id);
+        assert_eq!(expected.action, actual.action);
+        assert_book_order_fields(&expected.order, &actual.order);
+        assert_eq!(expected.flags, actual.flags);
+        assert_eq!(expected.sequence, actual.sequence);
+        assert_eq!(expected.ts_event, actual.ts_event);
+        assert_eq!(expected.ts_init, actual.ts_init);
+    }
+
+    fn assert_order_book_deltas_fields(expected: &OrderBookDeltas, actual: &OrderBookDeltas) {
+        assert_eq!(expected.instrument_id, actual.instrument_id);
+        assert_eq!(expected.flags, actual.flags);
+        assert_eq!(expected.sequence, actual.sequence);
+        assert_eq!(expected.ts_event, actual.ts_event);
+        assert_eq!(expected.ts_init, actual.ts_init);
+        assert_eq!(expected.deltas.len(), actual.deltas.len());
+
+        for (expected_delta, actual_delta) in expected.deltas.iter().zip(&actual.deltas) {
+            assert_order_book_delta_fields(expected_delta, actual_delta);
+        }
     }
 
     #[rstest]
@@ -552,16 +574,16 @@ mod tests {
         let serialized = deltas.to_json_bytes().unwrap();
         let deserialized = OrderBookDeltas::from_json_bytes(serialized.as_ref()).unwrap();
 
-        assert_deltas_eq(&deserialized, &deltas);
+        assert_order_book_deltas_fields(&deltas, &deserialized);
     }
 
     #[rstest]
-    fn test_msgpack_serialization(stub_deltas: OrderBookDeltas) {
-        let deltas = stub_deltas;
+    fn test_msgpack_serialization() {
+        let deltas = create_test_deltas_multiple();
         let serialized = deltas.to_msgpack_bytes().unwrap();
         let deserialized = OrderBookDeltas::from_msgpack_bytes(serialized.as_ref()).unwrap();
 
-        assert_deltas_eq(&deserialized, &deltas);
+        assert_order_book_deltas_fields(&deltas, &deserialized);
     }
 
     #[rstest]
