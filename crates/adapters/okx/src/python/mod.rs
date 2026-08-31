@@ -26,7 +26,6 @@ pub mod factories;
 pub mod http;
 pub mod models;
 pub mod urls;
-pub mod websocket;
 
 use std::str::FromStr;
 
@@ -122,8 +121,6 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(OKX), OKX)?;
     m.add(stringify!(OKX_CLIENT_ID), *OKX_CLIENT_ID)?;
     m.add(stringify!(OKX_VENUE), *OKX_VENUE)?;
-    m.add_class::<super::websocket::OKXWebSocketClient>()?;
-    m.add_class::<super::websocket::messages::OKXWebSocketError>()?;
     m.add_class::<super::http::OKXHttpClient>()?;
     m.add_class::<crate::http::models::OKXBalanceDetail>()?;
     m.add_class::<crate::common::enums::OKXInstrumentType>()?;

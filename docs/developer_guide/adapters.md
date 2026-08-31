@@ -105,20 +105,20 @@ locally, and [blockchain](../../crates/adapters/blockchain/src/execution/client.
 on-chain behind the `defi` feature. Deterministic simulation eligibility also sits outside the
 baseline, as an optional capability proven per adapter rather than a requirement.
 
-| Target                     | Shared piece                                                                     | Contract                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Command outcome evidence   | [`CommandFailure`](../../crates/live/src/execution/failure.rs)                   | [Naming the evidence classes](#naming-the-evidence-classes)                   |
-| Order identity and context | [`OrderIdentity` and `OrderContext`](../../crates/live/src/execution/context.rs) | [Tracked and external updates](#tracked-and-external-execution-updates)       |
-| Replay deduplication       | [`FifoCache` and `FifoCacheMap`](../../crates/common/src/cache/fifo.rs)          | [Event ordering and deduplication](#event-ordering-and-deduplication)         |
-| Order denial reasons       | [`OrderDeniedReason`](../../crates/model/src/events/order/denied_reason.rs)      | [Diagnostics and reasons](#separate-diagnostics-from-strategy-facing-reasons) |
-| Task lifecycle             | [`TaskHandles`](../../crates/common/src/live/task.rs)                            | [Task management](#task-management)                                           |
-| Ingestion precision        | [Domain numeric types](rust.md#domain-numeric-types)                             | [Venue payload modeling](#modeling-venue-payloads)                            |
-| HTTP transport             | [`HttpClient`](../../crates/network/src/http/client.rs)                          | [Request flow](#request-flow)                                                 |
-| Authentication state       | [`AuthTracker`](../../crates/network/src/websocket/auth.rs)                      | [Authentication](#authentication)                                             |
-| Subscription identity      | [`SubscriptionState`](../../crates/network/src/websocket/subscription.rs)        | [Subscription management](#subscription-management)                           |
-| Reconnect requests         | [`request_reconnect`](../../crates/network/src/websocket/client.rs)              | [Reconnection and shutdown](#reconnection-and-shutdown)                       |
-| Retry machinery            | [`RetryManager`](../../crates/network/src/retry.rs)                              | [Error handling and retry logic](#error-handling-and-retry-logic)             |
-| Inferred fill commission   | [`ExecutionClient`](../../crates/common/src/clients/execution.rs)                | [Commission failure handling](#commission-failure-handling)                   |
+| Target                     | Shared piece                                                                                           | Contract                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Command outcome evidence   | [`CommandFailure`](../../crates/live/src/execution/failure.rs)                                         | [Naming the evidence classes](#naming-the-evidence-classes)                   |
+| Order identity and context | [`OrderIdentity` and `OrderContext`](../../crates/live/src/execution/context.rs)                       | [Tracked and external updates](#tracked-and-external-execution-updates)       |
+| Replay deduplication       | [`FifoCache` and `FifoCacheMap`](../../crates/common/src/cache/fifo.rs)                                | [Event ordering and deduplication](#event-ordering-and-deduplication)         |
+| Order denial reasons       | [`OrderDeniedReason`](../../crates/model/src/events/order/denied_reason.rs)                            | [Diagnostics and reasons](#separate-diagnostics-from-strategy-facing-reasons) |
+| Task lifecycle             | [`TaskGroup`](../../crates/live/src/task.rs) and [`TaskHandles`](../../crates/common/src/live/task.rs) | [Task management](#task-management)                                           |
+| Ingestion precision        | [Domain numeric types](rust.md#domain-numeric-types)                                                   | [Venue payload modeling](#modeling-venue-payloads)                            |
+| HTTP transport             | [`HttpClient`](../../crates/network/src/http/client.rs)                                                | [Request flow](#request-flow)                                                 |
+| Authentication state       | [`AuthTracker`](../../crates/network/src/websocket/auth.rs)                                            | [Authentication](#authentication)                                             |
+| Subscription identity      | [`SubscriptionState`](../../crates/network/src/websocket/subscription.rs)                              | [Subscription management](#subscription-management)                           |
+| Reconnect requests         | [`request_reconnect`](../../crates/network/src/websocket/client.rs)                                    | [Reconnection and shutdown](#reconnection-and-shutdown)                       |
+| Retry machinery            | [`RetryManager`](../../crates/network/src/retry.rs)                                                    | [Error handling and retry logic](#error-handling-and-retry-logic)             |
+| Inferred fill commission   | [`ExecutionClient`](../../crates/common/src/clients/execution.rs)                                      | [Commission failure handling](#commission-failure-handling)                   |
 
 Where a venue transmits a discrete value as an IEEE-754 field rather than a decimal string or JSON
 number, contain that at the parsing boundary as a documented exception instead of letting `f64`
@@ -1488,12 +1488,34 @@ recovery.
 
 ## Task management
 
-### Spawning async tasks (`spawn_task`)
+Classify every production task by its owner before choosing its storage and shutdown path.
+
+| Ownership           | Use                                                                                         | Required behavior                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Session-scoped      | Stream consumers, keepalives, health polls, refresh loops, and reconnect drivers.           | One session group owns the task from successful admission through disconnect or failed startup.    |
+| Command-scoped      | Work spawned by synchronous data requests or execution commands.                            | A separate command group owns the task without tying its outcome to the transport session.         |
+| Explicitly singular | One transport loop or disconnect operation whose identity is part of the owning state.      | Store one named handle and apply the same bounded join, forced abort, and failure reporting rules. |
+| Handler-local       | Retry futures, send workers, and child work created and joined inside one handler.          | The handler drains the work before it exits and exposes failure to its owner.                      |
+| Protocol exception  | Typed fan-out results, keyed timeouts, or work whose local join preserves protocol meaning. | Keep the exception local, state why a shared group would lose meaning, and test its shutdown path. |
+
+Use separate session and command groups even when both groups have the same timeout policy. A
+disconnect ends the session, while an accepted command can still need reconciliation or an
+explicit ambiguous outcome. Do not let transport shutdown silently reclassify that command result.
+
+[`TaskHandles`](../../crates/common/src/live/task.rs) stores unit task handles without setting
+spawn, cancellation, generation, or join policy. Use it inside a component that defines those
+rules. [`TaskGroup`](../../crates/live/src/task.rs) supplies the shared live-client policy for
+unit-output session and command tasks. The module's `finish_task` function applies the same bounded
+policy to an explicitly singular handle without erasing a typed result. For another explicit ownership
+pattern, spawn through `nautilus_common::live::get_runtime().spawn()` as described in
+[Async code](rust.md#async-code), then retain or locally await the returned handle.
+
+### Spawn through a task group
 
 Synchronous client trait methods must not block an active Tokio runtime. Clone owned inputs, spawn
-the asynchronous operation, and return the local validation result. Use
-`nautilus_common::live::get_runtime().spawn()` for adapter production tasks so native Rust and
-Python bindings use the configured runtime.
+the asynchronous operation, and return the local validation result. Register client-owned work
+through its `TaskGroup`. The group stores the handle before opening the task's start gate, so a
+concurrent shutdown either owns the task or rejects its admission.
 
 The [Tokio usage hook](../../.pre-commit-hooks/check_tokio_usage.sh) rejects `tokio::spawn` in
 adapter production code and requires fully qualified Tokio spawn, time, and sync paths.
@@ -1505,27 +1527,56 @@ fn spawn_request<F>(&self, description: &'static str, future: F)
 where
     F: Future<Output = anyhow::Result<()>> + Send + 'static,
 {
-    let handle = get_runtime().spawn(async move {
+    let future = async move {
         if let Err(e) = future.await {
             log::warn!("{description} failed: {e:?}");
         }
-    });
-    self.tasks.push(handle);
+    };
+
+    if let Err(e) = self.command_tasks.spawn(future) {
+        log::warn!("Skipping {description} after shutdown began: {e}");
+    }
 }
 ```
 
 Validate the command and clone every input before constructing the future. Do not capture a
 `RefCell` borrow, cache guard, clock borrow, or reference to the command in work that outlives the
-trait call.
+trait call. When a long-lived task creates children, capture a `TaskSpawner` from the owning group.
+A spawner from an older generation cannot register work in the replacement generation.
 
-Use [`TaskHandles`](../../crates/common/src/live/task.rs) for client-owned tasks when a collection
-is needed. `push` prunes completed handles, `abort_all` drains and aborts them, and `take_all`
-transfers them to a client-specific join policy. Give each task:
+Give each task:
 
 - One owner responsible for joining or aborting it.
 - A stable description for failure logs.
 - A cancellation path.
 - Owned inputs that do not retain `RefCell` or engine borrows.
+
+Keep typed task results local to the component that awaits them. Do not erase a `JoinHandle<T>` to
+fit a unit-output group when `T` carries order, transport, or startup evidence.
+
+### Shut down and reopen task generations
+
+Task shutdown has separate synchronous and asynchronous phases:
+
+1. `stop`, `reset`, and `dispose` call `begin_shutdown`. This closes admission and cancels the
+   current generation without blocking the runtime.
+   Use `abort` instead only when the existing synchronous contract requires immediate task
+   cancellation.
+1. `disconnect`, or the next asynchronous `connect`, closes the generation's transports in their
+   required protocol order and calls `finish_shutdown` with bounded graceful and forced intervals.
+1. `finish_shutdown` repeatedly drains tasks registered by an allowed race, reports unexpected
+   cancellations and join failures, aborts unfinished work after the graceful interval, and awaits
+   the forced abort within its second bound.
+1. `start_generation` reopens the group only after the prior generation drains. A timeout retains
+   the remaining handles and keeps admission closed.
+
+When `connect` fails after creating a transport or admitting a task, apply the same sequence before
+returning the startup error. Close every transport created by that attempt, drain both session and
+command work that cannot survive the failure, and include teardown failures in the returned or
+logged evidence.
+
+Make repeated `begin_shutdown` and `finish_shutdown` calls safe. A synchronous lifecycle method may
+begin teardown more than once before an asynchronous boundary finishes it.
 
 ### Never use `block_on` in trait methods
 
@@ -1545,9 +1596,11 @@ method. Redesign an ambiguous boundary as async.
 ### Graceful shutdown with `CancellationToken`
 
 Use `CancellationToken` when several tasks share a lifecycle. Select cancellation alongside
-streams, timers, or response channels. Cancel before joining tasks, and replace the token during
-`reset`. Also replace a canceled token before a reconnect or any other path starts new work. A
-reused canceled token causes every new task to exit immediately.
+streams, timers, or response channels. For grouped tasks, obtain child tokens from the generation
+group or spawner and let `begin_shutdown` cancel their parent. Obtain the replacement token only
+after `finish_shutdown` drains every handle and `start_generation` reopens the group. Reusing a
+canceled token makes replacement tasks exit immediately, while replacing it before the drain lets
+old work cross the reconnect boundary.
 
 ## Testing
 

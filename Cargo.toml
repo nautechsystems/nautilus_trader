@@ -195,6 +195,7 @@ mimalloc = "0.1.52"
 object_store = { version = "0.13.2", default-features = false, features = [
   "fs",
 ] }
+parking_lot = "0.12.5"
 parquet = { version = "59.2.0", default-features = false, features = [
   "arrow",
   "async",

@@ -20,9 +20,9 @@
 //! Run with: `cargo run --example blockchain-data-tester --package nautilus-blockchain --features hypersync`
 //!
 //! Required environment variables:
-//! - `ENVIO_API_TOKEN`.
-//! - `RPC_WSS_URL`.
-//! - `RPC_HTTP_URL`.
+//! - `ENVIO_API_TOKEN`
+//! - `RPC_WSS_URL`
+//! - `RPC_HTTP_URL`
 
 use std::{sync::Arc, time::Duration};
 

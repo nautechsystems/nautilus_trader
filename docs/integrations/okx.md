@@ -12,7 +12,7 @@ require external OKX client libraries.
 The OKX adapter includes multiple components, which can be used separately or together:
 
 - `OKXHttpClient`: Low-level HTTP API connectivity.
-- `OKXWebSocketClient`: Low-level WebSocket API connectivity.
+- `OKXWebSocketClient`: Low-level WebSocket API connectivity for Rust callers.
 - `OKXDataClient`: Market data feed manager.
 - `OKXExecutionClient`: Account management and trade execution gateway.
 - `OKXDataClientFactory`: Factory for OKX data clients.

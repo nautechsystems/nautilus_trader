@@ -21,7 +21,7 @@ impl InteractiveBrokersExecutionClient {
     /// # Errors
     ///
     /// Returns an error if starting the subscription fails.
-    pub(super) async fn start_order_updates(&mut self) -> anyhow::Result<()> {
+    pub(super) async fn start_order_updates(&self) -> anyhow::Result<()> {
         let client = self.ib_client.as_ref().context("IB client not connected")?;
 
         let timeout_dur = Duration::from_secs(self.config.request_timeout);
@@ -55,7 +55,7 @@ impl InteractiveBrokersExecutionClient {
         let order_fill_progress = Arc::clone(&self.order_fill_progress);
         let pending_cancel_orders = Arc::clone(&self.pending_cancel_orders);
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             Self::process_order_update_stream(
                 &mut subscription,
                 &order_id_map,
@@ -79,9 +79,11 @@ impl InteractiveBrokersExecutionClient {
                 &pending_cancel_orders,
             )
             .await;
-        });
+        };
 
-        self.order_update_handle.replace(handle);
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register IB order update stream task")?;
 
         log::debug!("IB order update stream subscription started");
 

@@ -332,6 +332,8 @@ async fn test_market_heartbeat_uses_control_frames_before_initial_subscription()
     assert_eq!(state.ping_count.load(Ordering::Relaxed), 1);
     assert!(state.received_market_texts.lock().await.is_empty());
 
+    // The handler runs on the global live runtime, so use real time for its shutdown deadlines
+    tokio::time::resume();
     client.disconnect().await.expect("disconnect failed");
 }
 

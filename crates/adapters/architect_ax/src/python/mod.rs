@@ -23,7 +23,6 @@
 pub mod config;
 pub mod factories;
 pub mod http;
-pub mod websocket;
 
 use std::str::FromStr;
 
@@ -40,7 +39,6 @@ use crate::{
     config::{AxDataClientConfig, AxExecutionClientConfig},
     factories::{AxDataClientFactory, AxExecutionClientFactory},
     http::client::AxHttpClient,
-    python::websocket::{PyAxMdWebSocketClient, PyAxOrdersWebSocketClient},
 };
 
 #[expect(clippy::needless_pass_by_value)]
@@ -180,8 +178,6 @@ pub fn architect_ax(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<AxExecutionClientConfig>()?;
     m.add_class::<AxExecutionClientFactory>()?;
     m.add_class::<AxHttpClient>()?;
-    m.add_class::<PyAxMdWebSocketClient>()?;
-    m.add_class::<PyAxOrdersWebSocketClient>()?;
 
     let registry = get_global_pyo3_registry();
 

@@ -29,8 +29,8 @@
 //! Run with: `cargo run --example bybit-option-chain --package nautilus-bybit --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `BYBIT_API_KEY`.
-//! - `BYBIT_API_SECRET`.
+//! - `BYBIT_API_KEY`
+//! - `BYBIT_API_SECRET`
 
 use std::fmt::Debug;
 

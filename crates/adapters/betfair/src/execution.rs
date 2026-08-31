@@ -60,17 +60,14 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{
-        get_runtime,
-        runner::{get_data_event_sender, get_exec_event_sender},
-        task::TaskHandles,
-    },
+    live::runner::{get_data_event_sender, get_exec_event_sender},
     messages::{
         DataEvent, ExecutionReport,
         execution::{
@@ -85,7 +82,9 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
-    ExecutionClientCore, ExecutionEventEmitter, SocketControl, execution::failure::CommandFailure,
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    execution::failure::CommandFailure,
+    task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -105,7 +104,6 @@ use nautilus_model::{
 };
 use nautilus_network::{SocketState, SocketStateSink};
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use crate::{
@@ -171,11 +169,10 @@ pub struct BetfairExecutionClient {
     pending_resync: Arc<AtomicBool>,
     reconciliation_gate: Arc<ReconciliationGate>,
     replay_buffer: Arc<Mutex<Vec<ReceivedOcm>>>,
-    pending_tasks: TaskHandles,
-    keep_alive_handle: Option<JoinHandle<()>>,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     account_refresh_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
-    account_state_handle: Option<JoinHandle<()>>,
-    reconnect_handle: Option<JoinHandle<()>>,
 }
 
 impl BetfairExecutionClient {
@@ -203,6 +200,9 @@ impl BetfairExecutionClient {
             USER_STREAMS_ENDPOINT,
         ));
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Self {
             core,
             clock,
@@ -218,11 +218,10 @@ impl BetfairExecutionClient {
             pending_resync: Arc::new(AtomicBool::new(false)),
             reconciliation_gate: Arc::new(ReconciliationGate::default()),
             replay_buffer: Arc::new(Mutex::new(Vec::new())),
-            pending_tasks: TaskHandles::default(),
-            keep_alive_handle: None,
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             account_refresh_tx: None,
-            account_state_handle: None,
-            reconnect_handle: None,
         }
     }
 
@@ -245,14 +244,15 @@ impl BetfairExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Betfair {description} after shutdown began: {e}");
+        }
     }
 
     fn reconcile_market_ids(&self) -> Option<Vec<String>> {
@@ -500,21 +500,68 @@ impl BetfairExecutionClient {
     }
 
     fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+        self.pending_tasks.begin_shutdown();
     }
 
-    fn abort_background_tasks(&mut self) {
-        if let Some(handle) = self.keep_alive_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.account_state_handle.take() {
-            handle.abort();
-        }
+    fn abort_session_tasks(&mut self) {
+        self.session_tasks.begin_shutdown();
         self.account_refresh_tx = None;
+    }
 
-        if let Some(handle) = self.reconnect_handle.take() {
-            handle.abort();
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Betfair execution tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Betfair session tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
+
+        if let Some(client) = self.stream_client.as_ref() {
+            match client.close().await {
+                Ok(()) => self.stream_client = None,
+                Err(e) => self
+                    .shutdown_errors
+                    .push(format!("stream shutdown failed: {e}")),
+            }
+        }
+
+        self.http_client.disconnect().await;
+        let (session_result, pending_result) =
+            tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
+        self.core.set_disconnected();
+        self.clear_resync_state();
+
+        if let Err(e) = session_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!("Betfair execution shutdown failed: {}", errors.join("; "))
         }
     }
 
@@ -1363,50 +1410,85 @@ impl ExecutionClient for BetfairExecutionClient {
 
         self.core.set_stopped();
         self.core.set_disconnected();
-        self.abort_background_tasks();
+        self.abort_session_tasks();
         self.abort_pending_tasks();
 
         if let Some(control) = &self.socket_control {
             control.deregister();
         }
+
+        if let Some(client) = self.stream_client.as_ref() {
+            client.begin_shutdown();
+        }
+
         self.clear_resync_state();
         log::info!("Stopped: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.session_tasks.is_open() && self.pending_tasks.is_open()
+        {
             return Ok(());
         }
 
+        if !self.session_tasks.is_open() || !self.pending_tasks.is_open() {
+            self.teardown_partial_connect().await?;
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Betfair session generation: {e}"))?;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Betfair task generation: {e}"))?;
+        }
+
+        let http_cancellation = self.http_client.cancellation_token();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                http_cancellation.cancel();
+            });
+
         register_betfair_custom_data();
 
-        self.http_client
-            .connect()
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let session_token_result = async {
+            self.http_client
+                .connect()
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let funds: AccountFundsResponse = self
-            .http_client
-            .send_accounts(METHOD_GET_ACCOUNT_FUNDS, serde_json::json!({}))
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let funds: AccountFundsResponse = self
+                .http_client
+                .send_accounts(METHOD_GET_ACCOUNT_FUNDS, serde_json::json!({}))
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let ts_init = self.clock.get_time_ns();
-        let account_state = parse_account_state(
-            &funds,
-            self.core.account_id,
-            self.currency,
-            ts_init,
-            ts_init,
-        )?;
-        self.emitter.send_account_state(account_state);
+            let ts_init = self.clock.get_time_ns();
+            let account_state = parse_account_state(
+                &funds,
+                self.core.account_id,
+                self.currency,
+                ts_init,
+                ts_init,
+            )?;
+            self.emitter.send_account_state(account_state);
 
-        let session_token = self
-            .http_client
-            .session_token()
-            .await
-            .ok_or_else(|| anyhow::anyhow!("No session token after login"))?;
+            self.http_client
+                .session_token()
+                .await
+                .ok_or_else(|| anyhow::anyhow!("No session token after login"))
+        }
+        .await;
+        let session_token = match session_token_result {
+            Ok(session_token) => session_token,
+            Err(e) => {
+                if let Err(teardown_error) = self.teardown_partial_connect().await {
+                    return Err(e.context(format!(
+                        "Betfair execution startup teardown failed: {teardown_error}"
+                    )));
+                }
+                return Err(e);
+            }
+        };
 
         // Sync OCM state from cached orders before stream connects
         self.sync_ocm_state_from_cache();
@@ -1458,7 +1540,7 @@ impl ExecutionClient for BetfairExecutionClient {
             None => SocketStateSink::new(halt_on_disconnect),
         };
 
-        let stream_client = BetfairStreamClient::connect_with_state_sink(
+        let stream_client_result = BetfairStreamClient::connect_with_state_sink(
             &self.credential,
             session_token,
             handler,
@@ -1466,29 +1548,55 @@ impl ExecutionClient for BetfairExecutionClient {
             HeartbeatTimeoutSource::Server,
             Some(state_sink),
         )
-        .await
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+        .await;
+        let stream_client = match stream_client_result {
+            Ok(stream_client) => stream_client,
+            Err(e) => {
+                let e = anyhow::Error::new(e);
+                if let Err(teardown_error) = self.teardown_partial_connect().await {
+                    return Err(e.context(format!(
+                        "Betfair execution startup teardown failed: {teardown_error}"
+                    )));
+                }
+                return Err(e);
+            }
+        };
 
         let stream_client = Arc::new(stream_client);
 
-        stream_client
-            .subscribe_orders(None, None)
-            .await
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        if let Some(control) = &self.socket_control {
-            let reconnect_stream = Arc::clone(&stream_client);
-            control.register(move || reconnect_stream.request_reconnect_outcome());
+        if let Err(e) = stream_client.subscribe_orders(None, None).await {
+            if let Err(close_error) = stream_client.close().await {
+                log::warn!(
+                    "Failed to close Betfair order stream after subscribe failure: {close_error}"
+                );
+            }
+            let e = anyhow::Error::new(e);
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Betfair execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
 
         self.stream_client = Some(Arc::clone(&stream_client));
+        setup_guard.disarm();
+        let http_cancellation = self.http_client.cancellation_token();
+        let shutdown_stream = Arc::clone(&stream_client);
+        let stream_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                http_cancellation.cancel();
+                shutdown_stream.begin_shutdown();
+            });
+
+        let session_result = async {
 
         // Spawn periodic keep-alive to prevent session expiry
         let keep_alive_client = Arc::clone(&self.http_client);
         let keep_alive_stream = Arc::clone(&stream_client);
         let keep_alive_app_key = self.credential.app_key().to_string();
 
-        self.keep_alive_handle = Some(get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             const KEEP_ALIVE_INTERVAL_SECS: u64 = 36_000;
             let interval = tokio::time::Duration::from_secs(KEEP_ALIVE_INTERVAL_SECS);
             loop {
@@ -1524,7 +1632,7 @@ impl ExecutionClient for BetfairExecutionClient {
                 .await;
                 log::debug!("Betfair execution session keep-alive sent");
             }
-        }));
+        })?;
 
         let acct_client = Arc::clone(&self.http_client);
         let acct_emitter = self.emitter.clone();
@@ -1535,7 +1643,7 @@ impl ExecutionClient for BetfairExecutionClient {
             && self.config.request_account_state_secs > 0)
             .then(|| tokio::time::Duration::from_secs(self.config.request_account_state_secs));
 
-        self.account_state_handle = Some(get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             loop {
                 let should_refresh = if let Some(interval) = periodic_interval {
                     tokio::select! {
@@ -1571,10 +1679,10 @@ impl ExecutionClient for BetfairExecutionClient {
                     Err(e) => log::warn!("Failed to fetch account state: {e}"),
                 }
             }
-        }));
+        })?;
 
         let reconnect_http = Arc::clone(&self.http_client);
-        let reconnect_stream = stream_client;
+        let reconnect_stream = Arc::clone(&stream_client);
         let reconnect_emitter = self.emitter.clone();
         let reconnect_app_key = self.credential.app_key().to_string();
         let reconnect_clock = self.clock;
@@ -1586,7 +1694,7 @@ impl ExecutionClient for BetfairExecutionClient {
         let reconnect_ocm_state = Arc::clone(&self.ocm_state);
         let reconnect_gate = Arc::clone(&self.reconciliation_gate);
 
-        self.reconnect_handle = Some(get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             const RECOVERY_ATTEMPTS: usize = 4;
 
             while let Some(generation) = reconnect_rx.recv().await {
@@ -1670,33 +1778,35 @@ impl ExecutionClient for BetfairExecutionClient {
                     }
                 }
             }
-        }));
+        })?;
+
+        Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Betfair execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
+
+        if let Some(control) = &self.socket_control {
+            let reconnect_stream = Arc::clone(&stream_client);
+            control.register(move || reconnect_stream.request_reconnect_outcome());
+        }
 
         self.core.set_connected();
+        stream_guard.disarm();
 
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
-        self.abort_background_tasks();
-        self.abort_pending_tasks();
-
-        if let Some(control) = &self.socket_control {
-            control.deregister();
-        }
-
-        if let Some(client) = &self.stream_client {
-            client.close().await;
-        }
-
-        self.http_client.disconnect().await;
-        self.core.set_disconnected();
-        self.clear_resync_state();
+        self.teardown_partial_connect().await?;
 
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())

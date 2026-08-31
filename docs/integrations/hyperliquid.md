@@ -13,7 +13,7 @@ with Hyperliquid's REST and WebSocket APIs without requiring external client lib
 The Hyperliquid adapter includes multiple components:
 
 - `HyperliquidHttpClient`: HTTP API connectivity, instrument loading and parsing, and reconciliation reports.
-- `HyperliquidWebSocketClient`: WebSocket API connectivity for market data, user streams, and post trading requests.
+- `HyperliquidWebSocketClient`: WebSocket API connectivity for Rust callers.
 - `HyperliquidDataClient`: Market data feed manager.
 - `HyperliquidExecutionClient`: Account management and trade execution gateway.
 - `HyperliquidDataClientFactory`: Factory for Hyperliquid data clients (used by the live node builder).

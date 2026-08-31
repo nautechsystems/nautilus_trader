@@ -15,7 +15,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use nautilus_common::live::{get_runtime, task::TaskHandles};
+use futures_util::future::join_all;
 use nautilus_core::{UUID4, time::AtomicTime};
 use nautilus_live::{ExecutionEventEmitter, execution::failure::CommandFailure};
 use nautilus_model::{
@@ -59,7 +59,6 @@ pub(super) async fn handle_batch_order_responses(
     order_identities: &Arc<OrderIdentityRegistry>,
     pending_submits: &PendingSubmitTracker,
     pending_cancels: &PendingCancelTracker,
-    pending_tasks: &Arc<TaskHandles>,
     account_id: AccountId,
 ) {
     let response_len = responses.len();
@@ -150,45 +149,47 @@ pub(super) async fn handle_batch_order_responses(
         }
     }
 
-    for (batch_order, deferred_cancel, fok_order_id) in follow_ups {
-        let submitter = submitter.clone();
-        let emitter = emitter.clone();
-        let fill_tracker = fill_tracker.clone();
-        let order_identities = order_identities.clone();
-        let pending_cancels = pending_cancels.clone();
+    let follow_ups = follow_ups
+        .into_iter()
+        .map(|(batch_order, deferred_cancel, fok_order_id)| {
+            let submitter = submitter.clone();
+            let emitter = emitter.clone();
+            let fill_tracker = fill_tracker.clone();
+            let order_identities = order_identities.clone();
+            let pending_cancels = pending_cancels.clone();
 
-        let handle = get_runtime().spawn(async move {
-            if let Some((order_id_str, venue_order_id)) = deferred_cancel {
-                execute_deferred_cancel(
-                    &submitter,
-                    &batch_order.order,
-                    &order_id_str,
-                    venue_order_id,
-                    &emitter,
-                    &pending_cancels,
-                    clock,
-                )
-                .await;
-            }
+            async move {
+                if let Some((order_id_str, venue_order_id)) = deferred_cancel {
+                    execute_deferred_cancel(
+                        &submitter,
+                        &batch_order.order,
+                        &order_id_str,
+                        venue_order_id,
+                        &emitter,
+                        &pending_cancels,
+                        clock,
+                    )
+                    .await;
+                }
 
-            if let Some(order_id) = fok_order_id {
-                check_fok_status(
-                    &submitter,
-                    &order_id,
-                    &batch_order.order,
-                    &fill_tracker,
-                    &order_identities,
-                    &emitter,
-                    account_id,
-                    batch_order.size_precision,
-                    batch_order.price_precision,
-                    clock,
-                )
-                .await;
+                if let Some(order_id) = fok_order_id {
+                    check_fok_status(
+                        &submitter,
+                        &order_id,
+                        &batch_order.order,
+                        &fill_tracker,
+                        &order_identities,
+                        &emitter,
+                        account_id,
+                        batch_order.size_precision,
+                        batch_order.price_precision,
+                        clock,
+                    )
+                    .await;
+                }
             }
         });
-        pending_tasks.push(handle);
-    }
+    join_all(follow_ups).await;
 }
 
 pub(super) fn reject_submit_order(

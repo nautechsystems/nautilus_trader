@@ -176,8 +176,8 @@ async fn test_outbound_logs_omit_payload_bodies() {
         "orders send metadata missing or inaccurate: {messages:?}"
     );
 
-    data_client.close().await;
-    orders_client.close().await;
+    data_client.close().await.expect("close WebSocket client");
+    orders_client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -200,7 +200,7 @@ async fn test_md_client_connection() {
     assert!(client.is_active());
     assert_eq!(*state.connection_count.lock().await, 1);
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -278,7 +278,7 @@ async fn test_md_close_sets_closed_flag() {
 
     assert!(!client.is_closed());
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 
     assert!(client.is_closed());
 }
@@ -307,7 +307,7 @@ async fn test_md_disconnect_without_close() {
     // Disconnect doesn't set closed flag
     assert!(!client.is_closed());
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -344,7 +344,7 @@ async fn test_md_subscribe_l1() {
             .any(|s| s.contains("EURUSD-PERP") && s.contains("LEVEL_1"))
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -381,7 +381,7 @@ async fn test_md_subscribe_l2() {
             .any(|s| s.contains("EURUSD-PERP") && s.contains("LEVEL_2"))
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -418,7 +418,7 @@ async fn test_md_subscribe_l3() {
             .any(|s| s.contains("EURUSD-PERP") && s.contains("LEVEL_3"))
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -457,7 +457,7 @@ async fn test_md_subscribe_trades_uses_trades_level() {
     assert!(subscribe.get("trades").is_none());
     assert!(subscribe.get("ticker").is_none());
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -499,7 +499,7 @@ async fn test_md_book_subscription_suppresses_unrequested_streams() {
     assert_eq!(subscribe["trades"], false);
     assert_eq!(subscribe["ticker"], false);
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -543,7 +543,7 @@ async fn test_md_subscribe_multiple_symbols() {
     assert!(subs.iter().any(|s| s.contains("ETHUSD-PERP")));
     assert!(subs.iter().any(|s| s.contains("GBPUSD-PERP")));
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -584,7 +584,7 @@ async fn test_md_unsubscribe() {
 
     assert!(state.subscriptions.lock().await.is_empty());
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -624,7 +624,7 @@ async fn test_md_subscribe_candles() {
             .any(|s| s.contains("EURUSD-PERP") && s.contains("candle"))
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -674,7 +674,7 @@ async fn test_md_unsubscribe_candles() {
     assert!(state.subscriptions.lock().await.is_empty());
     assert_eq!(client.subscription_count(), 0);
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -717,7 +717,7 @@ async fn test_md_subscription_count_tracks_confirmed_subscriptions() {
 
     assert_eq!(client.subscription_count(), 0);
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -745,7 +745,7 @@ async fn test_md_ping_pong() {
 
     assert!(state.ping_count.load(Ordering::Relaxed) > 0);
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -784,7 +784,7 @@ async fn test_md_server_disconnect_handling() {
     )
     .await;
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -850,7 +850,7 @@ async fn test_md_reconnect_replays_failed_subscription() {
         vec!["EURUSD-PERP:LEVEL_2".to_string()]
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -889,7 +889,7 @@ async fn test_md_rapid_subscribe_unsubscribe() {
     )
     .await;
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -977,7 +977,7 @@ async fn test_md_subscribe_quotes_then_book_l2_resubscribes() {
         "expected at least one unsubscribe during level change",
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1024,7 +1024,7 @@ async fn test_md_subscribe_same_level_is_idempotent() {
         "no new subscribe traffic expected, events_after={events_after:?}",
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1093,7 +1093,7 @@ async fn test_md_subscribe_quotes_then_mark_prices_resubscribes_ticker() {
         "expected an unsubscribe during ticker option change",
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1136,7 +1136,7 @@ async fn test_md_unsubscribe_last_data_type_removes_server_subscription() {
 
     assert!(state.subscriptions.lock().await.is_empty());
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1194,7 +1194,7 @@ async fn test_md_book_level_change_resubscribes() {
         1
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1220,7 +1220,7 @@ async fn test_orders_client_connection() {
     assert!(client.is_active());
     assert_eq!(*state.connection_count.lock().await, 1);
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1328,7 +1328,7 @@ async fn test_orders_close_sets_closed_flag() {
 
     assert!(!client.is_closed());
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 
     assert!(client.is_closed());
 }
@@ -1391,7 +1391,7 @@ async fn test_orders_submit_order() {
     assert_eq!(place.get("p").and_then(|v| v.as_str()), Some("50000.00"));
     assert_eq!(place.get("tif").and_then(|v| v.as_str()), Some("GTC"));
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1464,7 +1464,7 @@ async fn test_orders_cancel_order_rejects_without_venue_order_id() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(state.get_messages().await.is_empty());
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1510,7 +1510,7 @@ async fn test_orders_cancel_order_with_venue_order_id() {
         .expect("expected a cancel-order message");
     assert_eq!(cancel.get("oid").and_then(|v| v.as_str()), Some("OID-123"));
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1553,7 +1553,7 @@ async fn test_orders_get_open_orders() {
         Some(request_id)
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1630,7 +1630,7 @@ async fn test_md_subscription_events_tracking() {
             .any(|(topic, success)| topic.contains("EURUSD-PERP") && *success)
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1672,7 +1672,7 @@ async fn test_md_subscription_failure_tracking() {
             .any(|(topic, success)| topic.contains("FAIL-SYMBOL") && !*success)
     );
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }
 
 #[rstest]
@@ -1714,8 +1714,8 @@ async fn test_multiple_md_clients() {
 
     assert_eq!(*state.connection_count.lock().await, 2);
 
-    client1.close().await;
-    client2.close().await;
+    client1.close().await.expect("close first client");
+    client2.close().await.expect("close second client");
 }
 
 #[rstest]
@@ -1773,7 +1773,7 @@ async fn test_md_rapid_connect_disconnect() {
 
         assert!(client.is_active());
 
-        client.close().await;
+        client.close().await.expect("close WebSocket client");
 
         wait_until_async(
             || async { *state.connection_count.lock().await == 0 },
@@ -1824,5 +1824,5 @@ async fn test_md_many_subscriptions() {
     let subs = state.subscriptions.lock().await.clone();
     assert!(subs.len() >= symbols.len());
 
-    client.close().await;
+    client.close().await.expect("close WebSocket client");
 }

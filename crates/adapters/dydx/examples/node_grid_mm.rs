@@ -21,9 +21,9 @@
 //! Run with: `cargo run --example dydx-grid-mm --package nautilus-dydx --features examples`
 //!
 //! Required credential environment variables:
-//! - `DYDX_PRIVATE_KEY` (or `DYDX_TESTNET_PRIVATE_KEY` for testnet).
+//! - `DYDX_PRIVATE_KEY` (or `DYDX_TESTNET_PRIVATE_KEY` for testnet)
 //! - `DYDX_WALLET_ADDRESS` (or `DYDX_TESTNET_WALLET_ADDRESS` for testnet; optional,
-//!   derived from the private key if not set).
+//!   derived from the private key if not set)
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};

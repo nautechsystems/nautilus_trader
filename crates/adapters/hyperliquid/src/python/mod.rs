@@ -24,7 +24,6 @@ pub mod config;
 pub mod enums;
 pub mod factories;
 pub mod http;
-pub mod websocket;
 
 #[cfg(feature = "arrow")]
 pub mod arrow;
@@ -53,7 +52,6 @@ use crate::{
     },
     factories::{HyperliquidDataClientFactory, HyperliquidExecutionClientFactory},
     http::{HyperliquidHttpClient, models::Cloid},
-    websocket::HyperliquidWebSocketClient,
 };
 
 /// Approve the Nautilus builder fee for Hyperliquid trading.
@@ -214,7 +212,6 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(HYPERLIQUID_CLIENT_ID), *HYPERLIQUID_CLIENT_ID)?;
     m.add(stringify!(HYPERLIQUID_VENUE), *HYPERLIQUID_VENUE)?;
     m.add_class::<HyperliquidHttpClient>()?;
-    m.add_class::<HyperliquidWebSocketClient>()?;
     m.add_class::<HyperliquidProductType>()?;
     m.add_class::<HyperliquidTpSl>()?;
     m.add_class::<HyperliquidConditionalOrderType>()?;

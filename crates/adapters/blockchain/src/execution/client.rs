@@ -35,7 +35,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -45,7 +45,10 @@ use nautilus_common::{
 use nautilus_core::{
     Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND, hex, time::get_atomic_clock_realtime,
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     accounts::AccountAny,
     defi::{
@@ -295,40 +298,23 @@ struct QuoteSpendCeiling {
 /// Execution client for blockchain interactions including balance tracking and order execution.
 #[derive(Debug)]
 pub struct BlockchainExecutionClient {
-    /// Core execution client providing base functionality.
     core: ExecutionClientCore,
-    /// Generates and dispatches execution events.
     emitter: ExecutionEventEmitter,
-    /// Cache for storing token metadata and other blockchain data.
     cache: BlockchainCache,
-    /// The client configuration.
     config: BlockchainExecutionClientConfig,
-    /// The blockchain network configuration.
     chain: SharedChain,
-    /// The wallet address used for transactions and balance queries.
     wallet_address: Address,
-    /// Transaction signer loaded from the configured environment variable at connect.
     signer: Option<Arc<PrivateKeySigner>>,
-    /// Signed transaction payload keys loaded from configured environment variables at connect.
     payload_keys: Option<Arc<PayloadKeySet>>,
-    /// Validated allowlist of SwapRouter addresses.
     router_addresses: Vec<Address>,
-    /// Validated transaction limits required before execution can start.
     transaction_limits: TransactionLimits,
-    /// Validated wrapped native token address for wrap operations.
     weth_address: Address,
-    /// The transaction currently awaiting finality, occupying the single in-flight slot.
     in_flight: Arc<Mutex<Option<InFlightSlot>>>,
-    /// Tracks native currency and ERC-20 token balances.
     wallet_balance: Arc<Mutex<WalletBalance>>,
-    /// Contract interface for ERC-20 token interactions.
     erc20_contract: Erc20Contract,
-    /// HTTP RPC client for blockchain queries.
     http_rpc_client: Arc<BlockchainHttpRpcClient>,
-    /// Independent verification boundary for security-critical reads.
     verification: VerificationCoordinator,
-    /// Handles of spawned order-submission tasks, aborted on stop or disconnect.
-    pending_tasks: Arc<TaskHandles>,
+    pending_tasks: TaskGroup,
 }
 
 impl BlockchainExecutionClient {
@@ -405,6 +391,8 @@ impl BlockchainExecutionClient {
             core_client.base_currency,
         );
 
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core: core_client,
             emitter,
@@ -422,7 +410,7 @@ impl BlockchainExecutionClient {
             http_rpc_client,
             verification,
             wallet_address,
-            pending_tasks: Arc::new(TaskHandles::default()),
+            pending_tasks,
         })
     }
 
@@ -5711,7 +5699,7 @@ impl ExecutionClient for BlockchainExecutionClient {
             return Ok(());
         }
 
-        self.pending_tasks.abort_all_retained();
+        self.pending_tasks.begin_shutdown();
         self.signer = None;
         self.core.set_stopped();
         self.core.set_disconnected();
@@ -5724,6 +5712,12 @@ impl ExecutionClient for BlockchainExecutionClient {
 
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());
+            return Ok(());
+        }
+
+        if !self.pending_tasks.is_open() {
+            self.emitter
+                .emit_order_denied(&order, "Blockchain execution client is shutting down");
             return Ok(());
         }
 
@@ -5748,7 +5742,7 @@ impl ExecutionClient for BlockchainExecutionClient {
         let deadline_seconds = self.transaction_limits.deadline_seconds;
         let client_order_id = order.client_order_id();
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = execute_swap(
                 plan,
                 executor,
@@ -5760,8 +5754,12 @@ impl ExecutionClient for BlockchainExecutionClient {
             {
                 log::warn!("Swap execution for order {client_order_id} failed: {e:?}");
             }
-        });
-        self.pending_tasks.push(handle);
+        };
+
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            release_preparing_slot(&self.in_flight);
+            log::warn!("Skipping blockchain swap after shutdown began: {e}");
+        }
 
         Ok(())
     }
@@ -5872,24 +5870,20 @@ impl ExecutionClient for BlockchainExecutionClient {
             self.chain.name
         );
 
-        // A prior stop or disconnect aborted spawned submission tasks; only after their
-        // termination is it safe to release a leftover pre-signature claim, because a
-        // terminated task can never touch the slot again
-        let reaped = tokio::time::timeout(Duration::from_secs(5), async {
-            while !self.pending_tasks.all_finished() {
-                tokio::time::sleep(Duration::from_millis(1)).await;
-            }
-        })
-        .await
-        .is_ok();
-
-        if reaped {
-            release_preparing_slot(&self.in_flight);
-        } else {
-            log::error!(
-                "Submission tasks did not terminate after disconnect; keeping any in-flight slot claim"
-            );
+        if !self.pending_tasks.is_open() || !self.pending_tasks.is_empty() {
+            self.pending_tasks.begin_shutdown();
+            self.pending_tasks
+                .finish_shutdown(Duration::from_secs(5), Duration::from_secs(2))
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to terminate blockchain submissions: {e}"))?;
+            self.signer = None;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start blockchain task generation: {e}"))?;
         }
+        release_preparing_slot(&self.in_flight);
+
+        let setup_guard = TaskGroupGuard::new(&[&self.pending_tasks], || {});
 
         let payload_keys = PayloadKeySet::load(
             self.config.payload_key_env.as_deref(),
@@ -6248,6 +6242,7 @@ impl ExecutionClient for BlockchainExecutionClient {
             return Err(e);
         }
         self.core.set_connected();
+        setup_guard.disarm();
         log::info!(
             "Blockchain execution client connected on chain {}",
             self.chain.name
@@ -6256,11 +6251,16 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        // Task handles stay registered so a later `connect` can prove their termination
-        // before releasing any stale pre-signature slot claim
-        self.pending_tasks.abort_all_retained();
+        self.pending_tasks.begin_shutdown();
+        let tasks_result = self
+            .pending_tasks
+            .finish_shutdown(Duration::from_secs(5), Duration::from_secs(2))
+            .await;
         self.signer = None;
         self.core.set_disconnected();
+        tasks_result
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Failed to terminate blockchain submissions: {e}"))?;
         Ok(())
     }
 
@@ -14796,7 +14796,10 @@ mod tests {
         // SAFETY: this variable name is unique to this test across the test binary
         unsafe { std::env::set_var("BLOCKCHAIN_TEST_RECONNECT_CLAIM", TEST_PRIVATE_KEY) };
         *client.in_flight.lock().unwrap() = Some(InFlightSlot::Preparing(TransactionPurpose::Swap));
-        client.pending_tasks.push(get_runtime().spawn(async {}));
+        client
+            .pending_tasks
+            .spawn(async {})
+            .expect("stale task spawn");
 
         client.connect().await.unwrap();
 

@@ -28,7 +28,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -40,7 +40,10 @@ use nautilus_core::{
     MUTEX_POISONED, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderStatus, OrderType, TriggerType},
@@ -55,7 +58,6 @@ use nautilus_model::{
 };
 use nautilus_network::retry::RetryConfig;
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use crate::{
@@ -276,8 +278,9 @@ pub struct CoinbaseExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: CoinbaseHttpClient,
     ws_user: CoinbaseWebSocketClient,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: TaskHandles,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     instruments_cache: Arc<AHashMap<String, InstrumentAny>>,
     fill_dedup: Arc<Mutex<FillDedup>>,
     cumulative_state: Arc<Mutex<CumulativeStateMap>>,
@@ -356,6 +359,9 @@ impl CoinbaseExecutionClient {
             None,
         );
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             clock,
@@ -363,8 +369,9 @@ impl CoinbaseExecutionClient {
             emitter,
             http_client,
             ws_user,
-            ws_stream_handle: None,
-            pending_tasks: TaskHandles::default(),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             instruments_cache: Arc::new(AHashMap::new()),
             fill_dedup: Arc::new(Mutex::new(FillDedup::new(FILL_DEDUP_CAPACITY))),
             cumulative_state: Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
@@ -379,18 +386,67 @@ impl CoinbaseExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Coinbase {description} after shutdown began: {e}");
+        }
     }
 
     fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_user.begin_shutdown();
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Coinbase execution tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Coinbase session tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+
+        if let Err(e) = self.ws_user.disconnect().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        let (session_result, pending_result) =
+            tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
+        self.core.set_disconnected();
+
+        if let Err(e) = session_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
     }
 
     // Returns true when the exec client was created with a Margin account,
@@ -469,9 +525,34 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
+        {
             return Ok(());
         }
+
+        if !self.pending_tasks.is_open() {
+            self.await_pending_tasks().await?;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Coinbase task generation: {e}"))?;
+        }
+
+        if !self.session_tasks.is_open() || !self.session_tasks.is_empty() {
+            self.abort_session_tasks();
+            self.ws_user
+                .disconnect()
+                .await
+                .context("failed to close stale Coinbase user WebSocket")?;
+            self.await_session_tasks().await?;
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Coinbase session generation: {e}"))?;
+        }
+        let ws_user = self.ws_user.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                ws_user.begin_shutdown();
+            });
 
         // If the underlying WS is still alive from a prior stop() that did not
         // explicitly disconnect, tear it down before reconnecting. The
@@ -481,12 +562,10 @@ impl ExecutionClient for CoinbaseExecutionClient {
         // pairs and a fresh signal.
         if self.ws_user.is_active() || self.ws_user.is_reconnecting() {
             log::debug!("Tearing down stale user WS before reconnect");
-            self.ws_user.disconnect().await;
-            // Abort any prior consumer task; the rebuilt ws_user gets a fresh
-            // out_rx so the previous task is otherwise leaked.
-            if let Some(handle) = self.ws_stream_handle.take() {
-                handle.abort();
-            }
+            self.ws_user
+                .disconnect()
+                .await
+                .context("failed to close stale Coinbase user WebSocket")?;
             let credential = CoinbaseCredential::resolve(
                 self.config.api_key.as_deref(),
                 self.config.api_secret.as_deref(),
@@ -550,35 +629,36 @@ impl ExecutionClient for CoinbaseExecutionClient {
             self.core.set_instruments_initialized();
         }
 
-        self.ws_user.set_account_id(self.core.account_id).await;
-        self.ws_user.connect().await?;
+        let session_result = async {
+            self.ws_user.set_account_id(self.core.account_id).await;
+            self.ws_user.connect().await?;
 
-        // Subscribe to the user channel (product-agnostic). User channel with
-        // an empty product list returns events for all products.
-        self.ws_user
-            .subscribe(CoinbaseWsChannel::User, &[])
-            .await
-            .context("failed to subscribe to Coinbase user channel")?;
-
-        if self.is_margin() {
+            // Subscribe to the user channel (product-agnostic). User channel with
+            // an empty product list returns events for all products.
             self.ws_user
-                .subscribe(CoinbaseWsChannel::FuturesBalanceSummary, &[])
+                .subscribe(CoinbaseWsChannel::User, &[])
                 .await
-                .context("failed to subscribe to Coinbase futures_balance_summary channel")?;
-        }
+                .context("failed to subscribe to Coinbase user channel")?;
 
-        if let Some(mut rx) = self.ws_user.take_out_rx() {
-            let fill_dedup = Arc::clone(&self.fill_dedup);
-            let cumulative_state = Arc::clone(&self.cumulative_state);
-            let order_contexts = Arc::clone(&self.order_contexts);
-            let external_order_contexts = Arc::clone(&self.external_order_contexts);
-            let emitter = self.emitter.clone();
-            let http_client = self.http_client.clone();
-            let account_id = self.core.account_id;
-            let clock = self.clock;
-            let is_margin = self.is_margin();
+            if self.is_margin() {
+                self.ws_user
+                    .subscribe(CoinbaseWsChannel::FuturesBalanceSummary, &[])
+                    .await
+                    .context("failed to subscribe to Coinbase futures_balance_summary channel")?;
+            }
 
-            let handle = get_runtime().spawn(async move {
+            if let Some(mut rx) = self.ws_user.take_out_rx() {
+                let fill_dedup = Arc::clone(&self.fill_dedup);
+                let cumulative_state = Arc::clone(&self.cumulative_state);
+                let order_contexts = Arc::clone(&self.order_contexts);
+                let external_order_contexts = Arc::clone(&self.external_order_contexts);
+                let emitter = self.emitter.clone();
+                let http_client = self.http_client.clone();
+                let account_id = self.core.account_id;
+                let clock = self.clock;
+                let is_margin = self.is_margin();
+
+                self.session_tasks.spawn(async move {
                 while let Some(message) = rx.recv().await {
                     match message {
                         NautilusWsMessage::UserOrder(carrier) => {
@@ -629,51 +709,53 @@ impl ExecutionClient for CoinbaseExecutionClient {
                         _ => {}
                     }
                 }
-            });
-            self.ws_stream_handle = Some(handle);
+            })?;
+            }
+
+            let account_state = if self.is_margin() {
+                self.http_client
+                    .request_cfm_account_state(self.core.account_id)
+                    .await
+                    .context("failed to request Coinbase CFM account state")?
+            } else {
+                self.http_client
+                    .request_account_state(self.core.account_id)
+                    .await
+                    .context("failed to request Coinbase account state")?
+            };
+
+            if !account_state.balances.is_empty() {
+                log::debug!(
+                    "Received account state with {} balance(s)",
+                    account_state.balances.len()
+                );
+            }
+            self.emitter.send_account_state(account_state);
+
+            self.await_account_registered(ACCOUNT_REGISTERED_TIMEOUT_SECS)
+                .await?;
+
+            Ok::<(), anyhow::Error>(())
         }
+        .await;
 
-        let account_state = if self.is_margin() {
-            self.http_client
-                .request_cfm_account_state(self.core.account_id)
-                .await
-                .context("failed to request Coinbase CFM account state")?
-        } else {
-            self.http_client
-                .request_account_state(self.core.account_id)
-                .await
-                .context("failed to request Coinbase account state")?
-        };
-
-        if !account_state.balances.is_empty() {
-            log::debug!(
-                "Received account state with {} balance(s)",
-                account_state.balances.len()
-            );
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Coinbase execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
-        self.emitter.send_account_state(account_state);
-
-        self.await_account_registered(ACCOUNT_REGISTERED_TIMEOUT_SECS)
-            .await?;
 
         self.core.set_connected();
+        setup_guard.disarm();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
-        self.abort_pending_tasks();
-        self.ws_user.disconnect().await;
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-
-        self.core.set_disconnected();
+        self.teardown_partial_connect().await?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -705,9 +787,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
         self.core.set_stopped();
         self.core.set_disconnected();
 
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
         self.abort_pending_tasks();
         log::info!("Stopped: client_id={}", self.core.client_id);
         Ok(())

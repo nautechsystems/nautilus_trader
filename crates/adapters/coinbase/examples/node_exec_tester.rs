@@ -21,8 +21,8 @@
 //! Run with: `cargo run --example coinbase-exec-tester --package nautilus-coinbase --features examples`
 //!
 //! Required credential environment variables:
-//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`).
-//! - `COINBASE_API_SECRET`: PEM-encoded EC private key (ECDSA, not Ed25519).
+//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`)
+//! - `COINBASE_API_SECRET`: PEM-encoded EC private key (ECDSA, not Ed25519)
 //!
 //! The CDP key must have View + Trade permissions. See the integration guide
 //! for setup details.

@@ -30,12 +30,12 @@ use std::{
         Arc, LazyLock, Mutex,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use arc_swap::ArcSwap;
-use nautilus_common::live::get_runtime;
 use nautilus_core::string::secret::REDACTED;
-use nautilus_live::SocketControl;
+use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::quota::Quota,
@@ -92,9 +92,10 @@ pub struct BinanceFuturesWsTradingClient {
     >,
     out_rx:
         Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceFuturesWsTradingMessage>>>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    handler_tasks: Arc<TaskGroup>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     request_id_counter: Arc<AtomicU64>,
-    cancellation_token: CancellationToken,
+    cancellation_token: Arc<Mutex<CancellationToken>>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
     recv_window_ms: Option<u64>,
@@ -136,9 +137,10 @@ impl BinanceFuturesWsTradingClient {
             )))),
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: Arc::new(Mutex::new(None)),
-            task_handle: None,
+            handler_tasks: Arc::new(TaskGroup::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             request_id_counter: Arc::new(AtomicU64::new(1)),
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: Arc::new(Mutex::new(CancellationToken::new())),
             transport_backend,
             proxy_url: None,
             recv_window_ms: None,
@@ -194,8 +196,27 @@ impl BinanceFuturesWsTradingClient {
     // Mutex poisoning is not documented individually
     #[expect(clippy::missing_panics_doc)]
     pub async fn connect(&mut self) -> BinanceFuturesWsApiResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
+            self.disconnect_handler().await?;
+            self.handler_tasks.start_generation().map_err(|e| {
+                BinanceFuturesWsApiError::ClientError(format!(
+                    "failed to start WebSocket handler task generation: {e}"
+                ))
+            })?;
+        }
+        let handler_spawner = self.handler_tasks.spawner().map_err(|e| {
+            BinanceFuturesWsApiError::ClientError(format!(
+                "failed to acquire WebSocket handler task spawner: {e}"
+            ))
+        })?;
         self.signal.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
+        *self
+            .cancellation_token
+            .lock()
+            .expect("cancellation token lock poisoned") = CancellationToken::new();
 
         let (raw_handler, raw_rx) = channel_message_handler();
         let ping_handler: PingHandler = Arc::new(move |_| {});
@@ -271,9 +292,13 @@ impl BinanceFuturesWsTradingClient {
             control.register(move || reconnect_handle.request_reconnect());
         }
 
-        let cancellation_token = self.cancellation_token.clone();
+        let cancellation_token = self
+            .cancellation_token
+            .lock()
+            .expect("cancellation token lock poisoned")
+            .clone();
 
-        let handle = get_runtime().spawn(async move {
+        let handler_task = async move {
             tokio::select! {
                 () = cancellation_token.cancelled() => {
                     log::debug!("Handler task cancelled");
@@ -282,15 +307,44 @@ impl BinanceFuturesWsTradingClient {
                     log::debug!("Handler run completed");
                 }
             }
-        });
+        };
 
-        self.task_handle = Some(Arc::new(handle));
+        if let Err(e) = handler_spawner.spawn(handler_task) {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            self.out_rx.lock().expect("Mutex poisoned").take();
+            return Err(BinanceFuturesWsApiError::HandlerUnavailable(format!(
+                "failed to register handler task: {e}"
+            )));
+        }
 
         Ok(())
     }
 
     /// Disconnects from the WebSocket Trading API server.
-    pub async fn disconnect(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler task fails or does not stop after abort.
+    pub async fn disconnect(&mut self) -> BinanceFuturesWsApiResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        self.disconnect_handler().await
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.handler_tasks.begin_shutdown();
+        self.signal.store(true, Ordering::Relaxed);
+        self.cancellation_token
+            .lock()
+            .expect("cancellation token lock poisoned")
+            .cancel();
+    }
+
+    async fn disconnect_handler(&self) -> BinanceFuturesWsApiResult<()> {
+        self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self
@@ -302,17 +356,23 @@ impl BinanceFuturesWsTradingClient {
             log::debug!("Failed to send disconnect command: {e}");
         }
 
-        self.cancellation_token.cancel();
+        self.cancellation_token
+            .lock()
+            .expect("cancellation token lock poisoned")
+            .cancel();
 
-        if let Some(handle) = self.task_handle.take()
-            && let Ok(handle) = Arc::try_unwrap(handle)
-        {
-            let _ = handle.await;
-        }
+        let result = self
+            .handler_tasks
+            .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2))
+            .await
+            .map_err(|e| {
+                BinanceFuturesWsApiError::ClientError(format!("handler task shutdown failed: {e}"))
+            });
 
         if let Some(control) = &self.socket_control {
             control.deregister();
         }
+        result
     }
 
     /// Places a new order via the WebSocket Trading API.

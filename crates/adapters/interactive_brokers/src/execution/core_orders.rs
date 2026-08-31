@@ -27,7 +27,7 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &tokio::sync::mpsc::UnboundedSender<ExecutionEvent>,
         clock: &'static AtomicTime,
         account_id: AccountId,
-        order_submit_lock: &Arc<AsyncMutex<()>>,
+        order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
     ) -> anyhow::Result<()> {
         if cmd.order_init.post_only {
             let ts_event = clock.get_time_ns();
@@ -424,7 +424,7 @@ impl InteractiveBrokersExecutionClient {
         clock: &'static AtomicTime,
         account_id: AccountId,
         strategy_id: StrategyId,
-        order_submit_lock: &Arc<AsyncMutex<()>>,
+        order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
     ) -> anyhow::Result<()> {
         let num_orders = orders.len();
         anyhow::ensure!(!orders.is_empty(), "Cannot submit an empty order list");

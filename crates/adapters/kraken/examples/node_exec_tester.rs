@@ -20,12 +20,12 @@
 //! Run with: `cargo run -p nautilus-kraken --example kraken-exec-tester --features examples`
 //!
 //! Required credential environment variables (Spot):
-//! - `KRAKEN_SPOT_API_KEY`.
-//! - `KRAKEN_SPOT_API_SECRET`.
+//! - `KRAKEN_SPOT_API_KEY`
+//! - `KRAKEN_SPOT_API_SECRET`
 //!
 //! Required credential environment variables (Futures):
-//! - `KRAKEN_FUTURES_API_KEY`.
-//! - `KRAKEN_FUTURES_API_SECRET`.
+//! - `KRAKEN_FUTURES_API_KEY`
+//! - `KRAKEN_FUTURES_API_SECRET`
 
 use nautilus_common::enums::Environment;
 use nautilus_kraken::{

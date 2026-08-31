@@ -34,15 +34,15 @@ use std::{
 };
 
 use ahash::AHashMap;
-use nautilus_common::{live::get_runtime, messages::DataEvent};
+use nautilus_common::messages::DataEvent;
 use nautilus_core::{MUTEX_POISONED, UnixNanos, time::AtomicTime};
+use nautilus_live::task::TaskGroup;
 use nautilus_model::{
     data::{Data, FundingRateUpdate, IndexPriceUpdate},
     identifiers::InstrumentId,
     types::Price,
 };
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::http::{client::CoinbaseHttpClient, models::Product};
@@ -83,7 +83,7 @@ pub(crate) struct DerivPollManager {
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
     interval_secs: u64,
-    tasks: Vec<JoinHandle<()>>,
+    tasks: TaskGroup,
 }
 
 impl DerivPollManager {
@@ -99,30 +99,30 @@ impl DerivPollManager {
             data_sender,
             clock,
             interval_secs: interval_secs.max(1),
-            tasks: Vec::new(),
+            tasks: TaskGroup::new(),
         }
     }
 
-    pub(crate) fn subscribe_index(&mut self, instrument_id: InstrumentId) {
+    pub(crate) fn subscribe_index(&self, instrument_id: InstrumentId) {
         self.register(instrument_id, true, false);
     }
 
-    pub(crate) fn subscribe_funding(&mut self, instrument_id: InstrumentId) {
+    pub(crate) fn subscribe_funding(&self, instrument_id: InstrumentId) {
         self.register(instrument_id, false, true);
     }
 
-    pub(crate) fn unsubscribe_index(&mut self, instrument_id: InstrumentId) {
+    pub(crate) fn unsubscribe_index(&self, instrument_id: InstrumentId) {
         self.unregister(instrument_id, true, false);
     }
 
-    pub(crate) fn unsubscribe_funding(&mut self, instrument_id: InstrumentId) {
+    pub(crate) fn unsubscribe_funding(&self, instrument_id: InstrumentId) {
         self.unregister(instrument_id, false, true);
     }
 
     /// Cancels every active polling task but keeps the subscription flags
     /// in the map so [`Self::resume`] can re-spawn them after reconnect.
     /// Safe to call multiple times.
-    pub(crate) fn shutdown(&mut self) {
+    pub(crate) fn shutdown(&self) {
         {
             let mut polls = self.polls.lock().expect(MUTEX_POISONED);
             for entry in polls.values_mut() {
@@ -133,9 +133,28 @@ impl DerivPollManager {
             }
         }
 
-        for handle in self.tasks.drain(..) {
-            handle.abort();
+        self.tasks.begin_shutdown();
+    }
+
+    pub(crate) async fn prepare(&self) -> anyhow::Result<()> {
+        if !self.tasks.is_open() {
+            self.tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to finish Coinbase poll tasks: {e}"))?;
+            self.tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Coinbase poll generation: {e}"))?;
         }
+        Ok(())
+    }
+
+    pub(crate) async fn finish_shutdown(&self) -> anyhow::Result<()> {
+        self.tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to finish Coinbase poll tasks: {e}"))?;
+        Ok(())
     }
 
     /// Spawns polling tasks for every entry with at least one active flag.
@@ -143,7 +162,7 @@ impl DerivPollManager {
     /// `disconnect()` remain live after the client reconnects: the data
     /// engine suppresses duplicate subscribe commands, so the caller does
     /// not re-issue them.
-    pub(crate) fn resume(&mut self) {
+    pub(crate) fn resume(&self) {
         let entries: Vec<(InstrumentId, CancellationToken)> = {
             let polls = self.polls.lock().expect(MUTEX_POISONED);
             polls
@@ -158,7 +177,7 @@ impl DerivPollManager {
         }
     }
 
-    fn register(&mut self, instrument_id: InstrumentId, want_index: bool, want_funding: bool) {
+    fn register(&self, instrument_id: InstrumentId, want_index: bool, want_funding: bool) {
         let (token, is_new) = {
             let mut polls = self.polls.lock().expect(MUTEX_POISONED);
             let is_new = !polls.contains_key(&instrument_id);
@@ -181,17 +200,12 @@ impl DerivPollManager {
             (entry.cancel.clone(), is_new)
         };
 
-        // Prune any completed poll handles before possibly pushing a new
-        // one so the task vec stays bounded under subscribe/unsubscribe
-        // churn on a long-lived client.
-        self.reap_finished_tasks();
-
         if is_new {
             self.spawn_task(instrument_id, token);
         }
     }
 
-    fn unregister(&mut self, instrument_id: InstrumentId, drop_index: bool, drop_funding: bool) {
+    fn unregister(&self, instrument_id: InstrumentId, drop_index: bool, drop_funding: bool) {
         let mut polls = self.polls.lock().expect(MUTEX_POISONED);
         let should_cancel = match polls.get_mut(&instrument_id) {
             Some(entry) => {
@@ -212,19 +226,9 @@ impl DerivPollManager {
             entry.cancel.cancel();
         }
         drop(polls);
-
-        // Cancelled tasks finish asynchronously; drop any that already
-        // completed on this pass, and any prior cycles still sitting in
-        // the vec. This keeps `tasks.len()` bounded by the number of
-        // currently live poll loops.
-        self.reap_finished_tasks();
     }
 
-    fn reap_finished_tasks(&mut self) {
-        self.tasks.retain(|handle| !handle.is_finished());
-    }
-
-    fn spawn_task(&mut self, instrument_id: InstrumentId, cancel: CancellationToken) {
+    fn spawn_task(&self, instrument_id: InstrumentId, cancel: CancellationToken) {
         let interval_secs = self.interval_secs;
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
@@ -232,7 +236,7 @@ impl DerivPollManager {
         let clock = self.clock;
         let product_id = instrument_id.symbol.inner();
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
@@ -292,9 +296,11 @@ impl DerivPollManager {
             }
 
             log::debug!("Coinbase derivatives poll task stopped for {instrument_id}");
-        });
+        };
 
-        self.tasks.push(handle);
+        if let Err(e) = self.tasks.spawn(future) {
+            log::warn!("Skipping Coinbase derivatives poll after shutdown began: {e}");
+        }
     }
 }
 
@@ -380,9 +386,7 @@ pub(crate) fn parse_funding_interval_minutes(raw: &str) -> Option<u16> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
-    use nautilus_common::{messages::DataEvent, testing::wait_until_async};
+    use nautilus_common::messages::DataEvent;
     use nautilus_core::UnixNanos;
     use nautilus_model::{data::Data, identifiers::InstrumentId};
     use rstest::rstest;
@@ -517,7 +521,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_manager_shutdown_preserves_flags_for_resume() {
-        let mut manager = make_manager(60);
+        let manager = make_manager(60);
         let instrument_id = perp_id();
 
         manager.subscribe_index(instrument_id);
@@ -543,19 +547,30 @@ mod tests {
 
         manager.shutdown();
 
-        let polls = manager.polls.lock().unwrap();
-        let entry = polls.get(&instrument_id).expect("shutdown preserves entry");
-        assert!(entry.emit_index);
-        assert!(entry.emit_funding);
+        {
+            let polls = manager.polls.lock().unwrap();
+            let entry = polls.get(&instrument_id).expect("shutdown preserves entry");
+            assert!(entry.emit_index);
+            assert!(entry.emit_funding);
+            assert!(
+                old_token.is_cancelled(),
+                "shutdown must cancel the previously-live token"
+            );
+            assert!(
+                !entry.cancel.is_cancelled(),
+                "shutdown must swap in a fresh token so resume() can spawn"
+            );
+            assert!(
+                !manager.tasks.is_open(),
+                "shutdown must close task admission"
+            );
+        }
+
+        manager.prepare().await.unwrap();
         assert!(
-            old_token.is_cancelled(),
-            "shutdown must cancel the previously-live token"
+            manager.tasks.is_empty(),
+            "prepare must drain the old generation"
         );
-        assert!(
-            !entry.cancel.is_cancelled(),
-            "shutdown must swap in a fresh token so resume() can spawn"
-        );
-        assert!(manager.tasks.is_empty(), "shutdown must drain the task vec");
     }
 
     // Subscribing both kinds for the same instrument must share one task
@@ -564,7 +579,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_manager_subscribe_same_instrument_shares_task() {
-        let mut manager = make_manager(60);
+        let manager = make_manager(60);
         let instrument_id = perp_id();
 
         manager.subscribe_index(instrument_id);
@@ -595,7 +610,7 @@ mod tests {
         #[case] expect_index: bool,
         #[case] expect_funding: bool,
     ) {
-        let mut manager = make_manager(60);
+        let manager = make_manager(60);
         let instrument_id = perp_id();
 
         manager.subscribe_index(instrument_id);
@@ -628,7 +643,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_manager_resubscribe_after_unsubscribe_spawns_fresh_task() {
-        let mut manager = make_manager(60);
+        let manager = make_manager(60);
         let instrument_id = perp_id();
 
         manager.subscribe_index(instrument_id);
@@ -670,7 +685,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_manager_unsubscribe_last_flag_removes_entry() {
-        let mut manager = make_manager(60);
+        let manager = make_manager(60);
         let instrument_id = perp_id();
 
         manager.subscribe_index(instrument_id);
@@ -695,18 +710,12 @@ mod tests {
         );
     }
 
-    // Under steady-state subscribe / unsubscribe churn, completed poll
-    // handles must not accumulate in the task vec. Without the reap step
-    // a long-lived client that repeatedly flips subscriptions leaks one
-    // JoinHandle per cycle.
-    //
-    // The test asserts the invariant through the public surface only: it
-    // waits until the cancelled tasks finish, then relies on the next
-    // subscribe to reap them before adding its own handle.
+    // Completed handles stay registered until shutdown so their join failures remain observable.
+    // Draining the old generation must release them before a replacement poll starts.
     #[rstest]
     #[tokio::test]
     async fn test_manager_does_not_leak_task_handles_on_churn() {
-        let mut manager = make_manager(60);
+        let manager = make_manager(60);
         let instrument_id = perp_id();
 
         for _ in 0..20 {
@@ -714,23 +723,15 @@ mod tests {
             manager.unsubscribe_index(instrument_id);
         }
 
-        wait_until_async(
-            || async {
-                manager
-                    .tasks
-                    .iter()
-                    .all(tokio::task::JoinHandle::is_finished)
-            },
-            Duration::from_secs(2),
-        )
-        .await;
+        manager.shutdown();
+        manager.prepare().await.unwrap();
 
         manager.subscribe_index(instrument_id);
 
         let task_count = manager.tasks.len();
         assert_eq!(
             task_count, 1,
-            "task vec should stay bounded under subscribe/unsubscribe churn, \
+            "task group should release the drained generation before resubscribe, \
              was {task_count}"
         );
 
@@ -742,12 +743,13 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_manager_resume_respawns_tasks_for_surviving_entries() {
-        let mut manager = make_manager(60);
+        let manager = make_manager(60);
         let instrument_id = perp_id();
 
         manager.subscribe_index(instrument_id);
         manager.subscribe_funding(instrument_id);
         manager.shutdown();
+        manager.prepare().await.unwrap();
         assert!(manager.tasks.is_empty());
 
         manager.resume();
@@ -769,7 +771,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_manager_resume_skips_entries_with_no_active_flag() {
-        let mut manager = make_manager(60);
+        let manager = make_manager(60);
         let instrument_id = perp_id();
 
         // Seed an entry with both flags false (only reachable via direct

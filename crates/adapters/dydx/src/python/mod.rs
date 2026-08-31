@@ -30,7 +30,6 @@ pub mod submitter;
 pub mod types;
 pub mod urls;
 pub mod wallet;
-pub mod websocket;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -95,7 +94,6 @@ pub fn dydx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(DYDX_CLIENT_ID), *DYDX_CLIENT_ID)?;
     m.add(stringify!(DYDX_VENUE), *DYDX_VENUE)?;
     m.add_class::<crate::http::client::DydxHttpClient>()?;
-    m.add_class::<crate::websocket::client::DydxWebSocketClient>()?;
     m.add_class::<crate::common::enums::DydxNetwork>()?;
     m.add_class::<crate::common::enums::DydxOrderSide>()?;
     m.add_class::<crate::common::enums::DydxOrderType>()?;

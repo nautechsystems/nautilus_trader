@@ -17,17 +17,16 @@
 
 use std::{
     sync::{
-        Arc,
+        Arc, RwLock,
         atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
 
 use ahash::AHashMap;
-use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use nautilus_common::live::get_runtime;
-use nautilus_core::{UUID4, time::AtomicTime};
+use nautilus_core::{MUTEX_POISONED, UUID4, time::AtomicTime};
+use nautilus_live::task::TaskSpawner;
 use nautilus_model::{
     events::{
         OrderAccepted, OrderCancelRejected, OrderEventAny, OrderModifyRejected, OrderRejected,
@@ -36,7 +35,6 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, TraderId, VenueOrderId},
     types::{Price, Quantity},
 };
-use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::WsDispatchState;
@@ -106,9 +104,7 @@ pub struct OrderRequestState {
     /// WS auth token shared with the client; used to build compensating
     /// cancels when a submit request times out.
     auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
-    /// Cancellation signal that aborts pending timeout tasks on shutdown so
-    /// the runtime can drop without waiting for in-flight timers.
-    cancellation_token: ArcSwap<CancellationToken>,
+    task_spawner: RwLock<TaskSpawner>,
     /// Clock used to stamp local timeout diagnostics.
     clock: &'static AtomicTime,
 }
@@ -127,7 +123,7 @@ impl OrderRequestState {
         trader_id: TraderId,
         account_id: AccountId,
         auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
-        cancellation_token: CancellationToken,
+        task_spawner: TaskSpawner,
         clock: &'static AtomicTime,
     ) -> Self {
         Self {
@@ -140,7 +136,7 @@ impl OrderRequestState {
             trader_id,
             account_id,
             auth_token,
-            cancellation_token: ArcSwap::from_pointee(cancellation_token),
+            task_spawner: RwLock::new(task_spawner),
             clock,
         }
     }
@@ -269,35 +265,48 @@ impl OrderRequestState {
             anyhow::bail!("handler command channel closed: {e}");
         }
 
-        let state_for_timeout = Arc::clone(self);
-        let cancel = state_for_timeout.cancellation_token.load_full();
+        let state_for_timeout = Arc::downgrade(self);
+        let task_spawner = self.task_spawner.read().expect(MUTEX_POISONED).clone();
+        let cancel = task_spawner.cancellation_token();
+        let timeout = self.timeout;
 
-        get_runtime().spawn(async move {
+        if let Err(e) = task_spawner.spawn(async move {
             tokio::select! {
                 biased;
                 () = cancel.cancelled() => {
-                    state_for_timeout.pending.remove(&req_id);
+                    if let Some(state) = state_for_timeout.upgrade() {
+                        state.pending.remove(&req_id);
+                    }
                 }
-                () = tokio::time::sleep(state_for_timeout.timeout) => {
-                    if let Some(pending) = state_for_timeout.pending.get(&req_id) {
+                () = tokio::time::sleep(timeout) => {
+                    let Some(state) = state_for_timeout.upgrade() else {
+                        return;
+                    };
+
+                    if let Some(pending) = state.pending.get(&req_id) {
                         if cancel.is_cancelled() {
                             drop(pending);
-                            state_for_timeout.pending.remove(&req_id);
+                            state.pending.remove(&req_id);
                             return;
                         }
 
-                        let ts_timeout_ns = state_for_timeout.clock.get_time_ns().as_u64();
+                        let ts_timeout_ns = state.clock.get_time_ns().as_u64();
                         log::warn!(
                             "Kraken WS response timeout req_id={req_id} op={:?} cl_ord_ids={:?} \
                              ts_timeout_ns={ts_timeout_ns}; awaiting definitive venue evidence",
                             pending.operation,
                             pending.client_order_ids,
                         );
-                        state_for_timeout.handle_timeout(&pending);
+                        state.handle_timeout(&pending);
                     }
                 }
             }
-        });
+        }) {
+            log::warn!(
+                "Kraken order request {req_id} was sent without a local timeout task: {e}; \
+                 awaiting definitive venue evidence"
+            );
+        }
 
         Ok(req_id)
     }
@@ -385,8 +394,8 @@ impl OrderRequestState {
         self.pending.clear();
     }
 
-    pub(crate) fn reset_cancellation_token(&self, token: CancellationToken) {
-        self.cancellation_token.store(Arc::new(token));
+    pub(crate) fn reset_task_spawner(&self, task_spawner: TaskSpawner) {
+        *self.task_spawner.write().expect(MUTEX_POISONED) = task_spawner;
     }
 
     /// Sends a best-effort `cancel_order` over the WebSocket after a Submit or
@@ -785,6 +794,7 @@ impl OrderRequestState {
 mod tests {
     use std::sync::atomic::AtomicU64;
 
+    use nautilus_live::task::TaskGroup;
     use nautilus_model::{
         enums::{OrderSide, OrderType},
         identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
@@ -816,7 +826,7 @@ mod tests {
         pub(super) event_rx: tokio::sync::mpsc::UnboundedReceiver<OrderEventAny>,
         pub(super) dispatch_state: Arc<WsDispatchState>,
         pub(super) auth_token: Arc<tokio::sync::RwLock<Option<String>>>,
-        pub(super) cancellation_token: CancellationToken,
+        pub(super) pending_tasks: TaskGroup,
         pub(super) cmd_tx_handle:
             Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<SpotHandlerCommand>>>,
     }
@@ -827,7 +837,8 @@ mod tests {
         let counter = Arc::new(AtomicU64::new(0));
         let dispatch_state = Arc::new(WsDispatchState::new());
         let auth_token = Arc::new(tokio::sync::RwLock::new(None));
-        let cancellation_token = CancellationToken::new();
+        let pending_tasks = TaskGroup::new();
+        let pending_spawner = pending_tasks.spawner().expect("pending task spawner");
         let cmd_tx_handle = Arc::new(tokio::sync::RwLock::new(cmd_tx));
         let state = Arc::new(OrderRequestState::new(
             Arc::clone(&cmd_tx_handle),
@@ -838,7 +849,7 @@ mod tests {
             TraderId::new("TESTER-001"),
             AccountId::new("KRAKEN-001"),
             Arc::clone(&auth_token),
-            cancellation_token.clone(),
+            pending_spawner,
             nautilus_core::time::get_atomic_clock_realtime(),
         ));
         Harness {
@@ -847,7 +858,7 @@ mod tests {
             event_rx,
             dispatch_state,
             auth_token,
-            cancellation_token,
+            pending_tasks,
             cmd_tx_handle,
         }
     }
@@ -2024,10 +2035,21 @@ mod tests {
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
         *harness.auth_token.write().await = Some("TEST-TOKEN".to_string());
-        harness.cancellation_token.cancel();
+        harness.pending_tasks.begin_shutdown();
         harness
-            .state
-            .reset_cancellation_token(CancellationToken::new());
+            .pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(1))
+            .await
+            .expect("finish old timeout generation");
+        harness
+            .pending_tasks
+            .start_generation()
+            .expect("start timeout generation");
+        let pending_spawner = harness
+            .pending_tasks
+            .spawner()
+            .expect("pending task spawner");
+        harness.state.reset_task_spawner(pending_spawner);
 
         harness
             .state
@@ -2045,7 +2067,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cancellation_token_aborts_pending_timeout() {
+    async fn test_task_group_shutdown_aborts_pending_timeout() {
         let harness = make_harness(60_000);
         let cl_ord_id = ClientOrderId::from(CLIENT_ORDER_ID);
         register_default_identity(&harness.dispatch_state, cl_ord_id);
@@ -2073,7 +2095,7 @@ mod tests {
             .expect("submit ok");
         assert_eq!(harness.state.pending_len(), 1);
 
-        harness.cancellation_token.cancel();
+        harness.pending_tasks.begin_shutdown();
 
         // Cancellation clears the pending entry from a task on the global runtime,
         // so poll the condition rather than racing a fixed sleep.

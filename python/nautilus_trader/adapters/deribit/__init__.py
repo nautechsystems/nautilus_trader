@@ -34,7 +34,6 @@ __all__ = [
     "DeribitExecutionClientConfig",
     "DeribitExecutionClientFactory",
     "DeribitProductType",
-    "DeribitUpdateInterval",
     "DeribitVolatilityIndex",
 ]
 

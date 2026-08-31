@@ -29,7 +29,7 @@ use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     cache::quote::QuoteCache,
     clients::DataClient,
-    live::{runner::get_data_event_sender, task::TaskHandles},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -51,14 +51,16 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{TaskGroup, TaskGroupGuard, TaskSpawner},
+};
 use nautilus_model::{
     data::{Data, FundingRateUpdate, InstrumentStatus},
     enums::{BookType, GreeksConvention, MarketStatusAction},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
-use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
@@ -107,8 +109,7 @@ pub struct OKXDataClient {
     ws_business: Option<OKXWebSocketClient>,
     is_connected: AtomicBool,
     transports_started: bool,
-    cancellation_token: CancellationToken,
-    tasks: Arc<TaskHandles>,
+    tasks: TaskGroup,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     // Shared instrument cache keyed by raw symbol so stream tasks, reconciliation,
     // and request paths all read and write one source of truth
@@ -219,8 +220,7 @@ impl OKXDataClient {
             ws_business,
             is_connected: AtomicBool::new(false),
             transports_started: false,
-            cancellation_token: CancellationToken::new(),
-            tasks: Arc::new(TaskHandles::default()),
+            tasks: TaskGroup::new(),
             data_sender,
             instruments_by_symbol: Arc::new(AtomicMap::new()),
             instrument_update_lock: Arc::new(InstrumentUpdateLock::default()),
@@ -268,39 +268,48 @@ impl OKXDataClient {
                 log::error!("{context}: {e:?}");
             }
         };
-        spawn_task(&self.tasks, &self.cancellation_token, fut);
+        self.spawn_task(fut);
     }
 
-    fn terminate_generation(&self, abort_tasks: bool) {
-        self.cancellation_token.cancel();
-
-        if abort_tasks {
-            self.tasks.abort_all_retained();
+    fn spawn_task<F>(&self, fut: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        match self.tasks.spawner() {
+            Ok(spawner) => spawn_task(&spawner, fut),
+            Err(e) => log::debug!("Skipping task after OKX shutdown began: {e}"),
         }
+    }
+
+    fn begin_generation_shutdown(&self) {
+        self.tasks.begin_shutdown();
+        self.is_connected.store(false, Ordering::Release);
 
         if let Some(ws) = self.ws_public.as_ref() {
-            ws.abort();
+            ws.begin_shutdown();
         }
 
         if let Some(ws) = self.ws_business.as_ref() {
-            ws.abort();
+            ws.begin_shutdown();
         }
-
-        self.is_connected.store(false, Ordering::Release);
     }
 
-    fn spawn_book_health_monitor(&self) {
+    fn register_book_health_monitor(&self) -> anyhow::Result<()> {
         let interval_duration = Duration::from_secs(self.config.book_stale_check_interval_secs);
         let threshold = Duration::from_secs(self.config.book_stale_threshold_secs);
 
         if interval_duration.is_zero() || threshold.is_zero() {
-            return;
+            return Ok(());
         }
 
         let book_sync = self.book_sync.clone();
-        let cancel = self.cancellation_token.clone();
+        let tasks = self
+            .tasks
+            .spawner()
+            .context("OKX data task admission is closed")?;
+        let cancel = tasks.cancellation_token();
 
-        spawn_task(&self.tasks, &self.cancellation_token, async move {
+        tasks.spawn(async move {
             let mut interval = tokio::time::interval(interval_duration);
 
             loop {
@@ -317,7 +326,8 @@ impl OKXDataClient {
                     }
                 }
             }
-        });
+        })?;
+        Ok(())
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -338,8 +348,7 @@ impl OKXDataClient {
         option_greeks_subs: &Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>>,
         book_channel_scope: BookChannelScope,
         snapshot_timeout: Duration,
-        tasks: &TaskHandles,
-        cancel: &CancellationToken,
+        tasks: &TaskSpawner,
         clock: &AtomicTime,
     ) {
         match message {
@@ -385,7 +394,6 @@ impl OKXDataClient {
                             recovery_ws,
                             snapshot_timeout,
                             tasks,
-                            cancel,
                         ) {
                             return;
                         }
@@ -439,7 +447,6 @@ impl OKXDataClient {
                             recovery_ws,
                             snapshot_timeout,
                             tasks,
-                            cancel,
                         ) {
                             return;
                         }
@@ -791,12 +798,7 @@ impl OKXDataClient {
                     );
 
                     if pending_count > 0 {
-                        spawn_snapshot_health_monitor(
-                            book_sync.clone(),
-                            tasks,
-                            cancel,
-                            snapshot_timeout,
-                        );
+                        spawn_snapshot_health_monitor(book_sync.clone(), tasks, snapshot_timeout);
                     }
                 }
             }
@@ -813,6 +815,7 @@ impl OKXDataClient {
         // Reset leaves the old generation canceled until this async boundary can drain it
         if self.transports_started
             || !self.tasks.is_empty()
+            || !self.tasks.is_open()
             || self
                 .ws_public
                 .as_ref()
@@ -825,7 +828,11 @@ impl OKXDataClient {
             self.teardown_transports().await?;
         }
 
-        self.cancellation_token = CancellationToken::new();
+        if !self.tasks.is_open() {
+            self.tasks
+                .start_generation()
+                .context("failed to start OKX data task generation")?;
+        }
         self.transports_started = true;
 
         let all_instruments = fetch_configured_instruments(&self.http_client, &self.config).await?;
@@ -890,50 +897,55 @@ impl OKXDataClient {
             let business_ws = self.ws_business.clone();
             let idx_map = self.index_ticker_map.clone();
             let greeks_subs = self.option_greeks_subs.clone();
-            let tasks = Arc::clone(&self.tasks);
-            let cancel = self.cancellation_token.clone();
+            let tasks = self
+                .tasks
+                .spawner()
+                .context("OKX data task admission is closed")?;
+            let task_spawner = tasks.clone();
+            let cancel = tasks.cancellation_token();
             let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
             let clock = self.clock;
 
-            spawn_task(&self.tasks, &self.cancellation_token, async move {
-                let mut quote_cache = QuoteCache::new();
-                let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
+            tasks
+                .spawn(async move {
+                    let mut quote_cache = QuoteCache::new();
+                    let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
 
-                pin_mut!(stream);
+                    pin_mut!(stream);
 
-                loop {
-                    tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => {
-                            log::debug!("Public websocket stream task cancelled");
-                            break;
-                        }
-                        Some(message) = stream.next() => {
-                            Self::handle_ws_message(
-                                message,
-                                &sender,
-                                &insts,
-                                &http,
-                                &config,
-                                &update_lock,
-                                &book_channels,
-                                &book_sync,
-                                Some(&recovery_ws),
-                                business_ws.as_ref(),
-                                &mut quote_cache,
-                                &mut funding_cache,
-                                &idx_map,
-                                &greeks_subs,
-                                BookChannelScope::Public,
-                                snapshot_timeout,
-                                &tasks,
-                                &cancel,
-                                clock,
-                            );
+                    loop {
+                        tokio::select! {
+                            biased;
+                            () = cancel.cancelled() => {
+                                log::debug!("Public websocket stream task cancelled");
+                                break;
+                            }
+                            Some(message) = stream.next() => {
+                                Self::handle_ws_message(
+                                    message,
+                                    &sender,
+                                    &insts,
+                                    &http,
+                                    &config,
+                                    &update_lock,
+                                    &book_channels,
+                                    &book_sync,
+                                    Some(&recovery_ws),
+                                    business_ws.as_ref(),
+                                    &mut quote_cache,
+                                    &mut funding_cache,
+                                    &idx_map,
+                                    &greeks_subs,
+                                    BookChannelScope::Public,
+                                    snapshot_timeout,
+                                    &task_spawner,
+                                    clock,
+                                );
+                            }
                         }
                     }
-                }
-            });
+                })
+                .context("failed to register OKX public WebSocket stream task")?;
 
             for inst_type in &instrument_types {
                 ws.subscribe_instruments(*inst_type)
@@ -963,54 +975,59 @@ impl OKXDataClient {
             let business_ws = ws.clone();
             let idx_map = self.index_ticker_map.clone();
             let greeks_subs = self.option_greeks_subs.clone();
-            let tasks = Arc::clone(&self.tasks);
-            let cancel = self.cancellation_token.clone();
+            let tasks = self
+                .tasks
+                .spawner()
+                .context("OKX data task admission is closed")?;
+            let task_spawner = tasks.clone();
+            let cancel = tasks.cancellation_token();
             let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
             let clock = self.clock;
 
-            spawn_task(&self.tasks, &self.cancellation_token, async move {
-                let mut quote_cache = QuoteCache::new();
-                let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
+            tasks
+                .spawn(async move {
+                    let mut quote_cache = QuoteCache::new();
+                    let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
 
-                pin_mut!(stream);
+                    pin_mut!(stream);
 
-                loop {
-                    tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => {
-                            log::debug!("Business websocket stream task cancelled");
-                            break;
-                        }
-                        Some(message) = stream.next() => {
-                            Self::handle_ws_message(
-                                message,
-                                &sender,
-                                &insts,
-                                &http,
-                                &config,
-                                &update_lock,
-                                &book_channels,
-                                &book_sync,
-                                None,
-                                Some(&business_ws),
-                                &mut quote_cache,
-                                &mut funding_cache,
-                                &idx_map,
-                                &greeks_subs,
-                                BookChannelScope::Business,
-                                snapshot_timeout,
-                                &tasks,
-                                &cancel,
-                                clock,
-                            );
+                    loop {
+                        tokio::select! {
+                            biased;
+                            () = cancel.cancelled() => {
+                                log::debug!("Business websocket stream task cancelled");
+                                break;
+                            }
+                            Some(message) = stream.next() => {
+                                Self::handle_ws_message(
+                                    message,
+                                    &sender,
+                                    &insts,
+                                    &http,
+                                    &config,
+                                    &update_lock,
+                                    &book_channels,
+                                    &book_sync,
+                                    None,
+                                    Some(&business_ws),
+                                    &mut quote_cache,
+                                    &mut funding_cache,
+                                    &idx_map,
+                                    &greeks_subs,
+                                    BookChannelScope::Business,
+                                    snapshot_timeout,
+                                    &task_spawner,
+                                    clock,
+                                );
+                            }
                         }
                     }
-                }
-            });
+                })
+                .context("failed to register OKX business WebSocket stream task")?;
         }
 
-        self.spawn_book_health_monitor();
-        self.spawn_instrument_refresh();
+        self.register_book_health_monitor()?;
+        self.register_instrument_refresh()?;
         Ok(())
     }
 
@@ -1018,16 +1035,20 @@ impl OKXDataClient {
     /// configured interval is zero. The handle is tracked in `self.tasks`, so
     /// `teardown_transports` joins it and the cancellation token stops it on
     /// disconnect, failed connect, stop, and dispose.
-    fn spawn_instrument_refresh(&self) {
+    fn register_instrument_refresh(&self) -> anyhow::Result<()> {
         let minutes = self.config.update_instruments_interval_mins;
 
         if minutes == 0 {
             log::debug!("Instrument refresh disabled (update_instruments_interval_mins=0)");
-            return;
+            return Ok(());
         }
 
         let interval = Duration::from_secs(minutes.saturating_mul(60));
-        let cancel = self.cancellation_token.clone();
+        let tasks = self
+            .tasks
+            .spawner()
+            .context("OKX data task admission is closed")?;
+        let cancel = tasks.cancellation_token();
         let http_client = self.http_client.clone();
         let config = self.config.clone();
         let instruments = self.instruments_by_symbol.clone();
@@ -1037,7 +1058,7 @@ impl OKXDataClient {
         let data_sender = self.data_sender.clone();
         let client_id = self.client_id;
 
-        spawn_task(&self.tasks, &self.cancellation_token, async move {
+        tasks.spawn(async move {
             loop {
                 let sleep = tokio::time::sleep(interval);
                 tokio::pin!(sleep);
@@ -1080,7 +1101,8 @@ impl OKXDataClient {
             }
 
             log::debug!("Instrument refresh task cancelled");
-        });
+        })?;
+        Ok(())
     }
 
     /// Cancels stream tasks, closes both WebSocket transports, and clears
@@ -1089,7 +1111,7 @@ impl OKXDataClient {
     /// Safe to call after a partially failed connect and idempotent.
     async fn teardown_transports(&mut self) -> anyhow::Result<()> {
         self.transports_started = false;
-        self.cancellation_token.cancel();
+        self.begin_generation_shutdown();
 
         if let Some(ws) = self.ws_public.as_ref() {
             ws.request_close().await;
@@ -1124,16 +1146,28 @@ impl OKXDataClient {
             .expect("option_summary_family_subs mutex poisoned")
             .clear();
         self.is_connected.store(false, Ordering::Release);
-        task_result?;
-        public_result?;
-        business_result
+
+        let mut errors = Vec::new();
+        if let Err(e) = task_result {
+            errors.push(e.to_string());
+        }
+
+        if let Err(e) = public_result {
+            errors.push(e.to_string());
+        }
+
+        if let Err(e) = business_result {
+            errors.push(e.to_string());
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(errors.join("; "))
+        }
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "book recovery needs the complete subscription and task ownership context"
-)]
 fn handle_book_sequence_outcome(
     outcome: BookSequenceOutcome,
     instrument_id: InstrumentId,
@@ -1141,8 +1175,7 @@ fn handle_book_sequence_outcome(
     book_sync: &BookSyncTracker,
     recovery_ws: Option<&OKXWebSocketClient>,
     snapshot_timeout: Duration,
-    tasks: &TaskHandles,
-    cancel: &CancellationToken,
+    tasks: &TaskSpawner,
 ) -> bool {
     match outcome {
         BookSequenceOutcome::Accept => true,
@@ -1166,9 +1199,9 @@ fn handle_book_sequence_outcome(
                 return false;
             };
             let channels = Arc::clone(book_channels);
-            let recovery_cancel = cancel.clone();
+            let recovery_cancel = tasks.cancellation_token();
 
-            spawn_task(tasks, cancel, async move {
+            spawn_task(tasks, async move {
                 if recovery_cancel.is_cancelled()
                     || channels.get_cloned(&instrument_id) != Some(channel)
                 {
@@ -1181,7 +1214,7 @@ fn handle_book_sequence_outcome(
             });
 
             if !snapshot_timeout.is_zero() {
-                spawn_snapshot_health_monitor(book_sync.clone(), tasks, cancel, snapshot_timeout);
+                spawn_snapshot_health_monitor(book_sync.clone(), tasks, snapshot_timeout);
             }
             false
         }
@@ -1274,12 +1307,11 @@ fn emit_instrument_status(
 
 fn spawn_snapshot_health_monitor(
     book_sync: BookSyncTracker,
-    tasks: &TaskHandles,
-    cancel: &CancellationToken,
+    tasks: &TaskSpawner,
     timeout: Duration,
 ) {
-    let task_cancel = cancel.clone();
-    spawn_task(tasks, cancel, async move {
+    let task_cancel = tasks.cancellation_token();
+    spawn_task(tasks, async move {
         tokio::select! {
             biased;
             () = task_cancel.cancelled() => {}
@@ -1671,13 +1703,13 @@ impl DataClient for OKXDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {id}", id = self.client_id);
-        self.terminate_generation(false);
+        self.begin_generation_shutdown();
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {id}", id = self.client_id);
-        self.terminate_generation(true);
+        self.begin_generation_shutdown();
         self.book_channels.store(AHashMap::new());
         self.book_sync.clear();
         self.option_greeks_subs
@@ -1691,29 +1723,49 @@ impl DataClient for OKXDataClient {
 
     fn dispose(&mut self) -> anyhow::Result<()> {
         log::debug!("Disposing {id}", id = self.client_id);
-        self.terminate_generation(true);
+        self.begin_generation_shutdown();
         Ok(())
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected() && self.tasks.is_open() {
             return Ok(());
         }
 
+        let ws_public = self.ws_public.clone();
+        let ws_business = self.ws_business.clone();
+        let setup_guard = TaskGroupGuard::new(&[&self.tasks], move || {
+            if let Some(ws) = ws_public {
+                ws.begin_shutdown();
+            }
+
+            if let Some(ws) = ws_business {
+                ws.begin_shutdown();
+            }
+        });
+
         if let Err(e) = self.connect_session().await {
             if let Err(teardown_error) = self.teardown_transports().await {
-                log::warn!("Error tearing down partial connection: {teardown_error:?}");
+                return Err(e.context(format!(
+                    "OKX data startup teardown failed: {teardown_error}"
+                )));
             }
             return Err(e);
         }
 
         self.is_connected.store(true, Ordering::Release);
+        setup_guard.disarm();
         log::info!("Connected: client_id={}", self.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() && !self.transports_started && self.tasks.is_empty() {
+        if self.is_disconnected()
+            && !self.transports_started
+            && self.tasks.is_empty()
+            && self.ws_public.as_ref().is_none_or(|ws| !ws.has_task())
+            && self.ws_business.as_ref().is_none_or(|ws| !ws.has_task())
+        {
             return Ok(());
         }
 
@@ -1734,6 +1786,7 @@ impl DataClient for OKXDataClient {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
+        self.begin_generation_shutdown();
         self.teardown_transports().await?;
         log::info!("Disconnected: client_id={}", self.client_id);
         Ok(())
@@ -2348,7 +2401,7 @@ impl DataClient for OKXDataClient {
         let instrument_families = self.config.instrument_families.clone();
         let load_spreads = self.config.load_spreads;
 
-        spawn_task(&self.tasks, &self.cancellation_token, async move {
+        self.spawn_task(async move {
             let seq_before = update_lock.write_seq.load(Ordering::SeqCst);
             let mut all_instruments = Vec::new();
 
@@ -2491,7 +2544,7 @@ impl DataClient for OKXDataClient {
         let contract_types = self.config.contract_types.clone();
         let load_spreads = self.config.load_spreads;
 
-        spawn_task(&self.tasks, &self.cancellation_token, async move {
+        self.spawn_task(async move {
             let seq_before = update_lock.write_seq.load(Ordering::SeqCst);
 
             match http
@@ -2587,7 +2640,7 @@ impl DataClient for OKXDataClient {
             .unwrap_or(false);
         let clock = self.clock;
 
-        spawn_task(&self.tasks, &self.cancellation_token, async move {
+        self.spawn_task(async move {
             let result = if rpi {
                 http.request_rpi_book_snapshot(instrument_id, depth).await
             } else {
@@ -2632,7 +2685,7 @@ impl DataClient for OKXDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        spawn_task(&self.tasks, &self.cancellation_token, async move {
+        self.spawn_task(async move {
             match http
                 .request_trades(instrument_id, start, end, limit)
                 .await
@@ -2675,7 +2728,7 @@ impl DataClient for OKXDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        spawn_task(&self.tasks, &self.cancellation_token, async move {
+        self.spawn_task(async move {
             match http
                 .request_bars(bar_type, start, end, limit)
                 .await
@@ -2718,7 +2771,7 @@ impl DataClient for OKXDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        spawn_task(&self.tasks, &self.cancellation_token, async move {
+        self.spawn_task(async move {
             match http
                 .request_funding_rates(instrument_id, start, end, limit)
                 .await
@@ -2758,7 +2811,7 @@ impl DataClient for OKXDataClient {
         let clock = self.clock;
         let venue = *OKX_VENUE;
 
-        spawn_task(&self.tasks, &self.cancellation_token, async move {
+        self.spawn_task(async move {
             match http
                 .request_forward_prices(&underlying, instrument_id)
                 .await
@@ -2948,8 +3001,8 @@ mod tests {
         let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
         let index_ticker_map = Arc::new(AtomicMap::new());
         let option_greeks_subs = Arc::new(AtomicMap::new());
-        let tasks = TaskHandles::default();
-        let cancel = CancellationToken::new();
+        let task_group = TaskGroup::new();
+        let tasks = task_group.spawner().expect("task spawner");
 
         OKXDataClient::handle_ws_message(
             OKXWsMessage::SubscriptionFailed {
@@ -2974,7 +3027,6 @@ mod tests {
             BookChannelScope::Public,
             Duration::ZERO,
             &tasks,
-            &cancel,
             get_atomic_clock_realtime(),
         );
 
@@ -3014,8 +3066,8 @@ mod tests {
         let update_lock = InstrumentUpdateLock::default();
         let index_ticker_map = Arc::new(AtomicMap::new());
         let option_greeks_subs = Arc::new(AtomicMap::new());
-        let tasks = TaskHandles::default();
-        let cancel = CancellationToken::new();
+        let task_group = TaskGroup::new();
+        let tasks = task_group.spawner().expect("task spawner");
         let mut quote_cache = QuoteCache::new();
         let mut funding_cache = AHashMap::new();
 
@@ -3046,7 +3098,6 @@ mod tests {
                 BookChannelScope::Public,
                 Duration::ZERO,
                 &tasks,
-                &cancel,
                 get_atomic_clock_realtime(),
             );
         };
@@ -3267,8 +3318,8 @@ mod tests {
         let mut funding_cache = AHashMap::new();
         let index_ticker_map = Arc::new(AtomicMap::new());
         let option_greeks_subs = Arc::new(AtomicMap::new());
-        let tasks = TaskHandles::default();
-        let cancel = CancellationToken::new();
+        let task_group = TaskGroup::new();
+        let tasks = task_group.spawner().expect("task spawner");
 
         OKXDataClient::handle_ws_message(
             message,
@@ -3288,7 +3339,6 @@ mod tests {
             BookChannelScope::Public,
             Duration::ZERO,
             &tasks,
-            &cancel,
             get_atomic_clock_realtime(),
         );
     }
@@ -4559,7 +4609,7 @@ mod tests {
         replace_data_event_sender(sender);
         let client = OKXDataClient::new(*OKX_CLIENT_ID, config).expect("data client");
 
-        client.spawn_instrument_refresh();
+        client.register_instrument_refresh().unwrap();
         assert!(client.tasks.is_empty());
     }
 
@@ -4673,13 +4723,12 @@ mod tests {
         replace_data_event_sender(sender);
         let client = OKXDataClient::new(*OKX_CLIENT_ID, config).expect("data client");
 
-        client.spawn_instrument_refresh();
+        client.register_instrument_refresh().unwrap();
         assert_eq!(client.tasks.len(), 1);
 
-        client.cancellation_token.cancel();
-        for handle in client.tasks.take_all() {
-            handle.await.expect("refresh task joins after cancel");
-        }
+        terminate_tasks(&client.tasks, "test data client")
+            .await
+            .expect("refresh task joins after cancel");
     }
 
     #[tokio::test]
@@ -4833,12 +4882,9 @@ mod tests {
         assert_eq!(client.tasks.len(), 3);
 
         client.stop().expect("stop");
-        for handle in client.tasks.take_all() {
-            tokio::time::timeout(Duration::from_secs(5), handle)
-                .await
-                .expect("stop must cancel every spawned task")
-                .expect("task joins cleanly");
-        }
+        terminate_tasks(&client.tasks, "test data client")
+            .await
+            .expect("stop must cancel every spawned task");
 
         client.disconnect().await.expect("disconnect");
     }

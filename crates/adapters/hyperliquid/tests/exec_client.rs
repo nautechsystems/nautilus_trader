@@ -5028,6 +5028,102 @@ async fn test_submit_order_unsupported_symbol_emits_denied(
     client.disconnect().await.unwrap();
 }
 
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_after_stop_emits_denied() {
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+    client.stop().unwrap();
+
+    let order = make_limit_order("O-AFTER-STOP");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client.submit_order(make_submit_cmd(&order)).unwrap();
+
+    let denied = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        denied,
+        vec![(
+            order.client_order_id(),
+            "Hyperliquid execution client is shutting down".to_string()
+        )]
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+    assert!(
+        client
+            .ws_dispatch_state()
+            .lookup_context(&order.client_order_id())
+            .is_none()
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_submit_order_list_after_stop_emits_denied() {
+    let state = TestServerState::default();
+    let exchange_count = state.exchange_request_count.clone();
+    let addr = start_mock_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    while rx.try_recv().is_ok() {}
+    client.stop().unwrap();
+
+    let order = make_limit_order("O-LIST-AFTER-STOP");
+    let client_order_id = order.client_order_id();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let order_list = OrderList::new(
+        OrderListId::from("list-after-stop"),
+        order.instrument_id(),
+        order.strategy_id(),
+        vec![client_order_id],
+        UnixNanos::default(),
+    );
+    let cmd = SubmitOrderList::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order_list,
+        vec![order.init_event().clone()],
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client.submit_order_list(cmd).unwrap();
+
+    let denied = drain_denied_events(&mut rx, Duration::from_millis(250)).await;
+    assert_eq!(
+        denied,
+        vec![(
+            client_order_id,
+            "Hyperliquid execution client is shutting down".to_string()
+        )]
+    );
+    assert_eq!(*exchange_count.lock().await, 0);
+    assert!(
+        client
+            .ws_dispatch_state()
+            .lookup_context(&client_order_id)
+            .is_none()
+    );
+}
+
 fn make_outcome_limit_order(id: &str, reduce_only: bool) -> OrderAny {
     OrderAny::Limit(LimitOrder::new(
         TraderId::from("TESTER-001"),
@@ -7200,16 +7296,63 @@ async fn test_stop_aborts_ws_stream_and_pending_tasks() {
 
     client.stop().unwrap();
     assert!(!client.is_connected());
-    assert!(
-        client.pending_tasks_all_finished(),
-        "stop() must abort the pending action task",
-    );
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
 
     // Idempotent: a second stop() is a no-op.
     client.stop().unwrap();
 
     // Release the held mock so its handler can return cleanly.
     pause_release.notify_one();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_stop_aborts_outcome_settlement_poll() {
+    let state = TestServerState::default();
+    let info_requests = state.info_requests.clone();
+    let addr = start_mock_server(state).await;
+    let mut config = create_test_exec_config(addr);
+    config.outcome_settlement_poll_secs = 1;
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    wait_until_async(
+        || {
+            let info_requests = info_requests.clone();
+            async move {
+                info_requests
+                    .lock()
+                    .await
+                    .iter()
+                    .any(|request| request.get("type") == Some(&json!("outcomeMeta")))
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client.stop().unwrap();
+    let count_at_stop = info_requests
+        .lock()
+        .await
+        .iter()
+        .filter(|request| request.get("type") == Some(&json!("outcomeMeta")))
+        .count();
+    tokio::time::sleep(Duration::from_millis(1_100)).await;
+    let count_after_stop = info_requests
+        .lock()
+        .await
+        .iter()
+        .filter(|request| request.get("type") == Some(&json!("outcomeMeta")))
+        .count();
+
+    assert_eq!(count_after_stop, count_at_stop);
 }
 
 // `await_account_registered` hard-codes a 30s timeout inside `connect()`,

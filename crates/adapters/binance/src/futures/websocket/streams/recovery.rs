@@ -28,16 +28,18 @@ use std::{
 use anyhow::Context;
 use dashmap::DashMap;
 use nautilus_core::MUTEX_POISONED;
-use nautilus_live::SocketControlFactory;
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskJoinOutcome, TaskSlot, finish_task},
+};
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::websocket::TransportBackend;
-use tokio::{sync::Mutex as TokioMutex, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use super::{
     client::BinanceFuturesWebSocketClient,
     dispatch::{
-        DispatchCtx, make_venue_position_id, spawn_user_stream_dispatch, with_venue_position_id,
+        DispatchCtx, make_venue_position_id, run_user_stream_dispatch, with_venue_position_id,
     },
     messages::BinanceFuturesWsStreamsMessage,
 };
@@ -76,9 +78,10 @@ pub(crate) struct WsBuildParams {
 pub(crate) struct RecoveryCtx {
     pub http_client: BinanceFuturesHttpClient,
     pub listen_key: Arc<RwLock<Option<String>>>,
-    pub ws_client: Arc<TokioMutex<Option<BinanceFuturesWebSocketClient>>>,
-    pub ws_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    pub recovery_lock: Arc<TokioMutex<()>>,
+    pub recovery_listen_key: Arc<RwLock<Option<String>>>,
+    pub ws_client: Arc<Mutex<Option<BinanceFuturesWebSocketClient>>>,
+    pub ws_task: Arc<tokio::sync::Mutex<TaskSlot<()>>>,
+    pub recovery_lock: Arc<tokio::sync::Mutex<()>>,
     pub ws_build_params: WsBuildParams,
     pub dispatch_ctx: Arc<DispatchCtx>,
     pub recovery_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -199,6 +202,8 @@ where
 
     log::warn!("Rotating Binance Futures listen key after expiry or keepalive failure");
 
+    close_recovery_listen_key(ctx).await?;
+
     // Create the new listenKey and emit the REST snapshot first, using only
     // the HTTP client. The old stream is still live during this window, so
     // its events continue to flow through the old dispatcher. If the
@@ -211,48 +216,77 @@ where
         .await
         .context("failed to create listen key during recovery")?;
     let new_listen_key = response.listen_key;
+    *ctx.recovery_listen_key.write().expect(MUTEX_POISONED) = Some(new_listen_key.clone());
 
     emit_open_order_reports(ctx).await?;
 
-    // Snapshot succeeded; commit the rotation. Build and connect the new
-    // stream, swap it in, close the old one, drain its queued events, then
-    // spawn the new dispatcher.
     let new_ws = build_and_connect_user_stream(&ctx.ws_build_params, &new_listen_key).await?;
     let new_stream = new_ws.stream();
 
-    let old_ws = {
-        let mut guard = ctx.ws_client.lock().await;
-        guard.replace(new_ws)
+    let old_ws = ctx.ws_client.lock().expect(MUTEX_POISONED).take();
+    if let Some(mut old_ws) = old_ws {
+        old_ws
+            .close()
+            .await
+            .context("failed to close old user data WebSocket")?;
+    }
+
+    // Drain queued events from the old stream while the replacement buffers new events.
+    let mut task_slot = ctx.ws_task.lock().await;
+    if let Some(outcome) = finish_task(
+        &mut task_slot,
+        Duration::from_secs(2),
+        Duration::from_secs(2),
+    )
+    .await
+    {
+        match outcome {
+            TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+            TaskJoinOutcome::Failed(error) => {
+                anyhow::bail!("old user stream dispatch task failed: {error}");
+            }
+            TaskJoinOutcome::Incomplete => {
+                anyhow::bail!("old user stream dispatch task did not stop after abort");
+            }
+        }
+    }
+
+    let mut new_task = TaskSlot::new();
+    new_task
+        .spawn(run_user_stream_dispatch(
+            new_stream,
+            ctx.dispatch_ctx.clone(),
+            ctx.recovery_tx.clone(),
+            dispatch_fn,
+        ))
+        .map_err(|e| anyhow::anyhow!("failed to start recovered user stream dispatch task: {e}"))?;
+
+    *ctx.ws_client.lock().expect(MUTEX_POISONED) = Some(new_ws);
+    *task_slot = new_task;
+    *ctx.listen_key.write().expect(MUTEX_POISONED) = Some(new_listen_key);
+    *ctx.recovery_listen_key.write().expect(MUTEX_POISONED) = None;
+
+    Ok(())
+}
+
+async fn close_recovery_listen_key(ctx: &RecoveryCtx) -> anyhow::Result<()> {
+    let key = ctx
+        .recovery_listen_key
+        .read()
+        .expect(MUTEX_POISONED)
+        .clone();
+    let Some(key) = key else {
+        return Ok(());
     };
 
-    {
-        let mut key_guard = ctx.listen_key.write().expect(MUTEX_POISONED);
-        *key_guard = Some(new_listen_key);
+    ctx.http_client
+        .close_listen_key(&key)
+        .await
+        .context("failed to close uncommitted recovery listen key")?;
+    let mut pending = ctx.recovery_listen_key.write().expect(MUTEX_POISONED);
+    if pending.as_deref() == Some(key.as_str()) {
+        *pending = None;
     }
-
-    if let Some(mut old) = old_ws
-        && let Err(e) = old.close().await
-    {
-        log::warn!("Failed to close old user data WebSocket cleanly: {e}");
-    }
-
-    // Await the old dispatch task so events already queued on the old
-    // stream (fills, cancels) drain through the dispatcher before the new
-    // dispatcher starts. Scope the std MutexGuard so it does not span the
-    // await.
-    let old_task = ctx.ws_task.lock().expect(MUTEX_POISONED).take();
-    if let Some(task) = old_task {
-        let _ = task.await;
-    }
-
-    let new_task = spawn_user_stream_dispatch(
-        new_stream,
-        ctx.dispatch_ctx.clone(),
-        ctx.recovery_tx.clone(),
-        dispatch_fn,
-    );
-    *ctx.ws_task.lock().expect(MUTEX_POISONED) = Some(new_task);
-
     Ok(())
 }
 
@@ -440,6 +474,7 @@ mod tests {
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde_json::json;
+    use tokio::task::JoinHandle;
     use ustr::Ustr;
 
     use super::*;
@@ -575,9 +610,10 @@ mod tests {
         let context = RecoveryCtx {
             http_client,
             listen_key: Arc::new(RwLock::new(None)),
-            ws_client: Arc::new(TokioMutex::new(None)),
-            ws_task: Arc::new(Mutex::new(None)),
-            recovery_lock: Arc::new(TokioMutex::new(())),
+            recovery_listen_key: Arc::new(RwLock::new(None)),
+            ws_client: Arc::new(Mutex::new(None)),
+            ws_task: Arc::new(tokio::sync::Mutex::new(TaskSlot::new())),
+            recovery_lock: Arc::new(tokio::sync::Mutex::new(())),
             ws_build_params: WsBuildParams {
                 product_type: BinanceProductType::UsdM,
                 environment: BinanceEnvironment::Live,

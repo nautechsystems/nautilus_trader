@@ -20,8 +20,8 @@
 //! Run with: `cargo run --example bybit-exec-tester --package nautilus-bybit --features examples`
 //!
 //! Required credential environment variables:
-//! - `BYBIT_API_KEY`.
-//! - `BYBIT_API_SECRET`.
+//! - `BYBIT_API_KEY`
+//! - `BYBIT_API_SECRET`
 
 use nautilus_bybit::{
     common::{

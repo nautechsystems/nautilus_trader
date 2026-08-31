@@ -25,7 +25,7 @@
 //! instrument, order size, and exec spec profile.
 //!
 //! Required environment variable:
-//! - `NAUTILUS_IB_ACCOUNT_ID` is your IB account, for example `U1234567`.
+//! - `NAUTILUS_IB_ACCOUNT_ID` is your IB account, for example `U1234567`
 
 use std::{collections::HashSet, env, time::Duration};
 

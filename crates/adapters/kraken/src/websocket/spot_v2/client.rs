@@ -24,9 +24,11 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use nautilus_common::live::get_runtime;
 use nautilus_core::AtomicMap;
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{TaskGroup, TaskShutdownError},
+};
 use nautilus_model::{
     data::BarType,
     enums::BarAggregation,
@@ -71,14 +73,6 @@ const WS_PING_MSG: &str = r#"{"method":"ping"}"#;
 
 /// WebSocket client for the Kraken Spot v2 streaming API.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.adapters.kraken", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
-)]
 pub struct KrakenSpotWebSocketClient {
     url: String,
     config: KrakenDataClientConfig,
@@ -86,7 +80,8 @@ pub struct KrakenSpotWebSocketClient {
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<SpotHandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<KrakenSpotWsMessage>>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    handler_tasks: Arc<TaskGroup>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions: SubscriptionState,
     subscription_payloads: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
     auth_tracker: AuthTracker,
@@ -112,7 +107,8 @@ impl Clone for KrakenSpotWebSocketClient {
             connection_mode: Arc::clone(&self.connection_mode),
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: self.out_rx.clone(),
-            task_handle: self.task_handle.clone(),
+            handler_tasks: Arc::clone(&self.handler_tasks),
+            connect_lock: Arc::clone(&self.connect_lock),
             subscriptions: self.subscriptions.clone(),
             subscription_payloads: Arc::clone(&self.subscription_payloads),
             auth_tracker: self.auth_tracker.clone(),
@@ -179,7 +175,8 @@ impl KrakenSpotWebSocketClient {
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
-            task_handle: None,
+            handler_tasks: Arc::new(TaskGroup::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(KRAKEN_SPOT_WS_TOPIC_DELIMITER),
             subscription_payloads: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             auth_tracker: AuthTracker::new(),
@@ -197,17 +194,17 @@ impl KrakenSpotWebSocketClient {
         }
     }
 
+    pub(crate) fn begin_shutdown(&self) {
+        self.handler_tasks.begin_shutdown();
+        self.cancellation_token.cancel();
+        self.signal.store(true, Ordering::Relaxed);
+    }
+
     /// Configures socket state reporting and reconnect control.
     #[must_use]
     pub fn with_socket_control(mut self, control: SocketControl) -> Self {
         self.socket_control = Some(control);
         self
-    }
-
-    pub(crate) fn deregister_socket_control(&self) {
-        if let Some(control) = &self.socket_control {
-            control.deregister();
-        }
     }
 
     fn get_next_req_id(&self) -> u64 {
@@ -259,7 +256,28 @@ impl KrakenSpotWebSocketClient {
 
     /// Connects to the WebSocket server.
     pub async fn connect(&mut self) -> Result<(), KrakenWsError> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
         log::debug!("Connecting to {}", self.url);
+
+        if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
+            self.disconnect_locked().await?;
+            self.handler_tasks.start_generation().map_err(|e| {
+                KrakenWsError::ConnectionError(format!(
+                    "Failed to start WebSocket handler task generation: {e}"
+                ))
+            })?;
+        }
+        let handler_spawner = self.handler_tasks.spawner().map_err(|e| {
+            KrakenWsError::ConnectionError(format!(
+                "Failed to acquire WebSocket handler task spawner: {e}"
+            ))
+        })?;
+
+        if self.cancellation_token.is_cancelled() {
+            self.cancellation_token = CancellationToken::new();
+        }
 
         self.signal.store(false, Ordering::Relaxed);
 
@@ -334,7 +352,7 @@ impl KrakenSpotWebSocketClient {
         let auth_tracker_for_reconnect = self.auth_tracker.clone();
         let cmd_tx_for_reconnect = cmd_tx.clone();
 
-        let stream_handle = get_runtime().spawn(async move {
+        let handler_task = async move {
             let mut handler =
                 SpotFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions.clone());
 
@@ -451,9 +469,17 @@ impl KrakenSpotWebSocketClient {
             }
 
             log::debug!("Handler task exiting");
-        });
+        };
 
-        self.task_handle = Some(Arc::new(stream_handle));
+        if let Err(e) = handler_spawner.spawn(handler_task) {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            self.out_rx = None;
+            return Err(KrakenWsError::ConnectionError(format!(
+                "Failed to register WebSocket handler task: {e}"
+            )));
+        }
 
         log::debug!("WebSocket connected successfully");
         Ok(())
@@ -461,8 +487,15 @@ impl KrakenSpotWebSocketClient {
 
     /// Disconnects from the WebSocket server.
     pub async fn disconnect(&mut self) -> Result<(), KrakenWsError> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+        self.disconnect_locked().await
+    }
+
+    async fn disconnect_locked(&self) -> Result<(), KrakenWsError> {
         log::debug!("Disconnecting WebSocket");
 
+        self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self
@@ -476,30 +509,13 @@ impl KrakenSpotWebSocketClient {
             );
         }
 
-        if let Some(task_handle) = self.task_handle.take() {
-            match Arc::try_unwrap(task_handle) {
-                Ok(handle) => {
-                    log::debug!("Waiting for task handle to complete");
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => log::debug!("Task handle completed successfully"),
-                        Ok(Err(e)) => log::error!("Task handle encountered an error: {e:?}"),
-                        Err(_) => {
-                            log::warn!(
-                                "Timeout waiting for task handle, task may still be running"
-                            );
-                        }
-                    }
-                }
-                Err(arc_handle) => {
-                    log::debug!(
-                        "Cannot take ownership of task handle - other references exist, aborting task"
-                    );
-                    arc_handle.abort();
-                }
-            }
-        } else {
-            log::debug!("No task handle to await");
-        }
+        let task_result = self
+            .handler_tasks
+            .finish_shutdown(
+                tokio::time::Duration::from_secs(2),
+                tokio::time::Duration::from_secs(2),
+            )
+            .await;
 
         self.subscriptions.clear();
         self.subscription_payloads.write().await.clear();
@@ -514,7 +530,15 @@ impl KrakenSpotWebSocketClient {
             control.deregister();
         }
 
-        Ok(())
+        match task_result {
+            Ok(()) => Ok(()),
+            Err(error @ TaskShutdownError::Timeout { .. }) => Err(KrakenWsError::Timeout(format!(
+                "Spot WebSocket handler shutdown timed out: {error}"
+            ))),
+            Err(e) => Err(KrakenWsError::Disconnected(format!(
+                "Spot WebSocket handler shutdown failed: {e}"
+            ))),
+        }
     }
 
     /// Closes the WebSocket connection.

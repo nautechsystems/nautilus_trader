@@ -36,7 +36,6 @@ use super::{
     runtime::{
         is_condition_closed, register_closed_condition_for_live_data, retire_closed_condition_state,
     },
-    spawn_task,
     subscriptions::{resolve_token_id_from, sync_ws_subscription_with_terminal_async},
 };
 use crate::{
@@ -527,11 +526,9 @@ impl PolymarketDataClient {
                 batch = next_batch;
             }
         };
-        spawn_task(
-            &self.tasks,
-            &self.task_registration,
-            &self.cancellation_token,
-            future,
-        );
+
+        if let Err(e) = self.tasks.spawn(future) {
+            log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+        }
     }
 }

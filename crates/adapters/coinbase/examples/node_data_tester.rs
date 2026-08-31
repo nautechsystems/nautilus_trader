@@ -20,8 +20,8 @@
 //! Run with: `cargo run --example coinbase-data-tester --package nautilus-coinbase --features examples`
 //!
 //! Credentials are read from the environment when set (optional for public market data):
-//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`).
-//! - `COINBASE_API_SECRET`: PEM-encoded EC private key.
+//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`)
+//! - `COINBASE_API_SECRET`: PEM-encoded EC private key
 
 use nautilus_coinbase::{
     common::{consts::COINBASE_CLIENT_ID, enums::CoinbaseEnvironment},

@@ -28,7 +28,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use nautilus_common::live::get_runtime;
+use nautilus_live::task::{SharedTaskSlot, TaskJoinOutcome};
 use nautilus_network::{
     SocketState, SocketStateSink,
     mode::ReconnectRequestOutcome,
@@ -37,7 +37,7 @@ use nautilus_network::{
         TcpMessageHandler, WriterCommand,
     },
 };
-use tokio::{sync::watch, task::JoinHandle}; // tokio-import-ok
+use tokio::sync::watch; // tokio-import-ok
 use tokio_tungstenite::tungstenite::stream::Mode;
 
 use super::{
@@ -288,7 +288,7 @@ pub struct BetfairStreamClient {
     dead_peer_enabled: Arc<AtomicBool>,
     dead_peer_timeout_ms: Arc<AtomicU64>,
     dead_peer_timeout_override: bool,
-    dead_peer_task: Option<JoinHandle<()>>,
+    dead_peer_task: SharedTaskSlot<()>,
     closed: AtomicBool,
 }
 
@@ -750,33 +750,39 @@ impl BetfairStreamClient {
             .expect("Betfair stream writer must only be initialized once");
         reconnect_auth.set_handle(socket.reconnect_handle());
 
-        let dead_peer_task = if matches!(heartbeat_timeout_source, HeartbeatTimeoutSource::Server) {
+        socket
+            .send_bytes(auth_bytes_vec)
+            .await
+            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+
+        let dead_peer_task = SharedTaskSlot::new();
+
+        if matches!(heartbeat_timeout_source, HeartbeatTimeoutSource::Server) {
             let reconnect = socket.reconnect_handle();
             let enabled = Arc::clone(&dead_peer_enabled);
             let last = Arc::clone(&last_inbound);
             let timeout_ms = Arc::clone(&dead_peer_timeout_ms);
 
-            Some(get_runtime().spawn(async move {
-                loop {
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+            dead_peer_task
+                .spawn(async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
 
-                    if !enabled.load(Ordering::Acquire) {
-                        continue;
+                        if !enabled.load(Ordering::Acquire) {
+                            continue;
+                        }
+                        let timeout = Duration::from_millis(timeout_ms.load(Ordering::Acquire));
+                        if last.lock().expect("last inbound lock poisoned").elapsed() >= timeout {
+                            let _ = reconnect.request_reconnect();
+                        }
                     }
-                    let timeout = Duration::from_millis(timeout_ms.load(Ordering::Acquire));
-                    if last.lock().expect("last inbound lock poisoned").elapsed() >= timeout {
-                        let _ = reconnect.request_reconnect();
-                    }
-                }
-            }))
-        } else {
-            None
-        };
-
-        socket
-            .send_bytes(auth_bytes_vec)
-            .await
-            .map_err(|e| BetfairStreamError::ConnectionFailed(e.to_string()))?;
+                })
+                .map_err(|e| {
+                    BetfairStreamError::ConnectionFailed(format!(
+                        "failed to start dead-peer monitor: {e}"
+                    ))
+                })?;
+        }
 
         Ok(Self {
             socket,
@@ -1033,15 +1039,39 @@ impl BetfairStreamClient {
             .request(self.auth_tx.borrow().generation)
     }
 
-    /// Closes the stream connection.
-    pub async fn close(&self) {
+    pub(crate) fn begin_shutdown(&self) {
         self.closed.store(true, Ordering::SeqCst);
         self.dead_peer_enabled.store(false, Ordering::Release);
+        self.dead_peer_task.abort();
+        self.socket.begin_shutdown();
+    }
 
-        if let Some(task) = &self.dead_peer_task {
-            task.abort();
-        }
+    /// Closes the stream connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the dead-peer task fails or does not stop after abort.
+    pub async fn close(&self) -> Result<(), BetfairStreamError> {
+        self.begin_shutdown();
         self.socket.close().await;
+
+        if let Some(outcome) = self
+            .dead_peer_task
+            .finish(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => Ok(()),
+                TaskJoinOutcome::Failed(e) => Err(BetfairStreamError::Disconnected(format!(
+                    "dead-peer task failed: {e}"
+                ))),
+                TaskJoinOutcome::Incomplete => Err(BetfairStreamError::Timeout(
+                    "dead-peer task did not stop after abort".to_string(),
+                )),
+            }
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -1049,9 +1079,7 @@ impl Drop for BetfairStreamClient {
     fn drop(&mut self) {
         self.dead_peer_enabled.store(false, Ordering::Release);
 
-        if let Some(task) = &self.dead_peer_task {
-            task.abort();
-        }
+        self.dead_peer_task.abort();
     }
 }
 
@@ -1333,9 +1361,14 @@ impl BetfairRaceStreamClient {
             .request(self.auth_tx.borrow().generation)
     }
 
+    pub(crate) fn begin_shutdown(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        self.socket.begin_shutdown();
+    }
+
     /// Closes the race stream connection.
     pub async fn close(&self) {
-        self.closed.store(true, Ordering::SeqCst);
+        self.begin_shutdown();
         self.socket.close().await;
     }
 }
@@ -2064,7 +2097,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        client.close().await;
+        client.close().await.expect("close stream");
     }
 
     #[rstest]

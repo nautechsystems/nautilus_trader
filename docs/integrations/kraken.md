@@ -18,8 +18,9 @@ The main Python components are:
   by the trading node builder.
 - `KrakenSpotHttpClient` and `KrakenFuturesHttpClient`: Lower-level HTTP access
   for direct requests.
-- `KrakenSpotWebSocketClient` and `KrakenFuturesWebSocketClient`: Lower-level
-  WebSocket access.
+
+The Rust crate also exposes `KrakenSpotWebSocketClient` and `KrakenFuturesWebSocketClient` for
+lower-level WebSocket access.
 
 :::note
 Most users configure these components through a live trading node and do not

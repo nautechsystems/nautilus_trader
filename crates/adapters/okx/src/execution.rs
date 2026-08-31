@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -47,6 +47,7 @@ use nautilus_live::{
         context::{OrderContext, OrderIdentity},
         failure::CommandFailure,
     },
+    task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -63,7 +64,6 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Money, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
@@ -107,9 +107,8 @@ pub struct OKXExecutionClient {
     ws_business: OKXWebSocketClient,
     trade_mode: OKXTradeMode,
     ws_dispatch_state: Arc<WsDispatchState>,
-    cancellation_token: CancellationToken,
-    session_tasks: TaskHandles,
-    pending_tasks: TaskHandles,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
 }
 
 impl OKXExecutionClient {
@@ -199,9 +198,8 @@ impl OKXExecutionClient {
             ws_business,
             trade_mode,
             ws_dispatch_state,
-            cancellation_token: CancellationToken::new(),
-            session_tasks: TaskHandles::default(),
-            pending_tasks: TaskHandles::default(),
+            session_tasks: TaskGroup::new(),
+            pending_tasks: TaskGroup::new(),
         })
     }
 
@@ -1156,7 +1154,10 @@ impl OKXExecutionClient {
             }
         };
 
-        spawn_task(&self.pending_tasks, &self.cancellation_token, fut);
+        match self.pending_tasks.spawner() {
+            Ok(spawner) => spawn_task(&spawner, fut),
+            Err(e) => log::debug!("Skipping {description} after OKX shutdown began: {e}"),
+        }
     }
 
     // Partitions algo cancel orders into regular and advance, then spawns
@@ -1232,12 +1233,11 @@ impl OKXExecutionClient {
         }
     }
 
-    fn abort_generation(&self) {
-        self.cancellation_token.cancel();
-        self.pending_tasks.abort_all_retained();
-        self.session_tasks.abort_all_retained();
-        self.ws_private.abort();
-        self.ws_business.abort();
+    fn begin_generation_shutdown(&self) {
+        self.pending_tasks.begin_shutdown();
+        self.session_tasks.begin_shutdown();
+        self.ws_private.begin_shutdown();
+        self.ws_business.begin_shutdown();
         self.core.set_disconnected();
     }
 
@@ -1279,6 +1279,8 @@ impl OKXExecutionClient {
         // Reset leaves the old generation canceled until this async boundary can drain it
         if !self.pending_tasks.is_empty()
             || !self.session_tasks.is_empty()
+            || !self.pending_tasks.is_open()
+            || !self.session_tasks.is_open()
             || self.ws_private.is_active()
             || self.ws_business.is_active()
             || self.ws_private.has_task()
@@ -1287,7 +1289,17 @@ impl OKXExecutionClient {
             self.teardown_session().await?;
         }
 
-        self.cancellation_token = CancellationToken::new();
+        if !self.pending_tasks.is_open() {
+            self.pending_tasks
+                .start_generation()
+                .context("failed to start OKX execution request task generation")?;
+        }
+
+        if !self.session_tasks.is_open() {
+            self.session_tasks
+                .start_generation()
+                .context("failed to start OKX execution stream task generation")?;
+        }
         let instrument_types = self.instrument_types();
 
         if !self.core.instruments_initialized() {
@@ -1379,10 +1391,14 @@ impl OKXExecutionClient {
             let state = Arc::clone(&self.ws_dispatch_state);
             let account_id = self.core.account_id;
             let instruments = self.ws_private.instruments_cache_arc();
-            let cancel = self.cancellation_token.clone();
+            let tasks = self
+                .session_tasks
+                .spawner()
+                .context("OKX execution stream task admission is closed")?;
+            let cancel = tasks.cancellation_token();
             let clock = self.clock;
 
-            let handle = get_runtime().spawn(async move {
+            spawn_task(&tasks, async move {
                 let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
                 let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
                 let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
@@ -1426,7 +1442,6 @@ impl OKXExecutionClient {
                     }
                 }
             });
-            self.session_tasks.push(handle);
         }
 
         self.ws_business.connect().await?;
@@ -1439,10 +1454,14 @@ impl OKXExecutionClient {
             let state = Arc::clone(&self.ws_dispatch_state);
             let account_id = self.core.account_id;
             let instruments = self.ws_business.instruments_cache_arc();
-            let cancel = self.cancellation_token.clone();
+            let tasks = self
+                .session_tasks
+                .spawner()
+                .context("OKX execution stream task admission is closed")?;
+            let cancel = tasks.cancellation_token();
             let clock = self.clock;
 
-            let handle = get_runtime().spawn(async move {
+            spawn_task(&tasks, async move {
                 let mut fee_cache: AHashMap<Ustr, Money> = AHashMap::new();
                 let mut filled_qty_cache: AHashMap<Ustr, Quantity> = AHashMap::new();
                 let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
@@ -1473,8 +1492,6 @@ impl OKXExecutionClient {
                     }
                 }
             });
-
-            self.session_tasks.push(handle);
         }
 
         let order_routing_types = order_routing_instrument_types(&instrument_types);
@@ -1538,7 +1555,7 @@ impl OKXExecutionClient {
     /// Drains application tasks before closing transports so task-owned
     /// WebSocket clones cannot outlive the session.
     async fn teardown_session(&mut self) -> anyhow::Result<()> {
-        self.cancellation_token.cancel();
+        self.begin_generation_shutdown();
         self.ws_private.request_close().await;
         self.ws_business.request_close().await;
         let pending_result = terminate_tasks(&self.pending_tasks, "OKX execution request").await;
@@ -1556,10 +1573,29 @@ impl OKXExecutionClient {
             .context("failed to close business websocket");
 
         self.core.set_disconnected();
-        pending_result?;
-        session_result?;
-        private_result?;
-        business_result
+
+        let mut errors = Vec::new();
+        if let Err(e) = pending_result {
+            errors.push(e.to_string());
+        }
+
+        if let Err(e) = session_result {
+            errors.push(e.to_string());
+        }
+
+        if let Err(e) = private_result {
+            errors.push(e.to_string());
+        }
+
+        if let Err(e) = business_result {
+            errors.push(e.to_string());
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(errors.join("; "))
+        }
     }
 }
 
@@ -1620,18 +1656,29 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
+        {
             return Ok(());
         }
+        let ws_private = self.ws_private.clone();
+        let ws_business = self.ws_business.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                ws_private.begin_shutdown();
+                ws_business.begin_shutdown();
+            });
 
         if let Err(e) = self.establish_session().await {
             if let Err(teardown_error) = self.teardown_session().await {
-                log::warn!("Error tearing down partial session: {teardown_error:?}");
+                return Err(e.context(format!(
+                    "OKX execution startup teardown failed: {teardown_error}"
+                )));
             }
             return Err(e);
         }
 
         self.core.set_connected();
+        setup_guard.disarm();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -1640,6 +1687,8 @@ impl ExecutionClient for OKXExecutionClient {
         if self.core.is_disconnected()
             && self.pending_tasks.is_empty()
             && self.session_tasks.is_empty()
+            && !self.ws_private.has_task()
+            && !self.ws_business.has_task()
         {
             return Ok(());
         }
@@ -1890,7 +1939,7 @@ impl ExecutionClient for OKXExecutionClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         let was_started = self.core.is_started();
         self.core.set_stopped();
-        self.abort_generation();
+        self.begin_generation_shutdown();
 
         if was_started {
             log::info!("Stopped: client_id={}", self.core.client_id);
@@ -1899,12 +1948,12 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
-        self.abort_generation();
+        self.begin_generation_shutdown();
         Ok(())
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        self.abort_generation();
+        self.begin_generation_shutdown();
         Ok(())
     }
 

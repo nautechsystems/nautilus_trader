@@ -26,7 +26,7 @@ use nautilus_model::{
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
-use super::{PolymarketDataClient, runtime::is_instrument_expired, spawn_task};
+use super::{PolymarketDataClient, runtime::is_instrument_expired};
 use crate::{
     common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
     filters::{
@@ -424,9 +424,9 @@ impl PolymarketDataClient {
         Ok(())
     }
 
-    pub(super) fn spawn_instrument_refresh_task(&self) {
+    pub(super) fn register_instrument_refresh_task(&self) -> anyhow::Result<()> {
         let Some(interval_mins) = self.config.update_instruments_interval_mins else {
-            return;
+            return Ok(());
         };
 
         let filters = self.provider.filters();
@@ -436,7 +436,7 @@ impl PolymarketDataClient {
         // Filter source methods are deliberately not evaluated here: they are documented as
         // re-evaluated each load cycle, so probing them would consume a batch the refresh misses.
         if interval_mins == 0 || (self.config.instrument_config.is_none() && filters.is_empty()) {
-            return;
+            return Ok(());
         }
 
         let interval = Duration::from_secs(interval_mins.saturating_mul(60));
@@ -488,12 +488,11 @@ impl PolymarketDataClient {
 
             log::debug!("Polymarket instrument refresh task ended");
         };
-        spawn_task(
-            &self.tasks,
-            &self.task_registration,
-            &self.cancellation_token,
-            future,
-        );
+
+        self.tasks.spawn(future).map_err(|e| {
+            anyhow::anyhow!("failed to register Polymarket instrument refresh: {e}")
+        })?;
+        Ok(())
     }
 }
 
@@ -577,7 +576,7 @@ mod tests {
         });
         client.add_instrument_filter(Arc::new(TagFilter::from_tag_id(84)));
 
-        client.spawn_instrument_refresh_task();
+        client.register_instrument_refresh_task().unwrap();
 
         // Without this the client would bootstrap from the filter and then freeze at its
         // connect-time universe, because the guard used to require an instrument_config.
@@ -592,7 +591,7 @@ mod tests {
             ..PolymarketDataClientConfig::default()
         });
 
-        client.spawn_instrument_refresh_task();
+        client.register_instrument_refresh_task().unwrap();
 
         assert_eq!(client.tasks.len(), 0);
     }
@@ -606,7 +605,7 @@ mod tests {
         });
         client.add_instrument_filter(Arc::new(PredicateFilter::new("accept-all", |_| true)));
 
-        client.spawn_instrument_refresh_task();
+        client.register_instrument_refresh_task().unwrap();
 
         // Accepted cost of not probing filter sources here: an accept-only filter spawns a timer
         // whose refresh issues no HTTP. A wakeup every N minutes is cheaper than consuming a

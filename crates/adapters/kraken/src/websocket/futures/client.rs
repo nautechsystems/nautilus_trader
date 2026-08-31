@@ -24,9 +24,11 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use nautilus_common::live::get_runtime;
 use nautilus_core::AtomicMap;
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{TaskGroup, TaskShutdownError},
+};
 use nautilus_model::{
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
@@ -65,14 +67,6 @@ pub const KRAKEN_FUTURES_WS_TOPIC_DELIMITER: char = ':';
 
 /// WebSocket client for the Kraken Futures v1 streaming API.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.adapters.kraken", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.kraken")
-)]
 pub struct KrakenFuturesWebSocketClient {
     url: String,
     heartbeat_secs: u64,
@@ -81,7 +75,8 @@ pub struct KrakenFuturesWebSocketClient {
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<FuturesHandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<KrakenFuturesWsMessage>>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    handler_tasks: Arc<TaskGroup>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions: SubscriptionState,
     subscription_payloads: Arc<tokio::sync::RwLock<HashMap<String, String>>>,
     auth_tracker: AuthTracker,
@@ -108,7 +103,8 @@ impl Clone for KrakenFuturesWebSocketClient {
             connection_mode: Arc::clone(&self.connection_mode),
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: self.out_rx.clone(),
-            task_handle: self.task_handle.clone(),
+            handler_tasks: Arc::clone(&self.handler_tasks),
+            connect_lock: Arc::clone(&self.connect_lock),
             subscriptions: self.subscriptions.clone(),
             subscription_payloads: Arc::clone(&self.subscription_payloads),
             auth_tracker: self.auth_tracker.clone(),
@@ -163,7 +159,8 @@ impl KrakenFuturesWebSocketClient {
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
-            task_handle: None,
+            handler_tasks: Arc::new(TaskGroup::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(KRAKEN_FUTURES_WS_TOPIC_DELIMITER),
             subscription_payloads: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             auth_tracker: AuthTracker::new(),
@@ -181,17 +178,17 @@ impl KrakenFuturesWebSocketClient {
         }
     }
 
+    pub(crate) fn begin_shutdown(&self) {
+        self.handler_tasks.begin_shutdown();
+        self.cancellation_token.cancel();
+        self.signal.store(true, Ordering::Relaxed);
+    }
+
     /// Configures socket state reporting and reconnect control.
     #[must_use]
     pub fn with_socket_control(mut self, control: SocketControl) -> Self {
         self.socket_control = Some(control);
         self
-    }
-
-    pub(crate) fn deregister_socket_control(&self) {
-        if let Some(control) = &self.socket_control {
-            control.deregister();
-        }
     }
 
     /// Returns true if the client has API credentials set.
@@ -293,7 +290,28 @@ impl KrakenFuturesWebSocketClient {
 
     /// Connects to the WebSocket server.
     pub async fn connect(&mut self) -> Result<(), KrakenWsError> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
         log::debug!("Connecting to Futures WebSocket: {}", self.url);
+
+        if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
+            self.disconnect_locked().await?;
+            self.handler_tasks.start_generation().map_err(|e| {
+                KrakenWsError::ConnectionError(format!(
+                    "Failed to start WebSocket handler task generation: {e}"
+                ))
+            })?;
+        }
+        let handler_spawner = self.handler_tasks.spawner().map_err(|e| {
+            KrakenWsError::ConnectionError(format!(
+                "Failed to acquire WebSocket handler task spawner: {e}"
+            ))
+        })?;
+
+        if self.cancellation_token.is_cancelled() {
+            self.cancellation_token = CancellationToken::new();
+        }
 
         self.signal.store(false, Ordering::Relaxed);
 
@@ -359,7 +377,7 @@ impl KrakenFuturesWebSocketClient {
         let signed_challenge_for_reconnect = self.signed_challenge.clone();
         let auth_tracker_for_reconnect = self.auth_tracker.clone();
 
-        let stream_handle = get_runtime().spawn(async move {
+        let handler_task = async move {
             let mut handler =
                 FuturesFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions.clone());
             let mut pending_resubscribe = false;
@@ -469,9 +487,17 @@ impl KrakenFuturesWebSocketClient {
             }
 
             log::debug!("Futures handler task exiting");
-        });
+        };
 
-        self.task_handle = Some(Arc::new(stream_handle));
+        if let Err(e) = handler_spawner.spawn(handler_task) {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            self.out_rx = None;
+            return Err(KrakenWsError::ConnectionError(format!(
+                "Failed to register WebSocket handler task: {e}"
+            )));
+        }
 
         log::debug!("Futures WebSocket connected successfully");
         Ok(())
@@ -479,8 +505,15 @@ impl KrakenFuturesWebSocketClient {
 
     /// Disconnects from the WebSocket server.
     pub async fn disconnect(&mut self) -> Result<(), KrakenWsError> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+        self.disconnect_locked().await
+    }
+
+    async fn disconnect_locked(&self) -> Result<(), KrakenWsError> {
         log::debug!("Disconnecting Futures WebSocket");
 
+        self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self
@@ -494,23 +527,13 @@ impl KrakenFuturesWebSocketClient {
             );
         }
 
-        if let Some(task_handle) = self.task_handle.take() {
-            match Arc::try_unwrap(task_handle) {
-                Ok(handle) => {
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => log::debug!("Task handle completed successfully"),
-                        Ok(Err(e)) => log::error!("Task handle encountered an error: {e:?}"),
-                        Err(_) => {
-                            log::warn!("Timeout waiting for task handle");
-                        }
-                    }
-                }
-                Err(arc_handle) => {
-                    log::debug!("Cannot take ownership of task handle, aborting");
-                    arc_handle.abort();
-                }
-            }
-        }
+        let task_result = self
+            .handler_tasks
+            .finish_shutdown(
+                tokio::time::Duration::from_secs(2),
+                tokio::time::Duration::from_secs(2),
+            )
+            .await;
 
         self.subscriptions.clear();
         self.subscription_payloads.write().await.clear();
@@ -519,7 +542,16 @@ impl KrakenFuturesWebSocketClient {
         if let Some(control) = &self.socket_control {
             control.deregister();
         }
-        Ok(())
+
+        match task_result {
+            Ok(()) => Ok(()),
+            Err(error @ TaskShutdownError::Timeout { .. }) => Err(KrakenWsError::Timeout(format!(
+                "Futures WebSocket handler shutdown timed out: {error}"
+            ))),
+            Err(e) => Err(KrakenWsError::Disconnected(format!(
+                "Futures WebSocket handler shutdown failed: {e}"
+            ))),
+        }
     }
 
     /// Closes the WebSocket connection.
@@ -1163,9 +1195,47 @@ mod tests {
 
     use super::*;
 
+    struct DropSignal(Arc<AtomicBool>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
     fn test_credential() -> KrakenCredential {
         let secret = STANDARD.encode(b"test_secret_key_24bytes!");
         KrakenCredential::new("test_key", secret)
+    }
+
+    #[tokio::test]
+    async fn test_last_client_owner_drop_aborts_handler_task() {
+        let client = KrakenFuturesWebSocketClient::new("wss://test".to_string(), 30, None);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let drop_signal = DropSignal(Arc::clone(&dropped));
+        client
+            .handler_tasks
+            .spawn(async move {
+                let _drop_signal = drop_signal;
+                started_tx.send(()).expect("started receiver");
+                std::future::pending::<()>().await;
+            })
+            .expect("handler task should register");
+        started_rx.await.expect("handler task started");
+        let clone = client.clone();
+
+        drop(client);
+        assert!(!dropped.load(Ordering::Acquire));
+        drop(clone);
+
+        tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
+            while !dropped.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("handler task aborted");
     }
 
     #[rstest]

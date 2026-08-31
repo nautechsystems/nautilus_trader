@@ -42,7 +42,7 @@
 //! - `time`: `Duration`, `Instant`, `Interval`, `MissedTickBehavior`, `Sleep`,
 //!   `error` (submodule), `interval`, `interval_at`, `sleep`, `sleep_until`,
 //!   `timeout`
-//! - `task`: `JoinHandle`, `spawn`, `spawn_local`, `yield_now`
+//! - `task`: `JoinError`, `JoinHandle`, `spawn`, `spawn_local`, `yield_now`
 //! - `runtime`: `Builder`, `Handle`, `Runtime`
 //! - `signal`: `ctrl_c`, `terminate`
 //!
@@ -77,9 +77,9 @@ pub mod time {
 /// Deterministic task spawning: fixed-order scheduler under simulation.
 pub mod task {
     #[cfg(all(feature = "simulation", madsim))]
-    pub use madsim::task::{JoinHandle, spawn, spawn_local, yield_now};
+    pub use madsim::task::{JoinError, JoinHandle, spawn, spawn_local, yield_now};
     #[cfg(not(all(feature = "simulation", madsim)))]
-    pub use tokio::task::{JoinHandle, spawn, spawn_local, yield_now};
+    pub use tokio::task::{JoinError, JoinHandle, spawn, spawn_local, yield_now};
 }
 
 /// Deterministic runtime: single-threaded sim runtime under simulation.
@@ -200,7 +200,7 @@ mod surface {
     use super::{
         runtime::{Builder, Handle, Runtime},
         signal::{ctrl_c, terminate},
-        task::{JoinHandle, spawn, spawn_local, yield_now},
+        task::{JoinError, JoinHandle, spawn, spawn_local, yield_now},
         time::{
             Duration, Instant, Interval, MissedTickBehavior, Sleep, error, interval, interval_at,
             sleep, sleep_until, timeout,

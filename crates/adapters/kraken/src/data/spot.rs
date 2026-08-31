@@ -21,6 +21,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::AHashMap;
@@ -29,7 +30,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use nautilus_common::{
     clients::DataClient,
-    live::{get_data_event_sender, get_runtime},
+    live::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -48,14 +49,13 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::SocketControlFactory;
+use nautilus_live::{SocketControlFactory, task::TaskGroup};
 use nautilus_model::{
     data::{Bar, Data, OrderBookDeltas},
     enums::{AggregationSource, BookType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -120,7 +120,8 @@ pub struct KrakenSpotDataClient {
     l3_handler_alive: Arc<AtomicBool>,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: Vec<JoinHandle<()>>,
+    session_tasks: TaskGroup,
+    command_tasks: TaskGroup,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
 }
@@ -128,7 +129,9 @@ pub struct KrakenSpotDataClient {
 impl KrakenSpotDataClient {
     /// Creates a new [`KrakenSpotDataClient`] instance.
     pub fn new(client_id: ClientId, config: KrakenDataClientConfig) -> anyhow::Result<Self> {
-        let cancellation_token = CancellationToken::new();
+        let session_tasks = TaskGroup::new();
+        let cancellation_token = session_tasks.cancellation_token();
+        let command_tasks = TaskGroup::new();
         let socket_factory = SocketControlFactory::new(client_id, Some(*KRAKEN_VENUE));
 
         let http = KrakenSpotHttpClient::new(
@@ -162,7 +165,8 @@ impl KrakenSpotDataClient {
             l3_handler_alive: Arc::new(AtomicBool::new(false)),
             is_connected: AtomicBool::new(false),
             cancellation_token,
-            tasks: Vec::new(),
+            session_tasks,
+            command_tasks,
             instruments: Arc::new(AtomicMap::new()),
             data_sender: get_data_event_sender(),
         })
@@ -208,11 +212,90 @@ impl KrakenSpotDataClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::error!("{context}: {e:?}");
             }
-        });
+        };
+
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping Kraken Spot {context} after shutdown began: {e}");
+        }
+    }
+
+    fn spawn_command<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping Kraken Spot data command after shutdown began: {e}");
+        }
+    }
+
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, command_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.command_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+        );
+        session_result.context("failed to finish Kraken Spot data session tasks")?;
+        command_result.context("failed to finish Kraken Spot data command tasks")?;
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.command_tasks.is_open() {
+            self.session_tasks.begin_shutdown();
+            self.command_tasks.begin_shutdown();
+            self.ws
+                .close()
+                .await
+                .context("failed to close prior Kraken Spot WebSocket")?;
+
+            if let Some(ws_l3) = self.ws_l3.as_mut() {
+                ws_l3
+                    .close()
+                    .await
+                    .context("failed to close prior Kraken Spot L3 WebSocket")?;
+                self.ws_l3 = None;
+            }
+            self.finish_tasks().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start Kraken Spot data session task generation")?;
+            self.command_tasks
+                .start_generation()
+                .context("failed to start Kraken Spot data command task generation")?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
+            self.ws = KrakenSpotWebSocketClient::new(
+                self.config.clone(),
+                self.cancellation_token.clone(),
+                self.config.proxy_url.clone(),
+            )
+            .with_socket_control(self.socket_factory.control("kraken-spot-data-streams"));
+        }
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        let ws_result = self.ws.close().await;
+        let ws_l3_result = if let Some(ws_l3) = self.ws_l3.as_mut() {
+            ws_l3.close().await
+        } else {
+            Ok(())
+        };
+
+        if ws_l3_result.is_ok() {
+            self.ws_l3 = None;
+        }
+        let tasks_result = self.finish_tasks().await;
+        self.is_connected.store(false, Ordering::Release);
+        tasks_result?;
+        ws_result?;
+        Ok(ws_l3_result?)
     }
 
     fn subscribe_l3_book(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
@@ -231,14 +314,8 @@ impl KrakenSpotDataClient {
         }
 
         let handler_dead = !self.l3_handler_alive.load(Ordering::Relaxed);
-        if self.ws_l3.is_none() || handler_dead {
-            if let Some(dead) = self.ws_l3.take() {
-                get_runtime().spawn(async move {
-                    let mut dead = dead;
-                    let _ = dead.close().await;
-                });
-            }
 
+        if self.ws_l3.is_none() {
             let ws_l3 = KrakenSpotWebSocketClient::l3(
                 self.config.clone(),
                 self.cancellation_token.clone(),
@@ -246,8 +323,11 @@ impl KrakenSpotDataClient {
             )
             .with_socket_control(self.socket_factory.control("kraken-spot-l3-data-streams"));
 
-            self.spawn_l3_handler_task(ws_l3.clone());
+            self.spawn_l3_handler_task(ws_l3.clone(), false);
             self.ws_l3 = Some(ws_l3);
+        } else if handler_dead && let Some(ws_l3) = self.ws_l3.as_ref() {
+            let ws_l3 = ws_l3.clone();
+            self.spawn_l3_handler_task(ws_l3, true);
         }
 
         let ws_l3 = self
@@ -277,16 +357,23 @@ impl KrakenSpotDataClient {
         Ok(())
     }
 
-    fn spawn_l3_handler_task(&mut self, handler_client: KrakenSpotWebSocketClient) {
+    fn spawn_l3_handler_task(&self, handler_client: KrakenSpotWebSocketClient, restart: bool) {
         let data_sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
         let cancellation_token = self.cancellation_token.clone();
         let clock = self.clock;
         let alive = self.l3_handler_alive.clone();
+        let session_spawner = match self.session_tasks.spawner() {
+            Ok(spawner) => spawner,
+            Err(e) => {
+                log::warn!("Skipping Kraken L3 handler after shutdown began: {e}");
+                return;
+            }
+        };
 
         alive.store(true, Ordering::Relaxed);
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             struct AliveGuard(Arc<AtomicBool>);
             impl Drop for AliveGuard {
                 fn drop(&mut self) {
@@ -296,6 +383,11 @@ impl KrakenSpotDataClient {
             let _alive_guard = AliveGuard(alive);
 
             let mut handler_client = handler_client;
+
+            if restart && let Err(e) = handler_client.close().await {
+                log::error!("Failed to close prior L3 WebSocket generation: {e}");
+                return;
+            }
 
             if let Err(e) = handler_client.connect().await {
                 log::error!("L3 WebSocket connect failed: {e}");
@@ -375,21 +467,26 @@ impl KrakenSpotDataClient {
                             let symbol_ustr = Ustr::from(&request.symbol);
                             let client_for_resync = resync_client.clone();
 
-                            get_runtime().spawn(async move {
+                            if let Err(e) = session_spawner.spawn(async move {
                                 retry_l3_resync(
                                     &client_for_resync,
                                     symbol_ustr,
                                     request.depth,
                                 )
                                 .await;
-                            });
+                            }) {
+                                log::warn!("Skipping Kraken L3 resync after shutdown began: {e}");
+                            }
                         }
                     }
                 }
             }
-        });
+        };
 
-        self.tasks.push(handle);
+        if let Err(e) = self.session_tasks.spawn(future) {
+            self.l3_handler_alive.store(false, Ordering::Relaxed);
+            log::warn!("Skipping Kraken L3 handler after shutdown began: {e}");
+        }
     }
 
     fn spawn_message_handler(&mut self) -> anyhow::Result<()> {
@@ -402,7 +499,7 @@ impl KrakenSpotDataClient {
         let cancellation_token = self.cancellation_token.clone();
         let clock = self.clock;
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             tokio::pin!(stream);
             let mut l2_books = L2BookState::default();
 
@@ -435,10 +532,11 @@ impl KrakenSpotDataClient {
                     }
                 }
             }
-        });
+        };
 
-        self.tasks.push(handle);
-        Ok(())
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register Kraken Spot message handler")
     }
 
     fn flush_ohlc_buffer(
@@ -615,35 +713,21 @@ impl DataClient for KrakenSpotDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Spot data client: {}", self.client_id);
-        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.ws.begin_shutdown();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::info!("Resetting Spot data client: {}", self.client_id);
-        self.cancellation_token.cancel();
-
-        for task in self.tasks.drain(..) {
-            task.abort();
-        }
-
-        self.ws.deregister_socket_control();
-        let mut ws = self.ws.clone();
-        get_runtime().spawn(async move {
-            let _ = ws.close().await;
-        });
-
-        if let Some(mut ws_l3) = self.ws_l3.take() {
-            get_runtime().spawn(async move {
-                let _ = ws_l3.close().await;
-            });
-        }
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.ws.begin_shutdown();
+        self.is_connected.store(false, Ordering::Relaxed);
 
         self.instruments.store(ahash::AHashMap::new());
-
-        self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
         Ok(())
     }
 
@@ -661,22 +745,38 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected() && self.session_tasks.is_open() && self.command_tasks.is_open() {
             return Ok(());
         }
 
+        self.prepare_task_groups().await?;
+
         let instruments = self.load_instruments().await?;
 
-        self.ws
-            .connect()
-            .await
-            .context("Failed to connect spot WebSocket")?;
-        self.ws
-            .wait_until_active(10.0)
-            .await
-            .context("Spot WebSocket failed to become active")?;
+        let session_result = async {
+            self.ws
+                .connect()
+                .await
+                .context("Failed to connect spot WebSocket")?;
+            self.ws
+                .wait_until_active(10.0)
+                .await
+                .context("Spot WebSocket failed to become active")?;
 
-        self.spawn_message_handler()?;
+            self.spawn_message_handler()?;
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Kraken Spot data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
 
         for instrument in instruments {
             if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
@@ -690,24 +790,7 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
-            return Ok(());
-        }
-
-        self.cancellation_token.cancel();
-        let _ = self.ws.close().await;
-
-        if let Some(mut ws_l3) = self.ws_l3.take() {
-            let _ = ws_l3.close().await;
-        }
-
-        for handle in self.tasks.drain(..) {
-            if let Err(e) = handle.await {
-                log::error!("Error joining WebSocket task: {e:?}");
-            }
-        }
-
-        self.cancellation_token = CancellationToken::new();
+        self.teardown_partial_connect().await?;
         self.is_connected.store(false, Ordering::Relaxed);
 
         log::info!("Disconnected: client_id={}", self.client_id);
@@ -954,7 +1037,7 @@ impl DataClient for KrakenSpotDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_instruments(None).await {
                 Ok(instruments) => {
                     instruments_cache.rcu(|m| {
@@ -998,7 +1081,7 @@ impl DataClient for KrakenSpotDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_instruments(None).await {
                 Ok(all_instruments) => {
                     instruments.rcu(|m| {
@@ -1051,7 +1134,7 @@ impl DataClient for KrakenSpotDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_trades(instrument_id, start, end, limit).await {
                 Ok(trades) => {
                     let response = DataResponse::Trades(TradesResponse::new(
@@ -1090,7 +1173,7 @@ impl DataClient for KrakenSpotDataClient {
         let start_nanos = datetime_to_unix_nanos(start);
         let end_nanos = datetime_to_unix_nanos(end);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_bars(bar_type, start, end, limit).await {
                 Ok(bars) => {
                     let response = DataResponse::Bars(BarsResponse::new(
@@ -1125,7 +1208,7 @@ impl DataClient for KrakenSpotDataClient {
         let params = request.params;
         let clock = self.clock;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http.request_book_snapshot(instrument_id, depth).await {
                 Ok(book) => {
                     let response = DataResponse::Book(BookResponse::new(

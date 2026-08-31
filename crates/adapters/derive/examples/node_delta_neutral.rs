@@ -29,9 +29,9 @@
 //!
 //! Required credential environment variables (testnet variants used when
 //! `DERIVE_ENVIRONMENT` is `DeriveEnvironment::Testnet`):
-//! - `DERIVE_WALLET_ADDRESS` / `DERIVE_TESTNET_WALLET_ADDRESS`.
-//! - `DERIVE_SESSION_PRIVATE_KEY` / `DERIVE_TESTNET_SESSION_PRIVATE_KEY`.
-//! - `DERIVE_SUBACCOUNT_ID` / `DERIVE_TESTNET_SUBACCOUNT_ID`.
+//! - `DERIVE_WALLET_ADDRESS` / `DERIVE_TESTNET_WALLET_ADDRESS`
+//! - `DERIVE_SESSION_PRIVATE_KEY` / `DERIVE_TESTNET_SESSION_PRIVATE_KEY`
+//! - `DERIVE_SUBACCOUNT_ID` / `DERIVE_TESTNET_SUBACCOUNT_ID`
 
 use nautilus_common::enums::Environment;
 use nautilus_derive::{

@@ -28,8 +28,8 @@
 //! - `EURUSD-PERP` (fx, qty=100, ~$1.15)
 //!
 //! Required credential environment variables:
-//! - `AX_API_KEY`.
-//! - `AX_API_SECRET`.
+//! - `AX_API_KEY`
+//! - `AX_API_SECRET`
 
 use nautilus_architect_ax::{
     common::{consts::AX_CLIENT_ID, enums::AxEnvironment},

@@ -28,7 +28,7 @@ The BitMEX adapter includes multiple components, which can be used together or s
 on the use case.
 
 - `BitmexHttpClient`: Low-level HTTP API connectivity.
-- `BitmexWebSocketClient`: Low-level WebSocket API connectivity.
+- `BitmexWebSocketClient`: Low-level WebSocket API connectivity for Rust callers.
 - `BitmexInstrumentProvider`: Instrument parsing and loading functionality.
 - `BitmexDataClient`: A market data feed manager.
 - `BitmexExecutionClient`: An account management and trade execution gateway.

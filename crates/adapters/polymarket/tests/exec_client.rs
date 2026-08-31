@@ -12331,10 +12331,10 @@ async fn test_disconnect_waits_for_shutdown_cancel_response() {
 
     let mut disconnect = Box::pin(client.disconnect());
     assert!(
-        tokio::time::timeout(Duration::from_millis(50), disconnect.as_mut())
+        tokio::time::timeout(Duration::from_millis(1_200), disconnect.as_mut())
             .await
             .is_err(),
-        "disconnect should wait for the in-flight cancel response"
+        "disconnect should preserve the in-flight cancel through its configured request timeout"
     );
 
     state.cancel_request_gate.release();
@@ -12667,11 +12667,9 @@ async fn test_repeated_submit_cancel_shutdown_interleavings_leave_no_open_orders
         }));
 
         client.start().unwrap();
-        if index % 2 == 1 {
-            client.connect().await.unwrap();
+        client.connect().await.unwrap();
 
-            while rx.try_recv().is_ok() {}
-        }
+        while rx.try_recv().is_ok() {}
 
         let mut order = make_limit_order(
             &client_order_id,

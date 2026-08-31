@@ -43,7 +43,7 @@ use rust_decimal::Decimal;
 use serde_json::Value;
 
 use crate::common::{
-    BettingResponseGate, MockState, betting_api_error, load_fixture, load_json_fixture,
+    MockResponseGate, MockState, betting_api_error, load_fixture, load_json_fixture,
 };
 
 const DEADLINE: Duration = Duration::from_secs(5);
@@ -497,7 +497,7 @@ async fn replace_filled_stream_before_rest_updates_before_fill() {
 
     let waiters = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
-    *h.mock_state.betting_response_gate.lock().unwrap() = Some(BettingResponseGate {
+    *h.mock_state.betting_response_gate.lock().unwrap() = Some(MockResponseGate {
         method: METHOD_REPLACE_ORDERS.to_string(),
         waiters: Arc::clone(&waiters),
         semaphore: Arc::clone(&semaphore),

@@ -15,14 +15,14 @@
 
 //! Live execution client implementation for the Deribit adapter.
 
-use std::future::Future;
+use std::{future::Future, time::Duration};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -36,7 +36,10 @@ use nautilus_core::{
     datetime::NANOSECONDS_IN_SECOND,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType, TimeInForce},
@@ -46,7 +49,6 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
 };
-use tokio::task::JoinHandle;
 
 use crate::{
     common::{
@@ -72,8 +74,8 @@ pub struct DeribitExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: DeribitHttpClient,
     ws_client: DeribitWebSocketClient,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: TaskHandles,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
 }
 
 impl DeribitExecutionClient {
@@ -138,6 +140,9 @@ impl DeribitExecutionClient {
             None,
         );
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             clock,
@@ -145,8 +150,8 @@ impl DeribitExecutionClient {
             emitter,
             http_client,
             ws_client,
-            ws_stream_handle: None,
-            pending_tasks: TaskHandles::default(),
+            session_tasks,
+            pending_tasks,
         })
     }
 
@@ -155,19 +160,70 @@ impl DeribitExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Deribit {description} after shutdown began: {e}");
+        }
     }
 
     /// Aborts all pending async tasks.
     fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Deribit execution tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Deribit session tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&self) -> anyhow::Result<()> {
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+
+        let mut errors = Vec::new();
+        if let Err(e) = self.ws_client.close().await {
+            errors.push(format!("WebSocket shutdown failed: {e}"));
+        }
+        let (session_result, pending_result) =
+            tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
+
+        if let Err(e) = session_result {
+            errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            errors.push(e.to_string());
+        }
+        self.core.set_disconnected();
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(errors.join("; "))
+        }
     }
 
     // Rejects unsupported order types and time-in-force values
@@ -309,24 +365,20 @@ impl DeribitExecutionClient {
 
     /// Spawns a stream handler to dispatch WebSocket messages to the execution engine.
     fn spawn_stream_handler(
-        &mut self,
+        &self,
         stream: impl futures_util::Stream<Item = NautilusWsMessage> + Send + 'static,
-    ) {
-        if self.ws_stream_handle.is_some() {
-            return;
-        }
-
+    ) -> anyhow::Result<()> {
         let emitter = self.emitter.clone();
 
-        let handle = get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             pin_mut!(stream);
             while let Some(message) = stream.next().await {
                 dispatch_ws_message(message, &emitter);
             }
-        });
+        })?;
 
-        self.ws_stream_handle = Some(handle);
         log::debug!("WebSocket stream handler started");
+        Ok(())
     }
 }
 
@@ -396,15 +448,49 @@ impl ExecutionClient for DeribitExecutionClient {
 
         self.core.set_stopped();
         self.core.set_disconnected();
+        self.abort_session_tasks();
         self.abort_pending_tasks();
         log::info!("Stopped: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
+        {
             return Ok(());
         }
+
+        if !self.pending_tasks.is_open() {
+            self.await_pending_tasks().await?;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Deribit task generation: {e}"))?;
+        }
+
+        if !self.session_tasks.is_open() || !self.session_tasks.is_empty() {
+            self.abort_session_tasks();
+
+            if self.ws_client.is_active() {
+                self.ws_client
+                    .close()
+                    .await
+                    .context("failed to close stale Deribit WebSocket")?;
+            }
+            self.await_session_tasks().await?;
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Deribit session generation: {e}"))?;
+        } else if self.ws_client.is_active() {
+            self.ws_client
+                .close()
+                .await
+                .context("failed to close stale Deribit WebSocket")?;
+        }
+        let ws_client = self.ws_client.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                ws_client.begin_shutdown();
+            });
 
         // Check if credentials are available before requesting account state
         if !self.config.has_api_credentials() {
@@ -446,69 +532,68 @@ impl ExecutionClient for DeribitExecutionClient {
 
         self.emitter.send_account_state(account_state);
 
-        self.ws_client
-            .connect()
-            .await
-            .context("failed to connect WebSocket client for execution")?;
+        let session_result = async {
+            self.ws_client
+                .connect()
+                .await
+                .context("failed to connect WebSocket client for execution")?;
 
-        self.ws_client
-            .authenticate_session(DERIBIT_EXECUTION_SESSION_NAME)
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to authenticate WebSocket session: {e}"))?;
+            self.ws_client
+                .authenticate_session(DERIBIT_EXECUTION_SESSION_NAME)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to authenticate WebSocket session: {e}"))?;
 
-        log::debug!("WebSocket client authenticated for execution");
+            log::debug!("WebSocket client authenticated for execution");
 
-        // Subscribe to user order and trade updates for all instruments
-        self.ws_client
-            .subscribe_user_orders()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to subscribe to user orders: {e}"))?;
-        self.ws_client
-            .subscribe_user_trades()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to subscribe to user trades: {e}"))?;
-        self.ws_client
-            .subscribe_user_portfolio()
-            .await
-            .map_err(|e| anyhow::anyhow!("failed to subscribe to user portfolio: {e}"))?;
+            // Subscribe to user order and trade updates for all instruments
+            self.ws_client
+                .subscribe_user_orders()
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to subscribe to user orders: {e}"))?;
+            self.ws_client
+                .subscribe_user_trades()
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to subscribe to user trades: {e}"))?;
+            self.ws_client
+                .subscribe_user_portfolio()
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to subscribe to user portfolio: {e}"))?;
 
-        if let Err(e) = self.ws_client.wait_for_subscriptions_confirmed(30.0).await {
-            // Roll back subscription state so a retry re-sends subscribe requests
-            let _ = self.ws_client.unsubscribe_user_orders().await;
-            let _ = self.ws_client.unsubscribe_user_trades().await;
-            let _ = self.ws_client.unsubscribe_user_portfolio().await;
-            anyhow::bail!("subscription confirmation failed: {e}");
+            if let Err(e) = self.ws_client.wait_for_subscriptions_confirmed(30.0).await {
+                // Roll back subscription state so a retry re-sends subscribe requests
+                let _ = self.ws_client.unsubscribe_user_orders().await;
+                let _ = self.ws_client.unsubscribe_user_trades().await;
+                let _ = self.ws_client.unsubscribe_user_portfolio().await;
+                anyhow::bail!("subscription confirmation failed: {e}");
+            }
+
+            log::debug!("Subscribed to user order, trade, and portfolio updates");
+
+            // Spawn stream handler to dispatch WebSocket messages to the execution engine
+            let stream = self.ws_client.stream()?;
+            self.spawn_stream_handler(stream)?;
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Deribit execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
 
-        log::debug!("Subscribed to user order, trade, and portfolio updates");
-
-        // Spawn stream handler to dispatch WebSocket messages to the execution engine
-        let stream = self.ws_client.stream()?;
-        self.spawn_stream_handler(stream);
-
         self.core.set_connected();
+        setup_guard.disarm();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
-        self.abort_pending_tasks();
-
-        // Abort stream handler
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-
-        // Close WebSocket client
-        if let Err(e) = self.ws_client.close().await {
-            log::warn!("Error closing WebSocket client: {e}");
-        }
-
-        self.core.set_disconnected();
+        self.teardown_partial_connect().await?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }

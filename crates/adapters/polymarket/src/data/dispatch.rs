@@ -33,12 +33,15 @@
 //! valid snapshot arrives. The mismatched snapshot is not parsed, applied, or
 //! emitted as a quote.
 
-use std::sync::{Arc, Mutex as StdMutex, Weak};
+use std::sync::{Arc, Mutex as StdMutex};
 
 use ahash::{AHashMap, AHashSet};
 use dashmap::{DashMap, mapref::entry::Entry};
-use nautilus_common::{live::task::TaskHandles, messages::DataEvent};
+use nautilus_common::messages::DataEvent;
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
+#[cfg(test)]
+use nautilus_live::task::TaskGroup;
+use nautilus_live::task::TaskSpawner;
 use nautilus_model::{
     data::{Data as NautilusData, InstrumentStatus, OrderBookDeltas, QuoteTick},
     enums::{BookType, MarketStatusAction},
@@ -108,8 +111,7 @@ pub(super) struct WsMessageContext {
     pub(super) pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     pub(super) new_market_inflight_keys: Arc<DashMap<String, ()>>,
     pub(super) new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
-    pub(super) tasks: Weak<TaskHandles>,
-    pub(super) task_registration: Weak<StdMutex<()>>,
+    pub(super) tasks: TaskSpawner,
     pub(super) rtds_feed: PolymarketRtdsFeed,
     pub(super) subscribe_new_markets: bool,
     pub(super) new_market_filter: Option<Arc<dyn InstrumentFilter>>,
@@ -649,12 +651,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             let fetch_semaphore = ctx.new_market_fetch_semaphore.clone();
             let active = nm.active;
 
-            let (Some(tasks), Some(task_registration)) =
-                (ctx.tasks.upgrade(), ctx.task_registration.upgrade())
-            else {
-                ctx.new_market_inflight_keys.remove(&dedupe_key);
-                return;
-            };
+            let tasks = ctx.tasks.clone();
 
             let inflight_guard = NewMarketInflightGuard::new(inflight_keys, dedupe_key.clone());
             let future = async move {
@@ -819,7 +816,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     }
                 }
             };
-            spawn_task(&tasks, &task_registration, &ctx.cancellation_token, future);
+            spawn_task(&tasks, future);
         }
 
         MarketWsMessage::MarketResolved(resolved) => {
@@ -1038,8 +1035,7 @@ mod tests {
 
     struct TestWsContext {
         ctx: WsMessageContext,
-        tasks: Arc<TaskHandles>,
-        _task_registration: Arc<StdMutex<()>>,
+        task_group: Option<TaskGroup>,
     }
 
     impl Deref for TestWsContext {
@@ -1193,8 +1189,8 @@ mod tests {
         )
         .expect("gamma client");
         let default_config = PolymarketDataClientConfig::default();
-        let tasks = Arc::new(TaskHandles::default());
-        let task_registration = Arc::new(StdMutex::new(()));
+        let tasks = TaskGroup::new();
+        let task_spawner = tasks.spawner().expect("open task group");
 
         let ctx = WsMessageContext {
             clock: get_atomic_clock_realtime(),
@@ -1216,8 +1212,7 @@ mod tests {
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
                 default_config.new_market_fetch_max_concurrency,
             )),
-            tasks: Arc::downgrade(&tasks),
-            task_registration: Arc::downgrade(&task_registration),
+            tasks: task_spawner.clone(),
             rtds_feed: crate::rtds::PolymarketRtdsFeed::new(
                 "ws://localhost/rtds".to_string(),
                 TransportBackend::default(),
@@ -1228,14 +1223,13 @@ mod tests {
             new_market_filter: None,
             drop_quotes_missing_side: default_config.drop_quotes_missing_side,
             compute_effective_deltas: default_config.compute_effective_deltas,
-            cancellation_token: CancellationToken::new(),
+            cancellation_token: task_spawner.cancellation_token(),
         };
 
         (
             TestWsContext {
                 ctx,
-                tasks,
-                _task_registration: task_registration,
+                task_group: Some(tasks),
             },
             data_rx,
         )
@@ -1379,8 +1373,7 @@ mod tests {
             pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: client.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
-            tasks: Arc::downgrade(&client.tasks),
-            task_registration: Arc::downgrade(&client.task_registration),
+            tasks: client.tasks.spawner().expect("task spawner"),
             rtds_feed: client.rtds_feed.clone(),
             subscribe_new_markets: client.config.subscribe_new_markets,
             new_market_filter: client.config.new_market_filter.clone(),
@@ -1391,8 +1384,7 @@ mod tests {
 
         TestWsContext {
             ctx,
-            tasks: client.tasks.clone(),
-            _task_registration: client.task_registration.clone(),
+            task_group: None,
         }
     }
 
@@ -1913,11 +1905,19 @@ mod tests {
     async fn new_market_canceled_registration_cleans_inflight_key() {
         let (mut ctx, _data_rx) = make_ws_ctx();
         ctx.subscribe_new_markets = true;
-        ctx.cancellation_token.cancel();
+        ctx.task_group
+            .as_ref()
+            .expect("owned task group")
+            .begin_shutdown();
 
         handle_market_message(make_new_market("btc-updown-5m-1", true), &ctx);
 
-        assert!(ctx.tasks.is_empty());
+        assert!(
+            ctx.task_group
+                .as_ref()
+                .expect("owned task group")
+                .is_empty()
+        );
         assert!(ctx.new_market_inflight_keys.is_empty());
     }
 
@@ -1940,17 +1940,16 @@ mod tests {
             ctx.new_market_inflight_keys
                 .contains_key("cond:cond-btc-updown-5m-1")
         );
-        assert_eq!(ctx.tasks.len(), 1);
+        assert_eq!(ctx.task_group.as_ref().expect("owned task group").len(), 1);
 
-        ctx.cancellation_token.cancel();
-        for handle in ctx.tasks.take_all() {
-            tokio::time::timeout(Duration::from_secs(1), handle)
-                .await
-                .expect("new market fetch cancellation timeout")
-                .expect("new market fetch task join");
-        }
+        let task_group = ctx.task_group.as_ref().expect("owned task group");
+        task_group.begin_shutdown();
+        task_group
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(1))
+            .await
+            .expect("new market fetch shutdown");
 
-        assert!(ctx.tasks.is_empty());
+        assert!(task_group.is_empty());
         assert!(ctx.new_market_inflight_keys.is_empty());
     }
 
@@ -2154,7 +2153,10 @@ mod tests {
             state.received_payloads.lock().await.is_empty(),
             "healthy RTDS connection should not replay subscriptions on main WS reconnect",
         );
-        ctx.rtds_feed.disconnect().await;
+        ctx.rtds_feed
+            .disconnect()
+            .await
+            .expect("disconnect RTDS feed");
     }
 
     #[rstest]
@@ -2195,7 +2197,10 @@ mod tests {
         let payloads = state.received_payloads.lock().await.clone();
         let replay = payloads.last().expect("recovery payload");
         assert_eq!(replay["action"].as_str(), Some("subscribe"));
-        ctx.rtds_feed.disconnect().await;
+        ctx.rtds_feed
+            .disconnect()
+            .await
+            .expect("disconnect RTDS feed");
     }
 
     #[rstest]
@@ -3726,7 +3731,7 @@ mod tests {
             PositionId::new("P-2"),
         );
 
-        client.spawn_resolve_poll_task();
+        client.register_resolve_poll_task().unwrap();
         tokio::time::sleep(StdDuration::from_millis(200)).await;
         state.gamma_response.lock().await.as_mut().unwrap()[0]["closed"] = true.into();
 
@@ -4347,6 +4352,15 @@ mod tests {
         .await;
 
         client.reset_client();
+        client
+            .await_tasks_with_timeout(Duration::from_secs(1))
+            .await
+            .expect("old auto-load generation drained");
+        client
+            .tasks
+            .start_generation()
+            .expect("new auto-load generation");
+        client.cancellation_token = client.tasks.cancellation_token();
         subscribe(&mut client).expect("new-generation subscription");
         wait_until_async(
             || {
@@ -4532,7 +4546,7 @@ mod tests {
         }
         let instrument_id = instrument.id();
         client.instruments.insert(instrument_id, instrument);
-        client.spawn_resolve_poll_task();
+        client.register_resolve_poll_task().unwrap();
         wait_until_async(
             || {
                 let state = state.clone();

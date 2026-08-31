@@ -17,7 +17,6 @@
 
 use std::time::Duration;
 
-use nautilus_common::live::get_runtime;
 use nautilus_core::{UUID4, time::get_atomic_clock_realtime};
 use tokio_util::sync::CancellationToken;
 
@@ -125,46 +124,42 @@ pub fn send_auth_request(
     }
 }
 
-/// Spawns a background task to refresh the authentication token before it expires.
+/// Refreshes the authentication token after 80% of its lifetime has elapsed.
 ///
-/// The task sleeps until 80% of the token lifetime has passed, then sends a refresh request.
 /// When the refresh succeeds, a new `Authenticated` message will be received, which triggers
-/// another refresh task - creating a continuous refresh cycle.
+/// another delayed refresh and creates a continuous refresh cycle.
 ///
-/// The `cancel_token` allows the caller to cancel a stale refresh task when a new
-/// authentication cycle begins (e.g., after reconnection re-auth).
-pub fn spawn_token_refresh_task(
+/// The `cancel_token` allows the owning handler to cancel a stale refresh when a new
+/// authentication cycle begins.
+pub async fn refresh_token_after_delay(
     expires_in: u64,
     refresh_token: String,
     cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
     cancel_token: CancellationToken,
 ) {
-    // Refresh at 80% of token lifetime to ensure we never expire
     let refresh_delay_secs = (expires_in as f64 * 0.8) as u64;
 
-    get_runtime().spawn(async move {
-        log::debug!(
-            "Token refresh scheduled in {refresh_delay_secs}s (token expires in {expires_in}s)"
-        );
+    log::debug!(
+        "Token refresh scheduled in {refresh_delay_secs}s (token expires in {expires_in}s)"
+    );
 
-        tokio::select! {
-            () = tokio::time::sleep(Duration::from_secs(refresh_delay_secs)) => {}
-            () = cancel_token.cancelled() => {
-                log::debug!("Token refresh task cancelled");
-                return;
-            }
+    tokio::select! {
+        () = tokio::time::sleep(Duration::from_secs(refresh_delay_secs)) => {}
+        () = cancel_token.cancelled() => {
+            log::debug!("Token refresh cancelled");
+            return;
         }
+    }
 
-        log::debug!("Refreshing authentication token...");
-        let refresh_params = DeribitRefreshTokenParams {
-            grant_type: "refresh_token".to_string(),
-            refresh_token,
-        };
+    log::debug!("Refreshing authentication token...");
+    let refresh_params = DeribitRefreshTokenParams {
+        grant_type: "refresh_token".to_string(),
+        refresh_token,
+    };
 
-        if let Ok(auth_params_value) = serde_json::to_value(&refresh_params) {
-            let _ = cmd_tx.send(HandlerCommand::Authenticate {
-                auth_params: auth_params_value,
-            });
-        }
-    });
+    if let Ok(auth_params_value) = serde_json::to_value(&refresh_params) {
+        let _ = cmd_tx.send(HandlerCommand::Authenticate {
+            auth_params: auth_params_value,
+        });
+    }
 }

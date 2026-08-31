@@ -20,9 +20,9 @@
 //! Run with: `cargo run --example okx-exec-tester --package nautilus-okx --features examples`
 //!
 //! Required credential environment variables:
-//! - `OKX_API_KEY`.
-//! - `OKX_API_SECRET`.
-//! - `OKX_API_PASSPHRASE`.
+//! - `OKX_API_KEY`
+//! - `OKX_API_SECRET`
+//! - `OKX_API_PASSPHRASE`
 
 use nautilus_common::enums::Environment;
 use nautilus_live::{config::LiveExecutionEngineConfig, node::LiveNode};

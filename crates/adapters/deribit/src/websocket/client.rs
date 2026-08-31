@@ -29,13 +29,13 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use futures_util::Stream;
-use nautilus_common::{enums::LogColor, live::get_runtime, log_debug};
+use futures_util::{FutureExt, Stream, StreamExt, stream::FuturesUnordered};
+use nautilus_common::{enums::LogColor, log_debug};
 use nautilus_core::{
     AtomicMap, AtomicSet, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt,
     time::get_atomic_clock_realtime,
 };
-use nautilus_live::SocketControl;
+use nautilus_live::{SocketControl, task::TaskGroup};
 use nautilus_model::{
     data::BarType,
     enums::OrderSide,
@@ -55,7 +55,7 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    auth::{AuthState, send_auth_request, spawn_token_refresh_task},
+    auth::{AuthState, refresh_token_after_delay, send_auth_request},
     enums::{DeribitUpdateInterval, DeribitWsChannel},
     error::{DeribitWsError, DeribitWsResult},
     handler::{DeribitWsFeedHandler, HandlerCommand},
@@ -82,14 +82,6 @@ type CommandSender = tokio::sync::mpsc::UnboundedSender<HandlerCommand>;
 
 /// WebSocket client for connecting to Deribit.
 #[derive(Clone)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.adapters.deribit", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.deribit")
-)]
 pub struct DeribitWebSocketClient {
     url: String,
     environment: DeribitEnvironment,
@@ -102,7 +94,8 @@ pub struct DeribitWebSocketClient {
     auth_tracker: AuthTracker,
     cmd_tx: Arc<RwLock<CommandSender>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    handler_tasks: Arc<TaskGroup>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions_state: SubscriptionState,
     instruments_cache: Arc<AtomicMap<Ustr, InstrumentAny>>,
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
@@ -213,7 +206,8 @@ impl DeribitWebSocketClient {
                 Arc::new(RwLock::new(tx))
             },
             out_rx: None,
-            task_handle: None,
+            handler_tasks: Arc::new(TaskGroup::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions_state,
             instruments_cache: Arc::new(AtomicMap::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
@@ -227,6 +221,11 @@ impl DeribitWebSocketClient {
             proxy_url,
             socket_control: None,
         })
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.handler_tasks.begin_shutdown();
+        self.signal.store(true, Ordering::Relaxed);
     }
 
     /// Configures socket state reporting and reconnect control.
@@ -511,15 +510,28 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if the connection fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
         log_debug!(
             "Connecting to WebSocket: {}",
             self.url,
             color = LogColor::Blue
         );
 
-        if let Some(handle) = self.task_handle.take() {
-            handle.abort();
+        if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
+            self.handler_tasks.begin_shutdown();
+            self.signal.store(true, Ordering::Relaxed);
+            self.finish_handler()
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to stop prior WebSocket handler: {e}"))?;
+            self.handler_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("failed to start WebSocket handler task generation: {e}")
+            })?;
         }
+        let handler_spawner = self.handler_tasks.spawner().map_err(|e| {
+            anyhow::anyhow!("failed to acquire WebSocket handler task spawner: {e}")
+        })?;
 
         // Reset stop signal and subscription state so callers can
         // resubscribe cleanly after a manual disconnect/connect cycle.
@@ -607,27 +619,27 @@ impl DeribitWebSocketClient {
 
         // Cache updates hold a read guard while mutating the central cache. Publishing the new
         // sender under the write guard ensures later subscriptions follow this cache snapshot.
-        let mut command_sender = self.cmd_tx.write().unwrap_or_else(PoisonError::into_inner);
-        let _ = cmd_tx.send(HandlerCommand::SetClient(ws_client));
+        {
+            let mut command_sender = self.cmd_tx.write().unwrap_or_else(PoisonError::into_inner);
+            let _ = cmd_tx.send(HandlerCommand::SetClient(ws_client));
 
-        let instruments: Vec<InstrumentAny> =
-            self.instruments_cache.load().values().cloned().collect();
+            let instruments: Vec<InstrumentAny> =
+                self.instruments_cache.load().values().cloned().collect();
 
-        if !instruments.is_empty() {
-            log::debug!(
-                "Sending {} cached instruments to handler",
-                instruments.len()
-            );
-            let _ = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments));
+            if !instruments.is_empty() {
+                log::debug!(
+                    "Sending {} cached instruments to handler",
+                    instruments.len()
+                );
+                let _ = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments));
+            }
+
+            if let Some(interval) = self.heartbeat_interval {
+                let _ = cmd_tx.send(HandlerCommand::SetHeartbeat { interval });
+            }
+
+            *command_sender = cmd_tx.clone();
         }
-
-        // Enable heartbeat if configured
-        if let Some(interval) = self.heartbeat_interval {
-            let _ = cmd_tx.send(HandlerCommand::SetHeartbeat { interval });
-        }
-
-        *command_sender = cmd_tx.clone();
-        drop(command_sender);
 
         // Spawn handler task
         let subscriptions_state = self.subscriptions_state.clone();
@@ -636,7 +648,7 @@ impl DeribitWebSocketClient {
         let auth_state = self.auth_state.clone();
         let heartbeat_interval = self.heartbeat_interval;
 
-        let task_handle = get_runtime().spawn(async move {
+        let handler_task = async move {
             const MAX_REAUTH_ATTEMPTS: u32 = 3;
 
             let mut pending_reauth = false;
@@ -644,9 +656,24 @@ impl DeribitWebSocketClient {
 
             let mut refresh_cancel = CancellationToken::new();
             let mut retry_cancel = CancellationToken::new();
+            let mut lifecycle_futures = FuturesUnordered::new();
 
             loop {
-                match handler.next().await {
+                let message = {
+                    // `handler.next()` can dequeue work before awaiting transport I/O, so keep the
+                    // same future alive while handler-owned lifecycle futures complete.
+                    let next = handler.next();
+                    tokio::pin!(next);
+
+                    loop {
+                        tokio::select! {
+                            message = &mut next => break message,
+                            _ = lifecycle_futures.next(), if !lifecycle_futures.is_empty() => {}
+                        }
+                    }
+                };
+
+                match message {
                     Some(msg) => match msg {
                         NautilusWsMessage::Reconnected => {
                             log::info!("Reconnected to WebSocket");
@@ -674,11 +701,8 @@ impl DeribitWebSocketClient {
                                 pending_reauth = true;
                                 reauth_attempts = 1;
 
-                                let previous_scope = auth_state
-                                    .read()
-                                    .await
-                                    .as_ref()
-                                    .map(|s| s.scope.clone());
+                                let previous_scope =
+                                    auth_state.read().await.as_ref().map(|s| s.scope.clone());
 
                                 send_auth_request(cred, previous_scope, &cmd_tx);
                             } else {
@@ -698,11 +722,14 @@ impl DeribitWebSocketClient {
                             retry_cancel.cancel();
                             retry_cancel = CancellationToken::new();
 
-                            spawn_token_refresh_task(
-                                result.expires_in,
-                                result.refresh_token.clone(),
-                                cmd_tx.clone(),
-                                refresh_cancel.clone(),
+                            lifecycle_futures.push(
+                                refresh_token_after_delay(
+                                    result.expires_in,
+                                    result.refresh_token.clone(),
+                                    cmd_tx.clone(),
+                                    refresh_cancel.clone(),
+                                )
+                                .boxed(),
                             );
 
                             if pending_reauth {
@@ -744,19 +771,22 @@ impl DeribitWebSocketClient {
                                     let cmd_tx = cmd_tx.clone();
                                     let cancel = retry_cancel.clone();
 
-                                    get_runtime().spawn(async move {
-                                        tokio::select! {
-                                            () = tokio::time::sleep(Duration::from_secs(delay_secs)) => {}
-                                            () = cancel.cancelled() => return,
+                                    lifecycle_futures.push(
+                                        async move {
+                                            tokio::select! {
+                                                () = tokio::time::sleep(Duration::from_secs(delay_secs)) => {}
+                                                () = cancel.cancelled() => return,
+                                            }
+                                            let _rx = auth_tracker.begin();
+                                            let previous_scope = auth_state
+                                                .read()
+                                                .await
+                                                .as_ref()
+                                                .map(|s| s.scope.clone());
+                                            send_auth_request(&cred, previous_scope, &cmd_tx);
                                         }
-                                        let _rx = auth_tracker.begin();
-                                        let previous_scope = auth_state
-                                            .read()
-                                            .await
-                                            .as_ref()
-                                            .map(|s| s.scope.clone());
-                                        send_auth_request(&cred, previous_scope, &cmd_tx);
-                                    });
+                                        .boxed(),
+                                    );
                                 }
                             } else if pending_reauth {
                                 pending_reauth = false;
@@ -799,9 +829,15 @@ impl DeribitWebSocketClient {
                     }
                 }
             }
-        });
+        };
 
-        self.task_handle = Some(Arc::new(task_handle));
+        if let Err(e) = handler_spawner.spawn(handler_task) {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            self.out_rx = None;
+            anyhow::bail!("failed to register WebSocket handler task: {e}");
+        }
         log::debug!("Connected to WebSocket");
 
         Ok(())
@@ -813,22 +849,19 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if the close operation fails.
     pub async fn close(&self) -> DeribitWsResult<()> {
+        self.begin_shutdown();
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+        self.close_locked().await
+    }
+
+    async fn close_locked(&self) -> DeribitWsResult<()> {
         log::debug!("Closing WebSocket connection");
-        self.signal.store(true, Ordering::Relaxed);
+        self.begin_shutdown();
 
         let _ = self.command_sender().send(HandlerCommand::Disconnect);
 
-        // Poll for graceful handler shutdown, abort after 2s deadline
-        if let Some(handle) = &self.task_handle {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
-            while !handle.is_finished() && tokio::time::Instant::now() < deadline {
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-
-            if !handle.is_finished() {
-                handle.abort();
-            }
-        }
+        self.finish_handler().await?;
 
         self.auth_tracker.invalidate();
 
@@ -836,6 +869,15 @@ impl DeribitWebSocketClient {
             control.deregister();
         }
         Ok(())
+    }
+
+    async fn finish_handler(&self) -> DeribitWsResult<()> {
+        self.handler_tasks
+            .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2))
+            .await
+            .map_err(|e| {
+                DeribitWsError::ClientError(format!("WebSocket handler shutdown failed: {e}"))
+            })
     }
 
     /// Returns a stream of WebSocket messages.
@@ -1767,6 +1809,49 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    struct DropSignal(Arc<AtomicBool>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_last_client_owner_drop_aborts_handler_task() {
+        let client = DeribitWebSocketClient::new_unauthenticated(
+            Some("ws://127.0.0.1:0/ws/api/v2".to_string()),
+            30,
+            DeribitEnvironment::Testnet,
+        )
+        .unwrap();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let drop_signal = DropSignal(Arc::clone(&dropped));
+        client
+            .handler_tasks
+            .spawn(async move {
+                let _drop_signal = drop_signal;
+                started_tx.send(()).expect("started receiver");
+                std::future::pending::<()>().await;
+            })
+            .expect("handler task should register");
+        started_rx.await.expect("handler task started");
+        let clone = client.clone();
+
+        drop(client);
+        assert!(!dropped.load(Ordering::Acquire));
+        drop(clone);
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !dropped.load(Ordering::Acquire) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("handler task aborted");
+    }
 
     #[rstest]
     #[tokio::test]

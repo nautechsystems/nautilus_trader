@@ -18,7 +18,7 @@
 use std::{
     str::FromStr,
     sync::{
-        Arc, Mutex as StdMutex,
+        Arc, Mutex as StdMutex, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
@@ -26,9 +26,14 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
-use nautilus_common::{live::get_runtime, messages::DataEvent};
+#[cfg(test)]
+use nautilus_common::live::get_runtime;
+use nautilus_common::messages::DataEvent;
 use nautilus_core::{UnixNanos, time::AtomicTime};
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{TaskJoinOutcome, TaskSlot, finish_task},
+};
 use nautilus_model::{
     data::{CustomData, Data as NautilusData, DataType, custom::CustomDataTrait},
     types::Price,
@@ -75,6 +80,72 @@ pub(crate) fn is_supported_rtds_data_type(data_type: &DataType) -> bool {
 #[derive(Clone, Debug)]
 pub(crate) struct PolymarketRtdsFeed {
     inner: Arc<PolymarketRtdsFeedInner>,
+    _task_owner: Option<Arc<RtdsTaskSlots>>,
+    task_slots: Weak<RtdsTaskSlots>,
+}
+
+#[derive(Debug)]
+struct RtdsTaskSlots {
+    message: tokio::sync::Mutex<TaskSlot<()>>,
+    reconcile: tokio::sync::Mutex<TaskSlot<()>>,
+    shutdown_errors: StdMutex<Vec<String>>,
+}
+
+struct RtdsWebSocketGuard<'a> {
+    owner: &'a StdMutex<Option<Arc<WebSocketClient>>>,
+    ws: Option<Arc<WebSocketClient>>,
+}
+
+impl<'a> RtdsWebSocketGuard<'a> {
+    fn take(owner: &'a StdMutex<Option<Arc<WebSocketClient>>>) -> Self {
+        let ws = owner.lock().expect("RTDS ws_client mutex poisoned").take();
+        Self { owner, ws }
+    }
+
+    fn clear(&mut self) {
+        self.ws = None;
+    }
+}
+
+impl Drop for RtdsWebSocketGuard<'_> {
+    fn drop(&mut self) {
+        if self.ws.is_some() {
+            *self.owner.lock().expect("RTDS ws_client mutex poisoned") = self.ws.take();
+        }
+    }
+}
+
+impl RtdsTaskSlots {
+    fn push_shutdown_error(&self, error: String) {
+        self.shutdown_errors
+            .lock()
+            .expect("RTDS shutdown_errors mutex poisoned")
+            .push(error);
+    }
+
+    fn take_shutdown_result(&self) -> anyhow::Result<()> {
+        let mut errors = self
+            .shutdown_errors
+            .lock()
+            .expect("RTDS shutdown_errors mutex poisoned");
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut *errors);
+            anyhow::bail!(
+                "Polymarket RTDS task shutdown failed: {}",
+                errors.join("; ")
+            )
+        }
+    }
+}
+
+impl Drop for RtdsTaskSlots {
+    fn drop(&mut self) {
+        self.message.get_mut().abort();
+        self.reconcile.get_mut().abort();
+    }
 }
 
 #[derive(Debug)]
@@ -92,13 +163,12 @@ struct PolymarketRtdsFeedInner {
     // can send only the delta from desired state to live wire state.
     live_subscriptions: StdMutex<AHashMap<String, RtdsWireSubscription>>,
     ws_client: StdMutex<Option<Arc<WebSocketClient>>>,
-    message_task_handle: StdMutex<Option<tokio::task::JoinHandle<()>>>,
-    reconcile_task_handle: StdMutex<Option<tokio::task::JoinHandle<()>>>,
     wire_mutex: tokio::sync::Mutex<()>,
     reconcile_notify: tokio::sync::Notify,
     reconcile_pending: AtomicBool,
     reset_live_state_pending: AtomicBool,
     closing: AtomicBool,
+    shutdown_generation: StdMutex<u64>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -352,6 +422,11 @@ impl PolymarketRtdsFeed {
         socket_sink: Option<SocketStateSink>,
         socket_control: Option<SocketControl>,
     ) -> Self {
+        let task_owner = Arc::new(RtdsTaskSlots {
+            message: tokio::sync::Mutex::new(TaskSlot::new()),
+            reconcile: tokio::sync::Mutex::new(TaskSlot::new()),
+            shutdown_errors: StdMutex::new(Vec::new()),
+        });
         Self {
             inner: Arc::new(PolymarketRtdsFeedInner {
                 url,
@@ -365,15 +440,35 @@ impl PolymarketRtdsFeed {
                 last_emitted_timestamps_ms: dashmap::DashMap::new(),
                 live_subscriptions: StdMutex::new(AHashMap::new()),
                 ws_client: StdMutex::new(None),
-                message_task_handle: StdMutex::new(None),
-                reconcile_task_handle: StdMutex::new(None),
                 wire_mutex: tokio::sync::Mutex::new(()),
                 reconcile_notify: tokio::sync::Notify::new(),
                 reconcile_pending: AtomicBool::new(false),
                 reset_live_state_pending: AtomicBool::new(false),
                 closing: AtomicBool::new(false),
+                shutdown_generation: StdMutex::new(0),
             }),
+            _task_owner: Some(Arc::clone(&task_owner)),
+            task_slots: Arc::downgrade(&task_owner),
         }
+    }
+
+    fn worker(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+            _task_owner: None,
+            task_slots: self.task_slots.clone(),
+        }
+    }
+
+    fn task_slots(&self) -> Option<Arc<RtdsTaskSlots>> {
+        self.task_slots.upgrade()
+    }
+
+    pub(crate) async fn has_retained_tasks(&self) -> bool {
+        let Some(tasks) = self.task_slots() else {
+            return false;
+        };
+        !tasks.message.lock().await.is_none() || !tasks.reconcile.lock().await.is_none()
     }
 
     pub(crate) fn has_subscriptions(&self) -> bool {
@@ -446,9 +541,88 @@ impl PolymarketRtdsFeed {
     }
 
     pub(crate) async fn connect(&self) -> anyhow::Result<()> {
-        self.inner.closing.store(false, Ordering::Release);
+        let generation = *self
+            .inner
+            .shutdown_generation
+            .lock()
+            .expect("RTDS shutdown_generation mutex poisoned");
+
+        if self.inner.closing.load(Ordering::Acquire) {
+            self.finish_retained_tasks().await?;
+        }
+
+        {
+            let current_generation = self
+                .inner
+                .shutdown_generation
+                .lock()
+                .expect("RTDS shutdown_generation mutex poisoned");
+            if *current_generation != generation {
+                anyhow::bail!("RTDS connect was canceled by shutdown");
+            }
+            self.inner.closing.store(false, Ordering::Release);
+        }
+
         self.ensure_reconcile_worker();
-        self.reconcile_once(false).await
+        self.reconcile_once(false).await?;
+
+        let current_generation = self
+            .inner
+            .shutdown_generation
+            .lock()
+            .expect("RTDS shutdown_generation mutex poisoned");
+        if *current_generation != generation || self.inner.closing.load(Ordering::Acquire) {
+            anyhow::bail!("RTDS connect was canceled by shutdown");
+        }
+        Ok(())
+    }
+
+    async fn finish_retained_tasks(&self) -> anyhow::Result<()> {
+        let Some(tasks) = self.task_slots() else {
+            if let Some(ws) = self.current_ws() {
+                ws.notify_closed();
+                ws.disconnect().await;
+                self.clear_ws_if_current(&ws);
+            }
+            anyhow::bail!("RTDS task owner was dropped");
+        };
+
+        let mut message_slot = tasks.message.lock().await;
+        if let Some(outcome) =
+            finish_task(&mut message_slot, Duration::ZERO, Duration::from_secs(2)).await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    tasks.push_shutdown_error(format!("RTDS message loop failed: {error}"));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    tasks.push_shutdown_error(
+                        "RTDS message loop did not stop after abort".to_string(),
+                    );
+                }
+            }
+        }
+        drop(message_slot);
+
+        let mut reconcile_slot = tasks.reconcile.lock().await;
+        if let Some(outcome) =
+            finish_task(&mut reconcile_slot, Duration::ZERO, Duration::from_secs(2)).await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    tasks.push_shutdown_error(format!("RTDS reconcile worker failed: {error}"));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    tasks.push_shutdown_error(
+                        "RTDS reconcile worker did not stop after abort".to_string(),
+                    );
+                }
+            }
+        }
+
+        tasks.take_shutdown_result()
     }
 
     pub(crate) fn request_reconcile(&self, reason: ReconcileReason) {
@@ -471,37 +645,23 @@ impl PolymarketRtdsFeed {
         self.inner.reconcile_notify.notify_one();
     }
 
-    pub(crate) async fn disconnect(&self) {
+    pub(crate) async fn disconnect(&self) -> anyhow::Result<()> {
+        self.begin_shutdown();
         let _guard = self.inner.wire_mutex.lock().await;
 
-        self.inner.closing.store(true, Ordering::Release);
         self.inner.reconcile_pending.store(false, Ordering::Release);
         self.inner
             .reset_live_state_pending
             .store(false, Ordering::Release);
         self.inner.reconcile_notify.notify_waiters();
 
-        let ws = self
-            .inner
-            .ws_client
-            .lock()
-            .expect("RTDS ws_client mutex poisoned")
-            .take();
-        let message_handle = self
-            .inner
-            .message_task_handle
-            .lock()
-            .expect("RTDS message_task_handle mutex poisoned")
-            .take();
-        let reconcile_handle = self
-            .inner
-            .reconcile_task_handle
-            .lock()
-            .expect("RTDS reconcile_task_handle mutex poisoned")
-            .take();
+        let Some(tasks) = self.task_slots() else {
+            anyhow::bail!("Polymarket RTDS task owner was dropped");
+        };
+        let mut ws = RtdsWebSocketGuard::take(&self.inner.ws_client);
 
-        if let Some(ws) = ws {
-            ws.disconnect().await;
+        if let Some(client) = ws.ws.as_ref() {
+            client.disconnect().await;
         }
 
         if let Some(control) = &self.inner.socket_control {
@@ -515,63 +675,79 @@ impl PolymarketRtdsFeed {
             .clear();
         drop(_guard);
 
-        if let Some(handle) = message_handle {
-            await_task_shutdown(handle, "RTDS message loop").await;
+        let mut message_slot = tasks.message.lock().await;
+        if let Some(outcome) = finish_task(
+            &mut message_slot,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    tasks.push_shutdown_error(format!("RTDS message loop failed: {error}"));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    tasks.push_shutdown_error(
+                        "RTDS message loop did not stop after abort".to_string(),
+                    );
+                }
+            }
+        }
+        let message_stopped = message_slot.is_none();
+        drop(message_slot);
+
+        let mut reconcile_slot = tasks.reconcile.lock().await;
+        if let Some(outcome) = finish_task(
+            &mut reconcile_slot,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    tasks.push_shutdown_error(format!("RTDS reconcile worker failed: {error}"));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    tasks.push_shutdown_error(
+                        "RTDS reconcile worker did not stop after abort".to_string(),
+                    );
+                }
+            }
         }
 
-        if let Some(handle) = reconcile_handle {
-            await_task_shutdown(handle, "RTDS reconcile worker").await;
+        if message_stopped && reconcile_slot.is_none() {
+            ws.clear();
         }
+
+        tasks.take_shutdown_result()
     }
 
-    pub(crate) fn abort(&self) {
+    pub(crate) fn begin_shutdown(&self) {
+        let mut generation = self
+            .inner
+            .shutdown_generation
+            .lock()
+            .expect("RTDS shutdown_generation mutex poisoned");
+        *generation = generation.wrapping_add(1);
         self.inner.closing.store(true, Ordering::Release);
         self.inner.reconcile_pending.store(false, Ordering::Release);
         self.inner
             .reset_live_state_pending
             .store(false, Ordering::Release);
+        self.inner.reconcile_notify.notify_waiters();
 
-        let ws = self
+        if let Some(ws) = self
             .inner
             .ws_client
             .lock()
             .expect("RTDS ws_client mutex poisoned")
-            .take();
-
-        if let Some(ws) = ws {
-            get_runtime().spawn(async move {
-                ws.disconnect().await;
-            });
-        }
-
-        if let Some(control) = &self.inner.socket_control {
-            control.deregister();
-        }
-
-        self.inner
-            .live_subscriptions
-            .lock()
-            .expect("RTDS live_subscriptions mutex poisoned")
-            .clear();
-
-        if let Some(handle) = self
-            .inner
-            .message_task_handle
-            .lock()
-            .expect("RTDS message_task_handle mutex poisoned")
-            .take()
+            .as_ref()
         {
-            handle.abort();
-        }
-
-        if let Some(handle) = self
-            .inner
-            .reconcile_task_handle
-            .lock()
-            .expect("RTDS reconcile_task_handle mutex poisoned")
-            .take()
-        {
-            handle.abort();
+            ws.notify_closed();
         }
     }
 
@@ -626,24 +802,33 @@ impl PolymarketRtdsFeed {
     }
 
     fn ensure_reconcile_worker(&self) {
-        let mut guard = self
+        let _generation = self
             .inner
-            .reconcile_task_handle
+            .shutdown_generation
             .lock()
-            .expect("RTDS reconcile_task_handle mutex poisoned");
+            .expect("RTDS shutdown_generation mutex poisoned");
 
         if self.inner.closing.load(Ordering::Acquire) {
             return;
         }
 
-        if guard.as_ref().is_some_and(|handle| !handle.is_finished()) {
+        let Some(tasks) = self.task_slots() else {
+            return;
+        };
+        let Ok(mut slot) = tasks.reconcile.try_lock() else {
+            return;
+        };
+
+        if slot.is_some() {
             return;
         }
 
-        let feed = self.clone();
-        *guard = Some(get_runtime().spawn(async move {
+        let feed = self.worker();
+        if let Err(e) = slot.spawn(async move {
             feed.run_reconcile_loop().await;
-        }));
+        }) {
+            log::error!("Failed to start RTDS reconcile worker: {e}");
+        }
     }
 
     async fn run_reconcile_loop(&self) {
@@ -692,9 +877,18 @@ impl PolymarketRtdsFeed {
     }
 
     async fn ensure_connected_locked(&self) -> anyhow::Result<bool> {
-        if self.inner.closing.load(Ordering::Acquire) {
-            return Ok(false);
-        }
+        let generation = {
+            let generation = self
+                .inner
+                .shutdown_generation
+                .lock()
+                .expect("RTDS shutdown_generation mutex poisoned");
+
+            if self.inner.closing.load(Ordering::Acquire) {
+                return Ok(false);
+            }
+            *generation
+        };
 
         if self.current_ws().is_some_and(|ws| !ws.is_disconnected()) {
             return Ok(false);
@@ -719,50 +913,134 @@ impl PolymarketRtdsFeed {
                 .context("failed to connect Polymarket RTDS WebSocket")?,
         );
 
-        if let Some(control) = &self.inner.socket_control {
-            let handle = ws.reconnect_handle();
-            control.register(move || handle.request_reconnect());
+        if !self.is_generation_open(generation) {
+            ws.notify_closed();
+            ws.disconnect().await;
+            anyhow::bail!("RTDS connection was canceled by shutdown");
         }
+
         log::debug!("Polymarket RTDS WebSocket connected: {}", self.inner.url);
-
-        // Tokio cancellation is cooperative. Quiesce the previous loop before
-        // activating the replacement so an admitted old-loop tail cannot emit
-        // after newer data from the new connection.
-        let old_handle = self
-            .inner
-            .message_task_handle
-            .lock()
-            .expect("RTDS message_task_handle mutex poisoned")
-            .take();
-
-        if let Some(old_handle) = old_handle {
-            old_handle.abort();
-            if let Err(e) = old_handle.await
-                && !e.is_cancelled()
-            {
-                log::error!("Previous RTDS message loop failed during replacement: {e:?}");
-            }
-        }
-
         *self
             .inner
             .ws_client
             .lock()
             .expect("RTDS ws_client mutex poisoned") = Some(Arc::clone(&ws));
 
-        let feed = self.clone();
-        let ws_for_task = Arc::clone(&ws);
-        let handle = get_runtime().spawn(async move {
-            feed.run_message_loop(ws_for_task, raw_rx).await;
-        });
+        // Tokio cancellation is cooperative. Quiesce the previous loop before
+        // activating the replacement so an admitted old-loop tail cannot emit
+        // after newer data from the new connection.
+        let tasks = self
+            .task_slots()
+            .ok_or_else(|| anyhow::anyhow!("RTDS task owner was dropped"))?;
+        let mut message_slot = tasks.message.lock().await;
+        if !self.is_generation_open(generation) {
+            drop(message_slot);
+            ws.notify_closed();
+            ws.disconnect().await;
+            self.clear_ws_if_current(&ws);
+            anyhow::bail!("RTDS connection was canceled by shutdown");
+        }
+        message_slot.abort();
+        let previous_loop_error = if let Some(outcome) =
+            finish_task(&mut message_slot, Duration::ZERO, Duration::from_secs(2)).await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => None,
+                TaskJoinOutcome::Failed(error) => {
+                    Some(format!("previous RTDS message loop failed: {error}"))
+                }
+                TaskJoinOutcome::Incomplete => {
+                    Some("previous RTDS message loop did not stop after abort".to_string())
+                }
+            }
+        } else {
+            None
+        };
 
-        *self
-            .inner
-            .message_task_handle
-            .lock()
-            .expect("RTDS message_task_handle mutex poisoned") = Some(handle);
+        if let Some(error) = previous_loop_error {
+            drop(message_slot);
+            ws.notify_closed();
+            ws.disconnect().await;
+            self.clear_ws_if_current(&ws);
+            anyhow::bail!(error);
+        }
+
+        let spawn_result = {
+            let generation_guard = self
+                .inner
+                .shutdown_generation
+                .lock()
+                .expect("RTDS shutdown_generation mutex poisoned");
+
+            if *generation_guard != generation || self.inner.closing.load(Ordering::Acquire) {
+                None
+            } else {
+                *self
+                    .inner
+                    .ws_client
+                    .lock()
+                    .expect("RTDS ws_client mutex poisoned") = Some(Arc::clone(&ws));
+
+                let feed = self.worker();
+                let ws_for_task = Arc::clone(&ws);
+                let spawn_result = message_slot.spawn(async move {
+                    feed.run_message_loop(ws_for_task, raw_rx).await;
+                });
+
+                if spawn_result.is_ok()
+                    && let Some(control) = &self.inner.socket_control
+                {
+                    let handle = ws.reconnect_handle();
+                    control.register(move || handle.request_reconnect());
+                }
+                Some(spawn_result)
+            }
+        };
+        let Some(spawn_result) = spawn_result else {
+            drop(message_slot);
+            ws.notify_closed();
+            ws.disconnect().await;
+            self.clear_ws_if_current(&ws);
+            anyhow::bail!("RTDS connection was canceled by shutdown");
+        };
+
+        if let Err(e) = spawn_result {
+            ws.disconnect().await;
+            self.clear_ws_if_current(&ws);
+            let shutdown_error = match finish_task(
+                &mut message_slot,
+                Duration::ZERO,
+                Duration::from_secs(2),
+            )
+            .await
+            {
+                Some(TaskJoinOutcome::Failed(error)) => {
+                    Some(format!("message loop task failed: {error}"))
+                }
+                Some(TaskJoinOutcome::Incomplete) => {
+                    Some("message loop task did not stop after abort".to_string())
+                }
+                None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => None,
+            };
+            anyhow::bail!(match shutdown_error {
+                Some(shutdown_error) => format!(
+                    "Failed to start RTDS message loop: {e}; startup rollback failed: \
+                     {shutdown_error}"
+                ),
+                None => format!("Failed to start RTDS message loop: {e}"),
+            });
+        }
 
         Ok(true)
+    }
+
+    fn is_generation_open(&self, generation: u64) -> bool {
+        let current_generation = self
+            .inner
+            .shutdown_generation
+            .lock()
+            .expect("RTDS shutdown_generation mutex poisoned");
+        *current_generation == generation && !self.inner.closing.load(Ordering::Acquire)
     }
 
     fn websocket_config(&self) -> WebSocketConfig {
@@ -1476,22 +1754,6 @@ fn price_from_str(field: &str, value: &str) -> anyhow::Result<Price> {
         .with_context(|| format!("invalid price for {field}: {value}"))
 }
 
-async fn await_task_shutdown(handle: tokio::task::JoinHandle<()>, description: &str) {
-    let abort_handle = handle.abort_handle();
-    tokio::select! {
-        result = handle => {
-            if let Err(e) = result
-                && !e.is_cancelled()
-            {
-                log::error!("{description} error: {e:?}");
-            }
-        }
-        () = tokio::time::sleep(Duration::from_secs(2)) => {
-            abort_handle.abort();
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{
@@ -1867,7 +2129,7 @@ mod tests {
         assert_eq!(change.endpoint, endpoint);
         assert_eq!(change.state, SocketState::Disconnected);
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
         assert!(registry.handle(*POLYMARKET_CLIENT_ID, endpoint).is_none());
     }
 
@@ -2013,7 +2275,7 @@ mod tests {
             ]
         );
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
     }
 
     async fn connect_test_ws(url: String) -> Arc<WebSocketClient> {
@@ -2607,11 +2869,12 @@ mod tests {
             ));
             old_feed.emit_custom_payload(&custom_payload, data_types);
         });
-        *feed
-            .inner
-            .message_task_handle
+        feed.task_slots()
+            .expect("RTDS task owner")
+            .message
             .lock()
-            .expect("RTDS message_task_handle mutex poisoned") = Some(old_handle);
+            .await
+            .insert(old_handle);
         admitted_rx
             .await
             .expect("old-loop TWAP admission signal dropped");
@@ -2677,7 +2940,7 @@ mod tests {
             "a replacement message loop must not overtake an admitted old-loop TWAP tail",
         );
         assert!(data_rx.try_recv().is_err());
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
     }
 
     #[rstest]
@@ -3863,7 +4126,7 @@ mod tests {
             "both retained symbols should resume after server-side reconnect",
         );
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
     }
 
     #[rstest]
@@ -3945,7 +4208,7 @@ mod tests {
             "ETH should not be replayed after unsubscribe"
         );
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
     }
 
     #[rstest]
@@ -3991,7 +4254,7 @@ mod tests {
             tx,
         );
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
         feed.connect().await.expect("connect feed");
 
         assert!(
@@ -4015,7 +4278,7 @@ mod tests {
         let payloads = state.received_payloads.lock().await.clone();
         let subscribe = payloads.last().expect("subscribe payload");
         assert_eq!(subscribe["action"].as_str(), Some("subscribe"));
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
     }
 
     #[rstest]
@@ -4104,10 +4367,11 @@ mod tests {
             || {
                 let feed = feed.clone();
                 async move {
-                    feed.inner
-                        .reconcile_task_handle
+                    feed.task_slots()
+                        .expect("RTDS task owner")
+                        .reconcile
                         .lock()
-                        .expect("RTDS reconcile_task_handle mutex poisoned")
+                        .await
                         .as_ref()
                         .is_some_and(|handle| !handle.is_finished())
                 }
@@ -4116,16 +4380,76 @@ mod tests {
         )
         .await;
 
-        feed.disconnect().await;
+        feed.disconnect().await.expect("disconnect feed");
 
         assert!(
-            feed.inner
-                .reconcile_task_handle
+            feed.task_slots()
+                .expect("RTDS task owner")
+                .reconcile
                 .lock()
-                .expect("RTDS reconcile_task_handle mutex poisoned")
+                .await
                 .is_none(),
             "disconnect should clear the reconcile worker handle",
         );
+    }
+
+    #[tokio::test]
+    async fn test_last_feed_owner_drop_aborts_worker_tasks() {
+        struct NotifyOnDrop(Option<tokio::sync::oneshot::Sender<()>>);
+
+        impl Drop for NotifyOnDrop {
+            fn drop(&mut self) {
+                if let Some(tx) = self.0.take() {
+                    let _ = tx.send(());
+                }
+            }
+        }
+
+        let (feed, _rx) = make_feed();
+        let (message_tx, mut message_rx) = tokio::sync::oneshot::channel();
+        let (reconcile_tx, mut reconcile_rx) = tokio::sync::oneshot::channel();
+        feed.task_slots()
+            .expect("RTDS task owner")
+            .message
+            .lock()
+            .await
+            .insert(tokio::spawn(async move {
+                let _notify = NotifyOnDrop(Some(message_tx));
+                std::future::pending::<()>().await;
+            }));
+        feed.task_slots()
+            .expect("RTDS task owner")
+            .reconcile
+            .lock()
+            .await
+            .insert(tokio::spawn(async move {
+                let _notify = NotifyOnDrop(Some(reconcile_tx));
+                std::future::pending::<()>().await;
+            }));
+        tokio::task::yield_now().await;
+        let clone = feed.clone();
+
+        drop(feed);
+
+        assert!(matches!(
+            message_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(matches!(
+            reconcile_rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+
+        drop(clone);
+
+        tokio::time::timeout(Duration::from_secs(1), &mut message_rx)
+            .await
+            .expect("message task dropped")
+            .expect("message task drop signal");
+        tokio::time::timeout(Duration::from_secs(1), &mut reconcile_rx)
+            .await
+            .expect("reconcile task dropped")
+            .expect("reconcile task drop signal");
     }
 
     #[rstest]
@@ -4156,10 +4480,11 @@ mod tests {
             || {
                 let feed = feed.clone();
                 async move {
-                    feed.inner
-                        .reconcile_task_handle
+                    feed.task_slots()
+                        .expect("RTDS task owner")
+                        .reconcile
                         .lock()
-                        .expect("RTDS reconcile_task_handle mutex poisoned")
+                        .await
                         .as_ref()
                         .is_some_and(tokio::task::JoinHandle::is_finished)
                 }
@@ -4190,7 +4515,7 @@ mod tests {
         let disconnect_task = tokio::spawn({
             let feed = feed.clone();
             async move {
-                feed.disconnect().await;
+                feed.disconnect().await.expect("disconnect feed");
             }
         });
 

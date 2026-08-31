@@ -24,14 +24,14 @@
 //! `cargo run --example hyperliquid-outcome-exec-tester --package nautilus-hyperliquid --features examples`
 //!
 //! Required credential environment variables:
-//! - `HYPERLIQUID_PK` (mainnet) or `HYPERLIQUID_TESTNET_PK` (testnet).
-//! - Optionally `HYPERLIQUID_ACCOUNT_ADDRESS` for agent-wallet setups.
+//! - `HYPERLIQUID_PK` (mainnet) or `HYPERLIQUID_TESTNET_PK` (testnet)
+//! - Optionally `HYPERLIQUID_ACCOUNT_ADDRESS` for agent-wallet setups
 //!
 //! Required order environment variables:
 //! - `HYPERLIQUID_OUTCOME_INSTRUMENT_ID`, using an active
-//!   `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID` instrument.
+//!   `{outcome_index}-{YES|NO}-OUTCOME.HYPERLIQUID` instrument
 //! - `HYPERLIQUID_OUTCOME_ORDER_QTY`, sized to clear the venue minimum notional without exceeding
-//!   the available spot balance.
+//!   the available spot balance
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};

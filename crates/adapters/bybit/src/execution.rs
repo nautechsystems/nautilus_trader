@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -41,7 +41,9 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
-    ExecutionClientCore, ExecutionEventEmitter, SocketControl, execution::failure::CommandFailure,
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    execution::failure::CommandFailure,
+    task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -53,7 +55,6 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Price},
 };
-use tokio::task::JoinHandle;
 use ustr::Ustr;
 
 use crate::{
@@ -102,10 +103,9 @@ pub struct BybitExecutionClient {
     http_client: BybitHttpClient,
     ws_private: BybitWebSocketClient,
     ws_trade: BybitWebSocketClient,
-    ws_private_stream_handle: Option<JoinHandle<()>>,
-    ws_trade_stream_handle: Option<JoinHandle<()>>,
-    repay_handle: Option<JoinHandle<()>>,
-    pending_tasks: TaskHandles,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     instruments_cache: Arc<AHashMap<Ustr, InstrumentAny>>,
     dispatch_state: Arc<WsDispatchState>,
 }
@@ -185,6 +185,9 @@ impl BybitExecutionClient {
             None,
         );
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             clock,
@@ -193,10 +196,9 @@ impl BybitExecutionClient {
             http_client,
             ws_private,
             ws_trade,
-            ws_private_stream_handle: None,
-            ws_trade_stream_handle: None,
-            repay_handle: None,
-            pending_tasks: TaskHandles::default(),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             instruments_cache: Arc::new(AHashMap::new()),
             dispatch_state: Arc::new(WsDispatchState::default()),
         })
@@ -229,18 +231,78 @@ impl BybitExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Bybit {description} after shutdown began: {e}");
+        }
     }
 
     fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Bybit execution tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to terminate Bybit execution session tasks: {e}")
+            })?;
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+        self.http_client.cancel_all_requests();
+        self.ws_private.begin_shutdown();
+        self.ws_trade.begin_shutdown();
+
+        if let Err(e) = self.ws_private.close().await {
+            self.shutdown_errors
+                .push(format!("private WebSocket shutdown failed: {e}"));
+        }
+
+        if let Err(e) = self.ws_trade.close().await {
+            self.shutdown_errors
+                .push(format!("trade WebSocket shutdown failed: {e}"));
+        }
+        self.dispatch_state.clear_repay_sender();
+
+        if let Err(e) = self.await_session_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = self.await_pending_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        self.core.set_disconnected();
+
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!("Bybit execution shutdown failed: {}", errors.join("; "))
+        }
     }
 
     /// Polls the cache until the account is registered or timeout is reached.
@@ -640,56 +702,84 @@ impl ExecutionClient for BybitExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
+        {
             return Ok(());
         }
 
-        // Reset after a prior disconnect so REST calls are not short-circuited
-        self.http_client.reset_cancellation_token();
-
-        let product_types = self.product_types();
-
-        if !self.core.instruments_initialized() {
-            let mut all_instruments = Vec::new();
-
-            for product_type in &product_types {
-                let instruments = self
-                    .http_client
-                    .request_instruments(*product_type, None, None)
-                    .await
-                    .with_context(|| {
-                        format!("failed to request Bybit instruments for {product_type:?}")
-                    })?;
-
-                if instruments.is_empty() {
-                    log::warn!("No instruments returned for {product_type:?}");
-                    continue;
-                }
-
-                log::debug!("Loaded {} {product_type:?} instruments", instruments.len());
-
-                self.http_client.cache_instruments(&instruments);
-                all_instruments.extend(instruments);
-            }
-
-            if !all_instruments.is_empty() {
-                let mut instruments_map = AHashMap::new();
-                for instrument in &all_instruments {
-                    instruments_map.insert(instrument.id().symbol.inner(), instrument.clone());
-                }
-                self.instruments_cache = Arc::new(instruments_map);
-            }
-            self.core.set_instruments_initialized();
+        if !self.pending_tasks.is_open() || !self.session_tasks.is_open() {
+            self.teardown_partial_connect().await?;
         }
 
-        self.ws_private.set_account_id(self.core.account_id);
-        self.ws_trade.set_account_id(self.core.account_id);
+        if !self.pending_tasks.is_open() {
+            self.await_pending_tasks().await?;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Bybit task generation: {e}"))?;
+        }
 
-        self.ws_private.connect().await?;
-        self.ws_private.wait_until_active(10.0).await?;
-        log::debug!("Connected to private WebSocket");
+        if !self.session_tasks.is_open() {
+            self.await_session_tasks().await?;
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Bybit session generation: {e}"))?;
+        }
+        let http_client = self.http_client.clone();
+        let ws_private = self.ws_private.clone();
+        let ws_trade = self.ws_trade.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                http_client.cancel_all_requests();
+                ws_private.begin_shutdown();
+                ws_trade.begin_shutdown();
+            });
 
-        if self.ws_private_stream_handle.is_none() {
+        let connect_result: anyhow::Result<()> = async {
+            // Reset after a prior disconnect so REST calls are not short-circuited
+            self.http_client.reset_cancellation_token();
+
+            let product_types = self.product_types();
+
+            if !self.core.instruments_initialized() {
+                let mut all_instruments = Vec::new();
+
+                for product_type in &product_types {
+                    let instruments = self
+                        .http_client
+                        .request_instruments(*product_type, None, None)
+                        .await
+                        .with_context(|| {
+                            format!("failed to request Bybit instruments for {product_type:?}")
+                        })?;
+
+                    if instruments.is_empty() {
+                        log::warn!("No instruments returned for {product_type:?}");
+                        continue;
+                    }
+
+                    log::debug!("Loaded {} {product_type:?} instruments", instruments.len());
+
+                    self.http_client.cache_instruments(&instruments);
+                    all_instruments.extend(instruments);
+                }
+
+                if !all_instruments.is_empty() {
+                    let mut instruments_map = AHashMap::new();
+                    for instrument in &all_instruments {
+                        instruments_map.insert(instrument.id().symbol.inner(), instrument.clone());
+                    }
+                    self.instruments_cache = Arc::new(instruments_map);
+                }
+                self.core.set_instruments_initialized();
+            }
+
+            self.ws_private.set_account_id(self.core.account_id);
+            self.ws_trade.set_account_id(self.core.account_id);
+
+            self.ws_private.connect().await?;
+            self.ws_private.wait_until_active(10.0).await?;
+            log::debug!("Connected to private WebSocket");
+
             let stream = self.ws_private.stream();
             let emitter = self.emitter.clone();
             let account_id = self.core.account_id;
@@ -697,7 +787,7 @@ impl ExecutionClient for BybitExecutionClient {
             let state = Arc::clone(&self.dispatch_state);
             let clock = self.clock;
 
-            let handle = get_runtime().spawn(async move {
+            self.session_tasks.spawn(async move {
                 pin_mut!(stream);
                 while let Some(message) = stream.next().await {
                     dispatch_ws_message(
@@ -709,19 +799,16 @@ impl ExecutionClient for BybitExecutionClient {
                         clock,
                     );
                 }
-            });
-            self.ws_private_stream_handle = Some(handle);
-        }
+            })?;
 
-        // Demo environment does not support Trade WebSocket API
-        if self.config.environment == BybitEnvironment::Demo {
-            log::warn!("Demo mode: Trade WebSocket not available, orders use HTTP REST API");
-        } else {
-            self.ws_trade.connect().await?;
-            self.ws_trade.wait_until_active(10.0).await?;
-            log::debug!("Connected to trade WebSocket");
+            // Demo environment does not support Trade WebSocket API
+            if self.config.environment == BybitEnvironment::Demo {
+                log::warn!("Demo mode: Trade WebSocket not available, orders use HTTP REST API");
+            } else {
+                self.ws_trade.connect().await?;
+                self.ws_trade.wait_until_active(10.0).await?;
+                log::debug!("Connected to trade WebSocket");
 
-            if self.ws_trade_stream_handle.is_none() {
                 let stream = self.ws_trade.stream();
                 let emitter = self.emitter.clone();
                 let account_id = self.core.account_id;
@@ -729,7 +816,7 @@ impl ExecutionClient for BybitExecutionClient {
                 let state = Arc::clone(&self.dispatch_state);
                 let clock = self.clock;
 
-                let handle = get_runtime().spawn(async move {
+                self.session_tasks.spawn(async move {
                     pin_mut!(stream);
                     while let Some(message) = stream.next().await {
                         dispatch_ws_message(
@@ -741,82 +828,62 @@ impl ExecutionClient for BybitExecutionClient {
                             clock,
                         );
                     }
-                });
-                self.ws_trade_stream_handle = Some(handle);
+                })?;
             }
+
+            if self.config.auto_repay_spot_borrows {
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                self.dispatch_state.set_repay_sender(tx);
+
+                let http_client = self.http_client.clone();
+                let clock = self.clock;
+                self.session_tasks.spawn(async move {
+                    crate::repay::run_spot_repay_consumer(rx, http_client, clock).await;
+                })?;
+            }
+
+            self.ws_private.subscribe_orders().await?;
+            self.ws_private.subscribe_executions().await?;
+            self.ws_private.subscribe_positions().await?;
+            self.ws_private.subscribe_wallet().await?;
+
+            self.apply_account_configuration().await?;
+
+            let account_state = self
+                .http_client
+                .request_account_state(BybitAccountType::Unified, self.core.account_id)
+                .await
+                .context("failed to request Bybit account state")?;
+
+            if !account_state.balances.is_empty() {
+                log::debug!(
+                    "Received account state with {} balance(s)",
+                    account_state.balances.len()
+                );
+            }
+            self.emitter.send_account_state(account_state);
+
+            self.await_account_registered(30.0).await?;
+
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = connect_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!("Bybit startup teardown failed: {teardown_error}")));
+            }
+            return Err(e);
         }
 
-        if self.config.auto_repay_spot_borrows && self.repay_handle.is_none() {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            self.dispatch_state.set_repay_sender(tx);
-
-            let http_client = self.http_client.clone();
-            let clock = self.clock;
-            let handle = get_runtime().spawn(async move {
-                crate::repay::run_spot_repay_consumer(rx, http_client, clock).await;
-            });
-            self.repay_handle = Some(handle);
-        }
-
-        self.ws_private.subscribe_orders().await?;
-        self.ws_private.subscribe_executions().await?;
-        self.ws_private.subscribe_positions().await?;
-        self.ws_private.subscribe_wallet().await?;
-
-        self.apply_account_configuration().await?;
-
-        let account_state = self
-            .http_client
-            .request_account_state(BybitAccountType::Unified, self.core.account_id)
-            .await
-            .context("failed to request Bybit account state")?;
-
-        if !account_state.balances.is_empty() {
-            log::debug!(
-                "Received account state with {} balance(s)",
-                account_state.balances.len()
-            );
-        }
-        self.emitter.send_account_state(account_state);
-
-        self.await_account_registered(30.0).await?;
-
+        setup_guard.disarm();
         self.core.set_connected();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
-        self.abort_pending_tasks();
-        self.http_client.cancel_all_requests();
-
-        if let Err(e) = self.ws_private.close().await {
-            log::warn!("Error closing private websocket: {e:?}");
-        }
-
-        if let Err(e) = self.ws_trade.close().await {
-            log::warn!("Error closing trade websocket: {e:?}");
-        }
-
-        if let Some(handle) = self.ws_private_stream_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.ws_trade_stream_handle.take() {
-            handle.abort();
-        }
-
-        self.dispatch_state.clear_repay_sender();
-
-        if let Some(handle) = self.repay_handle.take() {
-            handle.abort();
-        }
-
-        self.core.set_disconnected();
+        self.teardown_partial_connect().await?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -887,7 +954,7 @@ impl ExecutionClient for BybitExecutionClient {
         let http_client = self.http_client.clone();
         let product_types = self.config.product_types.clone();
 
-        get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             let mut all_instruments = Vec::new();
 
             for product_type in product_types {
@@ -916,7 +983,7 @@ impl ExecutionClient for BybitExecutionClient {
             } else {
                 log::debug!("Instruments initialized: count={}", all_instruments.len());
             }
-        });
+        })?;
 
         log::info!(
             "Started: client_id={}, account_id={}, account_type={:?}, product_types={:?}, environment={:?}, proxy_url={:?}",
@@ -938,21 +1005,11 @@ impl ExecutionClient for BybitExecutionClient {
         self.core.set_stopped();
         self.core.set_disconnected();
 
-        if let Some(handle) = self.ws_private_stream_handle.take() {
-            handle.abort();
-        }
-
-        if let Some(handle) = self.ws_trade_stream_handle.take() {
-            handle.abort();
-        }
-
-        self.dispatch_state.clear_repay_sender();
-
-        if let Some(handle) = self.repay_handle.take() {
-            handle.abort();
-        }
-
+        self.abort_session_tasks();
         self.abort_pending_tasks();
+        self.http_client.cancel_all_requests();
+        self.ws_private.begin_shutdown();
+        self.ws_trade.begin_shutdown();
         log::info!("Stopped: client_id={}", self.core.client_id);
         Ok(())
     }

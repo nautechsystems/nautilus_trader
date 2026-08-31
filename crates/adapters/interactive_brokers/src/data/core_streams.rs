@@ -35,6 +35,7 @@ use ibapi::{
 };
 use nautilus_common::messages::DataEvent;
 use nautilus_core::{UnixNanos, time::AtomicTime};
+use nautilus_live::task::TaskSlot;
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, Data, OrderBookDelta, QuoteTick, option_chain::OptionGreeks},
     enums::OrderSide,
@@ -1162,7 +1163,7 @@ pub(super) async fn handle_realtime_bars_subscription(
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
     last_bars: Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
-    bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
+    bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, TaskSlot<()>>>>,
     handle_revised_bars: bool,
     use_rth: bool,
     cancellation_token: CancellationToken,
@@ -1220,11 +1221,11 @@ async fn update_revised_bar_tracking(
     bar_type_str: &str,
     bar: RealtimeBar,
     last_bars: &Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
-    bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
+    bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, TaskSlot<()>>>>,
 ) {
     last_bars.lock().await.insert(bar_type_str.to_string(), bar);
 
-    if let Some(existing) = bar_timeout_tasks.lock().await.remove(bar_type_str) {
+    if let Some(mut existing) = bar_timeout_tasks.lock().await.remove(bar_type_str) {
         existing.abort();
     }
 }
@@ -1325,7 +1326,7 @@ async fn process_realtime_bar_stream(
     size_precision: u8,
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     last_bars: &Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
-    bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
+    bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, TaskSlot<()>>>>,
     handle_revised_bars: bool,
     cancellation_token: &CancellationToken,
     data_farm_state: &DataFarmConnectionState,
@@ -2034,6 +2035,7 @@ mod tests {
     };
     use nautilus_common::messages::DataEvent;
     use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_live::task::TaskSlot;
     use nautilus_model::{
         data::{BarType, Data},
         identifiers::{InstrumentId, Symbol, Venue},
@@ -3070,7 +3072,7 @@ mod tests {
         bar_timeout_tasks
             .lock()
             .await
-            .insert(bar_type.clone(), stale_task);
+            .insert(bar_type.clone(), TaskSlot::from_handle(stale_task));
 
         let bar = RealtimeBar {
             date: time::OffsetDateTime::UNIX_EPOCH,

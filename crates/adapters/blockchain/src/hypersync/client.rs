@@ -29,8 +29,8 @@ use hypersync_client::{
     net_types::{BlockField, BlockSelection, FieldSelection, Query},
     simple_types::Log,
 };
-use nautilus_common::live::get_runtime;
 use nautilus_core::hex;
+use nautilus_live::task::{TaskJoinOutcome, TaskSlot, finish_task};
 use nautilus_model::{
     defi::{Block, Blockchain, DexType, SharedChain},
     identifiers::InstrumentId,
@@ -76,7 +76,7 @@ pub struct HyperSyncClient {
     /// The underlying HyperSync Rust client for making API requests.
     client: Arc<hypersync_client::Client>,
     /// Background task handle for the block subscription task.
-    blocks_task: Option<tokio::task::JoinHandle<()>>,
+    blocks_task: TaskSlot<()>,
     /// Cancellation token for the blocks subscription task.
     blocks_cancellation_token: Option<tokio_util::sync::CancellationToken>,
     /// Background DEX event stream tasks keyed by DEX type.
@@ -117,7 +117,7 @@ impl HyperSyncClient {
         Self {
             chain,
             client: Arc::new(client),
-            blocks_task: None,
+            blocks_task: TaskSlot::new(),
             blocks_cancellation_token: None,
             dex_event_tasks: AHashMap::new(),
             tx,
@@ -148,15 +148,21 @@ impl HyperSyncClient {
             return;
         }
 
-        if self
-            .dex_event_tasks
-            .get(&dex)
-            .is_some_and(|task| task.filter == filter)
-        {
+        if self.dex_event_tasks.get(&dex).is_some_and(|task| {
+            task.filter == filter
+                && task
+                    .task
+                    .as_ref()
+                    .is_some_and(|handle| !handle.is_finished())
+        }) {
             return;
         }
 
         let next_from_block = self.stop_dex_event_stream(dex).await;
+        if self.dex_event_tasks.contains_key(&dex) {
+            log::error!("Previous HyperSync DEX event stream for {dex} is still stopping");
+            return;
+        }
 
         let from_block = match next_from_block {
             Some(block) => block,
@@ -188,7 +194,8 @@ impl HyperSyncClient {
         let task_next_from_block = next_from_block.clone();
         let task_filter = filter.clone();
 
-        let task = get_runtime().spawn(async move {
+        let mut task = TaskSlot::new();
+        if let Err(e) = task.spawn(async move {
             Self::run_dex_event_stream(
                 dex,
                 client,
@@ -199,7 +206,10 @@ impl HyperSyncClient {
                 task_token,
             )
             .await;
-        });
+        }) {
+            stream_token.cancel();
+            log::error!("Failed to start HyperSync DEX event stream for {dex}: {e}");
+        }
 
         self.dex_event_tasks.insert(
             dex,
@@ -254,30 +264,27 @@ impl HyperSyncClient {
         log::debug!("Disconnecting HyperSync client");
         self.cancellation_token.cancel();
 
-        // Await blocks task with timeout, abort if it takes too long
-        if let Some(mut task) = self.blocks_task.take() {
-            match tokio::time::timeout(Duration::from_secs(DISCONNECT_TIMEOUT_SECS), &mut task)
-                .await
-            {
-                Ok(Ok(())) => {
-                    log::debug!("Blocks task completed gracefully");
+        if let Some(outcome) = finish_task(
+            &mut self.blocks_task,
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    log::error!("HyperSync blocks task failed: {error}");
                 }
-                Ok(Err(e)) => {
-                    log::error!("Error awaiting blocks task: {e}");
-                }
-                Err(_) => {
-                    log::warn!(
-                        "Blocks task did not complete within {DISCONNECT_TIMEOUT_SECS}s timeout, \
-                         aborting task (this is expected if Hypersync long-poll was in progress)"
-                    );
-                    task.abort();
-                    let _ = task.await;
+                TaskJoinOutcome::Incomplete => {
+                    log::error!("HyperSync blocks task did not stop after abort");
                 }
             }
         }
 
-        for (dex, task) in self.dex_event_tasks.drain() {
-            Self::stop_dex_event_task(dex, task).await;
+        let dexes = self.dex_event_tasks.keys().copied().collect::<Vec<_>>();
+        for dex in dexes {
+            self.stop_dex_event_stream(dex).await;
         }
 
         log::debug!("HyperSync client disconnected");
@@ -347,7 +354,7 @@ impl HyperSyncClient {
         let cancellation_token = blocks_token.clone();
         self.blocks_cancellation_token = Some(blocks_token);
 
-        let task = get_runtime().spawn(async move {
+        if let Err(e) = self.blocks_task.spawn(async move {
             log::debug!("Starting task 'blocks_feed");
 
             let current_block_height = client.get_height().await.unwrap();
@@ -403,24 +410,41 @@ impl HyperSyncClient {
                     }
                 }
             }
-        });
-
-        self.blocks_task = Some(task);
+        }) {
+            if let Some(token) = self.blocks_cancellation_token.take() {
+                token.cancel();
+            }
+            log::error!("Failed to start HyperSync blocks subscription task: {e}");
+        }
     }
 
     /// Unsubscribes from new blocks by stopping the background watch task.
     pub async fn unsubscribe_blocks(&mut self) {
-        let Some(task) = self.blocks_task.take() else {
+        if self.blocks_task.is_none() {
             return;
-        };
+        }
 
         // Cancel only the blocks child token, not the main cancellation token
         if let Some(token) = self.blocks_cancellation_token.take() {
             token.cancel();
         }
 
-        if let Err(e) = task.await {
-            log::error!("Error awaiting blocks task during unsubscribe: {e}");
+        if let Some(outcome) = finish_task(
+            &mut self.blocks_task,
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    log::error!("HyperSync blocks task failed during unsubscribe: {error}");
+                }
+                TaskJoinOutcome::Incomplete => {
+                    log::error!("HyperSync blocks task did not stop after abort");
+                }
+            }
         }
         log::debug!("Unsubscribed from blocks");
     }
@@ -698,32 +722,53 @@ impl HyperSyncClient {
     }
 
     async fn stop_dex_event_stream(&mut self, dex: DexType) -> Option<u64> {
-        let task = self.dex_event_tasks.remove(&dex)?;
-        Some(Self::stop_dex_event_task(dex, task).await)
-    }
+        let task = self.dex_event_tasks.get_mut(&dex)?;
+        let terminated = Self::stop_dex_event_task(dex, task).await;
+        let next_from_block = task.next_from_block.load(Ordering::Relaxed);
 
-    async fn stop_dex_event_task(dex: DexType, mut task: DexEventStreamTask) -> u64 {
-        task.cancellation_token.cancel();
-
-        match tokio::time::timeout(Duration::from_secs(DISCONNECT_TIMEOUT_SECS), &mut task.task)
-            .await
-        {
-            Ok(Ok(())) => {
-                log::debug!("DEX event stream task for {dex} completed gracefully");
-            }
-            Ok(Err(e)) => {
-                log::error!("Error awaiting DEX event stream task for {dex}: {e}");
-            }
-            Err(_) => {
-                log::warn!(
-                    "DEX event stream task for {dex} did not complete within {DISCONNECT_TIMEOUT_SECS}s timeout, aborting task"
-                );
-                task.task.abort();
-                let _ = task.task.await;
-            }
+        if terminated {
+            self.dex_event_tasks.remove(&dex);
         }
 
-        task.next_from_block.load(Ordering::Relaxed)
+        Some(next_from_block)
+    }
+
+    async fn stop_dex_event_task(dex: DexType, task: &mut DexEventStreamTask) -> bool {
+        task.cancellation_token.cancel();
+
+        let outcome = finish_task(
+            &mut task.task,
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+            Duration::from_secs(DISCONNECT_TIMEOUT_SECS),
+        )
+        .await;
+
+        match outcome {
+            None | Some(TaskJoinOutcome::Completed(())) | Some(TaskJoinOutcome::Aborted) => true,
+            Some(TaskJoinOutcome::Failed(error)) => {
+                log::error!("HyperSync DEX event stream task for {dex} failed: {error}");
+                true
+            }
+            Some(TaskJoinOutcome::Incomplete) => {
+                log::error!("HyperSync DEX event stream task for {dex} did not stop after abort");
+                false
+            }
+        }
+    }
+}
+
+impl Drop for HyperSyncClient {
+    fn drop(&mut self) {
+        self.cancellation_token.cancel();
+        if let Some(token) = self.blocks_cancellation_token.as_ref() {
+            token.cancel();
+        }
+        self.blocks_task.abort();
+
+        for task in self.dex_event_tasks.values_mut() {
+            task.cancellation_token.cancel();
+            task.task.abort();
+        }
     }
 }
 
@@ -755,7 +800,7 @@ struct DexEventStreamTask {
     filter: DexEventStreamFilter,
     next_from_block: Arc<AtomicU64>,
     cancellation_token: tokio_util::sync::CancellationToken,
-    task: tokio::task::JoinHandle<()>,
+    task: TaskSlot<()>,
 }
 
 /// Maps one HyperSync response into stream items, surfacing blocks ahead of the logs from the
@@ -973,13 +1018,16 @@ mod tests {
             filter: DexEventStreamFilter::new(vec![], vec![]),
             next_from_block,
             cancellation_token,
-            task,
+            task: TaskSlot::from_handle(task),
         };
+        let mut stream_task = stream_task;
 
-        let final_next_from_block =
-            HyperSyncClient::stop_dex_event_task(DexType::UniswapV3, stream_task).await;
+        let terminated =
+            HyperSyncClient::stop_dex_event_task(DexType::UniswapV3, &mut stream_task).await;
 
-        assert_eq!(final_next_from_block, 99);
+        assert!(terminated);
+        assert_eq!(stream_task.next_from_block.load(Ordering::Relaxed), 99);
+        assert!(stream_task.task.is_none());
     }
 
     #[tokio::test(flavor = "multi_thread")]

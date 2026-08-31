@@ -22,8 +22,8 @@
 //! Run with: `cargo run -p nautilus-kraken --features examples --example kraken-hurst-vpin-live`
 //!
 //! Required credential environment variables:
-//! - `KRAKEN_FUTURES_API_KEY`.
-//! - `KRAKEN_FUTURES_API_SECRET`.
+//! - `KRAKEN_FUTURES_API_KEY`
+//! - `KRAKEN_FUTURES_API_SECRET`
 //!
 //! Point at [demo-futures.kraken.com](https://demo-futures.kraken.com) for
 //! paper trading by setting `demo=true` on `resolve_futures` or by using a

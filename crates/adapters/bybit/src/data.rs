@@ -21,6 +21,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -28,7 +29,7 @@ use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -50,7 +51,10 @@ use nautilus_core::{
     datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::SocketControlFactory;
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     data::{BarType, Data, ForwardPrice, QuoteTick},
     enums::{BookType, MarketStatusAction},
@@ -59,7 +63,6 @@ use nautilus_model::{
     orderbook::book::OrderBook,
 };
 use rust_decimal::Decimal;
-use tokio::{task::JoinHandle, time::Duration};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -96,7 +99,9 @@ pub struct BybitDataClient {
     ws_clients: Vec<BybitWebSocketClient>,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: Vec<JoinHandle<()>>,
+    session_tasks: TaskGroup,
+    command_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     book_depths: Arc<AtomicMap<InstrumentId, u32>>,
@@ -107,7 +112,6 @@ pub struct BybitDataClient {
     instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
     status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
     instrument_subs: Arc<AtomicSet<InstrumentId>>,
-    /// Venue-wide subscription: when set, definition updates are emitted for all instruments.
     subscribe_all_instruments: Arc<AtomicBool>,
     clock: &'static AtomicTime,
 }
@@ -173,14 +177,19 @@ impl BybitDataClient {
             })
             .collect();
 
+        let session_tasks = TaskGroup::new();
+        let command_tasks = TaskGroup::new();
+
         Ok(Self {
             client_id,
             config,
             http_client,
             ws_clients,
             is_connected: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
-            tasks: Vec::new(),
+            cancellation_token: session_tasks.cancellation_token(),
+            session_tasks,
+            command_tasks,
+            shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             book_depths: Arc::new(AtomicMap::new()),
@@ -219,18 +228,72 @@ impl BybitDataClient {
             .and_then(|_| BybitProductType::from_suffix(instrument_id.symbol.as_str()))
     }
 
+    fn spawn_command<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping Bybit data command after shutdown began: {e}");
+        }
+    }
+
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, command_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.command_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+        );
+        let mut errors = Vec::new();
+        if let Err(e) = session_result {
+            errors.push(format!("failed to finish Bybit data session tasks: {e}"));
+        }
+
+        if let Err(e) = command_result {
+            errors.push(format!("failed to finish Bybit data command tasks: {e}"));
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(errors.join("; "))
+        }
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.command_tasks.is_open() {
+            self.teardown_partial_connect().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start Bybit data session task generation")?;
+            self.command_tasks
+                .start_generation()
+                .context("failed to start Bybit data command task generation")?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
+        }
+        Ok(())
+    }
+
     fn spawn_ws<F>(&self, fut: F, context: &'static str)
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::error!("{context}: {e:?}");
             }
-        });
+        };
+
+        if let Err(e) = self.command_tasks.spawn(future) {
+            log::warn!("Skipping Bybit {context} after shutdown began: {e}");
+        }
     }
 
-    fn spawn_instrument_polling(&mut self, product_types: &[BybitProductType], poll_secs: u64) {
+    fn spawn_instrument_polling(
+        &self,
+        product_types: &[BybitProductType],
+        poll_secs: u64,
+    ) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
@@ -242,7 +305,7 @@ impl BybitDataClient {
         let clock = self.clock;
         let product_types = product_types.to_vec();
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             let mut interval = tokio::time::interval(Duration::from_secs(poll_secs));
             interval.tick().await; // Skip first immediate tick
 
@@ -320,9 +383,39 @@ impl BybitDataClient {
                     }
                 }
             }
-        });
-        self.tasks.push(handle);
+        };
+
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register Bybit instrument polling task")?;
         log::debug!("Instrument polling started: interval={poll_secs}s");
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        for ws_client in &self.ws_clients {
+            ws_client.begin_shutdown();
+        }
+
+        for ws_client in &mut self.ws_clients {
+            if let Err(e) = ws_client.close().await {
+                self.shutdown_errors.push(e.to_string());
+            }
+        }
+
+        if let Err(e) = self.finish_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
+        self.is_connected.store(false, Ordering::Release);
+
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!("Bybit data shutdown failed: {}", errors.join("; "))
+        }
     }
 }
 
@@ -645,16 +738,23 @@ impl DataClient for BybitDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping {id}", id = self.client_id);
-        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        for ws_client in &self.ws_clients {
+            ws_client.begin_shutdown();
+        }
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {id}", id = self.client_id);
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        for ws_client in &self.ws_clients {
+            ws_client.begin_shutdown();
+        }
         self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
-        self.tasks.clear();
         self.book_depths.store(AHashMap::new());
         self.quote_depths.store(AHashMap::new());
         self.ticker_subs.store(AHashMap::new());
@@ -673,9 +773,18 @@ impl DataClient for BybitDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected() && self.session_tasks.is_open() && self.command_tasks.is_open() {
             return Ok(());
         }
+
+        self.prepare_task_groups().await?;
+        let ws_clients = self.ws_clients.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.command_tasks], move || {
+                for ws_client in ws_clients {
+                    ws_client.begin_shutdown();
+                }
+            });
 
         let product_types = if self.config.product_types.is_empty() {
             vec![BybitProductType::Linear]
@@ -762,100 +871,110 @@ impl DataClient for BybitDataClient {
             Arc::new(map)
         };
 
-        for ws_client in &mut self.ws_clients {
-            ws_client
-                .connect()
-                .await
-                .context("failed to connect Bybit WebSocket")?;
-            ws_client
-                .wait_until_active(10.0)
-                .await
-                .context("WebSocket did not become active")?;
+        let session_result = async {
+            for ws_client in &mut self.ws_clients {
+                ws_client
+                    .connect()
+                    .await
+                    .context("failed to connect Bybit WebSocket")?;
+                ws_client
+                    .wait_until_active(10.0)
+                    .await
+                    .context("WebSocket did not become active")?;
 
-            let stream = ws_client.stream();
-            let product_type = ws_client.product_type();
-            let sender = self.data_sender.clone();
-            let trade_subs = self.trade_subs.clone();
-            let ticker_subs = self.ticker_subs.clone();
-            let quote_depths = self.quote_depths.clone();
-            let book_depths = self.book_depths.clone();
-            let option_greeks_subs = self.option_greeks_subs.clone();
-            let bar_types_cache = ws_client.bar_types_cache().clone();
-            let instruments = Arc::clone(&instruments_by_symbol);
-            let clock = self.clock;
-            let cancel = self.cancellation_token.clone();
+                let stream = ws_client.stream();
+                let product_type = ws_client.product_type();
+                let sender = self.data_sender.clone();
+                let trade_subs = self.trade_subs.clone();
+                let ticker_subs = self.ticker_subs.clone();
+                let quote_depths = self.quote_depths.clone();
+                let book_depths = self.book_depths.clone();
+                let option_greeks_subs = self.option_greeks_subs.clone();
+                let bar_types_cache = ws_client.bar_types_cache().clone();
+                let instruments = Arc::clone(&instruments_by_symbol);
+                let clock = self.clock;
+                let cancel = self.cancellation_token.clone();
 
-            let handle = get_runtime().spawn(async move {
-                let mut quote_cache: AHashMap<InstrumentId, QuoteTick> = AHashMap::new();
-                let mut funding_cache: AHashMap<Ustr, FundingCacheEntry> = AHashMap::new();
+                let future = async move {
+                    let mut quote_cache: AHashMap<InstrumentId, QuoteTick> = AHashMap::new();
+                    let mut funding_cache: AHashMap<Ustr, FundingCacheEntry> = AHashMap::new();
 
-                pin_mut!(stream);
+                    pin_mut!(stream);
 
-                loop {
-                    tokio::select! {
-                        Some(message) = stream.next() => {
-                            handle_ws_message(
-                                &message,
-                                &sender,
-                                &instruments,
-                                product_type,
-                                &trade_subs,
-                                &ticker_subs,
-                                &quote_depths,
-                                &book_depths,
-                                &option_greeks_subs,
-                                &bar_types_cache,
-                                &mut quote_cache,
-                                &mut funding_cache,
-                                clock,
-                            );
-                        }
-                        () = cancel.cancelled() => {
-                            log::debug!("WebSocket stream task cancelled");
-                            break;
+                    loop {
+                        tokio::select! {
+                            Some(message) = stream.next() => {
+                                handle_ws_message(
+                                    &message,
+                                    &sender,
+                                    &instruments,
+                                    product_type,
+                                    &trade_subs,
+                                    &ticker_subs,
+                                    &quote_depths,
+                                    &book_depths,
+                                    &option_greeks_subs,
+                                    &bar_types_cache,
+                                    &mut quote_cache,
+                                    &mut funding_cache,
+                                    clock,
+                                );
+                            }
+                            () = cancel.cancelled() => {
+                                log::debug!("WebSocket stream task cancelled");
+                                break;
+                            }
                         }
                     }
-                }
-            });
-            self.tasks.push(handle);
+                };
+                self.session_tasks
+                    .spawn(future)
+                    .context("failed to register Bybit WebSocket stream task")?;
+            }
+
+            if let Some(poll_secs) = self.config.instrument_poll_interval_secs
+                && poll_secs > 0
+            {
+                self.spawn_instrument_polling(&product_types, poll_secs)?;
+            }
+
+            Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Bybit data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
 
-        // Spawn the instrument/status polling task (serves both definition and status subs).
-        if let Some(poll_secs) = self.config.instrument_poll_interval_secs
-            && poll_secs > 0
-        {
-            self.spawn_instrument_polling(&product_types, poll_secs);
-        }
-
+        setup_guard.disarm();
         self.is_connected.store(true, Ordering::Release);
         log::info!("Connected: client_id={}", self.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
-            return Ok(());
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        for ws_client in &self.ws_clients {
+            ws_client.begin_shutdown();
         }
-
-        self.cancellation_token.cancel();
-
-        // Reinitialize token so reconnect can spawn new stream tasks
-        self.cancellation_token = CancellationToken::new();
 
         for ws_client in &mut self.ws_clients {
             if let Err(e) = ws_client.close().await {
-                log::warn!("Error closing WebSocket: {e:?}");
+                self.shutdown_errors.push(e.to_string());
             }
         }
 
         // Allow time for unsubscribe confirmations
         tokio::time::sleep(Duration::from_millis(500)).await;
 
-        let handles: Vec<_> = std::mem::take(&mut self.tasks);
-        for handle in handles {
-            if let Err(e) = handle.await {
-                log::error!("Error joining WebSocket task: {e}");
-            }
+        if let Err(e) = self.finish_tasks().await {
+            self.shutdown_errors.push(e.to_string());
         }
 
         self.book_depths.store(AHashMap::new());
@@ -870,7 +989,13 @@ impl DataClient for BybitDataClient {
             .store(false, Ordering::Relaxed);
         self.is_connected.store(false, Ordering::Release);
         log::info!("Disconnected: client_id={}", self.client_id);
-        Ok(())
+
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!("Bybit data shutdown failed: {}", errors.join("; "))
+        }
     }
 
     fn is_connected(&self) -> bool {
@@ -1554,7 +1679,7 @@ impl DataClient for BybitDataClient {
             self.config.product_types.clone()
         };
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let mut all_instruments = Vec::new();
 
             for product_type in product_types {
@@ -1608,7 +1733,7 @@ impl DataClient for BybitDataClient {
             .unwrap_or(BybitProductType::Linear);
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str()).to_string();
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
                 .request_instruments(product_type, Some(raw_symbol), None)
                 .await
@@ -1657,7 +1782,7 @@ impl DataClient for BybitDataClient {
         let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
             .unwrap_or(BybitProductType::Linear);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
                 .request_orderbook_snapshot(product_type, instrument_id, depth)
                 .await
@@ -1709,7 +1834,7 @@ impl DataClient for BybitDataClient {
         let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
             .unwrap_or(BybitProductType::Linear);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
                 .request_trades(product_type, instrument_id, limit)
                 .await
@@ -1756,7 +1881,7 @@ impl DataClient for BybitDataClient {
         let product_type = BybitProductType::from_suffix(instrument_id.symbol.as_str())
             .unwrap_or(BybitProductType::Linear);
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
                 .request_bars(product_type, bar_type, start, end, limit, true)
                 .await
@@ -1806,7 +1931,7 @@ impl DataClient for BybitDataClient {
             anyhow::bail!("Funding rates not available for {product_type} instruments");
         }
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             match http
                 .request_funding_rates(product_type, instrument_id, start, end, limit)
                 .await
@@ -1846,7 +1971,7 @@ impl DataClient for BybitDataClient {
         let clock = self.clock;
         let venue = *BYBIT_VENUE;
 
-        get_runtime().spawn(async move {
+        self.spawn_command(async move {
             let result = if let Some(inst_id) = instrument_id {
                 // Single-instrument path: fetch ticker for one symbol
                 let raw_symbol = extract_raw_symbol(inst_id.symbol.as_str()).to_string();

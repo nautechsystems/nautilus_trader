@@ -21,7 +21,6 @@ pub mod factories;
 pub mod http;
 pub mod params;
 pub mod types;
-pub mod websocket;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -193,11 +192,6 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::types::BybitMarginBorrowResult>()?;
     m.add_class::<crate::common::types::BybitMarginRepayResult>()?;
     m.add_class::<crate::common::types::BybitMarginStatusResult>()?;
-    m.add_class::<crate::websocket::client::BybitWebSocketClient>()?;
-    m.add_class::<crate::websocket::messages::BybitWebSocketError>()?;
-    m.add_class::<params::BybitWsPlaceOrderParams>()?;
-    m.add_class::<params::BybitWsAmendOrderParams>()?;
-    m.add_class::<params::BybitWsCancelOrderParams>()?;
     m.add_class::<params::BybitTickersParams>()?;
     m.add_class::<params::BybitNativeTpSlParams>()?;
     m.add_class::<BybitDataClientConfig>()?;

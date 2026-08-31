@@ -25,7 +25,6 @@ pub mod enums;
 pub mod factories;
 pub mod http;
 pub mod urls;
-pub mod websocket;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -103,11 +102,9 @@ pub fn deribit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(DERIBIT_CLIENT_ID), *DERIBIT_CLIENT_ID)?;
     m.add(stringify!(DERIBIT_VENUE), *DERIBIT_VENUE)?;
     m.add_class::<super::http::client::DeribitHttpClient>()?;
-    m.add_class::<super::websocket::client::DeribitWebSocketClient>()?;
     m.add_class::<crate::common::enums::DeribitCurrency>()?;
     m.add_class::<crate::common::enums::DeribitProductType>()?;
     m.add_class::<crate::common::enums::DeribitEnvironment>()?;
-    m.add_class::<crate::websocket::enums::DeribitUpdateInterval>()?;
     m.add_class::<DeribitVolatilityIndex>()?;
     m.add_class::<DeribitBookSummary>()?;
     m.add_class::<DeribitDataClientConfig>()?;

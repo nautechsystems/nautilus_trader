@@ -26,7 +26,7 @@ use std::{
     fmt::Debug,
     num::NonZeroU32,
     sync::{
-        Arc, LazyLock,
+        Arc, LazyLock, Mutex,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, SystemTime},
@@ -36,14 +36,16 @@ use ahash::{AHashMap, AHashSet};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use futures_util::Stream;
-use nautilus_common::live::get_runtime;
 use nautilus_core::{
     AtomicMap,
     consts::NAUTILUS_USER_AGENT,
     env::{get_env_var, get_or_env_var},
     string::secret::REDACTED,
 };
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{TaskGroup, TaskShutdownError},
+};
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
@@ -204,18 +206,8 @@ pub(crate) struct PendingOrderInfo {
 
 /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
 #[derive(Clone)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.adapters.okx", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.okx")
-)]
 pub struct OKXWebSocketClient {
     url: String,
-    #[allow(dead_code)] // Read by Python bindings
-    pub(crate) account_id: AccountId,
     vip_level: Arc<AtomicU8>,
     credential: Option<Credential>,
     heartbeat: Option<u64>,
@@ -225,7 +217,9 @@ pub struct OKXWebSocketClient {
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<OKXWsMessage>>>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    handler_tasks: Arc<TaskGroup>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
+    handler_abort: Arc<Mutex<CancellationToken>>,
     subscriptions_inst_type: Arc<DashMap<OKXWsChannel, AHashSet<OKXInstrumentType>>>,
     subscriptions_inst_family: Arc<DashMap<OKXWsChannel, AHashSet<Ustr>>>,
     subscriptions_inst_id: Arc<DashMap<OKXWsChannel, AHashSet<Ustr>>>,
@@ -255,7 +249,37 @@ pub struct OKXWebSocketClient {
     /// Optional proxy URL for the WebSocket transport.
     proxy_url: Option<String>,
     cancellation_token: CancellationToken,
-    socket_control: Option<SocketControl>,
+    socket_control: Option<Arc<SocketControl>>,
+}
+
+struct ConnectRollback {
+    handler_tasks: Arc<TaskGroup>,
+    signal: Arc<AtomicBool>,
+    handler_abort: CancellationToken,
+    socket_control: Option<Arc<SocketControl>>,
+    armed: bool,
+}
+
+impl ConnectRollback {
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ConnectRollback {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+
+        self.handler_tasks.begin_shutdown();
+        self.signal.store(true, Ordering::Release);
+        self.handler_abort.cancel();
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
+    }
 }
 
 impl Default for OKXWebSocketClient {
@@ -297,15 +321,13 @@ impl OKXWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         api_passphrase: Option<String>,
-        account_id: Option<AccountId>,
+        _account_id: Option<AccountId>,
         heartbeat: Option<u64>,
         auth_timeout_secs: Option<u64>,
         transport_backend: TransportBackend,
         proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let url = url.unwrap_or(OKX_WS_PUBLIC_URL.to_string());
-        let account_id = account_id.unwrap_or(AccountId::from("OKX-master"));
-
         let credential = match (api_key, api_secret, api_passphrase) {
             (Some(key), Some(secret), Some(passphrase)) => {
                 Some(Credential::new(key, secret, passphrase))
@@ -325,7 +347,6 @@ impl OKXWebSocketClient {
 
         Ok(Self {
             url,
-            account_id,
             vip_level: Arc::new(AtomicU8::new(0)),
             credential,
             heartbeat,
@@ -341,7 +362,9 @@ impl OKXWebSocketClient {
                 Arc::new(tokio::sync::RwLock::new(tx))
             },
             out_rx: None,
-            task_handle: None,
+            handler_tasks: Arc::new(TaskGroup::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
+            handler_abort: Arc::new(Mutex::new(CancellationToken::new())),
             subscriptions_inst_type,
             subscriptions_inst_family,
             subscriptions_inst_id,
@@ -366,7 +389,7 @@ impl OKXWebSocketClient {
     /// Configures socket state reporting and reconnect control.
     #[must_use]
     pub fn with_socket_control(mut self, control: SocketControl) -> Self {
-        self.socket_control = Some(control);
+        self.socket_control = Some(Arc::new(control));
         self
     }
 
@@ -473,7 +496,7 @@ impl OKXWebSocketClient {
 
     /// Returns whether this client retains ownership of a handler task.
     pub(crate) fn has_task(&self) -> bool {
-        self.task_handle.is_some()
+        !self.handler_tasks.is_empty()
     }
 
     /// Caches multiple instruments.
@@ -569,14 +592,38 @@ impl OKXWebSocketClient {
     ///
     /// Panics if subscription arguments fail to serialize to JSON.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        if self
-            .task_handle
-            .as_ref()
-            .is_some_and(|handle| !handle.is_finished())
-        {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        if !self.handler_tasks.is_empty() && !self.handler_tasks.all_finished() {
             anyhow::bail!("Cannot connect while previous WebSocket handler task is still running");
         }
-        self.task_handle = None;
+
+        if !self.handler_tasks.is_open() || !self.handler_tasks.is_empty() {
+            self.handler_tasks.begin_shutdown();
+            self.handler_tasks
+                .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2))
+                .await
+                .map_err(|e| anyhow::anyhow!("Previous WebSocket handler failed: {e}"))?;
+            self.handler_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start WebSocket handler task generation: {e}")
+            })?;
+        }
+        let handler_spawner = self.handler_tasks.spawner().map_err(|e| {
+            anyhow::anyhow!("Failed to acquire WebSocket handler task spawner: {e}")
+        })?;
+        let handler_abort = CancellationToken::new();
+        *self
+            .handler_abort
+            .lock()
+            .expect("handler abort lock poisoned") = handler_abort.clone();
+        let mut rollback = ConnectRollback {
+            handler_tasks: Arc::clone(&self.handler_tasks),
+            signal: Arc::clone(&self.signal),
+            handler_abort: handler_abort.clone(),
+            socket_control: self.socket_control.clone(),
+            armed: true,
+        };
 
         // Reset signal so is_active()/is_closed() work after a previous close()
         self.signal.store(false, Ordering::Release);
@@ -655,7 +702,7 @@ impl OKXWebSocketClient {
             .message_handler(message_handler)
             .keyed_quotas(keyed_quotas)
             .default_quota(*OKX_WS_CONNECTION_QUOTA)
-            .maybe_state_sink(self.socket_control.as_ref().map(SocketControl::sink))
+            .maybe_state_sink(self.socket_control.as_ref().map(|control| control.sink()))
             .connect()
             .await?;
 
@@ -674,7 +721,7 @@ impl OKXWebSocketClient {
         let auth_tracker = self.auth_tracker.clone();
         let subscriptions_state = self.subscriptions_state.clone();
 
-        let stream_handle = get_runtime().spawn({
+        let handler_task = {
             let auth_tracker = auth_tracker.clone();
             let signal = signal.clone();
             let credential = self.credential.clone();
@@ -769,7 +816,15 @@ impl OKXWebSocketClient {
                 };
 
                 loop {
-                    match handler.next().await {
+                    let message = tokio::select! {
+                        () = handler_abort.cancelled() => {
+                            log::debug!("Handler task aborted");
+                            break;
+                        }
+                        message = handler.next() => message,
+                    };
+
+                    match message {
                         Some(OKXWsMessage::Reconnected) => {
                             if signal.load(Ordering::Acquire) {
                                 continue;
@@ -851,17 +906,37 @@ impl OKXWebSocketClient {
 
                 log::debug!("Handler task exiting");
             }
-        });
+        };
 
-        self.task_handle = Some(Arc::new(stream_handle));
+        if let Err(e) = handler_spawner.spawn(handler_task) {
+            self.out_rx = None;
+            anyhow::bail!("Failed to register WebSocket handler task: {e}");
+        }
 
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::SetClient(client))
-            .map_err(|e| {
-                OKXWsError::ClientError(format!("Failed to send WebSocket client to handler: {e}"))
-            })?;
+        let set_client_result = {
+            let cmd_tx = self.cmd_tx.read().await;
+            cmd_tx.send(HandlerCommand::SetClient(client))
+        };
+
+        if let Err(e) = set_client_result {
+            self.handler_tasks.begin_shutdown();
+            self.signal.store(true, Ordering::Release);
+            let handler_abort = self
+                .handler_abort
+                .lock()
+                .expect("handler abort lock poisoned")
+                .clone();
+            handler_abort.cancel();
+            let shutdown_result = self.close_stream_task(Duration::from_secs(2)).await;
+            self.out_rx = None;
+            anyhow::bail!(match shutdown_result {
+                Ok(()) => format!("Failed to send WebSocket client to handler: {e}"),
+                Err(shutdown_error) => format!(
+                    "Failed to send WebSocket client to handler: {e}; handler shutdown failed: \
+                     {shutdown_error}"
+                ),
+            });
+        }
 
         if let Some(control) = &self.socket_control {
             control.register(move || reconnect_handle.request_reconnect());
@@ -871,9 +946,24 @@ impl OKXWebSocketClient {
         if self.credential.is_some()
             && let Err(e) = self.authenticate().await
         {
-            anyhow::bail!("Authentication failed: {e}");
+            self.handler_tasks.begin_shutdown();
+            self.request_close().await;
+            let shutdown_result = self.close_stream_task(Duration::from_secs(2)).await;
+
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            self.out_rx = None;
+
+            match shutdown_result {
+                Ok(()) => anyhow::bail!("Authentication failed: {e}"),
+                Err(shutdown_error) => anyhow::bail!(
+                    "Authentication failed: {e}; handler shutdown failed: {shutdown_error}"
+                ),
+            }
         }
 
+        rollback.disarm();
         Ok(())
     }
 
@@ -979,21 +1069,16 @@ impl OKXWebSocketClient {
         Ok(())
     }
 
-    pub(crate) fn abort(&self) {
+    pub(crate) fn begin_shutdown(&self) {
+        self.handler_tasks.begin_shutdown();
         self.signal.store(true, Ordering::Release);
-        self.connection_mode
-            .load()
-            .store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
 
-        if let Some(stream_handle) = &self.task_handle {
-            stream_handle.abort();
-        }
-
-        self.index_pair_subscribers.clear();
-
-        if let Some(control) = &self.socket_control {
-            control.deregister();
-        }
+        let handler_abort = self
+            .handler_abort
+            .lock()
+            .expect("handler abort lock poisoned")
+            .clone();
+        handler_abort.cancel();
     }
 
     /// Signals the handler to close without joining its task.
@@ -1014,8 +1099,16 @@ impl OKXWebSocketClient {
     /// Returns an error if disconnecting the websocket or cleaning up the
     /// client fails.
     pub async fn close(&mut self) -> Result<(), Error> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        self.close_locked().await
+    }
+
+    async fn close_locked(&self) -> Result<(), Error> {
         log::debug!("Starting close process");
 
+        self.handler_tasks.begin_shutdown();
         self.request_close().await;
 
         let task_result = self.close_stream_task(Duration::from_secs(2)).await;
@@ -1034,47 +1127,16 @@ impl OKXWebSocketClient {
         task_result
     }
 
-    async fn close_stream_task(&mut self, timeout: Duration) -> Result<(), Error> {
-        let Some(stream_handle) = self.task_handle.take() else {
-            log::debug!("No stream handle to await");
-            return Ok(());
-        };
-
-        let mut handle = match Arc::try_unwrap(stream_handle) {
-            Ok(handle) => handle,
-            Err(stream_handle) if stream_handle.is_finished() => {
-                log::debug!("Shared stream handle already completed");
-                return Ok(());
-            }
-            Err(stream_handle) => {
-                stream_handle.abort();
-                self.task_handle = Some(stream_handle);
-                return Ok(());
-            }
-        };
-
-        log::debug!("Waiting for stream handle to complete");
-        match tokio::time::timeout(timeout, &mut handle).await {
-            Ok(Ok(())) => {
-                log::debug!("Stream handle completed successfully");
-                Ok(())
-            }
-            Ok(Err(e)) if e.is_cancelled() => {
-                log::debug!("Stream handle stopped after cancellation");
-                Ok(())
-            }
-            Ok(Err(e)) => {
-                log::error!("Stream handle encountered an error: {e:?}");
-                Ok(())
-            }
-            Err(_) => {
-                handle.abort();
-                self.task_handle = Some(Arc::new(handle));
-                Err(Error::Io(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "Timed out joining WebSocket handler task after abort",
-                )))
-            }
+    async fn close_stream_task(&self, timeout: Duration) -> Result<(), Error> {
+        match self.handler_tasks.finish_shutdown(timeout, timeout).await {
+            Ok(()) => Ok(()),
+            Err(error @ TaskShutdownError::Timeout { .. }) => Err(Error::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!("Timed out joining WebSocket handler task after abort: {error}"),
+            ))),
+            Err(e) => Err(Error::Io(std::io::Error::other(format!(
+                "WebSocket handler shutdown failed: {e}"
+            )))),
         }
     }
 
@@ -3573,6 +3635,20 @@ mod tests {
         }
     }
 
+    struct BlockingDrop(Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>);
+
+    impl Drop for BlockingDrop {
+        fn drop(&mut self) {
+            let (lock, condvar) = &*self.0;
+            let released = lock.lock().expect("release mutex");
+            drop(
+                condvar
+                    .wait_while(released, |released| !*released)
+                    .expect("release mutex"),
+            );
+        }
+    }
+
     #[rstest]
     #[case(OKXBookChannel::Book, OKXWsChannel::Books)]
     #[case(OKXBookChannel::BookL2Tbt, OKXWsChannel::BooksTbt)]
@@ -3752,7 +3828,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn abort_stops_handler_and_deregisters_socket() {
+    async fn begin_shutdown_stops_handler_before_bounded_close() {
         let client_id = ClientId::from("OKX-TEST");
         let endpoint = Ustr::from("okx-test-stream");
         let registry = SocketReconnectRegistry::default();
@@ -3767,27 +3843,66 @@ mod tests {
             .store(ConnectionMode::Active.as_u8(), Ordering::SeqCst);
         let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
         let signal = DropSignal(Some(drop_tx));
-        client.task_handle = Some(Arc::new(tokio::spawn(async move {
-            let _signal = signal;
-            std::future::pending::<()>().await;
-        })));
+        let handler_abort = CancellationToken::new();
+        *client
+            .handler_abort
+            .lock()
+            .expect("handler abort lock poisoned") = handler_abort.clone();
+        client
+            .handler_tasks
+            .spawn(async move {
+                let _signal = signal;
+                handler_abort.cancelled().await;
+            })
+            .expect("handler task should register");
 
         assert!(registry.handle(client_id, endpoint).is_some());
-        client.abort();
+        client.begin_shutdown();
 
         tokio::time::timeout(Duration::from_secs(1), drop_rx)
             .await
-            .expect("abort must drop the handler task")
+            .expect("begin shutdown must drop the handler task")
             .expect("drop signal");
         assert!(client.is_closed());
-        assert!(client.has_task());
-        assert!(registry.handle(client_id, endpoint).is_none());
+        assert!(!client.handler_tasks.is_open());
+        assert!(registry.handle(client_id, endpoint).is_some());
 
-        client
-            .close_stream_task(Duration::from_secs(1))
-            .await
-            .expect("aborted handler task joined");
+        client.close().await.expect("bounded close");
         assert!(!client.has_task());
+        assert!(registry.handle(client_id, endpoint).is_none());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn connect_rollback_closes_handler_admission_and_deregisters_socket() {
+        let client_id = ClientId::from("OKX-CONNECT-ROLLBACK");
+        let endpoint = Ustr::from("okx-connect-rollback");
+        let registry = SocketReconnectRegistry::default();
+        let control =
+            SocketControl::with_registry(client_id, Some(*OKX_VENUE), endpoint, &registry);
+        control.register(|| SocketReconnectRequestOutcome::Accepted);
+        let handler_tasks = Arc::new(TaskGroup::new());
+        let signal = Arc::new(AtomicBool::new(false));
+        let handler_abort = CancellationToken::new();
+
+        let rollback = ConnectRollback {
+            handler_tasks: Arc::clone(&handler_tasks),
+            signal: Arc::clone(&signal),
+            handler_abort: handler_abort.clone(),
+            socket_control: Some(Arc::new(control)),
+            armed: true,
+        };
+
+        drop(rollback);
+
+        assert!(!handler_tasks.is_open());
+        assert!(signal.load(Ordering::Acquire));
+        assert!(handler_abort.is_cancelled());
+        assert!(registry.handle(client_id, endpoint).is_none());
+        handler_tasks
+            .finish_shutdown(Duration::ZERO, Duration::from_secs(1))
+            .await
+            .expect("empty handler scope should drain");
     }
 
     #[rstest]
@@ -3806,14 +3921,17 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn close_succeeds_when_clone_retains_handler() {
+    async fn close_joins_handler_shared_with_clone() {
         let mut client = OKXWebSocketClient::default();
         let (drop_tx, drop_rx) = tokio::sync::oneshot::channel();
         let signal = DropSignal(Some(drop_tx));
-        client.task_handle = Some(Arc::new(tokio::spawn(async move {
-            let _signal = signal;
-            std::future::pending::<()>().await;
-        })));
+        client
+            .handler_tasks
+            .spawn(async move {
+                let _signal = signal;
+                std::future::pending::<()>().await;
+            })
+            .expect("handler task should register");
         let retained = client.clone();
 
         client.close().await.expect("close with retained clone");
@@ -3822,29 +3940,27 @@ mod tests {
             .await
             .expect("close must drop the handler task")
             .expect("drop signal");
-        assert!(client.has_task());
-        assert!(retained.has_task());
+        assert!(!client.has_task());
+        assert!(!retained.has_task());
     }
 
     #[rstest]
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn timeout_retains_unfinished_handler_task() {
         let mut client = OKXWebSocketClient::default();
         let release = Arc::new((std::sync::Mutex::new(false), std::sync::Condvar::new()));
-        let task_release = Arc::clone(&release);
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-        client.task_handle = Some(Arc::new(tokio::task::spawn_blocking(move || {
-            started_tx.send(()).expect("started receiver");
-            let (lock, condvar) = &*task_release;
-            let released = lock.lock().expect("release mutex");
-            drop(
-                condvar
-                    .wait_while(released, |released| !*released)
-                    .expect("release mutex"),
-            );
-        })));
+        let blocking_drop = BlockingDrop(Arc::clone(&release));
+        client
+            .handler_tasks
+            .spawn(async move {
+                let _blocking_drop = blocking_drop;
+                started_tx.send(()).expect("started receiver");
+                std::future::pending::<()>().await;
+            })
+            .expect("handler task should register");
         started_rx.await.expect("blocking task started");
-        client.abort();
+        client.begin_shutdown();
 
         let result = client.close_stream_task(Duration::from_millis(10)).await;
         let retained = client.has_task();
@@ -3946,22 +4062,6 @@ mod tests {
 
         assert!(client_with_heartbeat.heartbeat.is_some());
         assert_eq!(client_with_heartbeat.heartbeat.unwrap(), 30);
-
-        let account_id = AccountId::from("test-account-123");
-        let client_with_account = OKXWebSocketClient::new(
-            None,
-            None,
-            None,
-            None,
-            Some(account_id),
-            None,
-            None,
-            TransportBackend::default(),
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(client_with_account.account_id, account_id);
     }
 
     #[rstest]

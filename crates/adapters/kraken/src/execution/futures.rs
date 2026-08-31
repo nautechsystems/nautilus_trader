@@ -17,7 +17,7 @@
 
 use std::{
     future::Future,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -27,7 +27,7 @@ use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -35,11 +35,12 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicMap, MUTEX_POISONED, Params, UnixNanos,
+    AtomicMap, Params, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControl, execution::failure::CommandFailure,
+    task::TaskGroup,
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -53,7 +54,6 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -98,8 +98,8 @@ pub struct KrakenFuturesExecutionClient {
     http: KrakenFuturesHttpClient,
     ws: KrakenFuturesWebSocketClient,
     cancellation_token: CancellationToken,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     truncated_id_map: Arc<AtomicMap<String, ClientOrderId>>,
     order_instrument_map: Arc<AtomicMap<String, InstrumentId>>,
@@ -123,7 +123,9 @@ impl KrakenFuturesExecutionClient {
             None,
         );
 
-        let cancellation_token = CancellationToken::new();
+        let session_tasks = TaskGroup::new();
+        let cancellation_token = session_tasks.cancellation_token();
+        let pending_tasks = TaskGroup::new();
 
         let http = KrakenFuturesHttpClient::with_credentials(
             config.api_key.clone(),
@@ -163,8 +165,8 @@ impl KrakenFuturesExecutionClient {
             http,
             ws,
             cancellation_token,
-            ws_stream_handle: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            session_tasks,
+            pending_tasks,
             instruments: Arc::new(AtomicMap::new()),
             truncated_id_map: Arc::new(AtomicMap::new()),
             order_instrument_map: Arc::new(AtomicMap::new()),
@@ -203,16 +205,54 @@ impl KrakenFuturesExecutionClient {
     where
         F: Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        tasks.retain(|handle| !handle.is_finished());
-        tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Kraken Futures {description} after shutdown began: {e}");
+        }
+    }
+
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, pending_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.pending_tasks
+                .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2)),
+        );
+        session_result.context("failed to finish Kraken Futures execution session tasks")?;
+        pending_result.context("failed to finish Kraken Futures execution command tasks")?;
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.pending_tasks.is_open() {
+            self.session_tasks.begin_shutdown();
+            self.pending_tasks.begin_shutdown();
+            self.finish_tasks().await?;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start Kraken Futures execution session task generation")?;
+            self.pending_tasks
+                .start_generation()
+                .context("failed to start Kraken Futures execution command task generation")?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
+        }
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.http.cancel_all_requests();
+        self.pending_tasks.begin_shutdown();
+        let ws_result = self.ws.close().await;
+        self.session_tasks.begin_shutdown();
+        let tasks_result = self.finish_tasks().await;
+        self.core.set_disconnected();
+        tasks_result?;
+        Ok(ws_result?)
     }
 
     fn submit_single_order(&self, order: &OrderAny, task_name: &'static str) {
@@ -355,7 +395,7 @@ impl KrakenFuturesExecutionClient {
         let clock = self.clock;
         let cancellation_token = self.cancellation_token.clone();
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             loop {
                 tokio::select! {
                     () = cancellation_token.cancelled() => {
@@ -386,10 +426,11 @@ impl KrakenFuturesExecutionClient {
                     }
                 }
             }
-        });
+        };
 
-        self.ws_stream_handle = Some(handle);
-        Ok(())
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register Kraken Futures execution stream task")
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -603,7 +644,9 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         }
 
         self.http.cancel_all_requests();
-        self.cancellation_token.cancel();
+        self.session_tasks.begin_shutdown();
+        self.pending_tasks.begin_shutdown();
+        self.ws.begin_shutdown();
         self.core.set_stopped();
         self.core.set_disconnected();
         log::info!("Stopped: client_id={}", self.core.client_id);
@@ -611,11 +654,13 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.session_tasks.is_open() && self.pending_tasks.is_open()
+        {
             return Ok(());
         }
 
         self.http.reset_cancellation_token();
+        self.prepare_task_groups().await?;
 
         if !self.core.instruments_initialized() {
             let instruments = self
@@ -634,44 +679,57 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             }
         });
 
-        self.ws
-            .connect()
-            .await
-            .context("Failed to connect futures WebSocket")?;
-        self.ws
-            .wait_until_active(10.0)
-            .await
-            .context("Futures WebSocket failed to become active")?;
+        let session_result = async {
+            self.ws
+                .connect()
+                .await
+                .context("Failed to connect futures WebSocket")?;
+            self.ws
+                .wait_until_active(10.0)
+                .await
+                .context("Futures WebSocket failed to become active")?;
 
-        self.ws
-            .authenticate()
-            .await
-            .context("Failed to authenticate futures WebSocket")?;
+            self.ws
+                .authenticate()
+                .await
+                .context("Failed to authenticate futures WebSocket")?;
 
-        // Request and register account state before message handler
-        let account_state = self
-            .http
-            .request_account_state(self.core.account_id)
-            .await
-            .context("Failed to request Kraken futures account state")?;
+            let account_state = self
+                .http
+                .request_account_state(self.core.account_id)
+                .await
+                .context("Failed to request Kraken futures account state")?;
 
-        if !account_state.balances.is_empty() {
-            log::debug!(
-                "Received account state with {} balance(s)",
-                account_state.balances.len()
-            );
+            if !account_state.balances.is_empty() {
+                log::debug!(
+                    "Received account state with {} balance(s)",
+                    account_state.balances.len()
+                );
+            }
+            self.emitter.send_account_state(account_state);
+            self.await_account_registered(30.0).await?;
+
+            self.spawn_message_handler()?;
+
+            self.ws
+                .subscribe_executions()
+                .await
+                .context("Failed to subscribe to executions")?;
+
+            log::debug!("Futures WebSocket authenticated and subscribed to executions");
+
+            Ok::<(), anyhow::Error>(())
         }
-        self.emitter.send_account_state(account_state);
-        self.await_account_registered(30.0).await?;
+        .await;
 
-        self.spawn_message_handler()?;
-
-        self.ws
-            .subscribe_executions()
-            .await
-            .context("Failed to subscribe to executions")?;
-
-        log::debug!("Futures WebSocket authenticated and subscribed to executions");
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Kraken Futures execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
 
         self.core.set_connected();
         log::info!("Connected: client_id={}", self.core.client_id);
@@ -679,21 +737,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
-        self.http.cancel_all_requests();
-        self.cancellation_token.cancel();
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-
-        let _ = self.ws.close().await;
-
-        self.cancellation_token = CancellationToken::new();
-        self.core.set_disconnected();
+        self.teardown_partial_connect().await?;
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }

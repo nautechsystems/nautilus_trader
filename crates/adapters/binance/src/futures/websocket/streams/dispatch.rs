@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use futures_util::{Stream, StreamExt, pin_mut};
-use nautilus_common::{cache::fifo::FifoCache, live::get_runtime};
+use nautilus_common::cache::fifo::FifoCache;
 use nautilus_core::{AtomicSet, MUTEX_POISONED, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
@@ -37,7 +37,6 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -89,15 +88,12 @@ pub(crate) struct DispatchCtx {
     pub cancellation_token: CancellationToken,
 }
 
-/// Spawns the user data stream dispatch task. The task consumes `stream` and
-/// routes each message through `dispatch_fn`.
-pub(crate) fn spawn_user_stream_dispatch<S, F>(
+pub(crate) async fn run_user_stream_dispatch<S, F>(
     stream: S,
     ctx: Arc<DispatchCtx>,
     recovery_tx: tokio::sync::mpsc::UnboundedSender<()>,
     dispatch_fn: F,
-) -> JoinHandle<()>
-where
+) where
     S: Stream<Item = BinanceFuturesWsStreamsMessage> + Send + 'static,
     F: Fn(BinanceFuturesWsStreamsMessage, &DispatchCtx, &tokio::sync::mpsc::UnboundedSender<()>)
         + Send
@@ -106,31 +102,29 @@ where
 {
     let cancel = ctx.cancellation_token.clone();
 
-    get_runtime().spawn(async move {
-        pin_mut!(stream);
+    pin_mut!(stream);
 
-        loop {
-            tokio::select! {
-                msg = stream.next() => {
-                    // Break on stream end so the task exits once the WebSocket
-                    // client has drained its out_rx queue. The recovery path
-                    // relies on this to flush events queued on the old stream
-                    // before the new dispatcher takes over.
-                    match msg {
-                        Some(message) => dispatch_fn(message, ctx.as_ref(), &recovery_tx),
-                        None => {
-                            log::debug!("WS dispatch stream ended");
-                            break;
-                        }
+    loop {
+        tokio::select! {
+            msg = stream.next() => {
+                // Break on stream end so the task exits once the WebSocket
+                // client has drained its out_rx queue. The recovery path
+                // relies on this to flush events queued on the old stream
+                // before the new dispatcher takes over.
+                match msg {
+                    Some(message) => dispatch_fn(message, ctx.as_ref(), &recovery_tx),
+                    None => {
+                        log::debug!("WS dispatch stream ended");
+                        break;
                     }
                 }
-                () = cancel.cancelled() => {
-                    log::debug!("WS dispatch task cancelled");
-                    break;
-                }
+            }
+            () = cancel.cancelled() => {
+                log::debug!("WS dispatch task cancelled");
+                break;
             }
         }
-    })
+    }
 }
 
 /// Adapter between [`DispatchCtx`] and the free-function [`dispatch_ws_message`].

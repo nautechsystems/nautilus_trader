@@ -112,7 +112,7 @@ pub(crate) fn plain_stream_config(port: u16) -> BetfairStreamConfig {
 }
 
 #[derive(Clone)]
-pub(crate) struct BettingResponseGate {
+pub(crate) struct MockResponseGate {
     pub method: String,
     pub waiters: Arc<AtomicUsize>,
     pub semaphore: Arc<Semaphore>,
@@ -146,7 +146,8 @@ pub(crate) struct MockState {
     pub betting_request_params: Arc<Mutex<Vec<(String, Value)>>>,
     /// Per-method response delay; lets tests widen reconciliation windows.
     pub betting_response_delays: Arc<Mutex<HashMap<String, Duration>>>,
-    pub betting_response_gate: Arc<Mutex<Option<BettingResponseGate>>>,
+    pub betting_response_gate: Arc<Mutex<Option<MockResponseGate>>>,
+    pub accounts_response_gate: Arc<Mutex<Option<MockResponseGate>>>,
     pub accounts_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub accounts_error_overrides: Arc<Mutex<HashMap<String, Value>>>,
     pub login_response_override: Arc<Mutex<Option<String>>>,
@@ -343,6 +344,18 @@ async fn handle_accounts(State(state): State<MockState>, body: Bytes) -> impl In
     let request: Value = serde_json::from_slice(&body).unwrap_or_default();
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = request.get("id").and_then(|i| i.as_u64()).unwrap_or(0);
+
+    let response_gate = state.accounts_response_gate.lock().unwrap().clone();
+    if let Some(gate) = response_gate
+        && gate.method == method
+    {
+        gate.waiters.fetch_add(1, Ordering::Relaxed);
+        gate.semaphore
+            .acquire()
+            .await
+            .expect("accounts response gate must remain open")
+            .forget();
+    }
 
     if let Some(mut response) = state
         .accounts_error_overrides

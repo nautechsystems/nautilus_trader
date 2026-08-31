@@ -38,7 +38,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::InstrumentLookupError,
     clients::DataClient,
-    live::{get_runtime, runner::get_data_event_sender, task::TaskHandles},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -55,7 +55,10 @@ use nautilus_core::{
     AtomicMap, AtomicSet,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{SocketControl, SocketControlFactory};
+use nautilus_live::{
+    SocketControl, SocketControlFactory,
+    task::{TaskGroup, TaskSpawner},
+};
 use nautilus_model::{
     data::QuoteTick,
     enums::BookType,
@@ -117,8 +120,7 @@ pub struct PolymarketDataClient {
     ws_client: PolymarketMarketConnectionPool,
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
-    tasks: Arc<TaskHandles>,
-    task_registration: Arc<StdMutex<()>>,
+    tasks: TaskGroup,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     token_meta: Arc<DashMap<Ustr, TokenMeta>>,
@@ -141,6 +143,8 @@ pub struct PolymarketDataClient {
     rtds_feed: PolymarketRtdsFeed,
     rtds_socket_control: Option<SocketControl>,
     proxy_url: Option<ProxyUrl>,
+    reset_pending: bool,
+    shutdown_errors: Vec<String>,
 }
 
 impl PolymarketDataClient {
@@ -199,6 +203,8 @@ impl PolymarketDataClient {
         let rtds_url = config.rtds_url();
         let rtds_transport_backend = config.transport_backend;
         let rtds_data_sender = data_sender.clone();
+        let tasks = TaskGroup::new();
+        let cancellation_token = tasks.cancellation_token();
 
         Self {
             clock,
@@ -209,9 +215,8 @@ impl PolymarketDataClient {
             data_api_client,
             ws_client,
             is_connected: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
-            tasks: Arc::new(TaskHandles::default()),
-            task_registration: Arc::new(StdMutex::new(())),
+            cancellation_token,
+            tasks,
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             token_meta: Arc::new(DashMap::new()),
@@ -243,6 +248,8 @@ impl PolymarketDataClient {
             ),
             rtds_socket_control,
             proxy_url,
+            reset_pending: false,
+            shutdown_errors: Vec::new(),
         }
     }
 
@@ -396,22 +403,20 @@ impl PolymarketDataClient {
         let ws_open_tokens = self.ws_open_tokens.clone();
         let ws_sub_mutex = self.ws_sub_mutex.clone();
         let ws = self.ws_client.handle();
-        spawn_task(
-            &self.tasks,
-            &self.task_registration,
-            &self.cancellation_token,
-            sync_ws_subscription_with_terminal_async(
-                instrument_id,
-                token_id_str,
-                active_quote_subs,
-                active_delta_subs,
-                active_trade_subs,
-                closed_condition_ids,
-                ws_open_tokens,
-                ws_sub_mutex,
-                ws,
-            ),
-        );
+
+        if let Err(e) = self.tasks.spawn(sync_ws_subscription_with_terminal_async(
+            instrument_id,
+            token_id_str,
+            active_quote_subs,
+            active_delta_subs,
+            active_trade_subs,
+            closed_condition_ids,
+            ws_open_tokens,
+            ws_sub_mutex,
+            ws,
+        )) {
+            log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+        }
     }
 }
 
@@ -691,30 +696,11 @@ impl DataClient for PolymarketDataClient {
     }
 }
 
-pub(super) fn spawn_task<F>(
-    tasks: &TaskHandles,
-    registration: &StdMutex<()>,
-    cancellation: &CancellationToken,
-    future: F,
-) where
+pub(super) fn spawn_task<F>(tasks: &TaskSpawner, future: F)
+where
     F: Future<Output = ()> + Send + 'static,
 {
-    // This mutex is also held when cancellation tokens are canceled or replaced,
-    // and the start gate prevents polling before the handle is tracked.
-    let _guard = registration
-        .lock()
-        .expect("task registration mutex poisoned");
-
-    if cancellation.is_cancelled() {
-        return;
+    if let Err(e) = tasks.spawn(future) {
+        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
     }
-
-    let (start_tx, start_rx) = tokio::sync::oneshot::channel();
-    let handle = get_runtime().spawn(async move {
-        if start_rx.await.is_ok() {
-            future.await;
-        }
-    });
-    tasks.push(handle);
-    let _ = start_tx.send(());
 }

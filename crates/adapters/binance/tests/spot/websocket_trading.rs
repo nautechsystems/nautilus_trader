@@ -110,7 +110,7 @@ fn write_var_string(buf: &mut Vec<u8>, s: &str) {
 }
 
 fn write_var_data(buf: &mut Vec<u8>, data: &[u8]) {
-    buf.push(data.len() as u8);
+    buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
     buf.extend_from_slice(data);
 }
 
@@ -130,7 +130,7 @@ fn build_ws_response_envelope(status: u16, request_id: &str, result: &[u8]) -> V
 
     // rate_limits group (empty)
     let group_block_length: u16 = 0;
-    let group_count: u32 = 0;
+    let group_count: u16 = 0;
     buf.extend_from_slice(&group_block_length.to_le_bytes());
     buf.extend_from_slice(&group_count.to_le_bytes());
 
@@ -415,7 +415,7 @@ async fn test_client_connection() {
     assert!(client.is_active());
     assert_eq!(*state.connection_count.lock().await, 1);
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -434,7 +434,7 @@ async fn test_client_disconnect() {
 
     assert!(client.is_active());
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 
     // Disconnect completes without panic - internal cleanup occurs
     // The handler task is cancelled and any pending requests would fail
@@ -505,7 +505,7 @@ async fn test_place_order_sends_correct_request() {
     assert!(params.get("apiKey").is_some());
     assert!(params.get("signature").is_some());
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -571,7 +571,7 @@ async fn test_order_rejection_via_json_error() {
         }
     }
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -629,7 +629,7 @@ async fn test_next_request_id_increments() {
     assert_eq!(id1, "req-1");
     assert_eq!(id2, "req-2");
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -649,7 +649,7 @@ async fn test_reconnection_clears_pending_requests() {
     // The reconnection flow with pending requests is tested via the handler
     // When a reconnect happens, fail_pending_requests should be called
 
-    client.disconnect().await;
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

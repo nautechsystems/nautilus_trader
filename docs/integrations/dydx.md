@@ -87,7 +87,7 @@ window and routes borderline orders to the long-term path rather than the revers
 The dYdX v4 adapter includes multiple components which can be used together or separately:
 
 - `DydxHttpClient`: HTTP client for Indexer REST API queries.
-- `DydxWebSocketClient`: WebSocket client for real-time market data and account updates.
+- `DydxWebSocketClient`: WebSocket client for Rust callers.
 - `DydxGrpcClient`: gRPC client for Cosmos SDK transaction submission.
 - `InstrumentCache`: Instrument parsing and loading, shared by the HTTP, WebSocket, and execution clients.
 - `DydxDataClient`: Market data feed manager.

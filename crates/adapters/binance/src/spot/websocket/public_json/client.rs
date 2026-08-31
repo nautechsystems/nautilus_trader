@@ -24,9 +24,11 @@ use std::{
 };
 
 use futures_util::Stream;
-use nautilus_common::live::get_runtime;
 use nautilus_core::AtomicMap;
-use nautilus_live::{SocketControl, SocketControlFactory};
+use nautilus_live::{
+    SocketControl, SocketControlFactory,
+    task::{TaskJoinOutcome, TaskSlot, finish_task},
+};
 use nautilus_model::instruments::{Instrument, InstrumentAny};
 use nautilus_network::{
     mode::ConnectionMode,
@@ -56,11 +58,12 @@ pub const MAX_CONNECTIONS: usize = 20;
 struct ConnectionSlot {
     cmd_tx: tokio::sync::mpsc::UnboundedSender<BinanceSpotPublicWsCommand>,
     streams: Vec<String>,
-    handler_task: tokio::task::JoinHandle<()>,
-    bytes_task: tokio::task::JoinHandle<()>,
+    handler_task: TaskSlot<()>,
+    bytes_task: TaskSlot<()>,
     cancellation_token: CancellationToken,
     connection_mode: Arc<AtomicU8>,
     socket_control: Option<SocketControl>,
+    shutdown_errors: Vec<String>,
 }
 
 /// Binance Spot public JSON WebSocket client.
@@ -69,7 +72,7 @@ pub struct BinanceSpotPublicJsonWebSocketClient {
     url: String,
     heartbeat: Option<u64>,
     signal: Arc<AtomicBool>,
-    slots: Arc<Mutex<Vec<ConnectionSlot>>>,
+    slots: Arc<ConnectionSlots>,
     connect_lock: Arc<tokio::sync::Mutex<()>>,
     out_tx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<BinanceSpotPublicWsMessage>>>>,
     out_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BinanceSpotPublicWsMessage>>>>,
@@ -113,7 +116,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
             url,
             heartbeat,
             signal: Arc::new(AtomicBool::new(false)),
-            slots: Arc::new(Mutex::new(Vec::new())),
+            slots: Arc::new(ConnectionSlots(Mutex::new(Vec::new()))),
             connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             out_tx: Arc::new(Mutex::new(None)),
             out_rx: Arc::new(Mutex::new(None)),
@@ -173,14 +176,41 @@ impl BinanceSpotPublicJsonWebSocketClient {
     /// Returns an error if connection fails.
     #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        self.signal.store(false, Ordering::Relaxed);
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+
+        if !self.slots.lock().expect("slots lock poisoned").is_empty() {
+            self.close_connections().await?;
+        }
+
+        {
+            let _slots = self.slots.lock().expect("slots lock poisoned");
+            self.signal.store(false, Ordering::Release);
+        }
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
         *self.out_tx.lock().expect("out_tx lock poisoned") = Some(out_tx);
         *self.out_rx.lock().expect("out_rx lock poisoned") = Some(out_rx);
 
         let slot = self.create_connection(0).await?;
-        self.slots.lock().expect("slots lock poisoned").push(slot);
+        let shutdown = {
+            let mut slots = self.slots.lock().expect("slots lock poisoned");
+            let shutdown = self.signal.load(Ordering::Acquire);
+            slots.push(slot);
+            shutdown
+        };
+
+        if shutdown {
+            let rollback = self.close_connections().await;
+            return Err(match rollback {
+                Ok(()) => anyhow::anyhow!(
+                    "Binance Spot public JSON stream pool shutdown began during connect"
+                ),
+                Err(e) => anyhow::anyhow!(
+                    "Binance Spot public JSON stream pool shutdown began during connect; rollback failed: {e}"
+                ),
+            });
+        }
 
         log::debug!(
             "Connected to Binance Spot public JSON stream pool: url={}",
@@ -194,28 +224,74 @@ impl BinanceSpotPublicJsonWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if command delivery fails while shutting down.
-    #[expect(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub async fn close(&mut self) -> anyhow::Result<()> {
-        self.signal.store(true, Ordering::Relaxed);
+        self.begin_shutdown();
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _connect_guard = connect_lock.lock().await;
+        self.close_connections().await
+    }
 
-        let taken: Vec<ConnectionSlot> = {
-            let mut guard = self.slots.lock().expect("slots lock poisoned");
-            guard.drain(..).collect()
-        };
+    pub(crate) fn begin_shutdown(&self) {
+        let slots = self.slots.lock().expect("slots lock poisoned");
+        self.signal.store(true, Ordering::Release);
 
-        for slot in taken {
+        for slot in slots.iter() {
+            if let Some(control) = &slot.socket_control {
+                control.deregister();
+            }
+            slot.cancellation_token.cancel();
+            let _ = slot.cmd_tx.send(BinanceSpotPublicWsCommand::Disconnect);
+        }
+    }
+
+    async fn close_connections(&self) -> anyhow::Result<()> {
+        self.begin_shutdown();
+
+        let mut batch = ConnectionSlotBatch::take(&self.slots);
+        let mut index = batch.slots.len();
+        while index > 0 {
+            index -= 1;
+            let slot = &mut batch.slots[index];
             if let Some(control) = &slot.socket_control {
                 control.deregister();
             }
             let _ = slot.cmd_tx.send(BinanceSpotPublicWsCommand::Disconnect);
             slot.cancellation_token.cancel();
-            let _ = slot.bytes_task.await;
-            let _ = slot.handler_task.await;
+            if let Some(error) =
+                finish_slot_task(&mut slot.handler_task, "Spot public stream handler").await
+            {
+                slot.shutdown_errors.push(error);
+            }
+
+            if let Some(error) =
+                finish_slot_task(&mut slot.bytes_task, "Spot public byte stream").await
+            {
+                slot.shutdown_errors.push(error);
+            }
+
+            if slot.handler_task.is_none()
+                && slot.bytes_task.is_none()
+                && slot.shutdown_errors.is_empty()
+            {
+                batch.slots.remove(index);
+            }
         }
 
         *self.out_tx.lock().expect("out_tx lock poisoned") = None;
         *self.out_rx.lock().expect("out_rx lock poisoned") = None;
 
+        let errors = batch
+            .slots
+            .iter_mut()
+            .flat_map(|slot| std::mem::take(&mut slot.shutdown_errors))
+            .collect::<Vec<_>>();
+        batch
+            .slots
+            .retain(|slot| slot.handler_task.is_some() || slot.bytes_task.is_some());
+
+        if !errors.is_empty() {
+            anyhow::bail!(errors.join("; "));
+        }
         log::debug!("Disconnected from Binance Spot public JSON stream pool");
         Ok(())
     }
@@ -232,6 +308,10 @@ impl BinanceSpotPublicJsonWebSocketClient {
         // Phase 1: filter already-subscribed streams (brief lock)
         let new_streams: Vec<String> = {
             let slots = self.slots.lock().expect("slots lock poisoned");
+
+            if self.signal.load(Ordering::Acquire) {
+                anyhow::bail!("Binance Spot public JSON stream pool is shutting down");
+            }
             streams
                 .into_iter()
                 .filter(|s| !slots.iter().any(|slot| slot.streams.contains(s)))
@@ -258,11 +338,25 @@ impl BinanceSpotPublicJsonWebSocketClient {
             }
 
             let new_slot = self.create_connection(slot_count).await?;
-            let slot_count = {
+            let (slot_count, shutdown) = {
                 let mut slots = self.slots.lock().expect("slots lock poisoned");
+                let shutdown = self.signal.load(Ordering::Acquire);
                 slots.push(new_slot);
-                slots.len()
+                (slots.len(), shutdown)
             };
+
+            if shutdown {
+                let client = self.clone();
+                let rollback = client.close_connections().await;
+                return Err(match rollback {
+                    Ok(()) => anyhow::anyhow!(
+                        "Binance Spot public JSON stream pool shutdown began during subscribe"
+                    ),
+                    Err(e) => anyhow::anyhow!(
+                        "Binance Spot public JSON stream pool shutdown began during subscribe; rollback failed: {e}"
+                    ),
+                });
+            }
             log::debug!(
                 "Spot JSON pool slot {} connected: url={}",
                 slot_count - 1,
@@ -272,6 +366,10 @@ impl BinanceSpotPublicJsonWebSocketClient {
 
         // Phase 3: stage assignments, send commands, then commit slot state.
         let mut slots = self.slots.lock().expect("slots lock poisoned");
+
+        if self.signal.load(Ordering::Acquire) {
+            anyhow::bail!("Binance Spot public JSON stream pool is shutting down");
+        }
         let mut slot_batches: Vec<(usize, Vec<String>)> = Vec::new();
         let mut slot_counts: Vec<usize> = slots.iter().map(|s| s.streams.len()).collect();
 
@@ -320,7 +418,12 @@ impl BinanceSpotPublicJsonWebSocketClient {
             return Ok(());
         }
 
+        let _connect_guard = self.connect_lock.lock().await;
         let mut slots = self.slots.lock().expect("slots lock poisoned");
+
+        if self.signal.load(Ordering::Acquire) {
+            anyhow::bail!("Binance Spot public JSON stream pool is shutting down");
+        }
         let mut slot_batches: Vec<(usize, Vec<String>)> = Vec::new();
 
         for stream in &streams {
@@ -452,9 +555,6 @@ impl BinanceSpotPublicJsonWebSocketClient {
 
         let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();
-        if let Some(control) = &socket_control {
-            control.register(move || reconnect_handle.request_reconnect());
-        }
         let subscriptions_state = SubscriptionState::new('@');
         let cancellation_token = CancellationToken::new();
 
@@ -462,7 +562,8 @@ impl BinanceSpotPublicJsonWebSocketClient {
 
         let (bytes_tx, bytes_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
-        let bytes_task = get_runtime().spawn(async move {
+        let mut bytes_task = TaskSlot::new();
+        if let Err(e) = bytes_task.spawn(async move {
             let mut raw_rx = raw_rx;
             while let Some(msg) = raw_rx.recv().await {
                 let data = match msg {
@@ -476,7 +577,16 @@ impl BinanceSpotPublicJsonWebSocketClient {
                     break;
                 }
             }
-        });
+        }) {
+            let shutdown_error = finish_slot_task(&mut bytes_task, "Binance Spot WS bytes").await;
+            anyhow::bail!(match shutdown_error {
+                Some(shutdown_error) => format!(
+                    "Failed to start Spot public JSON WS bytes task: {e}; startup rollback failed: \
+                     {shutdown_error}"
+                ),
+                None => format!("Failed to start Spot public JSON WS bytes task: {e}"),
+            });
+        }
 
         let mut handler = BinanceSpotPublicWsHandler::new(
             self.signal.clone(),
@@ -494,7 +604,8 @@ impl BinanceSpotPublicJsonWebSocketClient {
         let token = cancellation_token.clone();
         let resubscribe_tx = cmd_tx.clone();
 
-        let handler_task = get_runtime().spawn(async move {
+        let mut handler_task = TaskSlot::new();
+        if let Err(e) = handler_task.spawn(async move {
             loop {
                 tokio::select! {
                     () = token.cancelled() => {
@@ -537,7 +648,36 @@ impl BinanceSpotPublicJsonWebSocketClient {
                     }
                 }
             }
-        });
+        }) {
+            cancellation_token.cancel();
+            bytes_task.abort();
+            let mut shutdown_errors = Vec::new();
+
+            if let Some(error) =
+                finish_slot_task(&mut handler_task, "Binance Spot public JSON handler").await
+            {
+                shutdown_errors.push(error);
+            }
+
+            if let Some(error) =
+                finish_slot_task(&mut bytes_task, "Binance Spot public JSON bytes").await
+            {
+                shutdown_errors.push(error);
+            }
+            anyhow::bail!(if shutdown_errors.is_empty() {
+                format!("Failed to start Spot public JSON WS handler task: {e}")
+            } else {
+                format!(
+                    "Failed to start Spot public JSON WS handler task: {e}; startup rollback failed: \
+                     {}",
+                    shutdown_errors.join("; ")
+                )
+            });
+        }
+
+        if let Some(control) = &socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
         Ok(ConnectionSlot {
             cmd_tx,
@@ -547,7 +687,73 @@ impl BinanceSpotPublicJsonWebSocketClient {
             cancellation_token,
             connection_mode,
             socket_control,
+            shutdown_errors: Vec::new(),
         })
+    }
+}
+
+struct ConnectionSlots(Mutex<Vec<ConnectionSlot>>);
+
+impl std::ops::Deref for ConnectionSlots {
+    type Target = Mutex<Vec<ConnectionSlot>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for ConnectionSlots {
+    fn drop(&mut self) {
+        for slot in self.0.get_mut().expect("slots lock poisoned").iter() {
+            slot.cancellation_token.cancel();
+            if let Some(handle) = slot.handler_task.as_ref() {
+                handle.abort();
+            }
+
+            if let Some(handle) = slot.bytes_task.as_ref() {
+                handle.abort();
+            }
+
+            if let Some(control) = &slot.socket_control {
+                control.deregister();
+            }
+        }
+    }
+}
+
+struct ConnectionSlotBatch<'a> {
+    owner: &'a Mutex<Vec<ConnectionSlot>>,
+    slots: Vec<ConnectionSlot>,
+}
+
+impl<'a> ConnectionSlotBatch<'a> {
+    fn take(owner: &'a Mutex<Vec<ConnectionSlot>>) -> Self {
+        let slots = std::mem::take(&mut *owner.lock().expect("slots lock poisoned"));
+        Self { owner, slots }
+    }
+}
+
+impl Drop for ConnectionSlotBatch<'_> {
+    fn drop(&mut self) {
+        self.owner
+            .lock()
+            .expect("slots lock poisoned")
+            .extend(self.slots.drain(..));
+    }
+}
+
+async fn finish_slot_task(slot: &mut TaskSlot<()>, owner: &str) -> Option<String> {
+    let outcome = finish_task(
+        slot,
+        std::time::Duration::from_secs(2),
+        std::time::Duration::from_secs(2),
+    )
+    .await?;
+
+    match outcome {
+        TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => None,
+        TaskJoinOutcome::Failed(e) => Some(format!("{owner} task failed: {e}")),
+        TaskJoinOutcome::Incomplete => Some(format!("{owner} task did not stop after abort")),
     }
 }
 
@@ -601,14 +807,37 @@ mod tests {
         let slot = ConnectionSlot {
             cmd_tx,
             streams,
-            handler_task,
-            bytes_task,
+            handler_task: TaskSlot::from_handle(handler_task),
+            bytes_task: TaskSlot::from_handle(bytes_task),
             cancellation_token: CancellationToken::new(),
             connection_mode: Arc::new(AtomicU8::new(ConnectionMode::Active as u8)),
             socket_control: None,
+            shutdown_errors: Vec::new(),
         };
 
         (slot, cmd_rx)
+    }
+
+    #[tokio::test]
+    async fn test_cancelled_close_retains_connection_slot() {
+        let mut client =
+            BinanceSpotPublicJsonWebSocketClient::new(None, None, TransportBackend::default());
+        let (mut slot, mut cmd_rx) = make_slot_with_streams(Vec::new());
+        slot.handler_task = TaskSlot::from_handle(tokio::spawn(std::future::pending()));
+        client.slots.lock().expect("slots lock poisoned").push(slot);
+
+        {
+            let close = client.close();
+            tokio::pin!(close);
+            tokio::select! {
+                result = &mut close => panic!("close completed unexpectedly: {result:?}"),
+                command = cmd_rx.recv() => assert!(command.is_some()),
+            }
+        }
+
+        let slots = client.slots.lock().expect("slots lock poisoned");
+        assert_eq!(slots.len(), 1);
+        assert!(slots[0].handler_task.is_some());
     }
 
     #[tokio::test]

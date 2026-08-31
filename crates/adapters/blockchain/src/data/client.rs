@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::VecDeque;
+use std::{collections::VecDeque, time::Duration};
 
+use anyhow::Context;
 use nautilus_common::{
     clients::DataClient,
     defi::RequestPoolSnapshot,
-    live::get_runtime,
     messages::{
         DataEvent,
         defi::{
@@ -30,7 +30,10 @@ use nautilus_common::{
         },
     },
 };
-use nautilus_live::SocketControlFactory;
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     defi::{DefiData, DexType, PoolIdentifier, SharedChain, validation::validate_address},
     identifiers::{ClientId, Venue},
@@ -74,17 +77,11 @@ pub struct BlockchainDataClient {
     /// Wrapped in Option to allow moving it into the background processing task.
     pub core_client: Option<BlockchainDataClientCore>,
     socket_factory: SocketControlFactory,
-    /// Channel receiver for messages from the HyperSync client.
     hypersync_rx: Option<tokio::sync::mpsc::UnboundedReceiver<BlockchainMessage>>,
-    /// Channel sender for messages to the HyperSync client.
     hypersync_tx: Option<tokio::sync::mpsc::UnboundedSender<BlockchainMessage>>,
-    /// Channel sender for commands to be processed asynchronously.
     command_tx: tokio::sync::mpsc::UnboundedSender<DefiDataCommand>,
-    /// Channel receiver for commands to be processed asynchronously.
     command_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DefiDataCommand>>,
-    /// Background task for processing messages.
-    process_task: Option<tokio::task::JoinHandle<()>>,
-    /// Cancellation token for graceful shutdown of background tasks.
+    session_tasks: TaskGroup,
     cancellation_token: tokio_util::sync::CancellationToken,
 }
 
@@ -96,6 +93,7 @@ impl BlockchainDataClient {
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
         let socket_factory = SocketControlFactory::new(client_id, None);
+        let session_tasks = TaskGroup::new();
         Self {
             client_id,
             chain,
@@ -106,8 +104,8 @@ impl BlockchainDataClient {
             hypersync_tx: Some(hypersync_tx),
             command_tx,
             command_rx: Some(command_rx),
-            process_task: None,
-            cancellation_token: tokio_util::sync::CancellationToken::new(),
+            cancellation_token: session_tasks.cancellation_token(),
+            session_tasks,
         }
     }
 
@@ -118,12 +116,14 @@ impl BlockchainDataClient {
     /// 2. Handles incoming blockchain data from HyperSync
     /// 3. Processes RPC messages if RPC client is configured
     /// 4. Routes processed data to subscribers
-    fn spawn_process_task(&mut self) {
+    fn spawn_process_task(
+        &mut self,
+    ) -> anyhow::Result<tokio::sync::oneshot::Receiver<anyhow::Result<()>>> {
         let command_rx = if let Some(r) = self.command_rx.take() {
             r
         } else {
             log::error!("Command receiver already taken, not spawning handler");
-            return;
+            anyhow::bail!("Command receiver already taken");
         };
 
         let cancellation_token = self.cancellation_token.clone();
@@ -141,7 +141,8 @@ impl BlockchainDataClient {
         );
         core_client.set_socket_control(self.socket_factory.control("blockchain-rpc"));
 
-        let handle = get_runtime().spawn(async move {
+        let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
+        let future = async move {
             log::debug!("Started task 'process'");
 
             if let Err(e) = core_client.connect().await {
@@ -152,8 +153,10 @@ impl BlockchainDataClient {
                 } else {
                     log::error!("Failed to connect blockchain core client: {e}");
                 }
+                let _ = startup_tx.send(Err(e));
                 return;
             }
+            let _ = startup_tx.send(Ok(()));
 
             let mut command_rx = command_rx;
             let mut pending_pool_messages = VecDeque::new();
@@ -239,9 +242,12 @@ impl BlockchainDataClient {
             }
 
             log::debug!("Stopped task 'process'");
-        });
+        };
 
-        self.process_task = Some(handle);
+        self.session_tasks
+            .spawn(future)
+            .map_err(|e| anyhow::anyhow!("Failed to register blockchain process task: {e}"))?;
+        Ok(startup_rx)
     }
 
     async fn process_live_blockchain_message(
@@ -1195,12 +1201,38 @@ impl BlockchainDataClient {
     ///
     /// This method blocks until the spawned process task finishes execution,
     /// which typically happens after a shutdown signal is sent.
-    pub async fn await_process_task_close(&mut self) {
-        if let Some(handle) = self.process_task.take()
-            && let Err(e) = handle.await
-        {
-            log::error!("Process task join error: {e}");
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when bounded task shutdown fails.
+    pub async fn await_process_task_close(&self) -> anyhow::Result<()> {
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Blockchain process task shutdown failed: {e}"))?;
+        Ok(())
+    }
+
+    async fn prepare_task_group(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() {
+            self.session_tasks.begin_shutdown();
+            self.await_process_task_close().await?;
+            self.reset_channels();
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start blockchain task generation: {e}"))?;
+            self.cancellation_token = self.session_tasks.cancellation_token();
         }
+        Ok(())
+    }
+
+    fn reset_channels(&mut self) {
+        let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.hypersync_tx = Some(hypersync_tx);
+        self.hypersync_rx = Some(hypersync_rx);
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        self.command_tx = command_tx;
+        self.command_rx = Some(command_rx);
     }
 }
 
@@ -1232,10 +1264,7 @@ impl DataClient for BlockchainDataClient {
             "Stopping blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
-        self.cancellation_token.cancel();
-
-        // Create fresh token for next start cycle
-        self.cancellation_token = tokio_util::sync::CancellationToken::new();
+        self.session_tasks.begin_shutdown();
         Ok(())
     }
 
@@ -1244,7 +1273,7 @@ impl DataClient for BlockchainDataClient {
             "Resetting blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
-        self.cancellation_token = tokio_util::sync::CancellationToken::new();
+        self.session_tasks.begin_shutdown();
         Ok(())
     }
 
@@ -1253,19 +1282,40 @@ impl DataClient for BlockchainDataClient {
             "Disposing blockchain data client for '{chain_name}'",
             chain_name = self.chain.name
         );
+        self.session_tasks.begin_shutdown();
         Ok(())
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        if self.session_tasks.is_open() && !self.session_tasks.is_empty() {
+            return Ok(());
+        }
+
         log::info!(
             "Connecting blockchain data client for '{}'",
             self.chain.name
         );
 
-        if self.process_task.is_none() {
-            self.spawn_process_task();
+        self.prepare_task_group().await?;
+        let setup_guard = TaskGroupGuard::new(&[&self.session_tasks], || {});
+        let startup = self.spawn_process_task()?;
+        if let Err(e) = startup
+            .await
+            .context("Blockchain process task stopped before startup")?
+        {
+            self.session_tasks.begin_shutdown();
+            let teardown_result = self.await_process_task_close().await;
+            self.reset_channels();
+
+            if let Err(teardown_error) = teardown_result {
+                return Err(e.context(format!(
+                    "Blockchain data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
         }
 
+        setup_guard.disarm();
         Ok(())
     }
 
@@ -1275,25 +1325,17 @@ impl DataClient for BlockchainDataClient {
             self.chain.name
         );
 
-        self.cancellation_token.cancel();
-        self.await_process_task_close().await;
+        self.session_tasks.begin_shutdown();
+        let tasks_result = self.await_process_task_close().await;
+        self.reset_channels();
 
-        // Create fresh token and channels for next connect cycle
-        self.cancellation_token = tokio_util::sync::CancellationToken::new();
-        let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
-        self.hypersync_tx = Some(hypersync_tx);
-        self.hypersync_rx = Some(hypersync_rx);
-        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
-        self.command_tx = command_tx;
-        self.command_rx = Some(command_rx);
-
-        Ok(())
+        tasks_result
     }
 
     fn is_connected(&self) -> bool {
-        // TODO: Improve connection detection
-        // For now, we'll assume connected if we have either RPC or HyperSync configured
-        true
+        self.session_tasks.is_open()
+            && !self.session_tasks.is_empty()
+            && !self.session_tasks.all_finished()
     }
 
     fn is_disconnected(&self) -> bool {

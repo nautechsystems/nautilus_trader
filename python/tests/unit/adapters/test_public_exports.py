@@ -54,6 +54,23 @@ VENUE_ADAPTERS = {
 
 NON_VENUE_ADAPTERS = sorted(set(ADAPTERS) - set(VENUE_ADAPTERS))
 
+REMOVED_PYTHON_WEBSOCKET_TYPES = {
+    "architect_ax": ("AxMdWebSocketClient", "AxOrdersWebSocketClient"),
+    "bitmex": ("BitmexWebSocketClient",),
+    "bybit": (
+        "BybitWebSocketClient",
+        "BybitWebSocketError",
+        "BybitWsAmendOrderParams",
+        "BybitWsCancelOrderParams",
+        "BybitWsPlaceOrderParams",
+    ),
+    "deribit": ("DeribitUpdateInterval", "DeribitWebSocketClient"),
+    "dydx": ("DydxWebSocketClient",),
+    "hyperliquid": ("HyperliquidWebSocketClient",),
+    "kraken": ("KrakenFuturesWebSocketClient", "KrakenSpotWebSocketClient"),
+    "okx": ("OKXWebSocketClient", "OKXWebSocketError"),
+}
+
 # Members that must never reach a facade's public surface: raw transport clients,
 # endpoint helpers, and leaked future-import names.
 FORBIDDEN_SUFFIXES = (
@@ -142,6 +159,23 @@ def test_facade_exposes_no_raw_clients_endpoints_or_helpers(adapter: object) -> 
     leaked = [name for name in module.__all__ if _is_forbidden(name)]
 
     assert not leaked, f"{adapter} __all__ leaks private members: {leaked}"
+
+
+@pytest.mark.parametrize(
+    ("adapter", "name"),
+    [
+        (adapter, name)
+        for adapter, names in REMOVED_PYTHON_WEBSOCKET_TYPES.items()
+        for name in names
+    ],
+)
+def test_adapter_exposes_no_low_level_websocket_types(adapter: str, name: str) -> None:
+    """
+    Test adapter exposes no low-level WebSocket types.
+    """
+    module = _import(adapter)
+
+    assert not hasattr(module, name)
 
 
 @pytest.mark.parametrize("adapter", ADAPTERS)

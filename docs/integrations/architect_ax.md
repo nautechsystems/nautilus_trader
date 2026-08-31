@@ -17,8 +17,8 @@ The AX Exchange adapter includes multiple components, which can be used together
 depending on the use case.
 
 - `AxHttpClient`: Low-level HTTP API connectivity.
-- `AxMdWebSocketClient`: Market data WebSocket connectivity.
-- `AxOrdersWebSocketClient`: Orders WebSocket connectivity.
+- `AxMdWebSocketClient` and `AxOrdersWebSocketClient`: Low-level WebSocket connectivity for Rust
+  callers.
 - `AxDataClient`: A market data feed manager.
 - `AxExecutionClient`: An account management and trade execution gateway.
 - `AxDataClientFactory`: Factory for AX data clients.

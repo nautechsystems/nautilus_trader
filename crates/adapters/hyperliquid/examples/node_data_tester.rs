@@ -20,7 +20,7 @@
 //! Run with: `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet).
+//! - `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet)
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};

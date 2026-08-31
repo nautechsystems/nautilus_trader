@@ -29,14 +29,17 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
+#[cfg(test)]
 use nautilus_common::live::get_runtime;
 use nautilus_core::{AtomicMap, AtomicSet, UUID4, consts::NAUTILUS_USER_AGENT};
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{SharedTaskSlot, TaskJoinOutcome},
+};
 use nautilus_model::{
     data::BarType,
     enums::{AggregationSource, OrderSide, OrderType, PriceType, TimeInForce, TriggerType},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
@@ -74,7 +77,6 @@ use crate::{
         urls::{bybit_ws_private_url, bybit_ws_public_url, bybit_ws_trade_url},
     },
     websocket::{
-        dispatch::PendingOperation,
         enums::{BybitWsOperation, BybitWsPrivateChannel, BybitWsPublicChannel},
         error::{BybitWsError, BybitWsResult},
         handler::{BybitWsFeedHandler, BybitWsOrderCommand, HandlerCommand},
@@ -91,23 +93,7 @@ const WEBSOCKET_AUTH_WINDOW_MS: i64 = 5_000;
 const AUTH_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Legacy non-Spot batch endpoint maximum.
 pub const BATCH_PROCESSING_LIMIT: usize = 20;
-/// Tracks a pending Python execution request for OrderResponse correlation.
-#[derive(Debug, Clone)]
-pub struct PendingPyRequest {
-    pub client_order_id: ClientOrderId,
-    pub operation: PendingOperation,
-    pub trader_id: TraderId,
-    pub strategy_id: StrategyId,
-    pub instrument_id: InstrumentId,
-    pub venue_order_id: Option<VenueOrderId>,
-}
-
 /// Public/market data WebSocket client for Bybit.
-#[cfg_attr(feature = "python", pyo3::pyclass(from_py_object))]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.bybit")
-)]
 pub struct BybitWebSocketClient {
     url: String,
     environment: BybitEnvironment,
@@ -121,7 +107,8 @@ pub struct BybitWebSocketClient {
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<BybitWsMessage>>>,
     signal: Arc<AtomicBool>,
-    task_handle: Option<Arc<tokio::task::JoinHandle<()>>>,
+    task_handle: Arc<SharedTaskSlot<()>>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions: SubscriptionState,
     subscription_guard: Arc<tokio::sync::Mutex<()>>,
     rate_limiter: BybitRateLimiter,
@@ -133,11 +120,42 @@ pub struct BybitWebSocketClient {
     trade_subs: Arc<AtomicSet<InstrumentId>>,
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
     bars_timestamp_on_close: Arc<AtomicBool>,
-    pending_py_requests: Arc<DashMap<String, Vec<PendingPyRequest>>>,
     transport_backend: TransportBackend,
     cancellation_token: Arc<ArcSwap<CancellationToken>>,
     proxy_url: Option<String>,
     socket_control: Option<SocketControl>,
+}
+
+struct ConnectRollback {
+    signal: Arc<AtomicBool>,
+    cancellation_token: Arc<ArcSwap<CancellationToken>>,
+    task_handle: Arc<SharedTaskSlot<()>>,
+    armed: bool,
+}
+
+impl ConnectRollback {
+    fn new(client: &BybitWebSocketClient) -> Self {
+        Self {
+            signal: Arc::clone(&client.signal),
+            cancellation_token: Arc::clone(&client.cancellation_token),
+            task_handle: Arc::clone(&client.task_handle),
+            armed: true,
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ConnectRollback {
+    fn drop(&mut self) {
+        if self.armed {
+            self.signal.store(true, Ordering::Release);
+            self.cancellation_token.load().cancel();
+            self.task_handle.abort();
+        }
+    }
 }
 
 impl Debug for BybitWebSocketClient {
@@ -168,7 +186,8 @@ impl Clone for BybitWebSocketClient {
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None, // Each clone gets its own receiver
             signal: Arc::clone(&self.signal),
-            task_handle: None, // Each clone gets its own task handle
+            task_handle: Arc::clone(&self.task_handle),
+            connect_lock: Arc::clone(&self.connect_lock),
             subscriptions: self.subscriptions.clone(),
             subscription_guard: Arc::clone(&self.subscription_guard),
             rate_limiter: self.rate_limiter.clone(),
@@ -180,7 +199,6 @@ impl Clone for BybitWebSocketClient {
             trade_subs: Arc::clone(&self.trade_subs),
             option_greeks_subs: Arc::clone(&self.option_greeks_subs),
             bars_timestamp_on_close: Arc::clone(&self.bars_timestamp_on_close),
-            pending_py_requests: Arc::clone(&self.pending_py_requests),
             transport_backend: self.transport_backend,
             cancellation_token: Arc::clone(&self.cancellation_token),
             proxy_url: self.proxy_url.clone(),
@@ -255,7 +273,8 @@ impl BybitWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
-            task_handle: None,
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             subscription_guard: Arc::new(tokio::sync::Mutex::new(())),
             rate_limiter,
@@ -265,7 +284,6 @@ impl BybitWebSocketClient {
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
-            pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
@@ -325,7 +343,8 @@ impl BybitWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
-            task_handle: None,
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             subscription_guard: Arc::new(tokio::sync::Mutex::new(())),
             rate_limiter,
@@ -335,7 +354,6 @@ impl BybitWebSocketClient {
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
-            pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
@@ -388,7 +406,8 @@ impl BybitWebSocketClient {
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
-            task_handle: None,
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(BYBIT_WS_TOPIC_DELIMITER),
             subscription_guard: Arc::new(tokio::sync::Mutex::new(())),
             rate_limiter,
@@ -398,7 +417,6 @@ impl BybitWebSocketClient {
             trade_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
             bars_timestamp_on_close: Arc::new(AtomicBool::new(true)),
-            pending_py_requests: Arc::new(DashMap::new()),
             account_id: None,
             mm_level: Arc::new(AtomicU8::new(0)),
             transport_backend,
@@ -408,6 +426,11 @@ impl BybitWebSocketClient {
         }
     }
 
+    pub(crate) fn begin_shutdown(&self) {
+        self.cancellation_token.load().cancel();
+        self.signal.store(true, Ordering::Release);
+    }
+
     /// Establishes the WebSocket connection.
     ///
     /// # Errors
@@ -415,6 +438,15 @@ impl BybitWebSocketClient {
     /// Returns an error if the underlying WebSocket connection cannot be established,
     /// after retrying multiple times with exponential backoff.
     pub async fn connect(&mut self) -> BybitWsResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
+        self.connect_locked().await
+    }
+
+    async fn connect_locked(&mut self) -> BybitWsResult<()> {
+        if !self.task_handle.is_empty() {
+            self.close_locked().await?;
+        }
         self.signal.store(false, Ordering::Relaxed);
         let cancellation_token = CancellationToken::new();
         self.cancellation_token
@@ -488,10 +520,6 @@ impl BybitWebSocketClient {
 
         self.send_cmd(cmd).await?;
 
-        if let Some(control) = &self.socket_control {
-            control.register(move || reconnect_handle.request_reconnect());
-        }
-
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
         let credential = self.credential.clone();
@@ -501,8 +529,9 @@ impl BybitWebSocketClient {
         let auth_tracker_for_handler = auth_tracker.clone();
         let rate_limiter = self.rate_limiter.clone();
         let recv_window_ms = Arc::clone(&self.recv_window_ms);
+        let mut rollback = ConnectRollback::new(self);
 
-        let stream_handle = get_runtime().spawn(async move {
+        if let Err(e) = self.task_handle.spawn(async move {
             let mut handler = BybitWsFeedHandler::new(
                 signal.clone(),
                 cmd_rx,
@@ -652,19 +681,44 @@ impl BybitWebSocketClient {
             }
 
             log::debug!("Handler task exiting");
-        });
-
-        self.task_handle = Some(Arc::new(stream_handle));
-
-        if requires_auth && let Err(e) = self.authenticate_if_required().await {
-            return Err(e);
+        }) {
+            let shutdown_result = self.close_locked().await;
+            return Err(BybitWsError::ClientError(match shutdown_result {
+                Ok(()) => format!("Failed to start WebSocket handler task: {e}"),
+                Err(shutdown_error) => format!(
+                    "Failed to start WebSocket handler task: {e}; startup rollback failed: \
+                     {shutdown_error}"
+                ),
+            }));
         }
 
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
+
+        if requires_auth && let Err(e) = self.authenticate_if_required().await {
+            let result = match self.close_locked().await {
+                Ok(()) => Err(e),
+                Err(shutdown_error) => Err(BybitWsError::ClientError(format!(
+                    "{e}; startup rollback failed: {shutdown_error}"
+                ))),
+            };
+            rollback.disarm();
+            return result;
+        }
+
+        rollback.disarm();
         Ok(())
     }
 
     /// Disconnects the WebSocket client and stops the background task.
     pub async fn close(&mut self) -> BybitWsResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
+        self.close_locked().await
+    }
+
+    async fn close_locked(&self) -> BybitWsResult<()> {
         log::debug!("Starting close process");
 
         self.signal.store(true, Ordering::Relaxed);
@@ -677,30 +731,30 @@ impl BybitWebSocketClient {
             );
         }
 
-        if let Some(task_handle) = self.task_handle.take() {
-            match Arc::try_unwrap(task_handle) {
-                Ok(handle) => {
-                    log::debug!("Waiting for task handle to complete");
-                    match tokio::time::timeout(Duration::from_secs(2), handle).await {
-                        Ok(Ok(())) => log::debug!("Task handle completed successfully"),
-                        Ok(Err(e)) => log::error!("Task handle encountered an error: {e:?}"),
-                        Err(_) => {
-                            log::warn!(
-                                "Timeout waiting for task handle, task may still be running"
-                            );
-                        }
-                    }
-                }
-                Err(arc_handle) => {
-                    log::debug!(
-                        "Cannot take ownership of task handle - other references exist, aborting task"
-                    );
-                    arc_handle.abort();
-                }
-            }
-        } else {
+        let task_result = if self.task_handle.is_empty() {
             log::debug!("No task handle to await");
-        }
+            Ok(())
+        } else {
+            log::debug!("Waiting for task handle to complete");
+
+            if let Some(outcome) = self
+                .task_handle
+                .finish(Duration::from_secs(2), Duration::from_secs(2))
+                .await
+            {
+                match outcome {
+                    TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => Ok(()),
+                    TaskJoinOutcome::Failed(error) => Err(BybitWsError::ClientError(format!(
+                        "WebSocket handler task failed: {error}"
+                    ))),
+                    TaskJoinOutcome::Incomplete => Err(BybitWsError::ClientError(
+                        "WebSocket handler task did not stop after abort".to_string(),
+                    )),
+                }
+            } else {
+                Ok(())
+            }
+        };
 
         self.auth_tracker.invalidate();
 
@@ -710,7 +764,7 @@ impl BybitWebSocketClient {
 
         log::debug!("Closed");
 
-        Ok(())
+        task_result
     }
 
     /// Returns a value indicating whether the client is active.
@@ -975,12 +1029,6 @@ impl BybitWebSocketClient {
     #[must_use]
     pub fn trade_subs(&self) -> &Arc<AtomicSet<InstrumentId>> {
         &self.trade_subs
-    }
-
-    /// Returns a reference to the pending Python requests map.
-    #[must_use]
-    pub fn pending_py_requests(&self) -> &Arc<DashMap<String, Vec<PendingPyRequest>>> {
-        &self.pending_py_requests
     }
 
     /// Returns a reference to the live instruments cache Arc.
@@ -2079,6 +2127,16 @@ impl BybitWebSocketClient {
     }
 }
 
+impl Drop for BybitWebSocketClient {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.task_handle) == 1 && !self.task_handle.is_empty() {
+            self.cancellation_token.load().cancel();
+            self.signal.store(true, Ordering::Relaxed);
+            self.task_handle.abort();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -2088,6 +2146,24 @@ mod tests {
         common::{enums::BybitMarketUnit, testing::load_test_json},
         websocket::{messages::BybitWsFrame, parse_bybit_ws_frame},
     };
+
+    #[tokio::test]
+    async fn test_drop_clone_does_not_cancel_handler() {
+        let client = BybitWebSocketClient::new_public(Some("wss://test".to_string()), 30);
+        let cancellation_token = CancellationToken::new();
+        client
+            .cancellation_token
+            .store(Arc::new(cancellation_token.clone()));
+        client
+            .task_handle
+            .insert(get_runtime().spawn(std::future::pending()));
+        let clone = client.clone();
+
+        drop(clone);
+
+        assert!(!cancellation_token.is_cancelled());
+        assert!(!client.task_handle.is_empty());
+    }
 
     #[rstest]
     fn classify_orderbook_snapshot() {

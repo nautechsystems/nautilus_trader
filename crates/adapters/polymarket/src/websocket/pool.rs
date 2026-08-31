@@ -35,8 +35,10 @@ use std::sync::{
 };
 
 use ahash::AHashMap;
-use nautilus_common::live::get_runtime;
-use nautilus_live::SocketControlFactory;
+use nautilus_live::{
+    SocketControlFactory,
+    task::{TaskJoinOutcome, TaskSlot, TaskSpawnError, finish_task},
+};
 use nautilus_network::websocket::{TransportBackend, proxy::ProxyUrl};
 use ustr::Ustr;
 
@@ -85,6 +87,29 @@ struct PoolInner {
 struct PoolState {
     shards: AHashMap<usize, ShardEntry>,
     assignments: AHashMap<Ustr, usize>,
+    shutdown_errors: Vec<String>,
+}
+
+struct PoolDrain<'a> {
+    owner: &'a StdMutex<PoolState>,
+    state: PoolState,
+}
+
+impl<'a> PoolDrain<'a> {
+    fn take(owner: &'a StdMutex<PoolState>) -> Self {
+        let state = std::mem::replace(
+            &mut *owner.lock().expect("pool state mutex poisoned"),
+            PoolState::new(),
+        );
+        Self { owner, state }
+    }
+}
+
+impl Drop for PoolDrain<'_> {
+    fn drop(&mut self) {
+        *self.owner.lock().expect("pool state mutex poisoned") =
+            std::mem::replace(&mut self.state, PoolState::new());
+    }
 }
 
 impl PoolState {
@@ -92,6 +117,7 @@ impl PoolState {
         Self {
             shards: AHashMap::new(),
             assignments: AHashMap::new(),
+            shutdown_errors: Vec::new(),
         }
     }
 }
@@ -100,14 +126,54 @@ impl PoolState {
 struct ShardEntry {
     client: PolymarketWebSocketClient,
     handle: WsSubscriptionHandle,
-    forwarder: Option<tokio::task::JoinHandle<()>>,
+    forwarder: TaskSlot<()>,
     owned: usize,
+    closing: bool,
 }
 
 enum ReleaseOutcome {
     NotOwned,
     Unsubscribe(WsSubscriptionHandle),
-    CloseShard(Box<ShardEntry>),
+    CloseShard(usize, Box<ShardEntry>),
+}
+
+struct ShardClose<'a> {
+    owner: &'a StdMutex<PoolState>,
+    id: usize,
+    shard: Option<Box<ShardEntry>>,
+}
+
+impl<'a> ShardClose<'a> {
+    fn new(owner: &'a StdMutex<PoolState>, id: usize, mut shard: Box<ShardEntry>) -> Self {
+        shard.closing = true;
+        Self {
+            owner,
+            id,
+            shard: Some(shard),
+        }
+    }
+
+    fn shard_mut(&mut self) -> &mut ShardEntry {
+        self.shard.as_deref_mut().expect("closing shard present")
+    }
+
+    fn complete(mut self) {
+        self.shard.take();
+    }
+}
+
+impl Drop for ShardClose<'_> {
+    fn drop(&mut self) {
+        if let Some(shard) = self.shard.take() {
+            let replaced = self
+                .owner
+                .lock()
+                .expect("pool state mutex poisoned")
+                .shards
+                .insert(self.id, *shard);
+            assert!(replaced.is_none(), "closing shard ID is already present");
+        }
+    }
 }
 
 #[allow(
@@ -185,6 +251,10 @@ impl PolymarketMarketConnectionPool {
     ///
     /// Returns an error if the primary connection cannot be established.
     pub async fn connect(&self) -> anyhow::Result<()> {
+        if self.inner.closed.load(Ordering::Acquire) {
+            self.disconnect().await?;
+        }
+
         let _wire = self.inner.wire_mutex.lock().await;
 
         if !self.inner.closed.load(Ordering::Acquire)
@@ -200,7 +270,10 @@ impl PolymarketMarketConnectionPool {
             return Ok(());
         }
 
-        self.inner.closed.store(false, Ordering::Release);
+        {
+            let _state = self.inner.state.lock().expect("pool state mutex poisoned");
+            self.inner.closed.store(false, Ordering::Release);
+        }
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel();
         *self
@@ -226,14 +299,16 @@ impl PolymarketMarketConnectionPool {
     pub async fn subscribe_new_markets_feed(&self) -> anyhow::Result<()> {
         let _wire = self.inner.wire_mutex.lock().await;
 
-        let handle = self
-            .inner
-            .state
-            .lock()
-            .expect("pool state mutex poisoned")
-            .shards
-            .get(&PRIMARY_SHARD_ID)
-            .map(|shard| shard.handle.clone());
+        let handle = {
+            let state = self.inner.state.lock().expect("pool state mutex poisoned");
+            if self.inner.closed.load(Ordering::Acquire) {
+                anyhow::bail!("Market connection pool is closed");
+            }
+            state
+                .shards
+                .get(&PRIMARY_SHARD_ID)
+                .map(|shard| shard.handle.clone())
+        };
 
         match handle {
             Some(handle) => handle.subscribe_market(vec![]).await,
@@ -257,20 +332,70 @@ impl PolymarketMarketConnectionPool {
     ///
     /// # Errors
     ///
-    /// Never returns an error; per-shard failures are logged and disconnect continues.
+    /// Returns an error after attempting every shard when a task or connection does not stop.
     pub async fn disconnect(&self) -> anyhow::Result<()> {
+        self.inner.begin_shutdown();
         let _wire = self.inner.wire_mutex.lock().await;
-        self.inner.closed.store(true, Ordering::Release);
 
-        let shards = self.inner.drain_shards();
-        for mut shard in shards {
-            if let Some(forwarder) = shard.forwarder.take() {
-                forwarder.abort();
+        let mut drain = PoolDrain::take(&self.inner.state);
+        let shard_ids = drain.state.shards.keys().copied().collect::<Vec<_>>();
+        for shard_id in shard_ids {
+            let shard = drain
+                .state
+                .shards
+                .get_mut(&shard_id)
+                .expect("market shard ID collected from pool state");
+            let mut shard_failed = false;
+
+            shard.forwarder.abort();
+            if let Some(outcome) = finish_task(
+                &mut shard.forwarder,
+                std::time::Duration::ZERO,
+                std::time::Duration::from_secs(2),
+            )
+            .await
+            {
+                match outcome {
+                    TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                    TaskJoinOutcome::Failed(error) => {
+                        shard_failed = true;
+                        drain
+                            .state
+                            .shutdown_errors
+                            .push(format!("market shard {shard_id} forwarder failed: {error}"));
+                    }
+                    TaskJoinOutcome::Incomplete => {
+                        shard_failed = true;
+                        drain.state.shutdown_errors.push(format!(
+                            "market shard {shard_id} forwarder did not stop after abort"
+                        ));
+                    }
+                }
             }
 
             if let Err(e) = shard.client.disconnect().await {
-                log::debug!("Error disconnecting market shard: {e}");
+                shard_failed = true;
+                drain
+                    .state
+                    .shutdown_errors
+                    .push(format!("market shard {shard_id} disconnect failed: {e}"));
             }
+
+            if !shard_failed {
+                drain.state.shards.remove(&shard_id);
+                drain
+                    .state
+                    .assignments
+                    .retain(|_, assigned_id| *assigned_id != shard_id);
+            }
+        }
+
+        if !drain.state.shutdown_errors.is_empty() {
+            let errors = std::mem::take(&mut drain.state.shutdown_errors);
+            anyhow::bail!(
+                "Polymarket market pool shutdown failed: {}",
+                errors.join("; ")
+            );
         }
 
         *self
@@ -286,30 +411,8 @@ impl PolymarketMarketConnectionPool {
         Ok(())
     }
 
-    /// Force-closes every shard for the sync `stop()`/`reset()` path.
-    ///
-    /// Prefer [`Self::disconnect`] for graceful shutdown.
-    pub(crate) fn abort(&self) {
-        self.inner.closed.store(true, Ordering::Release);
-
-        let shards = self.inner.drain_shards();
-        for mut shard in shards {
-            if let Some(forwarder) = shard.forwarder.take() {
-                forwarder.abort();
-            }
-            shard.client.abort();
-        }
-
-        *self
-            .inner
-            .out_tx
-            .lock()
-            .expect("pool out_tx mutex poisoned") = None;
-        *self
-            .inner
-            .out_rx
-            .lock()
-            .expect("pool out_rx mutex poisoned") = None;
+    pub(crate) fn begin_shutdown(&self) {
+        self.inner.begin_shutdown();
     }
 
     /// Clears retained reconnect-replay state on any remaining shards.
@@ -343,11 +446,32 @@ impl PolymarketMarketConnectionPool {
     }
 }
 
+impl Drop for PoolInner {
+    fn drop(&mut self) {
+        self.closed.store(true, Ordering::Release);
+
+        for shard in self
+            .state
+            .get_mut()
+            .expect("pool state mutex poisoned")
+            .shards
+            .values_mut()
+        {
+            shard.forwarder.abort();
+            shard.client.abort();
+        }
+    }
+}
+
 #[allow(
     clippy::missing_panics_doc,
     reason = "internal mutex locks and shard-state invariants are not expected to panic"
 )]
 impl PolymarketMarketPoolHandle {
+    pub(crate) fn begin_shutdown(&self) {
+        self.inner.begin_shutdown();
+    }
+
     /// Subscribes to market data for the given asset IDs, sharding across connections.
     ///
     /// # Errors
@@ -355,6 +479,7 @@ impl PolymarketMarketPoolHandle {
     /// Returns an error if a shard cannot be opened or a subscribe send fails.
     pub async fn subscribe_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
         let _wire = self.inner.wire_mutex.lock().await;
+        self.inner.ensure_open()?;
         for asset_id in asset_ids {
             self.inner.subscribe_one(asset_id).await?;
         }
@@ -368,8 +493,28 @@ impl PolymarketMarketPoolHandle {
     /// Returns an error if an unsubscribe send fails.
     pub async fn unsubscribe_market(&self, asset_ids: Vec<String>) -> anyhow::Result<()> {
         let _wire = self.inner.wire_mutex.lock().await;
+        self.inner.ensure_open()?;
         for asset_id in asset_ids {
             self.inner.unsubscribe_one(asset_id).await?;
+        }
+        Ok(())
+    }
+}
+
+impl PoolInner {
+    fn begin_shutdown(&self) {
+        let state = self.state.lock().expect("pool state mutex poisoned");
+        self.closed.store(true, Ordering::Release);
+
+        for shard in state.shards.values() {
+            shard.client.begin_shutdown();
+        }
+    }
+
+    fn ensure_open(&self) -> anyhow::Result<()> {
+        let _state = self.state.lock().expect("pool state mutex poisoned");
+        if self.closed.load(Ordering::Acquire) {
+            anyhow::bail!("Market connection pool is closed");
         }
         Ok(())
     }
@@ -431,10 +576,21 @@ impl PoolInner {
             return Ok(());
         };
 
+        if let Err(e) = self.ensure_open() {
+            if let ReleaseOutcome::CloseShard(id, shard) = self.release(token)
+                && let Err(close_error) = self.close_shard(id, shard).await
+            {
+                anyhow::bail!("{e}; subscription rollback failed: {close_error}");
+            }
+            return Err(e);
+        }
+
         if let Err(e) = handle.subscribe_market(vec![asset_id]).await {
             // Roll back so a failed send leaves no stale assignment or empty shard.
-            if let ReleaseOutcome::CloseShard(shard) = self.release(token) {
-                close_shard(*shard).await;
+            if let ReleaseOutcome::CloseShard(id, shard) = self.release(token)
+                && let Err(close_error) = self.close_shard(id, shard).await
+            {
+                anyhow::bail!("{e}; subscription rollback failed: {close_error}");
             }
             return Err(e);
         }
@@ -443,15 +599,15 @@ impl PoolInner {
 
     // Callers hold `wire_mutex`.
     async fn unsubscribe_one(&self, asset_id: String) -> anyhow::Result<()> {
+        self.ensure_open()?;
         let token = Ustr::from(asset_id.as_str());
 
         match self.release(token) {
             ReleaseOutcome::NotOwned => Ok(()),
             ReleaseOutcome::Unsubscribe(handle) => handle.unsubscribe_market(vec![asset_id]).await,
-            ReleaseOutcome::CloseShard(shard) => {
+            ReleaseOutcome::CloseShard(id, shard) => {
                 // Disconnect drops the shard's subscriptions; no unsubscribe send needed.
-                close_shard(*shard).await;
-                Ok(())
+                self.close_shard(id, shard).await
             }
         }
     }
@@ -460,6 +616,10 @@ impl PoolInner {
     async fn assign(&self, token: Ustr) -> anyhow::Result<Option<WsSubscriptionHandle>> {
         {
             let mut state = self.state.lock().expect("pool state mutex poisoned");
+            if self.closed.load(Ordering::Acquire) {
+                anyhow::bail!("Market connection pool is closed");
+            }
+
             if state.assignments.contains_key(&token) {
                 return Ok(None);
             }
@@ -477,14 +637,34 @@ impl PoolInner {
 
         let id = self.connect_new_shard(false).await?;
 
-        let mut state = self.state.lock().expect("pool state mutex poisoned");
-        let handle = {
-            let shard = state.shards.get_mut(&id).expect("new shard present");
-            shard.owned += 1;
-            shard.handle.clone()
+        let rejected_shard = {
+            let mut state = self.state.lock().expect("pool state mutex poisoned");
+
+            if self.closed.load(Ordering::Acquire) {
+                Some(
+                    state
+                        .shards
+                        .remove(&id)
+                        .expect("new shard retained for shutdown"),
+                )
+            } else {
+                let handle = {
+                    let shard = state.shards.get_mut(&id).expect("new shard present");
+                    shard.owned += 1;
+                    shard.handle.clone()
+                };
+                state.assignments.insert(token, id);
+                return Ok(Some(handle));
+            }
         };
-        state.assignments.insert(token, id);
-        Ok(Some(handle))
+
+        if let Some(shard) = rejected_shard {
+            if let Err(e) = self.close_shard(id, Box::new(shard)).await {
+                anyhow::bail!("Market connection pool is closed; shard rollback failed: {e}");
+            }
+            anyhow::bail!("Market connection pool is closed");
+        }
+        unreachable!("open pool returned from assignment")
     }
 
     fn release(&self, token: Ustr) -> ReleaseOutcome {
@@ -504,7 +684,7 @@ impl PoolInner {
 
         if id != PRIMARY_SHARD_ID && owned == 0 {
             let shard = state.shards.remove(&id).expect("shard present");
-            ReleaseOutcome::CloseShard(Box::new(shard))
+            ReleaseOutcome::CloseShard(id, Box::new(shard))
         } else {
             let handle = state.shards.get(&id).expect("shard present").handle.clone();
             ReleaseOutcome::Unsubscribe(handle)
@@ -530,19 +710,51 @@ impl PoolInner {
         let rx = client
             .take_message_receiver()
             .ok_or_else(|| anyhow::anyhow!("Market shard receiver unavailable after connect"))?;
-        let forwarder = self.spawn_forwarder(rx, is_primary);
+        let forwarder = match self.spawn_forwarder(rx, is_primary) {
+            Ok(forwarder) => forwarder,
+            Err((e, forwarder)) => {
+                let shard = Box::new(ShardEntry {
+                    client,
+                    handle,
+                    forwarder,
+                    owned: 0,
+                    closing: true,
+                });
 
-        let mut state = self.state.lock().expect("pool state mutex poisoned");
-        state.shards.insert(
-            id,
-            ShardEntry {
-                client,
-                handle,
-                forwarder: Some(forwarder),
-                owned: 0,
-            },
-        );
-        drop(state);
+                if let Err(close_error) = self.close_shard(id, shard).await {
+                    anyhow::bail!(
+                        "Failed to start market shard forwarder: {e}; startup rollback failed: \
+                         {close_error}"
+                    );
+                }
+                anyhow::bail!("Failed to start market shard forwarder: {e}");
+            }
+        };
+
+        let shard = ShardEntry {
+            client,
+            handle,
+            forwarder,
+            owned: 0,
+            closing: false,
+        };
+        let rejected_shard = {
+            let mut state = self.state.lock().expect("pool state mutex poisoned");
+
+            if self.closed.load(Ordering::Acquire) {
+                Some(shard)
+            } else {
+                state.shards.insert(id, shard);
+                None
+            }
+        };
+
+        if let Some(shard) = rejected_shard {
+            if let Err(e) = self.close_shard(id, Box::new(shard)).await {
+                anyhow::bail!("Market connection pool is closed; shard rollback failed: {e}");
+            }
+            anyhow::bail!("Market connection pool is closed");
+        }
 
         log::debug!("Opened Polymarket market shard {id}");
         Ok(id)
@@ -581,14 +793,15 @@ impl PoolInner {
         &self,
         mut rx: tokio::sync::mpsc::UnboundedReceiver<PolymarketWsMessage>,
         is_primary: bool,
-    ) -> tokio::task::JoinHandle<()> {
+    ) -> Result<TaskSlot<()>, (TaskSpawnError, TaskSlot<()>)> {
         let out_tx = self
             .out_tx
             .lock()
             .expect("pool out_tx mutex poisoned")
             .clone();
 
-        get_runtime().spawn(async move {
+        let mut forwarder = TaskSlot::new();
+        if let Err(e) = forwarder.spawn(async move {
             let Some(out_tx) = out_tx else {
                 return;
             };
@@ -602,13 +815,69 @@ impl PoolInner {
                     break;
                 }
             }
-        })
+        }) {
+            return Err((e, forwarder));
+        }
+        Ok(forwarder)
     }
 
-    fn drain_shards(&self) -> Vec<ShardEntry> {
-        let mut state = self.state.lock().expect("pool state mutex poisoned");
-        state.assignments.clear();
-        state.shards.drain().map(|(_, shard)| shard).collect()
+    async fn close_shard(&self, id: usize, shard: Box<ShardEntry>) -> anyhow::Result<()> {
+        let mut close = ShardClose::new(&self.state, id, shard);
+        close.shard_mut().forwarder.abort();
+        let forwarder_stopped = match finish_task(
+            &mut close.shard_mut().forwarder,
+            std::time::Duration::ZERO,
+            std::time::Duration::from_secs(2),
+        )
+        .await
+        {
+            None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => true,
+            Some(TaskJoinOutcome::Failed(error)) => {
+                let error = format!("market shard {id} forwarder failed: {error}");
+                self.state
+                    .lock()
+                    .expect("pool state mutex poisoned")
+                    .shutdown_errors
+                    .push(error);
+                true
+            }
+            Some(TaskJoinOutcome::Incomplete) => {
+                let error = format!("market shard {id} forwarder did not stop after abort");
+                self.state
+                    .lock()
+                    .expect("pool state mutex poisoned")
+                    .shutdown_errors
+                    .push(error);
+                false
+            }
+        };
+
+        if let Err(e) = close.shard_mut().client.disconnect().await {
+            let error = format!("market shard {id} disconnect failed: {e}");
+            self.state
+                .lock()
+                .expect("pool state mutex poisoned")
+                .shutdown_errors
+                .push(error);
+        }
+
+        if forwarder_stopped && !close.shard_mut().client.has_task() {
+            close.complete();
+        }
+
+        let errors = std::mem::take(
+            &mut self
+                .state
+                .lock()
+                .expect("pool state mutex poisoned")
+                .shutdown_errors,
+        );
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(errors.join("; "))
+        }
     }
 
     #[cfg(test)]
@@ -635,7 +904,7 @@ fn smallest_shard_with_capacity(state: &PoolState, max_subscriptions: usize) -> 
     state
         .shards
         .iter()
-        .filter(|(_, shard)| shard.owned < max_subscriptions)
+        .filter(|(_, shard)| !shard.closing && shard.owned < max_subscriptions)
         .map(|(id, _)| *id)
         .min()
 }
@@ -646,16 +915,6 @@ fn available_shard_id(state: &PoolState) -> usize {
         id = id.checked_add(1).expect("market shard ID space exhausted");
     }
     id
-}
-
-async fn close_shard(mut shard: ShardEntry) {
-    if let Some(forwarder) = shard.forwarder.take() {
-        forwarder.abort();
-    }
-
-    if let Err(e) = shard.client.disconnect().await {
-        log::debug!("Error disconnecting empty market shard: {e}");
-    }
 }
 
 #[cfg(test)]
@@ -683,8 +942,9 @@ impl PolymarketMarketPoolHandle {
                         TransportBackend::default(),
                     ),
                     handle: WsSubscriptionHandle::from_sender(sender),
-                    forwarder: None,
+                    forwarder: TaskSlot::new(),
                     owned: assigned.len(),
+                    closing: false,
                 },
             );
 
@@ -702,7 +962,11 @@ impl PolymarketMarketPoolHandle {
 
 #[cfg(test)]
 mod tests {
-    use std::{net::SocketAddr, time::Duration};
+    use std::{
+        net::SocketAddr,
+        sync::{Arc as StdArc, Condvar, Mutex as TestMutex},
+        time::Duration,
+    };
 
     use PolymarketMarketPoolHandle as Handle;
     use axum::{
@@ -721,6 +985,20 @@ mod tests {
 
     use super::*;
     use crate::websocket::handler::HandlerCommand;
+
+    struct BlockingDrop(StdArc<(TestMutex<(bool, bool)>, Condvar)>);
+
+    impl Drop for BlockingDrop {
+        fn drop(&mut self) {
+            let (state, wake) = &*self.0;
+            let mut state = state.lock().expect("blocking drop lock poisoned");
+            state.0 = true;
+            wake.notify_all();
+            while !state.1 {
+                state = wake.wait(state).expect("blocking drop wait poisoned");
+            }
+        }
+    }
 
     async fn handle_socket_upgrade(ws: WebSocketUpgrade) -> Response {
         ws.on_upgrade(handle_socket)
@@ -761,8 +1039,9 @@ mod tests {
                         TransportBackend::default(),
                     ),
                     handle: WsSubscriptionHandle::from_sender(tx),
-                    forwarder: None,
+                    forwarder: TaskSlot::new(),
                     owned: *owned,
+                    closing: false,
                 },
             );
         }
@@ -799,7 +1078,9 @@ mod tests {
         let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
         *inner.out_tx.lock().expect("pool out_tx mutex poisoned") = Some(out_tx);
         let (shard_tx, shard_rx) = tokio::sync::mpsc::unbounded_channel();
-        let forwarder = inner.spawn_forwarder(shard_rx, false);
+        let mut forwarder = inner
+            .spawn_forwarder(shard_rx, false)
+            .expect("spawn forwarder");
 
         shard_tx
             .send(market_message("ws_market_new_market_msg.json"))
@@ -811,7 +1092,14 @@ mod tests {
             .send(market_message("ws_market_best_bid_ask_msg.json"))
             .unwrap();
         drop(shard_tx);
-        forwarder.await.unwrap();
+        let outcome = finish_task(
+            &mut forwarder,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("forwarder task");
+        assert!(matches!(outcome, TaskJoinOutcome::Completed(())));
 
         let forwarded = out_rx.try_recv().unwrap();
         let PolymarketWsMessage::Market(MarketWsMessage::BestBidAsk(message)) = forwarded else {
@@ -824,6 +1112,80 @@ mod tests {
             ),
         );
         assert!(out_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn canceled_shard_close_restores_unfinished_ownership() {
+        let inner = Arc::new(PoolInner::new(None, TransportBackend::default(), false, 1));
+        let blocking = StdArc::new((TestMutex::new((false, false)), Condvar::new()));
+        let blocking_task = StdArc::clone(&blocking);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let mut forwarder = TaskSlot::new();
+        forwarder
+            .spawn(async move {
+                let _blocking = BlockingDrop(blocking_task);
+                let _ = started_tx.send(());
+                std::future::pending::<()>().await;
+            })
+            .expect("spawn forwarder");
+        started_rx.await.expect("forwarder should start");
+
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let shard = Box::new(ShardEntry {
+            client: PolymarketWebSocketClient::new_market(None, false, TransportBackend::default()),
+            handle: WsSubscriptionHandle::from_sender(cmd_tx),
+            forwarder,
+            owned: 0,
+            closing: false,
+        });
+        let close_inner = Arc::clone(&inner);
+        let close = tokio::spawn(async move {
+            let _result = close_inner.close_shard(1, shard).await;
+        });
+
+        loop {
+            if blocking.0.lock().expect("blocking drop lock poisoned").0 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        close.abort();
+        let _ = close.await;
+
+        {
+            let restored = inner.state.lock().expect("pool state mutex poisoned");
+            let shard = restored.shards.get(&1).expect("closing shard restored");
+            assert!(shard.closing);
+            assert!(shard.forwarder.is_some());
+            assert_eq!(smallest_shard_with_capacity(&restored, 1), None);
+        }
+
+        {
+            let (state, wake) = &*blocking;
+            state.lock().expect("blocking drop lock poisoned").1 = true;
+            wake.notify_all();
+        }
+        let shard = inner
+            .state
+            .lock()
+            .expect("pool state mutex poisoned")
+            .shards
+            .remove(&1)
+            .expect("restored shard");
+        inner
+            .close_shard(1, Box::new(shard))
+            .await
+            .expect("restored shard should close");
+
+        assert!(
+            inner
+                .state
+                .lock()
+                .expect("pool state mutex poisoned")
+                .shards
+                .is_empty()
+        );
     }
 
     #[rstest]

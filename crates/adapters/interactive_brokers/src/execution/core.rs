@@ -53,7 +53,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     enums::LogLevel,
     factories::OrderEventFactory,
-    live::{get_runtime, runner::get_exec_event_sender},
+    live::runner::get_exec_event_sender,
     messages::{
         ExecutionEvent,
         execution::{
@@ -70,7 +70,11 @@ use nautilus_core::{
     Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, execution::failure::CommandFailure};
+use nautilus_live::{
+    ExecutionClientCore,
+    execution::failure::CommandFailure,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
@@ -92,7 +96,6 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
-use tokio::{sync::Mutex as AsyncMutex, task::JoinHandle};
 use ustr::Ustr;
 
 use super::{
@@ -121,57 +124,30 @@ use crate::{
     pyo3::pyclass(module = "nautilus_trader.adapters.interactive_brokers", unsendable)
 )]
 pub struct InteractiveBrokersExecutionClient {
-    /// Core execution client functionality.
     core: ExecutionClientCore,
-    /// Configuration for the client.
     config: InteractiveBrokersExecutionClientConfig,
-    /// Instrument provider.
     instrument_provider: Arc<InteractiveBrokersInstrumentProvider>,
-    /// Connection state.
     is_connected: AtomicBool,
-    /// IB API client (shared per host/port/client_id when both data and execution connect).
     ib_client: Option<SharedClientHandle>,
-    /// Active task handles.
-    pending_tasks: Mutex<Vec<JoinHandle<()>>>,
-    /// Order ID counter.
+    pending_tasks: TaskGroup,
     next_order_id: Arc<Mutex<i32>>,
-    /// Serializes order submissions so TWS receives monotonically increasing order IDs.
-    order_submit_lock: Arc<AsyncMutex<()>>,
-    /// Order update subscription handle.
-    order_update_handle: Option<JoinHandle<()>>,
-    /// Client order ID to venue order ID mapping.
+    order_submit_lock: Arc<tokio::sync::Mutex<()>>,
+    session_tasks: TaskGroup,
     order_id_map: Arc<Mutex<AHashMap<ClientOrderId, i32>>>,
-    /// Venue order ID to client order ID mapping.
     venue_order_id_map: Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
-    /// Commission cache by execution ID (to merge with fill reports).
     commission_cache: Arc<Mutex<CommissionCache>>,
-    /// Execution cache by execution ID while awaiting commission reports.
     pending_execution_cache: Arc<Mutex<PendingExecutionCache>>,
-    /// Instrument ID mapping by venue order ID (for order status tracking).
     instrument_id_map: Arc<Mutex<AHashMap<i32, InstrumentId>>>,
-    /// Trader ID mapping by venue order ID.
     trader_id_map: Arc<Mutex<AHashMap<i32, TraderId>>>,
-    /// Strategy ID mapping by venue order ID.
     strategy_id_map: Arc<Mutex<AHashMap<i32, StrategyId>>>,
-    /// Locally submitted active order identity.
     active_order_contexts: Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
-    /// Recently terminal locally submitted order identity.
     terminal_order_contexts: Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
-    /// Spread fill tracking to avoid duplicate processing.
-    /// Maps client_order_id to set of trade_ids that have been processed.
     spread_fill_tracking: Arc<Mutex<AHashMap<ClientOrderId, ahash::AHashSet<String>>>>,
-    /// Position tracker for detecting external position changes (e.g., option exercises).
     position_tracker: PositionTracker,
-    /// Average fill price tracking by client order ID.
-    /// Stores average fill prices from IB order status updates for use in fill reports.
     order_avg_prices: Arc<Mutex<AHashMap<ClientOrderId, Price>>>,
-    /// Pending spread combo fills waiting for their matching avg fill price chunk.
     pending_combo_fills: Arc<Mutex<AHashMap<ClientOrderId, VecDeque<PendingComboFill>>>>,
-    /// Pending average-price chunks derived from cumulative order status updates.
     pending_combo_fill_avgs: Arc<Mutex<AHashMap<ClientOrderId, VecDeque<(Decimal, Price)>>>>,
-    /// Tracks cumulative filled quantity and notional for deriving incremental avg fill chunks.
     order_fill_progress: Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
-    /// Set of client order IDs that have already emitted an OrderPendingCancel event.
     pending_cancel_orders: Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
 }
 
@@ -288,16 +264,19 @@ impl InteractiveBrokersExecutionClient {
             core.account_id = AccountId::from(account_id.clone());
         }
 
+        let pending_tasks = TaskGroup::new();
+        let session_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             config,
             instrument_provider,
             is_connected: AtomicBool::new(false),
             ib_client: None,
-            pending_tasks: Mutex::new(Vec::new()),
+            pending_tasks,
             next_order_id: Arc::new(Mutex::new(0)),
-            order_submit_lock: Arc::new(AsyncMutex::new(())),
-            order_update_handle: None,
+            order_submit_lock: Arc::new(tokio::sync::Mutex::new(())),
+            session_tasks,
             order_id_map: Arc::new(Mutex::new(AHashMap::new())),
             venue_order_id_map: Arc::new(Mutex::new(AHashMap::new())),
             commission_cache: Arc::new(Mutex::new(CommissionCache::new())),
@@ -340,7 +319,7 @@ impl InteractiveBrokersExecutionClient {
         let client_clone = client.as_arc().clone();
         let order_submit_lock = Arc::clone(&self.order_submit_lock);
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = Self::handle_submit_order_list_async(
                 &cmd,
                 &orders,
@@ -364,12 +343,11 @@ impl InteractiveBrokersExecutionClient {
             {
                 tracing::error!("Error submitting order list: {e}");
             }
-        });
+        };
 
         self.pending_tasks
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending tasks"))?
-            .push(handle);
+            .spawn(future)
+            .context("failed to register IB execution command task")?;
 
         Ok(())
     }
@@ -448,16 +426,47 @@ impl InteractiveBrokersExecutionClient {
         Ok(highest_order_id)
     }
 
-    /// Aborts all pending tasks.
-    fn abort_pending_tasks(&mut self) {
-        let mut tasks = self.pending_tasks.lock().expect(MUTEX_POISONED);
-        for task in tasks.drain(..) {
-            task.abort();
-        }
+    fn begin_task_shutdown(&self) {
+        self.pending_tasks.begin_shutdown();
+        self.session_tasks.begin_shutdown();
+        self.is_connected.store(false, Ordering::Release);
+        self.core.set_disconnected();
+    }
 
-        if let Some(handle) = self.order_update_handle.take() {
-            handle.abort();
+    async fn finish_tasks(&self) -> anyhow::Result<()> {
+        let (session_result, pending_result) = tokio::join!(
+            self.session_tasks
+                .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2)),
+            self.pending_tasks
+                .finish_shutdown(Duration::from_secs(2), Duration::from_secs(2)),
+        );
+        session_result.context("failed to finish IB execution session tasks")?;
+        pending_result.context("failed to finish IB execution command tasks")?;
+        Ok(())
+    }
+
+    async fn prepare_task_groups(&mut self) -> anyhow::Result<()> {
+        if !self.session_tasks.is_open() || !self.pending_tasks.is_open() {
+            self.begin_task_shutdown();
+            self.finish_tasks().await?;
+            self.ib_client = None;
+            self.session_tasks
+                .start_generation()
+                .context("failed to start IB execution session task generation")?;
+            self.pending_tasks
+                .start_generation()
+                .context("failed to start IB execution command task generation")?;
         }
+        Ok(())
+    }
+
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.begin_task_shutdown();
+        self.ib_client = None;
+        let tasks_result = self.finish_tasks().await;
+        self.is_connected.store(false, Ordering::Release);
+        self.core.set_disconnected();
+        tasks_result
     }
 }
 
@@ -527,7 +536,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn stop(&mut self) -> anyhow::Result<()> {
-        self.abort_pending_tasks();
+        self.begin_task_shutdown();
         Ok(())
     }
 
@@ -556,7 +565,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         let account_id = self.core.account_id;
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = Self::handle_submit_order_async(
                 &cmd,
                 &client_clone,
@@ -578,21 +587,27 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             {
                 tracing::error!("Error submitting order: {e}");
             }
-        });
+        };
 
         self.pending_tasks
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending tasks"))?
-            .push(handle);
+            .spawn(future)
+            .context("failed to register IB execution command task")?;
 
         Ok(())
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected.load(Ordering::Relaxed) {
+        if self.is_connected.load(Ordering::Relaxed)
+            && self.session_tasks.is_open()
+            && self.pending_tasks.is_open()
+        {
             log::debug!("Interactive Brokers execution client already connected");
             return Ok(());
         }
+
+        self.prepare_task_groups().await?;
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {});
 
         tracing::info!("Connecting Interactive Brokers execution client...");
         log::debug!(
@@ -642,6 +657,8 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         }
 
         self.ib_client = Some(handle);
+
+        let session_result = async {
 
         log::debug!("Preloading cached spread instruments for execution client");
         self.preload_cached_spread_instruments(client.as_ref())
@@ -734,8 +751,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         log::debug!("Subscribing to IB PnL updates");
 
-        if let Err(e) =
-            crate::execution::account::subscribe_pnl(&client_for_pnl, self.core.account_id).await
+        if let Err(e) = crate::execution::account::subscribe_pnl(
+            &client_for_pnl,
+            self.core.account_id,
+            &self.session_tasks,
+        )
+        .await
         {
             tracing::warn!("Failed to subscribe to PnL: {}", e);
         }
@@ -753,6 +774,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 self.core.account_id,
                 position_tracker_clone,
                 instrument_provider_clone,
+                &self.session_tasks,
             )
             .await
             {
@@ -760,34 +782,42 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             }
         }
 
+        Ok::<(), anyhow::Error>(())
+        }
+        .await;
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "IB execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
+
         self.is_connected.store(true, Ordering::Relaxed);
         self.core.set_connected();
+        setup_guard.disarm();
 
         tracing::info!("Connected Interactive Brokers execution client");
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if !self.is_connected.load(Ordering::Relaxed) {
+        if !self.is_connected.load(Ordering::Relaxed)
+            && self.ib_client.is_none()
+            && self.session_tasks.is_open()
+            && self.session_tasks.is_empty()
+            && self.pending_tasks.is_open()
+            && self.pending_tasks.is_empty()
+        {
             log::debug!("Interactive Brokers execution client already disconnected");
             return Ok(());
         }
 
         tracing::info!("Disconnecting Interactive Brokers execution client...");
 
-        // Abort pending tasks
-        self.abort_pending_tasks();
-
-        // Disconnect IB client if connected
-        // The rust-ibapi Client doesn't have an explicit disconnect method
-        // Connection will be closed when the Arc is dropped
-        if self.ib_client.is_some() {
-            tracing::debug!("Dropping IB client connection");
-        }
-
-        self.ib_client = None;
-        self.is_connected.store(false, Ordering::Relaxed);
-        self.core.set_disconnected();
+        self.teardown_partial_connect().await?;
 
         tracing::info!("Disconnected Interactive Brokers execution client");
         Ok(())
@@ -1313,7 +1343,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let clock = get_atomic_clock_realtime();
         let request_timeout_secs = self.config.request_timeout;
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             let timeout_dur = Duration::from_secs(request_timeout_secs);
             let result = tokio::time::timeout(
                 timeout_dur,
@@ -1349,12 +1379,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     tracing::error!("Timeout waiting for account summary");
                 }
             }
-        });
+        };
 
         self.pending_tasks
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending tasks"))?
-            .push(handle);
+            .spawn(future)
+            .context("failed to register IB execution command task")?;
 
         Ok(())
     }
@@ -1389,7 +1418,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let pending_cancel_orders = Arc::clone(&self.pending_cancel_orders);
         let raw_account_id = raw_ib_account_code(&self.core.account_id);
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             let timeout_dur = Duration::from_secs(request_timeout_secs);
             let subscription =
                 match tokio::time::timeout(timeout_dur, client_clone.all_open_orders()).await {
@@ -1510,12 +1539,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 "query_order: order {} not found in open orders (may be filled or canceled)",
                 target_order.label()
             );
-        });
+        };
 
         self.pending_tasks
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending tasks"))?
-            .push(handle);
+            .spawn(future)
+            .context("failed to register IB execution command task")?;
 
         Ok(())
     }
@@ -1564,7 +1592,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             );
         }
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = Self::handle_modify_order_async(
                 &cmd,
                 &client_clone,
@@ -1592,12 +1620,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     tracing::error!("{reason}; failed to emit OrderModifyRejected: {send_error}");
                 }
             }
-        });
+        };
 
         self.pending_tasks
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending tasks"))?
-            .push(handle);
+            .spawn(future)
+            .context("failed to register IB execution command task")?;
 
         Ok(())
     }
@@ -1642,7 +1669,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let client_clone = client.as_arc().clone();
         let request_timeout_secs = self.config.request_timeout;
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = Self::handle_cancel_order_async(
                 &cmd,
                 &target_order,
@@ -1672,12 +1699,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                     tracing::error!("{reason}; failed to emit OrderCancelRejected: {send_error}");
                 }
             }
-        });
+        };
 
         self.pending_tasks
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending tasks"))?
-            .push(handle);
+            .spawn(future)
+            .context("failed to register IB execution command task")?;
 
         Ok(())
     }
@@ -1775,7 +1801,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let account_id = self.core.account_id;
         let request_timeout_secs = self.config.request_timeout;
 
-        let handle = get_runtime().spawn(async move {
+        let future = async move {
             if let Err(e) = Self::handle_cancel_all_orders_async(
                 &client_clone,
                 &order_id_map,
@@ -1793,12 +1819,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             {
                 tracing::error!("Error canceling all orders: {e}");
             }
-        });
+        };
 
         self.pending_tasks
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Failed to lock pending tasks"))?
-            .push(handle);
+            .spawn(future)
+            .context("failed to register IB execution command task")?;
 
         Ok(())
     }
@@ -2404,5 +2429,3 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 }
-
-const MUTEX_POISONED: &str = "Mutex poisoned";

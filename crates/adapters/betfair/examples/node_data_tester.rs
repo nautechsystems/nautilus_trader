@@ -18,10 +18,10 @@
 //! Run with: `cargo run -p nautilus-betfair --example betfair-data-tester --features examples`
 //!
 //! Required environment variables:
-//! - `BETFAIR_USERNAME`: Your Betfair username.
-//! - `BETFAIR_PASSWORD`: Your Betfair password.
-//! - `BETFAIR_APP_KEY`: Your Betfair application key.
-//! - `BETFAIR_MARKET_ID`: An active Betfair market ID.
+//! - `BETFAIR_USERNAME`: Your Betfair username
+//! - `BETFAIR_PASSWORD`: Your Betfair password
+//! - `BETFAIR_APP_KEY`: Your Betfair application key
+//! - `BETFAIR_MARKET_ID`: An active Betfair market ID
 //!
 //! Market IDs can be found from `https://www.betfair.com.au/exchange/plus/`
 

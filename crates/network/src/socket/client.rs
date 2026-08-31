@@ -1180,13 +1180,19 @@ impl SocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
     pub async fn close(&self) {
+        self.begin_shutdown();
         self.close_with_timeout(Duration::from_secs(GRACEFUL_SHUTDOWN_TIMEOUT_SECS))
             .await;
     }
 
-    async fn close_with_timeout(&self, shutdown_timeout: Duration) {
+    /// Requests shutdown without waiting for the controller task.
+    pub fn begin_shutdown(&self) {
         ConnectionMode::request_disconnect(&self.connection_mode);
         self.state_notify.notify_waiters();
+    }
+
+    async fn close_with_timeout(&self, shutdown_timeout: Duration) {
+        self.begin_shutdown();
 
         if dst::time::timeout(shutdown_timeout, async {
             while !self.controller_task.is_finished() {

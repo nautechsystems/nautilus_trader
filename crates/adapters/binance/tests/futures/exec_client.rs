@@ -355,12 +355,16 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
         .route("/fapi/v1/positionSide/dual", get(handle_hedge_mode_query))
         .route(
             "/fapi/v1/listenKey",
-            post(handle_listen_key_create).put(handle_listen_key_keepalive),
+            post(handle_listen_key_create)
+                .put(handle_listen_key_keepalive)
+                .delete(handle_listen_key_close),
         )
         .route("/dapi/v1/positionSide/dual", get(handle_hedge_mode_query))
         .route(
             "/dapi/v1/listenKey",
-            post(handle_listen_key_create).put(handle_listen_key_keepalive),
+            post(handle_listen_key_create)
+                .put(handle_listen_key_keepalive)
+                .delete(handle_listen_key_close),
         )
         .route("/fapi/v2/account", get(handle_account_query))
         .route("/dapi/v1/account", get(handle_account_query))
@@ -436,6 +440,13 @@ async fn handle_listen_key_create(headers: HeaderMap) -> Response {
 }
 
 async fn handle_listen_key_keepalive(headers: HeaderMap) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response();
+    }
+    json_response(&json!({}))
+}
+
+async fn handle_listen_key_close(headers: HeaderMap) -> Response {
     if !has_auth_headers(&headers) {
         return unauthorized_response();
     }
@@ -1375,6 +1386,12 @@ fn create_exec_test_router_with_order_capture(
                 json_response(&json!({"listenKey": "test_listen_key"}))
             })
             .put(|headers: HeaderMap| async move {
+                if !has_auth_headers(&headers) {
+                    return unauthorized_response();
+                }
+                json_response(&json!({}))
+            })
+            .delete(|headers: HeaderMap| async move {
                 if !has_auth_headers(&headers) {
                     return unauthorized_response();
                 }

@@ -24,13 +24,13 @@
 //! `cargo run --bin lighter-nvda-composite-mm --package nautilus-tutorials --features examples`
 //!
 //! Required credential environment variables:
-//! - `DATABENTO_API_KEY`.
+//! - `DATABENTO_API_KEY`
 //! - `LIGHTER_TESTNET_ACCOUNT_INDEX`, `LIGHTER_TESTNET_API_KEY_INDEX`, and
 //!   `LIGHTER_TESTNET_API_SECRET` when the `LIGHTER_ENVIRONMENT` source constant
-//!   is `LighterEnvironment::Testnet`.
+//!   is `LighterEnvironment::Testnet`
 //! - `LIGHTER_ACCOUNT_INDEX`, `LIGHTER_API_KEY_INDEX`, and `LIGHTER_API_SECRET`
 //!   when the `LIGHTER_ENVIRONMENT` source constant is
-//!   `LighterEnvironment::Mainnet`.
+//!   `LighterEnvironment::Mainnet`
 
 use std::{error::Error, io, path::PathBuf, str::FromStr};
 

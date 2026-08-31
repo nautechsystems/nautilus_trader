@@ -33,9 +33,13 @@ use std::{
 use alloy::signers::local::PrivateKeySigner;
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
+#[cfg(test)]
 use nautilus_common::live::get_runtime;
 use nautilus_core::UUID4;
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{SharedTaskSlot, TaskJoinOutcome, TaskSlot, finish_task},
+};
 use nautilus_network::{
     mode::ConnectionMode,
     ratelimiter::clock::MonotonicClock,
@@ -154,11 +158,50 @@ pub struct DeriveWebSocketClient {
     out_rx: Option<tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>>,
     subscriptions: Arc<DashMap<String, ()>>,
     subscription_lock: Arc<tokio::sync::Mutex<()>>,
-    task_handle: Option<tokio::task::JoinHandle<()>>,
+    task_handle: TaskSlot<()>,
+    send_task: Arc<SharedTaskSlot<()>>,
+    shutdown_errors: Vec<String>,
     request_timeout: Duration,
     conn_id: Arc<ArcSwap<String>>,
     rate_limiter: Arc<WsRateLimiter>,
     socket_control: Option<SocketControl>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DeriveWebSocketShutdownHandle {
+    signal: Arc<AtomicBool>,
+}
+
+impl DeriveWebSocketShutdownHandle {
+    pub(crate) fn begin_shutdown(&self) {
+        self.signal.store(true, Ordering::Release);
+    }
+}
+
+struct DeriveWebSocketSetupGuard {
+    shutdown: DeriveWebSocketShutdownHandle,
+    armed: bool,
+}
+
+impl DeriveWebSocketSetupGuard {
+    fn new(shutdown: DeriveWebSocketShutdownHandle) -> Self {
+        Self {
+            shutdown,
+            armed: true,
+        }
+    }
+
+    fn disarm(mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for DeriveWebSocketSetupGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            self.shutdown.begin_shutdown();
+        }
+    }
 }
 
 /// Cloneable command handle for Derive public market data subscriptions.
@@ -276,7 +319,9 @@ impl DeriveWebSocketClient {
             out_rx: None,
             subscriptions: Arc::new(DashMap::new()),
             subscription_lock: Arc::new(tokio::sync::Mutex::new(())),
-            task_handle: None,
+            task_handle: TaskSlot::new(),
+            send_task: Arc::new(SharedTaskSlot::new()),
+            shutdown_errors: Vec::new(),
             request_timeout: WS_REQUEST_TIMEOUT,
             conn_id: Arc::new(ArcSwap::from_pointee(UUID4::new().to_string())),
             rate_limiter,
@@ -340,10 +385,13 @@ impl DeriveWebSocketClient {
         }
 
         // Tear down stale state so we don't orphan the old handler task on rebuild.
-        if self.task_handle.is_some() {
+        if self.task_handle.is_some() || !self.send_task.is_empty() {
             log::debug!("Tearing down stale Derive WebSocket state before connect");
-            self.teardown().await;
+            self.teardown().await?;
         }
+
+        self.signal.store(false, Ordering::Release);
+        let setup_guard = DeriveWebSocketSetupGuard::new(self.shutdown_handle());
 
         self.authenticated_epoch
             .store(UNAUTHENTICATED_CONNECTION_EPOCH, Ordering::Release);
@@ -401,10 +449,6 @@ impl DeriveWebSocketClient {
             )));
         }
 
-        if let Some(control) = &self.socket_control {
-            control.register(move || reconnect_handle.request_reconnect());
-        }
-
         let signal = Arc::clone(&self.signal);
         let auth_tracker = self.auth_tracker.clone();
         let authenticated_epoch = Arc::clone(&self.authenticated_epoch);
@@ -418,8 +462,9 @@ impl DeriveWebSocketClient {
         let request_timeout = self.request_timeout;
         let recovery_connection_mode = Arc::clone(&connection_mode);
         let recovery_connection_epoch = Arc::clone(&connection_epoch);
+        let send_task = Arc::clone(&self.send_task);
 
-        let stream_handle = get_runtime().spawn(async move {
+        if let Err(e) = self.task_handle.spawn(async move {
             let (recovery_tx, mut recovery_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
             let recovery_out_tx = out_tx.clone();
             let recovery_cmd_tx = cmd_tx_for_loop.clone();
@@ -496,13 +541,14 @@ impl DeriveWebSocketClient {
                 }
             });
 
-            let mut handler = FeedHandler::new(
+            let mut handler = FeedHandler::new_with_send_task(
                 signal,
                 cmd_rx,
                 raw_rx,
                 next_id,
                 auth_tracker.clone(),
                 Arc::clone(&authenticated_epoch),
+                send_task,
             );
 
             loop {
@@ -528,8 +574,20 @@ impl DeriveWebSocketClient {
                     }
                 }
             }
-        });
-        self.task_handle = Some(stream_handle);
+        }) {
+            let shutdown_result = self.teardown().await;
+            return Err(DeriveWsError::transport(match shutdown_result {
+                Ok(()) => format!("failed to start WebSocket handler task: {e}"),
+                Err(shutdown_error) => format!(
+                    "failed to start WebSocket handler task: {e}; startup rollback failed: \
+                     {shutdown_error}"
+                ),
+            }));
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
         if let Some(creds) = self.credentials.clone()
             && let Err(e) = login_via_handler(
@@ -547,18 +605,29 @@ impl DeriveWebSocketClient {
             // Without teardown, a retry connect() would short-circuit on
             // is_active() and return Ok without a valid session.
             log::warn!("Derive WebSocket login failed; tearing down transport: {e}");
-            self.teardown().await;
+            self.teardown().await?;
             return Err(e);
         }
 
+        setup_guard.disarm();
         Ok(())
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.signal.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn shutdown_handle(&self) -> DeriveWebSocketShutdownHandle {
+        DeriveWebSocketShutdownHandle {
+            signal: Arc::clone(&self.signal),
+        }
     }
 
     /// Signals the handler to disconnect, aborts the spawn task, and resets
     /// the client's transport-related state. Shared by [`Self::disconnect`]
     /// and the login-failure branch of [`Self::connect`].
-    async fn teardown(&mut self) {
-        self.signal.store(true, Ordering::Relaxed);
+    async fn teardown(&mut self) -> Result<()> {
+        self.begin_shutdown();
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
             log::debug!(
@@ -566,19 +635,48 @@ impl DeriveWebSocketClient {
             );
         }
 
-        if let Some(handle) = self.task_handle.take() {
-            let abort_handle = handle.abort_handle();
-            tokio::select! {
-                result = handle => match result {
-                    Ok(()) => log::debug!("Derive WebSocket task completed"),
-                    Err(e) if e.is_cancelled() => log::debug!("Derive WebSocket task cancelled"),
-                    Err(e) => log::error!("Derive WebSocket task error: {e:?}"),
-                },
-                () = tokio::time::sleep(Duration::from_secs(2)) => {
-                    log::warn!("Timeout waiting for Derive WebSocket task, aborting");
-                    abort_handle.abort();
-                }
+        match finish_task(
+            &mut self.task_handle,
+            Duration::from_secs(2),
+            Duration::from_secs(2),
+        )
+        .await
+        {
+            None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => {}
+            Some(TaskJoinOutcome::Failed(error)) => self
+                .shutdown_errors
+                .push(format!("WebSocket handler task failed: {error}")),
+            Some(TaskJoinOutcome::Incomplete) => self
+                .shutdown_errors
+                .push("WebSocket handler task did not stop after abort".to_string()),
+        }
+
+        if self.task_handle.is_some() {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
             }
+            return self.take_shutdown_result();
+        }
+
+        match self
+            .send_task
+            .finish(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+        {
+            None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => {}
+            Some(TaskJoinOutcome::Failed(error)) => self
+                .shutdown_errors
+                .push(format!("WebSocket send worker failed: {error}")),
+            Some(TaskJoinOutcome::Incomplete) => self
+                .shutdown_errors
+                .push("WebSocket send worker did not stop after abort".to_string()),
+        }
+
+        if !self.send_task.is_empty() {
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+            return self.take_shutdown_result();
         }
 
         // Subscriptions are also dropped: the venue session ended with the
@@ -598,6 +696,18 @@ impl DeriveWebSocketClient {
         if let Some(control) = &self.socket_control {
             control.deregister();
         }
+
+        self.take_shutdown_result()
+    }
+
+    fn take_shutdown_result(&mut self) -> Result<()> {
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            Err(DeriveWsError::transport(
+                std::mem::take(&mut self.shutdown_errors).join("; "),
+            ))
+        }
     }
 
     /// Disconnects the WebSocket connection and awaits the handler task.
@@ -608,8 +718,8 @@ impl DeriveWebSocketClient {
     /// cannot be enqueued; the handler still tears down on signal.
     pub async fn disconnect(&mut self) -> Result<()> {
         log::debug!("Disconnecting Derive WebSocket");
-        self.teardown().await;
-        Ok(())
+        self.begin_shutdown();
+        self.teardown().await
     }
 
     /// Subscribes to `ticker_slim.{instrument_name}.{interval}`. `interval` is the
@@ -783,6 +893,20 @@ impl DeriveWebSocketClient {
         &mut self,
     ) -> Option<tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>> {
         self.out_rx.take()
+    }
+}
+
+impl Drop for DeriveWebSocketClient {
+    fn drop(&mut self) {
+        self.signal.store(true, Ordering::Relaxed);
+
+        if let Some(handle) = self.task_handle.as_ref() {
+            handle.abort();
+        }
+
+        if let Some(control) = &self.socket_control {
+            control.deregister();
+        }
     }
 }
 

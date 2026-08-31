@@ -25,7 +25,7 @@ on the use case.
 - `BybitExecutionClient`: An account management and trade execution gateway, built by the execution
   client factory.
 - `BybitHttpClient`: Low-level HTTP API connectivity.
-- `BybitWebSocketClient`: Low-level WebSocket API connectivity.
+- `BybitWebSocketClient`: Low-level WebSocket API connectivity for Rust callers.
 - `BYBIT`, `BYBIT_CLIENT_ID`, `BYBIT_VENUE`: Public identifiers.
 - `BybitEnvironment`, `BybitProductType`, `BybitMarginMode`, `BybitPositionIdx`,
   `BybitPositionMode`: Public enums used by the configurations and order params.

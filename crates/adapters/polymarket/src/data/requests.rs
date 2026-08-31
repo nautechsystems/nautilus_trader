@@ -30,7 +30,6 @@ use nautilus_model::{data::CustomData, instruments::Instrument};
 use super::{
     PolymarketDataClient,
     instruments::{apply_live_instrument, cache_instrument_if_active},
-    spawn_task,
 };
 use crate::{
     common::consts::POLYMARKET_VENUE,
@@ -179,12 +178,10 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
             log::error!("Failed to send resolve custom data response: {e}");
         }
     };
-    spawn_task(
-        &client.tasks,
-        &client.task_registration,
-        &client.cancellation_token,
-        future,
-    );
+
+    if let Err(e) = client.tasks.spawn(future) {
+        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+    }
 }
 
 pub(super) fn request_instruments(client: &PolymarketDataClient, request: RequestInstruments) {
@@ -249,12 +246,10 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
             log::error!("Failed to send instruments response: {e}");
         }
     };
-    spawn_task(
-        &client.tasks,
-        &client.task_registration,
-        &client.cancellation_token,
-        future,
-    );
+
+    if let Err(e) = client.tasks.spawn(future) {
+        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+    }
 }
 
 pub(super) fn request_instrument(client: &PolymarketDataClient, request: RequestInstrument) {
@@ -331,12 +326,10 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
             log::error!("Instrument {instrument_id} not found on Polymarket");
         }
     };
-    spawn_task(
-        &client.tasks,
-        &client.task_registration,
-        &client.cancellation_token,
-        future,
-    );
+
+    if let Err(e) = client.tasks.spawn(future) {
+        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+    }
 }
 
 pub(super) fn request_book_snapshot(
@@ -381,12 +374,10 @@ pub(super) fn request_book_snapshot(
             Err(e) => log::error!("Book snapshot request failed: {e:?}"),
         }
     };
-    spawn_task(
-        &client.tasks,
-        &client.task_registration,
-        &client.cancellation_token,
-        future,
-    );
+
+    if let Err(e) = client.tasks.spawn(future) {
+        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+    }
 
     Ok(())
 }
@@ -446,12 +437,10 @@ pub(super) fn request_trades(
             Err(e) => log::error!("Trade request failed for {instrument_id}: {e:?}"),
         }
     };
-    spawn_task(
-        &client.tasks,
-        &client.task_registration,
-        &client.cancellation_token,
-        future,
-    );
+
+    if let Err(e) = client.tasks.spawn(future) {
+        log::debug!("Skipping Polymarket data task after shutdown began: {e}");
+    }
 
     Ok(())
 }

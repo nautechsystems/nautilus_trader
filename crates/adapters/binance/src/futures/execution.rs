@@ -31,7 +31,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
@@ -47,7 +47,10 @@ use nautilus_core::{
     },
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory,
+    task::{TaskGroup, TaskGroupGuard, TaskJoinOutcome, TaskShutdownError, TaskSlot, finish_task},
+};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
@@ -66,7 +69,6 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio::{sync::Mutex as TokioMutex, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
 use super::{
@@ -88,7 +90,7 @@ use super::{
             client::BinanceFuturesWebSocketClient,
             dispatch::{
                 DispatchCtx, dispatch_user_stream_message, make_venue_position_id,
-                spawn_user_stream_dispatch, with_venue_position_id,
+                run_user_stream_dispatch, with_venue_position_id,
             },
             recovery::{
                 RecoveryCtx, WsBuildParams, build_and_connect_user_stream, run_recovery_driver,
@@ -175,21 +177,21 @@ pub struct BinanceFuturesExecutionClient {
     dispatch_state: Arc<WsDispatchState>,
     product_type: BinanceProductType,
     http_client: BinanceFuturesHttpClient,
-    ws_client: Arc<TokioMutex<Option<BinanceFuturesWebSocketClient>>>,
+    ws_client: Arc<Mutex<Option<BinanceFuturesWebSocketClient>>>,
     socket_factory: SocketControlFactory,
     ws_trading_client: Option<BinanceFuturesWsTradingClient>,
-    ws_trading_handle: Option<JoinHandle<()>>,
     listen_key: Arc<RwLock<Option<String>>>,
+    recovery_listen_key: Arc<RwLock<Option<String>>>,
     cancellation_token: CancellationToken,
     triggered_algo_order_ids: Arc<AtomicSet<ClientOrderId>>,
     algo_client_order_ids: Arc<AtomicSet<ClientOrderId>>,
-    ws_task: Arc<Mutex<Option<JoinHandle<()>>>>,
-    keepalive_task: Option<JoinHandle<()>>,
-    recovery_task: Option<JoinHandle<()>>,
-    recovery_lock: Arc<TokioMutex<()>>,
+    ws_task: Arc<tokio::sync::Mutex<TaskSlot<()>>>,
+    recovery_lock: Arc<tokio::sync::Mutex<()>>,
     recovery_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
-    pending_tasks: TaskHandles,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
     is_hedge_mode: AtomicBool,
+    shutdown_errors: Vec<String>,
 }
 
 impl BinanceFuturesExecutionClient {
@@ -275,6 +277,9 @@ impl BinanceFuturesExecutionClient {
             core.base_currency,
         );
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             clock,
@@ -283,21 +288,21 @@ impl BinanceFuturesExecutionClient {
             dispatch_state: Arc::new(WsDispatchState::default()),
             product_type,
             http_client,
-            ws_client: Arc::new(TokioMutex::new(None)),
+            ws_client: Arc::new(Mutex::new(None)),
             socket_factory,
             ws_trading_client,
-            ws_trading_handle: None,
             listen_key: Arc::new(RwLock::new(None)),
+            recovery_listen_key: Arc::new(RwLock::new(None)),
             cancellation_token: CancellationToken::new(),
             triggered_algo_order_ids: Arc::new(AtomicSet::new()),
             algo_client_order_ids: Arc::new(AtomicSet::new()),
-            ws_task: Arc::new(Mutex::new(None)),
-            keepalive_task: None,
-            recovery_task: None,
-            recovery_lock: Arc::new(TokioMutex::new(())),
+            ws_task: Arc::new(tokio::sync::Mutex::new(TaskSlot::new())),
+            recovery_lock: Arc::new(tokio::sync::Mutex::new(())),
             recovery_tx: None,
-            pending_tasks: TaskHandles::default(),
+            session_tasks,
+            pending_tasks,
             is_hedge_mode: AtomicBool::new(false),
+            shutdown_errors: Vec::new(),
         })
     }
 
@@ -887,6 +892,74 @@ impl BinanceFuturesExecutionClient {
 
     fn abort_pending_tasks(&self) {
         crate::common::execution::abort_pending_tasks(&self.pending_tasks);
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        crate::common::execution::await_pending_tasks(&self.pending_tasks).await
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.finish_session_tasks().await.map_err(|e| {
+            anyhow::anyhow!("Failed to terminate Binance Futures session tasks: {e}")
+        })?;
+        Ok(())
+    }
+
+    async fn finish_session_tasks(&self) -> Result<(), TaskShutdownError> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await?;
+        Ok(())
+    }
+
+    async fn await_dispatch_task(&self) -> anyhow::Result<()> {
+        let _recovery_guard = self.recovery_lock.lock().await;
+        let mut task_slot = self.ws_task.lock().await;
+        let Some(outcome) = finish_task(
+            &mut task_slot,
+            Duration::from_secs(1),
+            Duration::from_secs(2),
+        )
+        .await
+        else {
+            return Ok(());
+        };
+
+        match outcome {
+            TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => Ok(()),
+            TaskJoinOutcome::Failed(e) => {
+                Err(anyhow::anyhow!("Binance Futures dispatch task failed: {e}"))
+            }
+            TaskJoinOutcome::Incomplete => Err(anyhow::anyhow!(
+                "Binance Futures dispatch task did not stop after abort"
+            )),
+        }
+    }
+
+    async fn close_listen_key_slot(
+        &self,
+        slot: &RwLock<Option<String>>,
+        context: &str,
+    ) -> anyhow::Result<()> {
+        let key = slot.read().expect(MUTEX_POISONED).clone();
+        let Some(key) = key else {
+            return Ok(());
+        };
+
+        self.http_client
+            .close_listen_key(&key)
+            .await
+            .with_context(|| context.to_string())?;
+        let mut owned = slot.write().expect(MUTEX_POISONED);
+        if owned.as_deref() == Some(key.as_str()) {
+            *owned = None;
+        }
+        Ok(())
     }
 
     /// Returns the (price_precision, size_precision) for an instrument.
@@ -1601,13 +1674,48 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() {
+        if self.core.is_connected() && self.session_tasks.is_open() && self.pending_tasks.is_open()
+        {
             return Ok(());
         }
 
-        // Reinitialize cancellation token in case of reconnection
-        self.cancellation_token = CancellationToken::new();
+        if !self.pending_tasks.is_open() || !self.session_tasks.is_open() {
+            self.disconnect().await?;
+        }
 
+        if !self.pending_tasks.is_open() {
+            self.await_pending_tasks().await?;
+            self.pending_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start Binance Futures task generation: {e}")
+            })?;
+        }
+
+        if !self.session_tasks.is_open() {
+            self.await_session_tasks().await?;
+            self.await_dispatch_task().await?;
+            self.session_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start Binance Futures session generation: {e}")
+            })?;
+        }
+
+        self.cancellation_token = CancellationToken::new();
+        let cancellation_token = self.cancellation_token.clone();
+        let ws_client = Arc::clone(&self.ws_client);
+        let ws_trading_client = self.ws_trading_client.clone();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                cancellation_token.cancel();
+
+                if let Some(client) = ws_client.lock().expect(MUTEX_POISONED).as_ref() {
+                    client.begin_shutdown();
+                }
+
+                if let Some(client) = ws_trading_client {
+                    client.begin_shutdown();
+                }
+            });
+
+        let connect_result: anyhow::Result<()> = async {
         // Check hedge mode
         let is_hedge_mode = self
             .init_hedge_mode()
@@ -1713,15 +1821,18 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let ws_client = build_and_connect_user_stream(&ws_build_params, &listen_key).await?;
         let stream = ws_client.stream();
-        *self.ws_client.lock().await = Some(ws_client);
+        *self.ws_client.lock().expect(MUTEX_POISONED) = Some(ws_client);
 
-        let ws_task = spawn_user_stream_dispatch(
-            stream,
-            dispatch_ctx.clone(),
-            recovery_tx.clone(),
-            dispatch_user_stream_message,
-        );
-        *self.ws_task.lock().expect(MUTEX_POISONED) = Some(ws_task);
+        self.ws_task
+            .lock()
+            .await
+            .spawn(run_user_stream_dispatch(
+                stream,
+                dispatch_ctx.clone(),
+                recovery_tx.clone(),
+                dispatch_user_stream_message,
+            ))
+            .map_err(|e| anyhow::anyhow!("failed to start user stream dispatch task: {e}"))?;
 
         // Start listen key keepalive task
         {
@@ -1730,7 +1841,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             let cancel = self.cancellation_token.clone();
             let recovery_tx = recovery_tx.clone();
 
-            let keepalive_task = get_runtime().spawn(async move {
+            self.session_tasks.spawn(async move {
                 let mut interval =
                     tokio::time::interval(Duration::from_secs(LISTEN_KEY_KEEPALIVE_SECS));
                 let mut consecutive_failures: u32 = 0;
@@ -1773,8 +1884,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         }
                     }
                 }
-            });
-            self.keepalive_task = Some(keepalive_task);
+            })?;
         }
 
         // Start listen key recovery driver task
@@ -1782,6 +1892,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             let recovery_ctx = RecoveryCtx {
                 http_client: self.http_client.clone(),
                 listen_key: self.listen_key.clone(),
+                recovery_listen_key: self.recovery_listen_key.clone(),
                 ws_client: self.ws_client.clone(),
                 ws_task: self.ws_task.clone(),
                 recovery_lock: self.recovery_lock.clone(),
@@ -1791,7 +1902,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             };
             let cancel = self.cancellation_token.clone();
 
-            let recovery_task = get_runtime().spawn(async move {
+            self.session_tasks.spawn(async move {
                 run_recovery_driver(
                     recovery_ctx,
                     recovery_rx,
@@ -1799,8 +1910,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     dispatch_user_stream_message,
                 )
                 .await;
-            });
-            self.recovery_task = Some(recovery_task);
+            })?;
         }
 
         // Request initial account state
@@ -1834,7 +1944,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     let clock = self.clock;
                     let dispatch_state = self.dispatch_state.clone();
 
-                    let handle = get_runtime().spawn(async move {
+                    self.session_tasks.spawn(async move {
                         while let Some(msg) = ws_trading_clone.recv().await {
                             dispatch_ws_trading_message(
                                 msg,
@@ -1844,9 +1954,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                                 &dispatch_state,
                             );
                         }
-                    });
-
-                    self.ws_trading_handle = Some(handle);
+                    })?;
                 }
                 Err(e) => {
                     log::error!(
@@ -1861,7 +1969,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         if refresh_secs > 0 {
             let http_client = self.http_client.clone();
             let provider = self.config.instrument_provider.clone();
-            self.spawn_task("instrument_refresh", async move {
+
+            self.session_tasks.spawn(async move {
                 let mut interval = tokio::time::interval(Duration::from_secs(refresh_secs));
                 interval.tick().await;
 
@@ -1878,75 +1987,183 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         }
                     }
                 }
-            });
+            })?;
         }
 
+            Ok(())
+        }
+        .await;
+
+        if let Err(e) = connect_result {
+            self.recovery_tx.take();
+            self.cancellation_token.cancel();
+            self.abort_session_tasks();
+            self.abort_pending_tasks();
+
+            if let Some(client) = self.ws_client.lock().expect(MUTEX_POISONED).as_ref() {
+                client.begin_shutdown();
+            }
+
+            if let Some(client) = self.ws_trading_client.as_ref() {
+                client.begin_shutdown();
+            }
+
+            if let Some(ref mut ws_trading) = self.ws_trading_client
+                && let Err(e) = ws_trading.disconnect().await
+            {
+                self.shutdown_errors.push(format!(
+                    "Binance Futures trading WebSocket shutdown failed: {e}"
+                ));
+            }
+
+            let session_drained = match self.finish_session_tasks().await {
+                Ok(()) => true,
+                Err(e) => {
+                    let drained = matches!(e, TaskShutdownError::Join(_));
+                    self.shutdown_errors.push(format!(
+                        "Failed to terminate Binance Futures session tasks: {e}"
+                    ));
+                    drained
+                }
+            };
+
+            if session_drained && let Err(e) = self.await_dispatch_task().await {
+                self.shutdown_errors.push(e.to_string());
+            }
+
+            let ws_client = self.ws_client.lock().expect(MUTEX_POISONED).clone();
+            if let Some(mut ws_client) = ws_client {
+                match ws_client.close().await {
+                    Ok(()) => *self.ws_client.lock().expect(MUTEX_POISONED) = None,
+                    Err(e) => self.shutdown_errors.push(format!(
+                        "Binance Futures stream close after failed startup failed: {e}"
+                    )),
+                }
+            }
+
+            if let Err(e) = self
+                .close_listen_key_slot(
+                    &self.listen_key,
+                    "failed to close listen key after failed startup",
+                )
+                .await
+            {
+                self.shutdown_errors.push(e.to_string());
+            }
+
+            if let Err(e) = self
+                .close_listen_key_slot(
+                    &self.recovery_listen_key,
+                    "failed to close recovery listen key after failed startup",
+                )
+                .await
+            {
+                self.shutdown_errors.push(e.to_string());
+            }
+
+            if let Err(e) = self.await_pending_tasks().await {
+                self.shutdown_errors.push(e.to_string());
+            }
+
+            if self.shutdown_errors.is_empty() {
+                return Err(e);
+            }
+            let shutdown_errors = std::mem::take(&mut self.shutdown_errors);
+            return Err(e.context(format!(
+                "Binance Futures startup teardown failed: {}",
+                shutdown_errors.join("; ")
+            )));
+        }
+
+        setup_guard.disarm();
         self.core.set_connected();
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_disconnected() {
-            return Ok(());
-        }
-
         // Drop the recovery tx so the driver exits its recv loop
         self.recovery_tx.take();
 
         // Cancel all background tasks
         self.cancellation_token.cancel();
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
 
-        // Abort WS trading task and disconnect
-        if let Some(handle) = self.ws_trading_handle.take() {
-            handle.abort();
+        if let Some(client) = self.ws_client.lock().expect(MUTEX_POISONED).as_ref() {
+            client.begin_shutdown();
         }
 
-        if let Some(ref mut ws_trading) = self.ws_trading_client {
-            ws_trading.disconnect().await;
+        if let Some(client) = self.ws_trading_client.as_ref() {
+            client.begin_shutdown();
         }
 
-        // Wait for WebSocket task to complete
-        let ws_task = self.ws_task.lock().expect(MUTEX_POISONED).take();
-        if let Some(task) = ws_task {
-            let _ = task.await;
+        if let Some(ref mut ws_trading) = self.ws_trading_client
+            && let Err(e) = ws_trading.disconnect().await
+        {
+            self.shutdown_errors.push(format!(
+                "Binance Futures trading WebSocket shutdown failed: {e}"
+            ));
         }
 
-        // Abort the keepalive task. An in-flight keepalive_listen_key HTTP
-        // call ignores the cancellation token until it returns, so awaiting
-        // without aborting can stall disconnect for the full HTTP timeout.
-        let keepalive_task = self.keepalive_task.take();
-        if let Some(task) = keepalive_task {
-            task.abort();
-            let _ = task.await;
-        }
+        let session_drained = match self.finish_session_tasks().await {
+            Ok(()) => true,
+            Err(e) => {
+                let drained = matches!(e, TaskShutdownError::Join(_));
+                self.shutdown_errors.push(format!(
+                    "Failed to terminate Binance Futures session tasks: {e}"
+                ));
+                drained
+            }
+        };
 
-        // Abort the recovery driver task. Waiting would block disconnect until
-        // any in-flight HTTP or WebSocket call inside recover_user_data_stream
-        // returns, which can be many seconds under a network outage.
-        let recovery_task = self.recovery_task.take();
-        if let Some(task) = recovery_task {
-            task.abort();
-            let _ = task.await;
+        if session_drained && let Err(e) = self.await_dispatch_task().await {
+            self.shutdown_errors.push(e.to_string());
         }
 
         // Close WebSocket
-        if let Some(mut ws_client) = self.ws_client.lock().await.take() {
-            let _ = ws_client.close().await;
+        let ws_client = self.ws_client.lock().expect(MUTEX_POISONED).clone();
+        if let Some(mut ws_client) = ws_client {
+            match ws_client.close().await {
+                Ok(()) => *self.ws_client.lock().expect(MUTEX_POISONED) = None,
+                Err(e) => {
+                    self.shutdown_errors
+                        .push(format!("Binance Futures stream close failed: {e}"));
+                }
+            }
         }
 
         // Close listen key
-        let listen_key = self.listen_key.read().expect(MUTEX_POISONED).clone();
-        if let Some(ref key) = listen_key
-            && let Err(e) = self.http_client.close_listen_key(key).await
+        if let Err(e) = self
+            .close_listen_key_slot(&self.listen_key, "failed to close listen key")
+            .await
         {
-            log::warn!("Failed to close listen key: {e}");
+            self.shutdown_errors.push(e.to_string());
         }
-        *self.listen_key.write().expect(MUTEX_POISONED) = None;
 
-        self.abort_pending_tasks();
+        if let Err(e) = self
+            .close_listen_key_slot(
+                &self.recovery_listen_key,
+                "failed to close recovery listen key",
+            )
+            .await
+        {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = self.await_pending_tasks().await {
+            self.shutdown_errors.push(e.to_string());
+        }
 
         self.core.set_disconnected();
+
+        if !self.shutdown_errors.is_empty() {
+            let shutdown_errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!(
+                "Binance Futures shutdown failed: {}",
+                shutdown_errors.join("; ")
+            );
+        }
         log::info!("Disconnected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -2818,23 +3035,21 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
 
         self.cancellation_token.cancel();
+        self.abort_session_tasks();
 
-        if let Some(handle) = self.ws_trading_handle.take() {
-            handle.abort();
+        if let Some(client) = self.ws_client.lock().expect(MUTEX_POISONED).as_ref() {
+            client.begin_shutdown();
         }
 
-        if let Some(handle) = self.ws_task.lock().expect(MUTEX_POISONED).take() {
-            handle.abort();
+        if let Some(client) = self.ws_trading_client.as_ref() {
+            client.begin_shutdown();
         }
 
-        if let Some(handle) = self.keepalive_task.take() {
-            handle.abort();
+        if let Ok(mut task_slot) = self.ws_task.try_lock() {
+            task_slot.abort();
         }
 
         self.recovery_tx.take();
-        if let Some(handle) = self.recovery_task.take() {
-            handle.abort();
-        }
 
         self.abort_pending_tasks();
         self.core.set_stopped();

@@ -23,7 +23,7 @@
 //! Run with: `cargo run --example databento-cme-sandbox --package nautilus-sandbox --features example-databento`
 //!
 //! Required credential environment variables:
-//! - `DATABENTO_API_KEY`.
+//! - `DATABENTO_API_KEY`
 
 use std::path::PathBuf;
 

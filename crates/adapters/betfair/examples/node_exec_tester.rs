@@ -18,12 +18,12 @@
 //! Run with: `cargo run -p nautilus-betfair --example betfair-exec-tester --features examples`
 //!
 //! Required environment variables:
-//! - `BETFAIR_USERNAME`: Your Betfair username.
-//! - `BETFAIR_PASSWORD`: Your Betfair password.
-//! - `BETFAIR_APP_KEY`: Your Betfair application key.
-//! - `BETFAIR_MARKET_ID`: An active Betfair market ID.
+//! - `BETFAIR_USERNAME`: Your Betfair username
+//! - `BETFAIR_PASSWORD`: Your Betfair password
+//! - `BETFAIR_APP_KEY`: Your Betfair application key
+//! - `BETFAIR_MARKET_ID`: An active Betfair market ID
 //! - `BETFAIR_INSTRUMENT_ID` (optional): A runner in that market. When omitted, the example
-//!   selects the active runner with the most matched volume.
+//!   selects the active runner with the most matched volume
 //!
 //! Market IDs can be found from `https://www.betfair.com.au/exchange/plus/`
 

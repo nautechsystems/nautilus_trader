@@ -32,8 +32,8 @@ use std::{
 use nautilus_betfair::{
     common::{
         consts::{
-            BETFAIR_CLIENT_ID, BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_LIST_CURRENT_ORDERS,
-            METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
+            BETFAIR_CLIENT_ID, BETFAIR_VENUE, METHOD_CANCEL_ORDERS, METHOD_GET_ACCOUNT_FUNDS,
+            METHOD_LIST_CURRENT_ORDERS, METHOD_PLACE_ORDERS, METHOD_REPLACE_ORDERS,
         },
         parse::make_customer_order_ref,
     },
@@ -240,6 +240,115 @@ async fn test_exec_client_connect_disconnect() {
 
     let _ = server_done_tx.send(());
     server.await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_failed_startup_rolls_back_session_before_retry() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    state.accounts_error_overrides.lock().unwrap().insert(
+        METHOD_GET_ACCOUNT_FUNDS.to_string(),
+        load_json_fixture("rest/account_jsonrpc_error_invalid_input_live.json"),
+    );
+    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+
+    let first_result = client.connect().await;
+    assert!(first_result.is_err());
+
+    state.accounts_error_overrides.lock().unwrap().clear();
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        let message: Value = serde_json::from_str(line.trim()).unwrap();
+        let id = message["id"].as_u64().unwrap();
+        write_half
+            .write_all(
+                format!(
+                    "{{\"op\":\"status\",\"id\":{id},\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}}\r\n\
+                     {{\"op\":\"ocm\",\"id\":{id},\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"oc\":[]}}\r\n",
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+
+    assert_eq!(state.login_count.load(Ordering::Relaxed), 2);
+    assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_canceled_startup_allows_immediate_retry() {
+    let (addr, state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let response_gate = MockResponseGate {
+        method: METHOD_GET_ACCOUNT_FUNDS.to_string(),
+        waiters: Arc::new(AtomicUsize::new(0)),
+        semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
+    };
+    *state.accounts_response_gate.lock().unwrap() = Some(response_gate.clone());
+    let (mut client, _rx, _data_rx, _cache) = create_test_execution_client(addr, stream_port);
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
+    let server = tokio::spawn(async move {
+        let (mut reader, mut write_half) = accept_and_auth(&listener).await;
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut reader, &mut line)
+            .await
+            .unwrap();
+        let message: Value = serde_json::from_str(line.trim()).unwrap();
+        let id = message["id"].as_u64().unwrap();
+        write_half
+            .write_all(
+                format!(
+                    "{{\"op\":\"status\",\"id\":{id},\"statusCode\":\"SUCCESS\",\"connectionClosed\":false}}\r\n\
+                     {{\"op\":\"ocm\",\"id\":{id},\"pt\":1000,\"ct\":\"SUB_IMAGE\",\"oc\":[]}}\r\n",
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let _ = server_done_rx.await;
+    });
+
+    {
+        let connect = client.connect();
+        tokio::pin!(connect);
+        tokio::select! {
+            biased;
+            result = tokio::time::timeout(Duration::from_secs(2), async {
+                while response_gate.waiters.load(Ordering::Relaxed) == 0 {
+                    tokio::task::yield_now().await;
+                }
+            }) => result.expect("account request should reach the response gate"),
+            result = &mut connect => panic!("first connect completed before cancellation: {result:?}"),
+        }
+    }
+    *state.accounts_response_gate.lock().unwrap() = None;
+    response_gate.semaphore.add_permits(1);
+
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(2)).await;
+    client.disconnect().await.unwrap();
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
+
+    assert_eq!(state.login_count.load(Ordering::Relaxed), 2);
+    assert!(!client.is_connected());
 }
 
 #[rstest]
@@ -5398,7 +5507,7 @@ async fn test_reduction_success_after_a_terminal_stream_update_stays_silent() {
 
     let waiters = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
-    *state.betting_response_gate.lock().unwrap() = Some(BettingResponseGate {
+    *state.betting_response_gate.lock().unwrap() = Some(MockResponseGate {
         method: METHOD_CANCEL_ORDERS.to_string(),
         waiters: Arc::clone(&waiters),
         semaphore: Arc::clone(&semaphore),
@@ -5634,7 +5743,7 @@ async fn test_reduction_stream_before_rest_emits_updated_once() {
     // Hold the REST response so OCM resolves first
     let waiters = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
-    *state.betting_response_gate.lock().unwrap() = Some(BettingResponseGate {
+    *state.betting_response_gate.lock().unwrap() = Some(MockResponseGate {
         method: METHOD_CANCEL_ORDERS.to_string(),
         waiters: Arc::clone(&waiters),
         semaphore: Arc::clone(&semaphore),
@@ -6330,7 +6439,7 @@ async fn test_startup_restored_replace_stream_before_rest_emits_updated_once() {
 
     let waiters = Arc::new(AtomicUsize::new(0));
     let semaphore = Arc::new(tokio::sync::Semaphore::new(0));
-    *state.betting_response_gate.lock().unwrap() = Some(BettingResponseGate {
+    *state.betting_response_gate.lock().unwrap() = Some(MockResponseGate {
         method: METHOD_REPLACE_ORDERS.to_string(),
         waiters: Arc::clone(&waiters),
         semaphore: Arc::clone(&semaphore),
@@ -7592,7 +7701,7 @@ async fn test_post_reconnect_relogin_waits_for_reconciliation_and_does_not_loop(
         .lock()
         .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
@@ -7923,7 +8032,7 @@ async fn test_reconnect_mass_status_failure_recovers_on_later_reconnect() {
         "fill recovery must not start before the order query succeeds",
     );
 
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
@@ -8040,7 +8149,7 @@ async fn test_submit_denied_during_reconciliation() {
         .lock()
         .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
@@ -8160,7 +8269,7 @@ async fn test_queued_reconnect_generation_stays_halted() {
         .lock()
         .unwrap()
         .insert(METHOD_LIST_CURRENT_ORDERS.to_string(), v["result"].clone());
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),
@@ -8470,7 +8579,7 @@ async fn test_stop_during_reconciliation_cancels_recovery() {
         METHOD_LIST_CURRENT_ORDERS.to_string(),
         response["result"].clone(),
     );
-    let response_gate = BettingResponseGate {
+    let response_gate = MockResponseGate {
         method: METHOD_LIST_CURRENT_ORDERS.to_string(),
         waiters: Arc::new(AtomicUsize::new(0)),
         semaphore: Arc::new(tokio::sync::Semaphore::new(0)),

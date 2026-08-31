@@ -1824,11 +1824,7 @@ NON_CONTRACT_DTO_CLASSES = frozenset(
         ("nautilus_trader.adapters.bybit", "BybitServerTime"),
         ("nautilus_trader.adapters.bybit", "BybitTickerData"),
         ("nautilus_trader.adapters.bybit", "BybitTickersParams"),
-        ("nautilus_trader.adapters.bybit", "BybitWsAmendOrderParams"),
-        ("nautilus_trader.adapters.bybit", "BybitWsCancelOrderParams"),
-        ("nautilus_trader.adapters.bybit", "BybitWsPlaceOrderParams"),
         ("nautilus_trader.adapters.databento", "DatabentoSubscriptionAck"),
-        ("nautilus_trader.adapters.okx", "OKXWebSocketError"),
     },
 )
 

@@ -20,8 +20,8 @@
 //! Run with: `cargo run --example deribit-data-tester --package nautilus-deribit --features examples`
 //!
 //! Credentials are read from the environment when set:
-//! - `DERIBIT_API_KEY`.
-//! - `DERIBIT_API_SECRET`.
+//! - `DERIBIT_API_KEY`
+//! - `DERIBIT_API_SECRET`
 
 use nautilus_common::enums::Environment;
 use nautilus_deribit::{

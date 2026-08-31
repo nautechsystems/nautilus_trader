@@ -27,9 +27,11 @@ use std::{
 
 use ahash::AHashSet;
 use arc_swap::ArcSwap;
-use nautilus_common::live::get_runtime;
 use nautilus_core::{AtomicMap, consts::NAUTILUS_USER_AGENT};
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{SharedTaskSlot, TaskJoinOutcome},
+};
 use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
@@ -138,7 +140,8 @@ pub struct AxMdWebSocketClient {
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<AxDataWsMessage>>>,
     signal: Arc<AtomicBool>,
     cancellation_token: Arc<ArcSwap<CancellationToken>>,
-    task_handle: Option<tokio::task::JoinHandle<()>>,
+    task_handle: Arc<SharedTaskSlot<()>>,
+    connect_lock: Arc<tokio::sync::Mutex<()>>,
     subscriptions: SubscriptionState,
     request_id_counter: Arc<AtomicI64>,
     subscribe_lock: Arc<tokio::sync::Mutex<()>>,
@@ -171,7 +174,8 @@ impl Clone for AxMdWebSocketClient {
             out_rx: None,
             signal: Arc::clone(&self.signal),
             cancellation_token: Arc::clone(&self.cancellation_token),
-            task_handle: None,
+            task_handle: Arc::clone(&self.task_handle),
+            connect_lock: Arc::clone(&self.connect_lock),
             subscriptions: self.subscriptions.clone(),
             subscribe_lock: Arc::clone(&self.subscribe_lock),
             request_id_counter: Arc::clone(&self.request_id_counter),
@@ -221,7 +225,8 @@ impl AxMdWebSocketClient {
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
-            task_handle: None,
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(AX_TOPIC_DELIMITER),
             request_id_counter: Arc::new(AtomicI64::new(1)),
             subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -258,7 +263,8 @@ impl AxMdWebSocketClient {
             out_rx: None,
             signal: Arc::new(AtomicBool::new(false)),
             cancellation_token: Arc::new(ArcSwap::from_pointee(CancellationToken::new())),
-            task_handle: None,
+            task_handle: Arc::new(SharedTaskSlot::new()),
+            connect_lock: Arc::new(tokio::sync::Mutex::new(())),
             subscriptions: SubscriptionState::new(AX_TOPIC_DELIMITER),
             request_id_counter: Arc::new(AtomicI64::new(1)),
             subscribe_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -371,6 +377,36 @@ impl AxMdWebSocketClient {
     /// Returns an error if the connection cannot be established or the initial handler command
     /// cannot be sent.
     pub async fn connect(&mut self) -> AxWsResult<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
+
+        if !self.task_handle.is_empty() && !self.task_handle.is_finished() {
+            return Err(AxWsClientError::Transport(
+                "WebSocket handler is already running".to_string(),
+            ));
+        }
+
+        if let Some(outcome) = self
+            .task_handle
+            .finish(Duration::from_secs(2), Duration::from_secs(2))
+            .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    return Err(AxWsClientError::Transport(format!(
+                        "Previous WebSocket handler failed: {error}"
+                    )));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    return Err(AxWsClientError::Transport(
+                        "Previous WebSocket handler did not stop within shutdown bounds"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+
         self.signal.store(false, Ordering::Release);
         let cancellation_token = CancellationToken::new();
         self.cancellation_token
@@ -438,14 +474,10 @@ impl AxMdWebSocketClient {
 
         self.send_cmd(HandlerCommand::SetClient(client)).await?;
 
-        if let Some(control) = &self.socket_control {
-            control.register(move || reconnect_handle.request_reconnect());
-        }
-
         let signal = Arc::clone(&self.signal);
         let subscriptions = self.subscriptions.clone();
 
-        let stream_handle = get_runtime().spawn(async move {
+        if let Err(e) = self.task_handle.spawn(async move {
             let mut handler =
                 AxMdWsFeedHandler::new(signal.clone(), cmd_rx, raw_rx, subscriptions.clone());
 
@@ -461,9 +493,16 @@ impl AxMdWebSocketClient {
             }
 
             log::debug!("Handler loop exited");
-        });
+        }) {
+            self.out_rx = None;
+            return Err(AxWsClientError::Transport(format!(
+                "Failed to start WebSocket handler task: {e}"
+            )));
+        }
 
-        self.task_handle = Some(stream_handle);
+        if let Some(control) = &self.socket_control {
+            control.register(move || reconnect_handle.request_reconnect());
+        }
 
         Ok(())
     }
@@ -1006,6 +1045,11 @@ impl AxMdWebSocketClient {
         }
     }
 
+    pub(crate) fn begin_shutdown(&self) {
+        self.cancellation_token.load().cancel();
+        self.signal.store(true, Ordering::Release);
+    }
+
     /// Disconnects the WebSocket connection gracefully.
     pub async fn disconnect(&self) {
         log::debug!("Disconnecting WebSocket");
@@ -1013,7 +1057,13 @@ impl AxMdWebSocketClient {
     }
 
     /// Closes the WebSocket connection and cleans up resources.
-    pub async fn close(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler task fails or does not stop after abort.
+    pub async fn close(&mut self) -> anyhow::Result<()> {
+        let connect_lock = Arc::clone(&self.connect_lock);
+        let _guard = connect_lock.lock().await;
         log::debug!("Closing WebSocket client");
 
         // Send disconnect first to allow graceful cleanup before signal
@@ -1022,19 +1072,10 @@ impl AxMdWebSocketClient {
         tokio::time::sleep(Duration::from_millis(50)).await;
         self.signal.store(true, Ordering::Release);
 
-        if let Some(handle) = self.task_handle.take() {
-            const CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
-            let abort_handle = handle.abort_handle();
-
-            match tokio::time::timeout(CLOSE_TIMEOUT, handle).await {
-                Ok(Ok(())) => log::debug!("Handler task completed gracefully"),
-                Ok(Err(e)) => log::warn!("Handler task panicked: {e}"),
-                Err(_) => {
-                    log::warn!("Handler task did not complete within timeout, aborting");
-                    abort_handle.abort();
-                }
-            }
-        }
+        let outcome = self
+            .task_handle
+            .finish(Duration::from_secs(2), Duration::from_secs(2))
+            .await;
 
         *self
             .reconnect_headers
@@ -1043,6 +1084,16 @@ impl AxMdWebSocketClient {
 
         if let Some(control) = &self.socket_control {
             control.deregister();
+        }
+
+        match outcome {
+            None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => Ok(()),
+            Some(TaskJoinOutcome::Failed(error)) => Err(anyhow::anyhow!(
+                "Architect AX data WebSocket handler failed: {error}"
+            )),
+            Some(TaskJoinOutcome::Incomplete) => Err(anyhow::anyhow!(
+                "Architect AX data WebSocket handler did not stop after abort"
+            )),
         }
     }
 
@@ -1054,11 +1105,54 @@ impl AxMdWebSocketClient {
     }
 }
 
+impl Drop for AxMdWebSocketClient {
+    fn drop(&mut self) {
+        if Arc::strong_count(&self.task_handle) == 1 && !self.task_handle.is_empty() {
+            self.cancellation_token.load().cancel();
+            self.signal.store(true, Ordering::Release);
+            self.task_handle.abort();
+
+            if let Some(control) = &self.socket_control {
+                control.deregister();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_drop_aborts_handler_task() {
+        let client = AxMdWebSocketClient::new(
+            "ws://localhost:9999/md/ws".to_string(),
+            "test_token".to_string(),
+            30,
+            TransportBackend::default(),
+            None,
+        );
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let handle = tokio::spawn(async move {
+            started_tx.send(()).expect("started receiver");
+            std::future::pending::<()>().await;
+        });
+        let abort_handle = handle.abort_handle();
+        client.task_handle.insert(handle);
+        started_rx.await.expect("handler task started");
+
+        drop(client);
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !abort_handle.is_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("handler task aborted");
+    }
 
     #[rstest]
     fn test_effective_subscription_empty_returns_none() {

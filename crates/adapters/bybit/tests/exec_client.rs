@@ -91,6 +91,7 @@ struct TestServerState {
     authenticated: Arc<AtomicBool>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     disconnect_trigger: Arc<AtomicBool>,
+    reject_trade_websocket: Arc<AtomicBool>,
     empty_orders_realtime: Arc<AtomicBool>,
     rejected_orders_realtime: Arc<AtomicBool>,
     orders_realtime_requests: Arc<AtomicUsize>,
@@ -114,6 +115,7 @@ impl Default for TestServerState {
             authenticated: Arc::new(AtomicBool::new(false)),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
+            reject_trade_websocket: Arc::new(AtomicBool::new(false)),
             empty_orders_realtime: Arc::new(AtomicBool::new(false)),
             rejected_orders_realtime: Arc::new(AtomicBool::new(false)),
             orders_realtime_requests: Arc::new(AtomicUsize::new(0)),
@@ -487,6 +489,9 @@ async fn handle_trade_websocket(
     State(state): State<TestServerState>,
 ) -> Response {
     state.trade_ws_connections.fetch_add(1, Ordering::Relaxed);
+    if state.reject_trade_websocket.load(Ordering::Relaxed) {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
     ws.on_upgrade(|socket| handle_socket(socket, state))
 }
 
@@ -1161,6 +1166,37 @@ async fn test_exec_client_connect_disconnect() {
         expected
             .iter()
             .all(|endpoint| registry.handle(*BYBIT_CLIENT_ID, *endpoint).is_none())
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_failed_startup_rolls_back_private_stream() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.reject_trade_websocket.store(true, Ordering::Relaxed);
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, _rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+
+    let error = client.connect().await.unwrap_err();
+
+    wait_until_async(
+        || async { *state.ws_connection_count.lock().await == 0 },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert!(
+        error.to_string().contains("WebSocket transport error"),
+        "unexpected startup error: {error:#}",
+    );
+    assert_eq!(state.private_ws_connections.load(Ordering::Relaxed), 1);
+    assert!(!client.is_connected());
+    assert!(
+        ["bybit-user-streams", "bybit-trading"]
+            .into_iter()
+            .all(|endpoint| registry
+                .handle(*BYBIT_CLIENT_ID, Ustr::from(endpoint))
+                .is_none())
     );
 }
 

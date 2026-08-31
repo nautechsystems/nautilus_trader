@@ -29,9 +29,11 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use nautilus_common::live::get_runtime;
 use nautilus_core::AtomicMap;
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{TaskJoinOutcome, TaskSlot, finish_task},
+};
 use nautilus_model::{
     data::BarType,
     identifiers::{AccountId, InstrumentId},
@@ -84,10 +86,6 @@ pub static COINBASE_WS_SUBSCRIPTION_KEYS: LazyLock<[Ustr; 1]> =
 /// Manages connection lifecycle, subscription state, and JWT authentication.
 /// Spawns a [`FeedHandler`] task that parses raw messages into Nautilus types.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.adapters.coinbase", from_py_object)
-)]
 pub struct CoinbaseWebSocketClient {
     url: String,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
@@ -104,7 +102,8 @@ pub struct CoinbaseWebSocketClient {
     subscriptions: SubscriptionState,
     credential: Option<CoinbaseCredential>,
     account_id: Option<AccountId>,
-    task_handle: Option<tokio::task::JoinHandle<()>>,
+    task_handle: TaskSlot<()>,
+    shutdown_errors: Vec<String>,
     transport_backend: TransportBackend,
     proxy_url: Option<String>,
     socket_control: Option<SocketControl>,
@@ -124,7 +123,8 @@ impl Clone for CoinbaseWebSocketClient {
             subscriptions: self.subscriptions.clone(),
             credential: self.credential.clone(),
             account_id: self.account_id,
-            task_handle: None,
+            task_handle: TaskSlot::new(),
+            shutdown_errors: Vec::new(),
             transport_backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
             socket_control: self.socket_control.clone(),
@@ -151,7 +151,8 @@ impl CoinbaseWebSocketClient {
             subscriptions: SubscriptionState::new('|'),
             credential: None,
             account_id: None,
-            task_handle: None,
+            task_handle: TaskSlot::new(),
+            shutdown_errors: Vec::new(),
             transport_backend,
             proxy_url,
             socket_control: None,
@@ -220,6 +221,24 @@ impl CoinbaseWebSocketClient {
         if self.is_active() || self.is_reconnecting() {
             log::warn!("WebSocket already connected or reconnecting");
             return Ok(());
+        }
+
+        if let Some(outcome) = finish_task(
+            &mut self.task_handle,
+            WS_DISCONNECT_TIMEOUT,
+            WS_DISCONNECT_TIMEOUT,
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    anyhow::bail!("Coinbase WebSocket handler failed: {error}");
+                }
+                TaskJoinOutcome::Incomplete => {
+                    anyhow::bail!("Coinbase WebSocket handler did not stop after abort");
+                }
+            }
         }
 
         // Clear stop signal from any previous disconnect
@@ -317,7 +336,7 @@ impl CoinbaseWebSocketClient {
         let cmd_tx_reconnect = cmd_tx.clone();
         let aliases_for_handler = Arc::clone(&self.subscription_aliases);
 
-        let stream_handle = get_runtime().spawn(async move {
+        if let Err(e) = self.task_handle.spawn(async move {
             let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, aliases_for_handler);
 
             loop {
@@ -348,9 +367,11 @@ impl CoinbaseWebSocketClient {
                     }
                 }
             }
-        });
+        }) {
+            self.out_rx = None;
+            anyhow::bail!("Failed to start Coinbase WebSocket handler task: {e}");
+        }
 
-        self.task_handle = Some(stream_handle);
         Ok(())
     }
 
@@ -432,7 +453,12 @@ impl CoinbaseWebSocketClient {
     }
 
     /// Disconnects the WebSocket and stops the feed handler.
-    pub async fn disconnect(&mut self) {
+    pub(crate) fn begin_shutdown(&self) {
+        self.signal.store(true, Ordering::Release);
+    }
+
+    /// Disconnects the WebSocket and stops the feed handler.
+    pub async fn disconnect(&mut self) -> anyhow::Result<()> {
         // Send Disconnect command before setting the signal so the handler
         // processes it and calls notify_closed() on the inner WebSocket client
         let cmd_tx = self.cmd_tx.read().await;
@@ -444,17 +470,24 @@ impl CoinbaseWebSocketClient {
 
         // Release pairs with the handler's Acquire load; fallback for when
         // the command channel is full or closed.
-        self.signal.store(true, Ordering::Release);
+        self.begin_shutdown();
 
-        if let Some(handle) = self.task_handle.take() {
-            // Capture an abort handle before awaiting so a stuck task can be
-            // forcibly stopped on timeout instead of leaking.
-            let abort_handle = handle.abort_handle();
-            match tokio::time::timeout(WS_DISCONNECT_TIMEOUT, handle).await {
-                Ok(_) => log::debug!("Feed handler task completed"),
-                Err(_) => {
-                    log::warn!("Feed handler task did not complete within timeout, aborting");
-                    abort_handle.abort();
+        if let Some(outcome) = finish_task(
+            &mut self.task_handle,
+            WS_DISCONNECT_TIMEOUT,
+            WS_DISCONNECT_TIMEOUT,
+        )
+        .await
+        {
+            match outcome {
+                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                TaskJoinOutcome::Failed(error) => {
+                    self.shutdown_errors
+                        .push(format!("Coinbase WebSocket handler failed: {error}"));
+                }
+                TaskJoinOutcome::Incomplete => {
+                    self.shutdown_errors
+                        .push("Coinbase WebSocket handler did not stop after abort".to_string());
                 }
             }
         }
@@ -473,7 +506,8 @@ impl CoinbaseWebSocketClient {
             }
 
             if tokio::time::Instant::now() >= deadline {
-                log::warn!("Timed out waiting for WebSocket to reach Closed state");
+                self.shutdown_errors
+                    .push("Timed out waiting for WebSocket to reach Closed state".to_string());
                 break;
             }
 
@@ -482,6 +516,13 @@ impl CoinbaseWebSocketClient {
 
         if let Some(control) = &self.socket_control {
             control.deregister();
+        }
+
+        if self.shutdown_errors.is_empty() {
+            Ok(())
+        } else {
+            let errors = std::mem::take(&mut self.shutdown_errors);
+            anyhow::bail!(errors.join("; "))
         }
     }
 
@@ -568,6 +609,15 @@ impl CoinbaseWebSocketClient {
 
         if let Err(e) = cmd_tx.send(HandlerCommand::AddBarType { key, bar_type }) {
             log::debug!("Failed to send AddBarType: {e}");
+        }
+    }
+}
+
+impl Drop for CoinbaseWebSocketClient {
+    fn drop(&mut self) {
+        if let Some(handle) = self.task_handle.as_ref() {
+            self.signal.store(true, Ordering::Release);
+            handle.abort();
         }
     }
 }
@@ -660,6 +710,16 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_drop_clone_does_not_signal_handler() {
+        let client = CoinbaseWebSocketClient::new("wss://test", TransportBackend::default(), None);
+        let clone = client.clone();
+
+        drop(clone);
+
+        assert!(!client.signal.load(Ordering::Acquire));
+    }
 
     #[rstest]
     fn test_resubscribe_all_product_level_topic() {

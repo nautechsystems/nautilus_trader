@@ -185,6 +185,6 @@ async fn live_stream_stays_active_across_heartbeats() {
     assert_eq!(closed, 0, "server closed the stream");
     assert_eq!(connections, 1, "stream reconnected during validation");
 
-    client.close().await;
+    client.close().await.expect("close stream");
     http.disconnect().await;
 }

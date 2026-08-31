@@ -37,7 +37,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     cache::ORDER_NOT_FOUND,
     clients::ExecutionClient,
-    live::{get_runtime, runner::get_exec_event_sender, task::TaskHandles},
+    live::runner::get_exec_event_sender,
     messages::{
         ExecutionReport,
         execution::{
@@ -51,7 +51,10 @@ use nautilus_core::{
     AtomicMap, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControl};
+use nautilus_live::{
+    ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     accounts::AccountAny,
     data::QuoteTick,
@@ -68,7 +71,6 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -139,8 +141,9 @@ pub struct DeriveExecutionClient {
     signing: SigningContext,
     is_connected: Arc<AtomicBool>,
     cancellation_token: CancellationToken,
-    pending_tasks: TaskHandles,
-    ws_stream_handle: Option<JoinHandle<()>>,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     dispatch_state: Arc<WsDispatchState>,
 }
 
@@ -230,6 +233,9 @@ impl DeriveExecutionClient {
             core.base_currency,
         );
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             core,
             clock,
@@ -244,8 +250,9 @@ impl DeriveExecutionClient {
             signing,
             is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: CancellationToken::new(),
-            pending_tasks: TaskHandles::default(),
-            ws_stream_handle: None,
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             dispatch_state: Arc::new(WsDispatchState::new()),
         })
     }
@@ -291,18 +298,44 @@ impl DeriveExecutionClient {
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Derive {description} after shutdown began: {e}");
+        }
     }
 
     fn abort_pending_tasks(&self) {
-        self.pending_tasks.abort_all();
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
+    }
+
+    async fn await_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Derive execution tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn await_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to terminate Derive execution session tasks: {e}")
+            })?;
+        Ok(())
     }
 
     async fn ensure_instruments_initialized(&self) -> anyhow::Result<()> {
@@ -370,20 +403,38 @@ impl DeriveExecutionClient {
     /// cancels the shared cancellation token, aborts the WS dispatch task,
     /// and closes the WS client. Used when initial account state cannot be
     /// loaded so that the next `connect()` call starts from a clean slate.
-    async fn teardown_partial_connect(&mut self) {
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
         self.cancellation_token.cancel();
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
 
         if let Err(e) = self.ws_client.disconnect().await {
-            log::warn!("Error tearing down Derive WebSocket after connect failure: {e}");
+            self.shutdown_errors
+                .push(format!("Derive WebSocket shutdown failed: {e}"));
         }
-        self.abort_pending_tasks();
+        let (session_result, pending_result) =
+            tokio::join!(self.await_session_tasks(), self.await_pending_tasks());
+        self.core.set_disconnected();
+        self.is_connected.store(false, Ordering::Release);
+
+        if let Err(e) = session_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
     }
 
-    fn start_ws_dispatch(&mut self, rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>) {
+    fn start_ws_dispatch(
+        &self,
+        rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>,
+    ) -> anyhow::Result<()> {
         let emitter = self.emitter.clone();
         let account_id = self.core.account_id;
         let clock = self.clock;
@@ -391,8 +442,12 @@ impl DeriveExecutionClient {
         let dispatch_state = self.dispatch_state.clone();
         let reconciliation = self.reconciliation_context();
         let is_connected = Arc::clone(&self.is_connected);
+        let session_spawner = self
+            .session_tasks
+            .spawner()
+            .map_err(|e| anyhow::anyhow!("Derive session task admission is closed: {e}"))?;
 
-        let handle = get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             let mut rx = rx;
 
             loop {
@@ -405,7 +460,7 @@ impl DeriveExecutionClient {
                                 let context = reconciliation.clone();
                                 let task_cancellation = cancellation.clone();
 
-                                get_runtime().spawn(async move {
+                                if let Err(e) = session_spawner.spawn(async move {
                                     tokio::select! {
                                         () = task_cancellation.cancelled() => {}
                                         result = context.recover_after_reconnect() => {
@@ -414,7 +469,9 @@ impl DeriveExecutionClient {
                                             }
                                         }
                                     }
-                                });
+                                }) {
+                                    log::warn!("Skipping Derive reconnect recovery after shutdown began: {e}");
+                                }
                             }
                             Some(DeriveWsMessage::SessionRecoveryFailed(reason)) => {
                                 is_connected.store(false, Ordering::Release);
@@ -426,7 +483,7 @@ impl DeriveExecutionClient {
                                 let context = reconciliation.clone();
                                 let task_cancellation = cancellation.clone();
 
-                                get_runtime().spawn(async move {
+                                if let Err(e) = session_spawner.spawn(async move {
                                     tokio::select! {
                                         () = task_cancellation.cancelled() => {}
                                         result = context.refresh_account_state() => {
@@ -435,7 +492,9 @@ impl DeriveExecutionClient {
                                             }
                                         }
                                     }
-                                });
+                                }) {
+                                    log::warn!("Skipping Derive account refresh after shutdown began: {e}");
+                                }
                             }
                             Some(message) => handle_ws_message(
                                 message,
@@ -449,8 +508,8 @@ impl DeriveExecutionClient {
                     }
                 }
             }
-        });
-        self.ws_stream_handle = Some(handle);
+        })?;
+        Ok(())
     }
 }
 
@@ -508,14 +567,11 @@ impl ExecutionClient for DeriveExecutionClient {
         log::info!("Stopping Derive execution client");
 
         self.cancellation_token.cancel();
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
         self.abort_pending_tasks();
 
-        self.core.set_disconnected();
         self.core.set_stopped();
+        self.core.set_disconnected();
         self.is_connected.store(false, Ordering::Release);
 
         log::info!("Derive execution client stopped");
@@ -523,15 +579,36 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected()
+            && !self.cancellation_token.is_cancelled()
+            && self.session_tasks.is_open()
+            && self.pending_tasks.is_open()
+        {
             return Ok(());
         }
 
         log::info!("Connecting Derive execution client");
 
-        if self.cancellation_token.is_cancelled() {
+        if self.cancellation_token.is_cancelled()
+            || !self.session_tasks.is_open()
+            || !self.pending_tasks.is_open()
+        {
+            self.teardown_partial_connect().await?;
+            self.session_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Derive session generation: {e}"))?;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Derive task generation: {e}"))?;
             self.cancellation_token = CancellationToken::new();
         }
+        let cancellation_token = self.cancellation_token.clone();
+        let ws_shutdown = self.ws_client.shutdown_handle();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                cancellation_token.cancel();
+                ws_shutdown.begin_shutdown();
+            });
 
         self.ensure_instruments_initialized()
             .await
@@ -541,10 +618,15 @@ impl ExecutionClient for DeriveExecutionClient {
             .connect()
             .await
             .context("failed to connect Derive WebSocket")?;
-        let rx = self
-            .ws_client
-            .take_event_receiver()
-            .context("Derive execution WS event receiver not initialized")?;
+        let Some(rx) = self.ws_client.take_event_receiver() else {
+            let e = anyhow::anyhow!("Derive execution WS event receiver not initialized");
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        };
 
         let subaccount_id = self.credential.subaccount_id();
         let channels = vec![
@@ -555,11 +637,22 @@ impl ExecutionClient for DeriveExecutionClient {
 
         if let Err(e) = self.ws_client.subscribe_channels(channels).await {
             log::warn!("Derive private WS subscriptions failed: {e}; tearing down");
-            self.teardown_partial_connect().await;
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(anyhow::Error::new(e).context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
             return Err(anyhow::Error::new(e).context("failed Derive private WS subscriptions"));
         }
 
-        self.start_ws_dispatch(rx);
+        if let Err(e) = self.start_ws_dispatch(rx) {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e.context("failed to register Derive execution WebSocket dispatch task"));
+        }
 
         // Fail-fast if the initial account snapshot cannot load: without it,
         // `await_account_registered` would block the full timeout window and
@@ -567,7 +660,11 @@ impl ExecutionClient for DeriveExecutionClient {
         // already started so the caller does not leak the dispatch task.
         if let Err(e) = self.refresh_account_state().await {
             log::warn!("Initial Derive account state refresh failed: {e}; tearing down");
-            self.teardown_partial_connect().await;
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
             return Err(e.context("failed initial Derive account state refresh"));
         }
 
@@ -576,12 +673,17 @@ impl ExecutionClient for DeriveExecutionClient {
             .await
         {
             log::warn!("Derive account did not register in time: {e}; tearing down");
-            self.teardown_partial_connect().await;
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive execution startup teardown failed: {teardown_error}"
+                )));
+            }
             return Err(e.context("failed waiting for Derive account registration"));
         }
 
         self.core.set_connected();
         self.is_connected.store(true, Ordering::Release);
+        setup_guard.disarm();
         log::info!(
             "Connected Derive execution client ({:?})",
             self.config.environment
@@ -590,24 +692,8 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if !self.is_connected() {
-            return Ok(());
-        }
-
         log::info!("Disconnecting Derive execution client");
-        self.cancellation_token.cancel();
-
-        if let Err(e) = self.ws_client.disconnect().await {
-            log::warn!("Error while disconnecting Derive execution WebSocket: {e}");
-        }
-
-        if let Some(handle) = self.ws_stream_handle.take() {
-            handle.abort();
-        }
-        self.abort_pending_tasks();
-
-        self.core.set_disconnected();
-        self.is_connected.store(false, Ordering::Release);
+        self.teardown_partial_connect().await?;
         log::info!("Derive execution client disconnected");
         Ok(())
     }

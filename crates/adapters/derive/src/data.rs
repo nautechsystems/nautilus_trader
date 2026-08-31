@@ -32,7 +32,7 @@ use dashmap::DashMap;
 use nautilus_common::{
     cache::{InstrumentLookupError, quote::QuoteCache},
     clients::DataClient,
-    live::{get_runtime, runner::get_data_event_sender, task::TaskHandles},
+    live::runner::get_data_event_sender,
     messages::{
         DataEvent,
         data::{
@@ -54,7 +54,10 @@ use nautilus_core::{
     datetime::{NANOSECONDS_IN_SECOND, datetime_to_unix_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
-use nautilus_live::SocketControl;
+use nautilus_live::{
+    SocketControl,
+    task::{TaskGroup, TaskGroupGuard},
+};
 use nautilus_model::{
     data::{Bar, Data, ForwardPrice, QuoteTick},
     enums::{AggregationSource, BookType, PriceType},
@@ -62,7 +65,6 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
-use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -103,8 +105,9 @@ pub struct DeriveDataClient {
     ws_client: DeriveWebSocketClient,
     is_connected: Arc<AtomicBool>,
     cancellation_token: CancellationToken,
-    ws_stream_handle: Option<JoinHandle<()>>,
-    pending_tasks: TaskHandles,
+    session_tasks: TaskGroup,
+    pending_tasks: TaskGroup,
+    shutdown_errors: Vec<String>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     active_book_delta_channels: Arc<AtomicMap<InstrumentId, String>>,
@@ -158,6 +161,9 @@ impl DeriveDataClient {
             ws_client.set_request_timeout(Duration::from_secs(secs));
         }
 
+        let session_tasks = TaskGroup::new();
+        let pending_tasks = TaskGroup::new();
+
         Ok(Self {
             client_id,
             config,
@@ -166,8 +172,9 @@ impl DeriveDataClient {
             ws_client,
             is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: CancellationToken::new(),
-            ws_stream_handle: None,
-            pending_tasks: TaskHandles::default(),
+            session_tasks,
+            pending_tasks,
+            shutdown_errors: Vec::new(),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             active_book_delta_channels: Arc::new(AtomicMap::new()),
@@ -192,23 +199,24 @@ impl DeriveDataClient {
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
     {
-        let runtime = get_runtime();
-        let handle = runtime.spawn(async move {
+        let future = async move {
             if let Err(e) = fut.await {
                 log::warn!("{description} failed: {e:?}");
             }
-        });
+        };
 
-        self.pending_tasks.push(handle);
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!("Skipping Derive {description} after shutdown began: {e}");
+        }
     }
 
-    /// Drains and aborts every tracked pending task.
-    fn abort_pending_tasks(&self) -> Vec<JoinHandle<()>> {
-        let tasks = self.pending_tasks.take_all();
-        for handle in &tasks {
-            handle.abort();
-        }
-        tasks
+    fn abort_pending_tasks(&self) {
+        self.pending_tasks.begin_shutdown();
+    }
+
+    fn abort_session_tasks(&self) {
+        self.session_tasks.begin_shutdown();
+        self.ws_client.begin_shutdown();
     }
 
     /// Clears every local subscription map. Called from `disconnect` and
@@ -230,7 +238,39 @@ impl DeriveDataClient {
         self.quote_cache.lock().expect(MUTEX_POISONED).clear();
     }
 
-    fn spawn_stream_task(&mut self, mut rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>) {
+    async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
+        self.cancellation_token.cancel();
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+
+        if let Err(e) = self.ws_client.disconnect().await {
+            self.shutdown_errors
+                .push(format!("Derive WebSocket shutdown failed: {e}"));
+        }
+        let (session_result, pending_result) =
+            tokio::join!(self.join_session_tasks(), self.join_pending_tasks());
+        self.clear_subscription_state();
+        self.channel_subscriptions.clear_transitions();
+        self.is_connected.store(false, Ordering::Release);
+
+        if let Err(e) = session_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if let Err(e) = pending_result {
+            self.shutdown_errors.push(e.to_string());
+        }
+
+        if !self.shutdown_errors.is_empty() {
+            anyhow::bail!(std::mem::take(&mut self.shutdown_errors).join("; "));
+        }
+        Ok(())
+    }
+
+    fn spawn_stream_task(
+        &self,
+        mut rx: tokio::sync::mpsc::UnboundedReceiver<DeriveWsMessage>,
+    ) -> anyhow::Result<()> {
         let ctx = WsMessageContext {
             clock: self.clock,
             data_sender: self.data_sender.clone(),
@@ -250,7 +290,7 @@ impl DeriveDataClient {
         let cancellation = self.cancellation_token.clone();
         let is_connected = Arc::clone(&self.is_connected);
 
-        let handle = get_runtime().spawn(async move {
+        self.session_tasks.spawn(async move {
             loop {
                 tokio::select! {
                     maybe_msg = rx.recv() => {
@@ -273,9 +313,9 @@ impl DeriveDataClient {
                     }
                 }
             }
-        });
+        })?;
 
-        self.ws_stream_handle = Some(handle);
+        Ok(())
     }
 
     fn handle_ws_message(message: DeriveWsMessage, ctx: &WsMessageContext) {
@@ -644,6 +684,8 @@ impl DataClient for DeriveDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Derive data client: {}", self.client_id);
         self.cancellation_token.cancel();
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -652,18 +694,15 @@ impl DataClient for DeriveDataClient {
         log::info!("Resetting Derive data client: {}", self.client_id);
         self.cancellation_token.cancel();
 
-        drop(self.abort_pending_tasks());
-
-        if let Some(handle) = self.ws_stream_handle.as_ref() {
-            handle.abort();
-        }
+        self.abort_session_tasks();
+        self.abort_pending_tasks();
+        self.is_connected.store(false, Ordering::Relaxed);
 
         // Leave the cancellation token cancelled; connect() refreshes it
         // (and tears down the inner WS client) on the next lifecycle start.
         self.instruments.store(AHashMap::new());
         self.clear_subscription_state();
         self.provider.store_mut().clear();
-        self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
 
@@ -681,28 +720,35 @@ impl DataClient for DeriveDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.is_connected() {
+        if self.is_connected()
+            && !self.cancellation_token.is_cancelled()
+            && self.session_tasks.is_open()
+            && self.pending_tasks.is_open()
+        {
             return Ok(());
         }
 
         // Completes the async teardown deferred by sync reset()/stop().
-        if self.cancellation_token.is_cancelled() {
-            if let Err(e) = self.ws_client.disconnect().await {
-                log::debug!("Error tearing down WebSocket on reconnect: {e}");
-            }
-            let ws_handle = self.ws_stream_handle.take();
-            if let Some(handle) = ws_handle
-                && let Err(e) = handle.await
-                && !e.is_cancelled()
-            {
-                log::error!("Error joining prior Derive WebSocket data task: {e:?}");
-            }
-            let pending_tasks = self.abort_pending_tasks();
-            self.join_pending_tasks(pending_tasks).await;
-            self.clear_subscription_state();
-            self.channel_subscriptions.clear_transitions();
+        if self.cancellation_token.is_cancelled()
+            || !self.session_tasks.is_open()
+            || !self.pending_tasks.is_open()
+        {
+            self.teardown_partial_connect().await?;
             self.cancellation_token = CancellationToken::new();
+            self.session_tasks.start_generation().map_err(|e| {
+                anyhow::anyhow!("Failed to start Derive data session generation: {e}")
+            })?;
+            self.pending_tasks
+                .start_generation()
+                .map_err(|e| anyhow::anyhow!("Failed to start Derive data task generation: {e}"))?;
         }
+        let cancellation_token = self.cancellation_token.clone();
+        let ws_shutdown = self.ws_client.shutdown_handle();
+        let setup_guard =
+            TaskGroupGuard::new(&[&self.session_tasks, &self.pending_tasks], move || {
+                cancellation_token.cancel();
+                ws_shutdown.begin_shutdown();
+            });
 
         if !self.config.currencies.is_empty() {
             self.provider
@@ -716,13 +762,23 @@ impl DataClient for DeriveDataClient {
             .connect()
             .await
             .context("failed to connect Derive WebSocket")?;
-        let rx = self
+        let session_result = self
             .ws_client
             .take_event_receiver()
-            .ok_or_else(|| anyhow::anyhow!("Derive WebSocket event receiver not initialized"))?;
-        self.spawn_stream_task(rx);
+            .ok_or_else(|| anyhow::anyhow!("Derive WebSocket event receiver not initialized"))
+            .and_then(|rx| self.spawn_stream_task(rx));
+
+        if let Err(e) = session_result {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive data startup teardown failed: {teardown_error}"
+                )));
+            }
+            return Err(e);
+        }
 
         self.is_connected.store(true, Ordering::Release);
+        setup_guard.disarm();
         log::info!(
             "Connected Derive data client ({:?})",
             self.config.environment
@@ -731,37 +787,7 @@ impl DataClient for DeriveDataClient {
     }
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
-        if self.is_disconnected() {
-            return Ok(());
-        }
-
-        self.cancellation_token.cancel();
-
-        if let Err(e) = self.ws_client.disconnect().await {
-            log::warn!("Error while disconnecting Derive WebSocket: {e}");
-        }
-
-        // Await the WS consumption loop so its sender is dropped before we
-        // return; abort the request-handler tasks since they don't observe
-        // the cancellation token and would otherwise outlive the client.
-        let ws_handle = self.ws_stream_handle.take();
-        if let Some(handle) = ws_handle
-            && let Err(e) = handle.await
-        {
-            log::error!("Error joining Derive WebSocket data task: {e:?}");
-        }
-        let pending_tasks = self.abort_pending_tasks();
-        self.join_pending_tasks(pending_tasks).await;
-
-        // Aborting in-flight subscribe tasks skips their on-error rollback,
-        // so any `active_*` entries staged before spawn would leak across
-        // a reconnect and silently suppress the next subscribe. Clear the
-        // local subscription state to match the venue-side reality that
-        // disconnect drops all subscriptions.
-        self.clear_subscription_state();
-        self.channel_subscriptions.clear_transitions();
-
-        self.is_connected.store(false, Ordering::Relaxed);
+        self.teardown_partial_connect().await?;
         log::info!("Disconnected Derive data client");
         Ok(())
     }
@@ -2212,14 +2238,22 @@ fn retain_channel_for_reconnect(
 }
 
 impl DeriveDataClient {
-    async fn join_pending_tasks(&self, tasks: Vec<JoinHandle<()>>) {
-        for handle in tasks {
-            if let Err(e) = handle.await
-                && !e.is_cancelled()
-            {
-                log::error!("Error joining Derive data task: {e:?}");
-            }
-        }
+    async fn join_session_tasks(&self) -> anyhow::Result<()> {
+        self.session_tasks.begin_shutdown();
+        self.session_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Derive data session tasks: {e}"))?;
+        Ok(())
+    }
+
+    async fn join_pending_tasks(&self) -> anyhow::Result<()> {
+        self.pending_tasks.begin_shutdown();
+        self.pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to terminate Derive data tasks: {e}"))?;
+        Ok(())
     }
 }
 
@@ -2718,10 +2752,10 @@ mod tests {
             environment: DeriveEnvironment::Mainnet,
             ..Default::default()
         };
-        let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
+        let client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
         let (ws_tx, ws_rx) = tokio::sync::mpsc::unbounded_channel();
         client.is_connected.store(true, Ordering::Release);
-        client.spawn_stream_task(ws_rx);
+        client.spawn_stream_task(ws_rx).unwrap();
 
         ws_tx
             .send(DeriveWsMessage::SessionRecoveryFailed(
@@ -3521,11 +3555,14 @@ mod tests {
         client.is_connected.store(true, Ordering::Relaxed);
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let (drop_tx, mut drop_rx) = tokio::sync::oneshot::channel::<()>();
-        client.pending_tasks.push(tokio::spawn(async move {
-            let _drop_tx = drop_tx;
-            let _ = started_tx.send(());
-            std::future::pending::<()>().await;
-        }));
+        client
+            .pending_tasks
+            .spawn(async move {
+                let _drop_tx = drop_tx;
+                let _ = started_tx.send(());
+                std::future::pending::<()>().await;
+            })
+            .unwrap();
         started_rx.await.unwrap();
 
         client.disconnect().await.unwrap();
@@ -3568,10 +3605,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_spawn_task_prunes_finished_handles() {
-        // Regression: every spawn_task call must prune finished handles
-        // before pushing the new one, otherwise `pending_tasks` grows
-        // unboundedly across long-running sessions.
+    async fn test_task_group_unregisters_finished_tasks_before_drain() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(tx);
 
@@ -3581,10 +3615,6 @@ mod tests {
         };
         let client = DeriveDataClient::new(*DERIVE_CLIENT_ID, config).unwrap();
 
-        // Spawn many no-op tasks, then wait until their handles are
-        // observably finished. `spawn_task` uses the global Nautilus runtime,
-        // so a single test-runtime yield is not a reliable completion fence
-        // under a busy full-suite run.
         for _ in 0..100 {
             client.spawn_task("test_noop", async { Ok(()) });
         }
@@ -3595,10 +3625,13 @@ mod tests {
         )
         .await;
 
-        // The next spawn should prune the finished handles before pushing the
-        // new one, leaving exactly the new tracked task.
-        client.spawn_task("test_prune", async { Ok(()) });
-        let len = client.pending_tasks.len();
-        assert_eq!(len, 1, "pending_tasks should retain only the new task");
+        assert!(client.pending_tasks.is_empty());
+        client.pending_tasks.begin_shutdown();
+        client
+            .pending_tasks
+            .finish_shutdown(Duration::from_secs(1), Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert!(client.pending_tasks.is_empty());
     }
 }

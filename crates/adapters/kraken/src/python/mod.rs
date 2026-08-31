@@ -33,9 +33,6 @@ use crate::{
     config::{KrakenDataClientConfig, KrakenExecutionClientConfig},
     factories::{KrakenDataClientFactory, KrakenExecutionClientFactory},
     http::{KrakenFuturesHttpClient, KrakenSpotHttpClient},
-    websocket::{
-        futures::client::KrakenFuturesWebSocketClient, spot_v2::client::KrakenSpotWebSocketClient,
-    },
 };
 
 pub mod config;
@@ -43,8 +40,6 @@ pub mod enums;
 pub mod factories;
 pub mod http_futures;
 pub mod http_spot;
-pub mod websocket_futures;
-pub mod websocket_spot;
 
 /// Determines the product type from a Kraken symbol.
 ///
@@ -123,8 +118,6 @@ pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<KrakenProductType>()?;
     m.add_class::<KrakenSpotHttpClient>()?;
     m.add_class::<KrakenFuturesHttpClient>()?;
-    m.add_class::<KrakenSpotWebSocketClient>()?;
-    m.add_class::<KrakenFuturesWebSocketClient>()?;
     m.add_class::<KrakenDataClientConfig>()?;
     m.add_class::<KrakenDataClientFactory>()?;
     m.add_class::<KrakenExecutionClientConfig>()?;
