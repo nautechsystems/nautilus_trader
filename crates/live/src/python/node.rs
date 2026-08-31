@@ -1101,6 +1101,35 @@ impl PyLiveNode {
         stop_result
     }
 
+    /// Adds a constructed Python actor to the trader.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the node is running, the actor is invalid, or registration fails.
+    #[pyo3(name = "add_actor")]
+    fn py_add_actor(&self, actor: &Bound<'_, PyAny>) -> PyResult<()> {
+        if self.node()?.state() != NodeState::Idle {
+            return Err(to_pyruntime_err(
+                "Cannot add actor while node is running, add actors before running the node",
+            ));
+        }
+
+        log::debug!("`add_actor` with a constructed instance");
+
+        let actor = actor.clone().unbind();
+        let actor_id = Python::attach(|py| {
+            let actor = actor.bind(py);
+            let config = actor
+                .getattr("config")
+                .ok()
+                .filter(|config| !config.is_none());
+            prepare_python_actor(actor, config.as_ref())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        self.register_python_actor(&actor, actor_id)
+    }
+
     #[pyo3(name = "add_actor_from_config")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_actor_from_config(&self, _py: Python, config: ImportableActorConfig) -> PyResult<()> {
@@ -1117,7 +1146,6 @@ impl PyLiveNode {
 
         log::info!("Importing actor from module: {module_name} class: {class_name}");
 
-        // Phase 1: Create and configure the Python actor, extract its actor_id
         let (python_actor, actor_id) =
             Python::attach(|py| -> anyhow::Result<(Py<PyAny>, ActorId)> {
                 let actor_module = py
@@ -1130,7 +1158,7 @@ impl PyLiveNode {
                 let config_instance =
                     create_config_instance(py, &config.config_path, &config.config)?;
 
-                let python_actor = if let Some(config_obj) = config_instance.clone() {
+                let python_actor = if let Some(config_obj) = config_instance.as_ref() {
                     actor_class.call1((config_obj,))?
                 } else {
                     actor_class.call0()?
@@ -1138,68 +1166,13 @@ impl PyLiveNode {
 
                 log::debug!("Created Python actor instance: {python_actor:?}");
 
-                let mut py_data_actor_ref = python_actor
-                    .extract::<PyRefMut<PyDataActor>>()
-                    .map_err(Into::<PyErr>::into)
-                    .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-                // Extract inherited config fields from the Python config
-                if let Some(config_obj) = config_instance.as_ref() {
-                    if let Ok(actor_id) = config_obj.getattr("actor_id")
-                        && !actor_id.is_none()
-                    {
-                        let actor_id_val = if let Ok(aid) = actor_id.extract::<ActorId>() {
-                            aid
-                        } else if let Ok(aid_str) = actor_id.extract::<String>() {
-                            ActorId::new_checked(&aid_str)?
-                        } else {
-                            anyhow::bail!("Invalid `actor_id` type");
-                        };
-                        py_data_actor_ref.set_actor_id(actor_id_val);
-                    }
-
-                    if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
-                        py_data_actor_ref.set_log_events(val);
-                    }
-
-                    if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
-                        py_data_actor_ref.set_log_commands(val);
-                    }
-                }
-
-                py_data_actor_ref.set_python_instance(&python_actor)?;
-
-                apply_class_derived_actor_id(&mut py_data_actor_ref, &python_actor)?;
-                let actor_id = py_data_actor_ref.actor_id();
+                let actor_id = prepare_python_actor(&python_actor, config_instance.as_ref())?;
 
                 Ok((python_actor.unbind(), actor_id))
             })
             .map_err(to_pyruntime_err)?;
 
-        // Validate no duplicate before any mutations
-        if self
-            .node_mut()?
-            .kernel()
-            .trader
-            .borrow()
-            .actor_ids()
-            .contains(&actor_id)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Actor '{actor_id}' is already registered"
-            )));
-        }
-
-        // Phase 2: Register the actor through the trader's single Python registration path
-        self.node_mut()?
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .add_python_actor_instance(&python_actor, actor_id)
-            .map_err(to_pyruntime_err)?;
-
-        log::info!("Registered Python actor {actor_id}");
-        Ok(())
+        self.register_python_actor(&python_actor, actor_id)
     }
 
     /// Adds a strategy to the trader.
@@ -1668,6 +1641,33 @@ impl PyLiveNode {
     }
 }
 
+impl PyLiveNode {
+    fn register_python_actor(&self, actor: &Py<PyAny>, actor_id: ActorId) -> PyResult<()> {
+        if self
+            .node()?
+            .kernel()
+            .trader
+            .borrow()
+            .actor_ids()
+            .contains(&actor_id)
+        {
+            return Err(to_pyruntime_err(format!(
+                "Actor '{actor_id}' is already registered"
+            )));
+        }
+
+        self.node_mut()?
+            .kernel_mut()
+            .trader
+            .borrow_mut()
+            .add_python_actor_instance(actor, actor_id)
+            .map_err(to_pyruntime_err)?;
+
+        log::info!("Registered Python actor {actor_id}");
+        Ok(())
+    }
+}
+
 fn new_sync_py_callback<F>(py: Python<'_>, closure: F) -> PyResult<Bound<'_, PyCFunction>>
 where
     F: Fn(&Bound<'_, PyTuple>, Option<&Bound<'_, PyDict>>) -> PyResult<()> + Send + Sync + 'static,
@@ -1705,6 +1705,45 @@ fn stop_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> 
         })
     }
     .map_err(to_pyruntime_err)
+}
+
+fn prepare_python_actor(
+    actor: &Bound<'_, PyAny>,
+    config: Option<&Bound<'_, PyAny>>,
+) -> anyhow::Result<ActorId> {
+    let mut py_data_actor = actor
+        .extract::<PyRefMut<PyDataActor>>()
+        .map_err(Into::<PyErr>::into)
+        .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
+
+    if let Some(config) = config {
+        if let Some(actor_id) = config
+            .getattr("actor_id")
+            .ok()
+            .filter(|actor_id| !actor_id.is_none())
+        {
+            let actor_id = if let Ok(actor_id) = actor_id.extract::<ActorId>() {
+                actor_id
+            } else if let Ok(actor_id) = actor_id.extract::<String>() {
+                ActorId::new_checked(&actor_id)?
+            } else {
+                anyhow::bail!("Invalid `actor_id` type");
+            };
+            py_data_actor.set_actor_id(actor_id);
+        }
+
+        if let Some(log_events) = extract_bool_config_attr(config, "log_events") {
+            py_data_actor.set_log_events(log_events);
+        }
+
+        if let Some(log_commands) = extract_bool_config_attr(config, "log_commands") {
+            py_data_actor.set_log_commands(log_commands);
+        }
+    }
+
+    py_data_actor.set_python_instance(actor)?;
+    apply_class_derived_actor_id(&mut py_data_actor, actor)?;
+    Ok(py_data_actor.actor_id())
 }
 
 /// Creates a Python config instance from a config path and config dictionary.
@@ -2316,7 +2355,7 @@ mod tests {
             MessagingSwitchboard, get_message_bus,
         },
         python::{
-            cache::get_global_cache_database_factory_registry,
+            actor::PyDataActor, cache::get_global_cache_database_factory_registry,
             msgbus::get_global_msgbus_factory_registry,
         },
         runner::{TradingCommandMessage, get_trading_cmd_sender},
@@ -2341,6 +2380,7 @@ mod tests {
     };
     use pyo3::{
         Py, PyRef, Python,
+        ffi::c_str,
         types::{PyAnyMethods, PyDict, PyModule, PyModuleMethods},
     };
     use rstest::rstest;
@@ -4193,6 +4233,89 @@ class ClaimsStrategy(Strategy):
         assert_eq!(results.default_event_type, "TimeEvent");
         assert_eq!(results.callback_event_name, "explicit_timer");
         assert_eq!(results.default_event_name, "default_timer");
+    }
+
+    #[rstest]
+    fn test_add_actor_registers_constructed_python_instance() {
+        Python::initialize();
+
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .map(PyLiveNode::new)
+            .unwrap();
+        let actor_id = ActorId::from("ACTOR-INSTANCE-001");
+
+        Python::attach(|py| {
+            let config = py
+                .eval(c_str!("type('_Cfg', (), {})()"), None, None)
+                .unwrap();
+            config.setattr("actor_id", actor_id.to_string()).unwrap();
+            let actor = py
+                .get_type::<PyDataActor>()
+                .as_any()
+                .call1((config,))
+                .unwrap();
+
+            node.py_add_actor(&actor).expect("actor should register");
+
+            let actor = actor.extract::<PyRef<PyDataActor>>().unwrap();
+            assert_eq!(actor.actor_id(), actor_id);
+            assert!(actor.is_registered());
+        });
+
+        assert_eq!(
+            node.node_mut()
+                .unwrap()
+                .kernel()
+                .trader
+                .borrow()
+                .actor_ids(),
+            vec![actor_id]
+        );
+    }
+
+    #[rstest]
+    fn test_add_actor_rejects_non_idle_node() {
+        Python::initialize();
+
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .map(PyLiveNode::new)
+            .unwrap();
+
+        Python::attach(|py| {
+            let actor = py.get_type::<PyDataActor>().call0().unwrap();
+            node.handle.set_starting();
+
+            let error = node
+                .py_add_actor(&actor)
+                .expect_err("a non-idle node should reject actor registration");
+            let actor = actor.extract::<PyRef<PyDataActor>>().unwrap();
+
+            assert_eq!(
+                error.to_string(),
+                "RuntimeError: Cannot add actor while node is running, add actors before running the node"
+            );
+            assert!(!actor.is_registered());
+        });
+
+        assert!(
+            node.node()
+                .unwrap()
+                .kernel()
+                .trader
+                .borrow()
+                .actor_ids()
+                .is_empty()
+        );
     }
 
     #[rstest]

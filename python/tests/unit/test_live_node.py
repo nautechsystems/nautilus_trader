@@ -193,6 +193,21 @@ class SecondNonForwardingLiveActor(NonForwardingLiveActor):
     """
 
 
+class InternalConfigLiveActor(DataActor):
+    """
+    Collect internal config live actor tests.
+    """
+
+    instances: ClassVar[list[object]] = []
+
+    def __init__(self) -> None:
+        """
+        Initialize the helper.
+        """
+        super().__init__(DataActorConfig(actor_id=ActorId("INTERNAL-CONFIG-ACTOR")))
+        type(self).instances.append(self)
+
+
 def test_importable_actor_config_construction() -> None:
     """
     Test importable actor config construction.
@@ -587,6 +602,56 @@ def test_add_actor_from_config_rejects_nonexistent_module(live_node: LiveNode) -
 
     with pytest.raises(RuntimeError, match="Failed to import module"):
         live_node.add_actor_from_config(config)
+
+
+def test_add_actor_from_empty_config_preserves_class_derived_id(live_node: LiveNode) -> None:
+    """
+    Test add actor from empty config preserves class derived ID.
+    """
+    InternalConfigLiveActor.instances.clear()
+    config = ImportableActorConfig(
+        actor_path="tests.unit.test_live_node:InternalConfigLiveActor",
+        config_path="",
+        config={},
+    )
+
+    live_node.add_actor_from_config(config)
+
+    actor = InternalConfigLiveActor.instances[-1]
+    assert actor.config.actor_id == ActorId("INTERNAL-CONFIG-ACTOR")
+    assert actor.actor_id == ActorId("InternalConfigLiveActor")
+    assert actor.state() == ComponentState.READY
+
+
+def test_add_actor_registers_constructed_instance(live_node: LiveNode) -> None:
+    """
+    Test add actor registers constructed instance.
+    """
+    actor_id = ActorId("PY-LIVE-CONSTRUCTED-ACTOR")
+    actor = DataActor(
+        DataActorConfig(
+            actor_id=actor_id,
+            log_events=False,
+            log_commands=False,
+        ),
+    )
+
+    live_node.add_actor(actor)
+
+    assert actor.actor_id == actor_id
+    assert actor.trader_id == live_node.trader_id
+    assert actor.state() == ComponentState.READY
+    assert actor.is_ready() is True
+
+    duplicate = DataActor(DataActorConfig(actor_id=actor_id))
+
+    with pytest.raises(RuntimeError) as exc_info:
+        live_node.add_actor(duplicate)
+
+    assert str(exc_info.value) == "Actor 'PY-LIVE-CONSTRUCTED-ACTOR' is already registered"
+    assert duplicate.trader_id is None
+    assert duplicate.state() == ComponentState.PRE_INITIALIZED
+    assert duplicate.is_ready() is False
 
 
 def test_add_strategy_from_config_registers(live_node: LiveNode) -> None:
