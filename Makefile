@@ -508,7 +508,10 @@ clippy-fix:  #-- Run clippy linter with automatic fixes (workspace lints)
 
 .PHONY: clippy-fix-nightly
 clippy-fix-nightly:  #-- Run clippy linter with the pinned nightly toolchain and automatic fixes (workspace lints + additional strictness)
-	cargo +$(NIGHTLY_TOOLCHAIN) clippy --fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings
+	# Work around rust-lang/rust#161495 in nightly-2026-08-23
+	cargo +$(NIGHTLY_TOOLCHAIN) clippy \
+		--config 'target."cfg(all())".rustflags=["-Znext-solver=coherence"]' \
+		--fix --all-targets --all-features --allow-dirty --allow-staged -- -D warnings
 
 .PHONY: clippy-strict-audit
 clippy-strict-audit:  #-- Report candidate strict Clippy lints without failing on findings

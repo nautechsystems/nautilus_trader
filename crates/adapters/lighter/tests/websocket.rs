@@ -191,7 +191,7 @@ async fn handle_ws_upgrade(
 
     if state
         .transient_upgrade_failures
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
             remaining.checked_sub(1)
         })
         .is_ok()

@@ -66,6 +66,9 @@
     clippy::assert_is_empty,
     reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
 )]
+// pyo3's `from_py_object` generates `.clone()` on `Copy` fields that clippy flags from the
+// macro expansion; an item-level `allow` cannot reach the expansion
+#![allow(clippy::clone_on_copy)]
 
 pub mod accumulator;
 pub mod config;

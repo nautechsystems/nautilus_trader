@@ -946,7 +946,7 @@ impl TaskGeneration {
         let _guard = self.admission_lock.lock();
         let _ = self
             .phase
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |phase| match phase {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |phase| match phase {
                 value
                     if value == TaskGroupPhase::Open as u8
                         || value == TaskGroupPhase::Drained as u8 =>
