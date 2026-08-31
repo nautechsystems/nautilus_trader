@@ -874,9 +874,14 @@ impl ExecutionClient for BybitExecutionClient {
                     account_state.balances.len()
                 );
             }
-            self.emitter
-                .try_send_bootstrap_account_state(account_state)
-                .context("failed to emit Bybit bootstrap account state")?;
+
+            if self.use_sourced_execution_events {
+                self.emitter
+                    .try_send_bootstrap_account_state(account_state)
+                    .context("failed to emit Bybit bootstrap account state")?;
+            } else {
+                self.emitter.send_account_state(account_state);
+            }
 
             self.await_account_registered(30.0).await?;
 

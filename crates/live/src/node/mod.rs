@@ -109,7 +109,7 @@ use nautilus_execution::engine::ExecutionEngine;
 #[cfg(test)]
 use nautilus_model::reports::OrderStatusReport;
 use nautilus_model::{
-    events::OrderEventAny,
+    events::{AccountState, OrderEventAny},
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::Order,
     reports::{FillReport, PositionStatusReport},
@@ -3876,9 +3876,10 @@ async fn drive_with_event_buffering<F: std::future::Future>(
             Some(ingress) = sourced_exec.recv(exec_evt_rx) => {
                 match ingress {
                     ExecutionEventIngress::Sourced(
-                        SourcedExecutionEvent::BootstrapAccount { state, .. },
+                        SourcedExecutionEvent::BootstrapAccount { client_id, state },
                     ) if sourced_bootstrap_handling == SourcedBootstrapHandling::Dispatch =>
                     {
+                        pending.discard_stale_runtime_account_states(client_id, &state);
                         AsyncRunner::handle_exec_event(ExecutionEvent::Account(state));
                     }
                     ingress => pending.buffer_execution_ingress(ingress),
@@ -3910,6 +3911,26 @@ struct PendingEvents {
 }
 
 impl PendingEvents {
+    fn discard_stale_runtime_account_states(
+        &mut self,
+        client_id: ClientId,
+        bootstrap: &AccountState,
+    ) {
+        self.sourced_exec_evts.retain(|event| {
+            let SourcedExecutionEvent::Runtime {
+                client_id: event_client_id,
+                event: ExecutionEvent::Account(state),
+            } = event
+            else {
+                return true;
+            };
+
+            *event_client_id != client_id
+                || state.account_id != bootstrap.account_id
+                || state.ts_event >= bootstrap.ts_event
+        });
+    }
+
     fn is_empty(&self) -> bool {
         self.system_events.is_empty()
             && self.system_commands.is_empty()
@@ -8632,9 +8653,9 @@ mod tests {
                     self.state.order_report.clone(),
                 ))))?;
             self.sink
-                .send_bootstrap_account(self.state.bootstrap_account.clone())?;
-            self.sink
                 .send(ExecutionEvent::Account(self.state.runtime_account.clone()))?;
+            self.sink
+                .send_bootstrap_account(self.state.bootstrap_account.clone())?;
             self.sink
                 .send(ExecutionEvent::Report(ExecutionReport::Position(Box::new(
                     self.state.position_report.clone(),
@@ -8694,13 +8715,17 @@ mod tests {
         let steady_account = AccountState::new(
             account_id,
             AccountType::Margin,
-            vec![],
+            vec![AccountBalance::new(
+                Money::from("300 USDT"),
+                Money::from("0 USDT"),
+                Money::from("300 USDT"),
+            )],
             vec![],
             true,
             steady_event_id,
             UnixNanos::from(12),
             UnixNanos::from(13),
-            None,
+            Some(Currency::USDT()),
         );
         let state = BootstrapConnectState {
             connected: Rc::new(Cell::new(false)),
@@ -8711,24 +8736,32 @@ mod tests {
             bootstrap_account: AccountState::new(
                 account_id,
                 AccountType::Margin,
-                vec![],
+                vec![AccountBalance::new(
+                    Money::from("200 USDT"),
+                    Money::from("0 USDT"),
+                    Money::from("200 USDT"),
+                )],
                 vec![],
                 true,
                 bootstrap_event_id,
-                UnixNanos::from(1),
-                UnixNanos::from(2),
-                None,
+                UnixNanos::from(3),
+                UnixNanos::from(4),
+                Some(Currency::USDT()),
             ),
             runtime_account: AccountState::new(
                 account_id,
                 AccountType::Margin,
-                vec![],
+                vec![AccountBalance::new(
+                    Money::from("100 USDT"),
+                    Money::from("0 USDT"),
+                    Money::from("100 USDT"),
+                )],
                 vec![],
                 true,
                 runtime_event_id,
-                UnixNanos::from(3),
-                UnixNanos::from(4),
-                None,
+                UnixNanos::from(1),
+                UnixNanos::from(2),
+                Some(Currency::USDT()),
             ),
             order_report: OrderStatusReport::new(
                 account_id,
@@ -8950,17 +8983,19 @@ mod tests {
             |event| node.process_sourced_exec_event(event),
         );
 
-        let account_event_ids = node
-            .kernel
-            .cache
-            .borrow()
-            .account(&account_id)
-            .unwrap()
-            .events()
-            .into_iter()
-            .map(|event| event.event_id)
-            .collect::<Vec<_>>();
-        assert_eq!(account_event_ids, [bootstrap_event_id, runtime_event_id]);
+        let (account_event_ids, account_total) = {
+            let cache = node.kernel.cache.borrow();
+            let account = cache.account(&account_id).unwrap();
+            let event_ids = account
+                .events()
+                .into_iter()
+                .map(|event| event.event_id)
+                .collect::<Vec<_>>();
+            let total = account.balances()[&Currency::USDT()].total;
+            (event_ids, total)
+        };
+        assert_eq!(account_event_ids, [bootstrap_event_id]);
+        assert_eq!(account_total, Money::from("200 USDT"));
         assert!(e3_enqueued.get());
         assert_eq!(
             state.observations.borrow().as_slice(),
@@ -8972,12 +9007,12 @@ mod tests {
                 },
                 BootstrapReportObservation {
                     kind: BootstrapReportKind::Position,
-                    account_event_id: runtime_event_id,
+                    account_event_id: bootstrap_event_id,
                     order_status: OrderStatus::Accepted,
                 },
                 BootstrapReportObservation {
                     kind: BootstrapReportKind::Fill,
-                    account_event_id: runtime_event_id,
+                    account_event_id: bootstrap_event_id,
                     order_status: OrderStatus::Accepted,
                 },
             ]
@@ -9013,20 +9048,19 @@ mod tests {
             panic!("steady-state sourced event should remain behind the startup prefix");
         };
         node.process_sourced_exec_event(steady_event);
-        let account_event_ids = node
-            .kernel
-            .cache
-            .borrow()
-            .account(&account_id)
-            .unwrap()
-            .events()
-            .into_iter()
-            .map(|event| event.event_id)
-            .collect::<Vec<_>>();
-        assert_eq!(
-            account_event_ids,
-            [bootstrap_event_id, runtime_event_id, steady_event_id]
-        );
+        let (account_event_ids, account_total) = {
+            let cache = node.kernel.cache.borrow();
+            let account = cache.account(&account_id).unwrap();
+            let event_ids = account
+                .events()
+                .into_iter()
+                .map(|event| event.event_id)
+                .collect::<Vec<_>>();
+            let total = account.balances()[&Currency::USDT()].total;
+            (event_ids, total)
+        };
+        assert_eq!(account_event_ids, [bootstrap_event_id, steady_event_id]);
+        assert_eq!(account_total, Money::from("300 USDT"));
         assert_eq!(sourced_exec.len(), 0);
         assert!(exec_evt_rx.try_recv().is_err());
         msgbus::get_message_bus().borrow_mut().dispose();
@@ -9257,6 +9291,64 @@ mod tests {
         );
         assert!(pending.exec_reports.is_empty());
         assert!(pending.order_evts.is_empty());
+    }
+
+    #[rstest]
+    fn test_pending_discards_only_stale_runtime_account_state_for_bootstrap() {
+        let source_id = ClientId::from("SOURCE-PENDING");
+        let other_source_id = ClientId::from("OTHER-SOURCE");
+        let account_id = AccountId::from("SOURCE-PENDING-001");
+        let other_account_id = AccountId::from("SOURCE-PENDING-002");
+        let account_state = |account_id, ts_event| {
+            AccountState::new(
+                account_id,
+                AccountType::Margin,
+                vec![],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(ts_event),
+                UnixNanos::from(ts_event),
+                None,
+            )
+        };
+        let bootstrap = account_state(account_id, 10);
+        let mut pending = PendingEvents::default();
+
+        for (client_id, state) in [
+            (source_id, account_state(account_id, 9)),
+            (other_source_id, account_state(account_id, 8)),
+            (source_id, account_state(other_account_id, 7)),
+            (source_id, account_state(account_id, 10)),
+            (source_id, account_state(account_id, 11)),
+        ] {
+            pending.buffer_execution_ingress(ExecutionEventIngress::Sourced(
+                SourcedExecutionEvent::runtime(client_id, ExecutionEvent::Account(state)),
+            ));
+        }
+
+        pending.discard_stale_runtime_account_states(source_id, &bootstrap);
+
+        let retained = pending
+            .sourced_exec_evts
+            .iter()
+            .map(|event| match event {
+                SourcedExecutionEvent::Runtime {
+                    client_id,
+                    event: ExecutionEvent::Account(state),
+                } => (*client_id, state.account_id, state.ts_event),
+                _ => panic!("Expected sourced account event"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            retained,
+            [
+                (other_source_id, account_id, UnixNanos::from(8)),
+                (source_id, other_account_id, UnixNanos::from(7)),
+                (source_id, account_id, UnixNanos::from(10)),
+                (source_id, account_id, UnixNanos::from(11)),
+            ]
+        );
     }
 
     #[rstest]
