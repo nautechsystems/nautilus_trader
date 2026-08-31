@@ -27,6 +27,7 @@ flowchart TD
     push["Push to master"]
     wheels["Build wheel artifacts<br/>Linux x86/ARM, macOS, Windows"]
     audits["Release gates<br/>Rust suite + cargo-deny + cargo-vet<br/>Cargo publish + docs/features preflights"]
+    security["security-audit<br/>Zizmor + supply chain"]
     tag["tag-release<br/>Create tag and draft GitHub release"]
     wheel_assets["publish-wheels-master<br/>Upload wheels to GitHub release and R2<br/>release env"]
     build_sdist["build-sdist<br/>Build sdist workflow artifact"]
@@ -39,8 +40,10 @@ flowchart TD
 
     push --> wheels
     push --> audits
+    push --> security
     wheels --> tag
     audits --> tag
+    security --> tag
     tag --> build_sdist
     build_sdist --> sdist_asset
     tag --> sdist_asset
@@ -62,6 +65,8 @@ flowchart TD
 Keep these sequencing rules intact when editing `.github/workflows/build.yml`:
 
 - The draft GitHub release must exist before any release asset upload or package registry publish.
+- `tag-release` must depend on `security-audit` so stable release tagging cannot proceed after an
+  audit failure.
 - Wheel and sdist assets must be attached to the GitHub release before package index publishing
   starts (`packages.nautechsystems.io`, PyPI, crates.io).
 - PyPI and crates.io Trusted Publishing jobs must keep `environment: release` and
@@ -141,6 +146,7 @@ mismatches also fail.
 - [ ] Verify the `build` workflow completes:
   - Wheels built for Linux x86/ARM, macOS, Windows
   - `cargo-deny` and `cargo-vet` pass
+  - `security-audit` passes its Zizmor and supply-chain checks
   - Release docs/features and Cargo publish preflights pass before tagging
   - Tag and draft GitHub release created
   - Wheels and sdist attached to the GitHub release before package registry publishing

@@ -146,10 +146,11 @@ overridden.
 
 Security audits run as part of `build.yml`. The Zizmor and supply-chain jobs remain path-scoped for
 ordinary pull requests and branch pushes, while `test-ci` and `test-pre-commit` force both jobs. The
-publication job depends directly on the same build's audit result. Nightly builds do not repeat the
-full audit; the nightly security gate completes its scans before publication. Scheduled and manual
-audits run independently, so the repository is still audited when no build runs. The override does
-not suppress pull request, scheduled, manual, or stable release audits.
+development publication and stable release tag gate depend directly on the same build's audit
+result. Nightly builds do not repeat the full audit; the nightly security gate completes its scans
+before publication. Scheduled and manual audits run independently, so the repository is still
+audited when no build runs. The override does not suppress pull request, scheduled, manual, or
+stable release audits.
 
 To approve a blocked development or nightly publication:
 

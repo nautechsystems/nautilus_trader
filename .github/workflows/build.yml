@@ -1123,6 +1123,7 @@ jobs:
       - release-cargo-publish-preflight
       - release-docs-features-preflight
       - rust-tests-linux-x86
+      - security-audit
     permissions:
       contents: write # Required for pushing tags and creating the draft release
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
