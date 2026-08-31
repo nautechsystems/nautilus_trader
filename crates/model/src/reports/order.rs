@@ -79,7 +79,8 @@ pub struct OrderStatusReport {
     /// The parent order ID for contingent child orders, if available.
     pub parent_order_id: Option<ClientOrderId>,
     /// The orders contingency type.
-    pub contingency_type: ContingencyType,
+    #[serde(default, with = "crate::enums::serde_option_contingency_type")]
+    pub contingency_type: Option<ContingencyType>,
     /// The order expiration (UNIX epoch nanoseconds), zero for no expiration.
     pub expire_time: Option<UnixNanos>,
     /// The order price (LIMIT).
@@ -89,13 +90,15 @@ pub struct OrderStatusReport {
     /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
     /// The trigger type for the order.
+    #[serde(default, with = "crate::enums::serde_option_trigger_type")]
     pub trigger_type: Option<TriggerType>,
     /// The trailing offset for the orders limit price.
     pub limit_offset: Option<Decimal>,
     /// The trailing offset for the orders trigger price (STOP).
     pub trailing_offset: Option<Decimal>,
     /// The trailing offset type.
-    pub trailing_offset_type: TrailingOffsetType,
+    #[serde(default, with = "crate::enums::serde_option_trailing_offset_type")]
+    pub trailing_offset_type: Option<TrailingOffsetType>,
     /// The order average fill price.
     pub avg_px: Option<Decimal>,
     /// The quantity of the `LIMIT` order to display on the public book (iceberg).
@@ -149,7 +152,7 @@ impl OrderStatusReport {
             venue_position_id: None,
             linked_order_ids: None,
             parent_order_id: None,
-            contingency_type: ContingencyType::default(),
+            contingency_type: None,
             expire_time: None,
             price: None,
             activation_price: None,
@@ -157,7 +160,7 @@ impl OrderStatusReport {
             trigger_type: None,
             limit_offset: None,
             trailing_offset: None,
-            trailing_offset_type: TrailingOffsetType::default(),
+            trailing_offset_type: None,
             avg_px: None,
             display_qty: None,
             post_only: false,
@@ -260,7 +263,7 @@ impl OrderStatusReport {
         mut self,
         trailing_offset_type: TrailingOffsetType,
     ) -> Self {
-        self.trailing_offset_type = trailing_offset_type;
+        self.trailing_offset_type = Some(trailing_offset_type);
         self
     }
 
@@ -309,7 +312,7 @@ impl OrderStatusReport {
     /// Sets the contingency type.
     #[must_use]
     pub const fn with_contingency_type(mut self, contingency_type: ContingencyType) -> Self {
-        self.contingency_type = contingency_type;
+        self.contingency_type = Some(contingency_type);
         self
     }
 
@@ -399,7 +402,9 @@ impl Display for OrderStatusReport {
             self.venue_position_id,
             self.linked_order_ids,
             self.parent_order_id,
-            self.contingency_type,
+            self.contingency_type
+                .as_ref()
+                .map_or("NO_CONTINGENCY", AsRef::as_ref),
             self.expire_time,
             self.price,
             self.activation_price,
@@ -407,7 +412,9 @@ impl Display for OrderStatusReport {
             self.trigger_type,
             self.limit_offset,
             self.trailing_offset,
-            self.trailing_offset_type,
+            self.trailing_offset_type
+                .as_ref()
+                .map_or("NO_TRAILING_OFFSET", AsRef::as_ref),
             self.avg_px,
             self.display_qty,
             self.post_only,
@@ -482,14 +489,14 @@ mod tests {
         assert_eq!(report.venue_position_id, None);
         assert_eq!(report.linked_order_ids, None);
         assert_eq!(report.parent_order_id, None);
-        assert_eq!(report.contingency_type, ContingencyType::default());
+        assert_eq!(report.contingency_type, None);
         assert_eq!(report.expire_time, None);
         assert_eq!(report.price, None);
         assert_eq!(report.trigger_price, None);
         assert_eq!(report.trigger_type, None);
         assert_eq!(report.limit_offset, None);
         assert_eq!(report.trailing_offset, None);
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::default());
+        assert_eq!(report.trailing_offset_type, None);
         assert_eq!(report.avg_px, None);
         assert_eq!(report.display_qty, None);
         assert!(!report.post_only);
@@ -562,14 +569,17 @@ mod tests {
         assert_eq!(report.trigger_type, Some(TriggerType::Default));
         assert_eq!(report.limit_offset, Some(dec!(0.0001)));
         assert_eq!(report.trailing_offset, Some(dec!(0.0002)));
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints);
+        assert_eq!(
+            report.trailing_offset_type,
+            Some(TrailingOffsetType::BasisPoints),
+        );
         assert_eq!(report.display_qty, Some(Quantity::from("50")));
         assert_eq!(report.expire_time, Some(UnixNanos::from(4_000_000_000)));
         assert!(report.post_only);
         assert!(report.reduce_only);
         assert_eq!(report.cancel_reason, Some("User requested".to_string()));
         assert_eq!(report.ts_triggered, Some(UnixNanos::from(1_500_000_000)));
-        assert_eq!(report.contingency_type, ContingencyType::Oco);
+        assert_eq!(report.contingency_type, Some(ContingencyType::Oco));
     }
 
     #[rstest]

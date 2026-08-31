@@ -2821,7 +2821,7 @@ impl OrderMatchingEngine {
             if self.config.support_contingent_orders {
                 if let Some(parent_order_id) = order.parent_order_id() {
                     let parent_order = match cache_borrow.order(&parent_order_id) {
-                        Some(o) if o.contingency_type().unwrap() == ContingencyType::Oto => o,
+                        Some(o) if o.contingency_type() == Some(ContingencyType::Oto) => o,
                         _ => panic!("OTO parent not found"),
                     };
 
@@ -2843,13 +2843,14 @@ impl OrderMatchingEngine {
                 }
 
                 if let Some(linked_order_ids) = order.linked_order_ids() {
+                    let contingency_type = order.contingency_type();
                     for client_order_id in linked_order_ids {
                         match cache_borrow.order(client_order_id) {
                             Some(contingent_order)
-                                if (order.contingency_type().unwrap() == ContingencyType::Oco
-                                    || order.contingency_type().unwrap()
-                                        == ContingencyType::Ouo)
-                                    && !order.is_closed()
+                                if matches!(
+                                    contingency_type,
+                                    Some(ContingencyType::Oco | ContingencyType::Ouo)
+                                ) && !order.is_closed()
                                     && contingent_order.is_closed() =>
                             {
                                 break 'validate Some(
@@ -5163,7 +5164,6 @@ impl OrderMatchingEngine {
                         );
                     }
                 }
-                _ => {}
             }
         }
 
@@ -5595,7 +5595,7 @@ impl OrderMatchingEngine {
             order.client_order_id(),
             order.order_side(),
             order.order_type(),
-            order.trigger_type().unwrap_or(TriggerType::Default),
+            Some(order.trigger_type().unwrap_or(TriggerType::Default)),
             if triggered_limit_style {
                 None
             } else {
@@ -5613,11 +5613,7 @@ impl OrderMatchingEngine {
     fn expire_order(&mut self, order: &OrderAny) {
         self.remove_queue_position(order.client_order_id());
 
-        if self.config.support_contingent_orders
-            && order
-                .contingency_type()
-                .is_some_and(|c| c != ContingencyType::NoContingency)
-        {
+        if self.config.support_contingent_orders && order.contingency_type().is_some() {
             self.cancel_contingent_orders(order);
         }
 
@@ -5657,7 +5653,6 @@ impl OrderMatchingEngine {
 
         if self.config.support_contingent_orders
             && order.contingency_type().is_some()
-            && order.contingency_type().unwrap() != ContingencyType::NoContingency
             && cancel_contingencies
         {
             self.cancel_contingent_orders(order);
@@ -5813,9 +5808,7 @@ impl OrderMatchingEngine {
         let new_leaves_qty = quantity.saturating_sub(filled_qty);
         if new_leaves_qty.is_zero() {
             if self.config.support_contingent_orders
-                && order
-                    .contingency_type()
-                    .is_some_and(|c| c != ContingencyType::NoContingency)
+                && order.contingency_type().is_some()
                 && update_contingencies
             {
                 self.update_contingent_order(order, quantity);
@@ -5827,9 +5820,7 @@ impl OrderMatchingEngine {
         }
 
         if self.config.support_contingent_orders
-            && order
-                .contingency_type()
-                .is_some_and(|c| c != ContingencyType::NoContingency)
+            && order.contingency_type().is_some()
             && update_contingencies
         {
             self.update_contingent_order(order, quantity);

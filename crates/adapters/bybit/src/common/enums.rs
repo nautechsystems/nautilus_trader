@@ -678,9 +678,7 @@ impl From<BybitTriggerType> for TriggerType {
 impl From<TriggerType> for BybitTriggerType {
     fn from(value: TriggerType) -> Self {
         match value {
-            TriggerType::Default | TriggerType::LastPrice | TriggerType::NoTrigger => {
-                Self::LastPrice
-            }
+            TriggerType::Default | TriggerType::LastPrice => Self::LastPrice,
             TriggerType::IndexPrice => Self::IndexPrice,
             TriggerType::MarkPrice => Self::MarkPrice,
             _ => Self::LastPrice,

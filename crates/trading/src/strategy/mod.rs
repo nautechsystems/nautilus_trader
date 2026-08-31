@@ -38,7 +38,7 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4};
 use nautilus_execution::order_manager::OrderManagerAction;
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, PositionSide, TimeInForce, TriggerType},
+    enums::{OrderSide, OrderStatus, PositionSide, TimeInForce},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
@@ -205,7 +205,7 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
+        if order.emulation_trigger().is_some() {
             send_emulator_command(TradingCommand::SubmitOrder(command));
         } else if let Some(exec_algorithm_id) = order.exec_algorithm_id() {
             send_algo_command(command, exec_algorithm_id);
@@ -343,10 +343,9 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        let has_emulated_order = orders.iter().any(|o| {
-            matches!(o.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
-                || o.is_emulated()
-        });
+        let has_emulated_order = orders
+            .iter()
+            .any(|o| o.emulation_trigger().is_some() || o.is_emulated());
 
         if has_emulated_order {
             send_emulator_command(TradingCommand::SubmitOrderList(command));
@@ -462,9 +461,7 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
-            || order.is_emulated()
-        {
+        if order.emulation_trigger().is_some() || order.is_emulated() {
             send_emulator_command(TradingCommand::ModifyOrder(command));
         } else if let Some(algo_id) = order
             .exec_algorithm_id()
@@ -678,9 +675,7 @@ pub trait Strategy: DataActor {
             None, // correlation_id
         );
 
-        if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger)
-            || order.is_emulated()
-        {
+        if order.emulation_trigger().is_some() || order.is_emulated() {
             send_emulator_command(TradingCommand::CancelOrder(command));
         } else if let Some(algo_id) = order
             .exec_algorithm_id()
@@ -2395,7 +2390,7 @@ mod tests {
     use nautilus_model::{
         enums::{
             ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
-            PositionAdjustmentType, PositionSide,
+            PositionAdjustmentType, PositionSide, TriggerType,
         },
         events::{
             OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,

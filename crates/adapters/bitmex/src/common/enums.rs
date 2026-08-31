@@ -386,14 +386,14 @@ pub enum BitmexContingencyType {
     Unknown, // Can be empty
 }
 
-impl From<BitmexContingencyType> for ContingencyType {
+impl From<BitmexContingencyType> for Option<ContingencyType> {
     fn from(value: BitmexContingencyType) -> Self {
         match value {
-            BitmexContingencyType::OneCancelsTheOther => Self::Oco,
-            BitmexContingencyType::OneTriggersTheOther => Self::Oto,
-            BitmexContingencyType::OneUpdatesTheOtherProportional => Self::Ouo,
-            BitmexContingencyType::OneUpdatesTheOtherAbsolute => Self::Ouo,
-            BitmexContingencyType::Unknown => Self::NoContingency,
+            BitmexContingencyType::OneCancelsTheOther => Some(ContingencyType::Oco),
+            BitmexContingencyType::OneTriggersTheOther => Some(ContingencyType::Oto),
+            BitmexContingencyType::OneUpdatesTheOtherProportional
+            | BitmexContingencyType::OneUpdatesTheOtherAbsolute => Some(ContingencyType::Ouo),
+            BitmexContingencyType::Unknown => None,
         }
     }
 }
@@ -403,7 +403,6 @@ impl TryFrom<ContingencyType> for BitmexContingencyType {
 
     fn try_from(value: ContingencyType) -> Result<Self, Self::Error> {
         match value {
-            ContingencyType::NoContingency => Ok(Self::Unknown),
             ContingencyType::Oco => Ok(Self::OneCancelsTheOther),
             ContingencyType::Oto => Ok(Self::OneTriggersTheOther),
             ContingencyType::Ouo => anyhow::bail!("OUO contingency type not supported by BitMEX"),

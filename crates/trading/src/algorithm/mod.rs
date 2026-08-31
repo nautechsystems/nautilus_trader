@@ -944,9 +944,7 @@ pub trait ExecutionAlgorithm: DataActor {
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
-        let has_emulation_trigger = order
-            .emulation_trigger()
-            .is_some_and(|t| t != TriggerType::NoTrigger);
+        let has_emulation_trigger = order.emulation_trigger().is_some();
 
         if order.is_emulated() || has_emulation_trigger {
             msgbus::send_trading_command(
@@ -1132,9 +1130,7 @@ pub trait ExecutionAlgorithm: DataActor {
             log::info!("{id} {SEND}{CMD} {command:?}");
         }
 
-        let has_emulation_trigger = order
-            .emulation_trigger()
-            .is_some_and(|t| t != TriggerType::NoTrigger);
+        let has_emulation_trigger = order.emulation_trigger().is_some();
 
         if order.is_emulated() || order.status() == OrderStatus::Released || has_emulation_trigger {
             msgbus::send_trading_command(

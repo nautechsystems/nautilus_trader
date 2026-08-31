@@ -18,7 +18,10 @@
 
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    enums::{
+        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TrailingOffsetType,
+    },
     events::{
         OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel, OrderPendingUpdate,
         OrderSubmitted,
@@ -1537,6 +1540,7 @@ fn test_inferred_fill_liquidity_side(
             .quantity(Quantity::from("1.0"))
             .trigger_price(Price::from("100.00"))
             .trailing_offset(dec!(1.0))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build(),
         _ => OrderTestBuilder::new(order_type)
             .instrument_id(instrument.id())
@@ -5086,6 +5090,7 @@ fn test_create_inferred_fill_for_qty_liquidity_side(
             .quantity(Quantity::from("10.0"))
             .trigger_price(Price::from("100.00"))
             .trailing_offset(Decimal::from(1))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build(),
         _ => OrderTestBuilder::new(order_type)
             .instrument_id(instrument.id())
@@ -6777,6 +6782,7 @@ fn test_inferred_fill_price_and_liquidity_maps_side(
             .quantity(Quantity::from("10.0"))
             .trigger_price(Price::from("100.00"))
             .trailing_offset(Decimal::from(1))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build(),
         _ => OrderTestBuilder::new(order_type)
             .instrument_id(instrument.id())

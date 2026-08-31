@@ -70,6 +70,31 @@ require_text "${MODEL_HEADER}" "POSITION_SIDE_FLAT = 1,"
 require_text "${MODEL_HEADER}" "POSITION_SIDE_LONG = 2,"
 require_text "${MODEL_HEADER}" "POSITION_SIDE_SHORT = 3,"
 require_text "${MODEL_HEADER}" "} PositionSide;"
+require_text "${MODEL_HEADER}" "typedef enum ContingencyType {"
+require_text "${MODEL_HEADER}" "CONTINGENCY_TYPE_NO_CONTINGENCY = 0,"
+require_text "${MODEL_HEADER}" "CONTINGENCY_TYPE_OCO = 1,"
+require_text "${MODEL_HEADER}" "CONTINGENCY_TYPE_OTO = 2,"
+require_text "${MODEL_HEADER}" "CONTINGENCY_TYPE_OUO = 3,"
+require_text "${MODEL_HEADER}" "} ContingencyType;"
+require_text "${MODEL_HEADER}" "typedef enum TrailingOffsetType {"
+require_text "${MODEL_HEADER}" "TRAILING_OFFSET_TYPE_NO_TRAILING_OFFSET = 0,"
+require_text "${MODEL_HEADER}" "TRAILING_OFFSET_TYPE_PRICE = 1,"
+require_text "${MODEL_HEADER}" "TRAILING_OFFSET_TYPE_BASIS_POINTS = 2,"
+require_text "${MODEL_HEADER}" "TRAILING_OFFSET_TYPE_TICKS = 3,"
+require_text "${MODEL_HEADER}" "TRAILING_OFFSET_TYPE_PRICE_TIER = 4,"
+require_text "${MODEL_HEADER}" "} TrailingOffsetType;"
+require_text "${MODEL_HEADER}" "typedef enum TriggerType {"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_NO_TRIGGER = 0,"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_DEFAULT = 1,"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_LAST_PRICE = 2,"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_MARK_PRICE = 3,"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_INDEX_PRICE = 4,"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_BID_ASK = 5,"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_DOUBLE_LAST = 6,"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_DOUBLE_BID_ASK = 7,"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_LAST_OR_BID_ASK = 8,"
+require_text "${MODEL_HEADER}" "TRIGGER_TYPE_MID_POINT = 9,"
+require_text "${MODEL_HEADER}" "} TriggerType;"
 require_text "${MODEL_HEADER}" "typedef struct BookOrder_t {"
 require_text "${MODEL_HEADER}" "typedef struct OrderBookDelta_t {"
 require_text "${MODEL_HEADER}" "typedef struct OrderBookDepth10_t {"
@@ -78,6 +103,9 @@ require_text "${MODEL_HEADER}" "#define NULL_ORDER"
 
 reject_pattern "${MODEL_HEADER}" "typedef (enum|struct) OrderSideOptional"
 reject_pattern "${MODEL_HEADER}" "typedef (enum|struct) PositionSideOptional"
+reject_pattern "${MODEL_HEADER}" "typedef (enum|struct) ContingencyTypeOptional"
+reject_pattern "${MODEL_HEADER}" "typedef (enum|struct) TrailingOffsetTypeOptional"
+reject_pattern "${MODEL_HEADER}" "typedef (enum|struct) TriggerTypeOptional"
 reject_pattern "${MODEL_HEADER}" "typedef struct BookOrder BookOrder;"
 reject_pattern "${MODEL_HEADER}" "typedef (enum|struct) BookOrderFfi"
 reject_pattern "${MODEL_HEADER}" "typedef (enum|struct) OrderBookDeltaFfi"
@@ -100,6 +128,25 @@ _Static_assert(POSITION_SIDE_NO_POSITION_SIDE == 0, "NO_POSITION_SIDE value chan
 _Static_assert(POSITION_SIDE_FLAT == 1, "POSITION_SIDE_FLAT value changed");
 _Static_assert(POSITION_SIDE_LONG == 2, "POSITION_SIDE_LONG value changed");
 _Static_assert(POSITION_SIDE_SHORT == 3, "POSITION_SIDE_SHORT value changed");
+_Static_assert(CONTINGENCY_TYPE_NO_CONTINGENCY == 0, "NO_CONTINGENCY value changed");
+_Static_assert(CONTINGENCY_TYPE_OCO == 1, "CONTINGENCY_TYPE_OCO value changed");
+_Static_assert(CONTINGENCY_TYPE_OTO == 2, "CONTINGENCY_TYPE_OTO value changed");
+_Static_assert(CONTINGENCY_TYPE_OUO == 3, "CONTINGENCY_TYPE_OUO value changed");
+_Static_assert(TRAILING_OFFSET_TYPE_NO_TRAILING_OFFSET == 0, "NO_TRAILING_OFFSET value changed");
+_Static_assert(TRAILING_OFFSET_TYPE_PRICE == 1, "TRAILING_OFFSET_TYPE_PRICE value changed");
+_Static_assert(TRAILING_OFFSET_TYPE_BASIS_POINTS == 2, "TRAILING_OFFSET_TYPE_BASIS_POINTS value changed");
+_Static_assert(TRAILING_OFFSET_TYPE_TICKS == 3, "TRAILING_OFFSET_TYPE_TICKS value changed");
+_Static_assert(TRAILING_OFFSET_TYPE_PRICE_TIER == 4, "TRAILING_OFFSET_TYPE_PRICE_TIER value changed");
+_Static_assert(TRIGGER_TYPE_NO_TRIGGER == 0, "NO_TRIGGER value changed");
+_Static_assert(TRIGGER_TYPE_DEFAULT == 1, "TRIGGER_TYPE_DEFAULT value changed");
+_Static_assert(TRIGGER_TYPE_LAST_PRICE == 2, "TRIGGER_TYPE_LAST_PRICE value changed");
+_Static_assert(TRIGGER_TYPE_MARK_PRICE == 3, "TRIGGER_TYPE_MARK_PRICE value changed");
+_Static_assert(TRIGGER_TYPE_INDEX_PRICE == 4, "TRIGGER_TYPE_INDEX_PRICE value changed");
+_Static_assert(TRIGGER_TYPE_BID_ASK == 5, "TRIGGER_TYPE_BID_ASK value changed");
+_Static_assert(TRIGGER_TYPE_DOUBLE_LAST == 6, "TRIGGER_TYPE_DOUBLE_LAST value changed");
+_Static_assert(TRIGGER_TYPE_DOUBLE_BID_ASK == 7, "TRIGGER_TYPE_DOUBLE_BID_ASK value changed");
+_Static_assert(TRIGGER_TYPE_LAST_OR_BID_ASK == 8, "TRIGGER_TYPE_LAST_OR_BID_ASK value changed");
+_Static_assert(TRIGGER_TYPE_MID_POINT == 9, "TRIGGER_TYPE_MID_POINT value changed");
 
 static BookOrder_t (*book_order_new_fn)(OrderSide, Price_t, Quantity_t, uint64_t) = book_order_new;
 static BookOrder_t null_order = NULL_ORDER;

@@ -333,7 +333,7 @@ impl OrderStatusReport {
 
     #[getter]
     #[pyo3(name = "contingency_type")]
-    const fn py_contingency_type(&self) -> ContingencyType {
+    const fn py_contingency_type(&self) -> Option<ContingencyType> {
         self.contingency_type
     }
 
@@ -381,7 +381,7 @@ impl OrderStatusReport {
 
     #[getter]
     #[pyo3(name = "trailing_offset_type")]
-    const fn py_trailing_offset_type(&self) -> TrailingOffsetType {
+    const fn py_trailing_offset_type(&self) -> Option<TrailingOffsetType> {
         self.trailing_offset_type
     }
 
@@ -472,10 +472,17 @@ impl OrderStatusReport {
         dict.set_item("ts_accepted", self.ts_accepted.as_u64())?;
         dict.set_item("ts_last", self.ts_last.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
-        dict.set_item("contingency_type", self.contingency_type.to_string())?;
+        dict.set_item(
+            "contingency_type",
+            self.contingency_type
+                .as_ref()
+                .map_or("NO_CONTINGENCY", AsRef::as_ref),
+        )?;
         dict.set_item(
             "trailing_offset_type",
-            self.trailing_offset_type.to_string(),
+            self.trailing_offset_type
+                .as_ref()
+                .map_or("NO_TRAILING_OFFSET", AsRef::as_ref),
         )?;
         dict.set_item("post_only", self.post_only)?;
         dict.set_item("reduce_only", self.reduce_only)?;

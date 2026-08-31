@@ -29,6 +29,50 @@ use crate::enums::{
     TradingState, TrailingOffsetType, TriggerType,
 };
 
+/// The stable zero-inclusive contingency-type representation required by the existing C ABI.
+///
+/// Use [`Option<ContingencyType>`] for ordinary Rust optionality.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Display, Hash, PartialEq, Eq, AsRefStr, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum ContingencyTypeOptional {
+    /// Compatibility value for no specified contingency type.
+    ///
+    /// This value may be removed in a future version.
+    #[default]
+    NoContingency = 0,
+    /// One-Cancels-the-Other.
+    Oco = 1,
+    /// One-Triggers-the-Other.
+    Oto = 2,
+    /// One-Updates-the-Other.
+    Ouo = 3,
+}
+
+impl ContingencyTypeOptional {
+    #[must_use]
+    pub const fn as_option(self) -> Option<ContingencyType> {
+        match self {
+            Self::NoContingency => None,
+            Self::Oco => Some(ContingencyType::Oco),
+            Self::Oto => Some(ContingencyType::Oto),
+            Self::Ouo => Some(ContingencyType::Ouo),
+        }
+    }
+}
+
+impl From<Option<ContingencyType>> for ContingencyTypeOptional {
+    fn from(value: Option<ContingencyType>) -> Self {
+        match value {
+            None => Self::NoContingency,
+            Some(ContingencyType::Oco) => Self::Oco,
+            Some(ContingencyType::Oto) => Self::Oto,
+            Some(ContingencyType::Ouo) => Self::Ouo,
+        }
+    }
+}
+
 /// The stable zero-inclusive order-side representation required by the existing C ABI.
 ///
 /// Use [`Option<OrderSide>`] for ordinary Rust optionality.
@@ -109,6 +153,122 @@ impl From<Option<PositionSide>> for PositionSideOptional {
             Some(PositionSide::Flat) => Self::Flat,
             Some(PositionSide::Long) => Self::Long,
             Some(PositionSide::Short) => Self::Short,
+        }
+    }
+}
+
+/// The stable zero-inclusive trailing-offset-type representation required by the existing C ABI.
+///
+/// Use [`Option<TrailingOffsetType>`] for ordinary Rust optionality.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Display, Hash, PartialEq, Eq, AsRefStr, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum TrailingOffsetTypeOptional {
+    /// Compatibility value for no specified trailing offset type.
+    ///
+    /// This value may be removed in a future version.
+    #[default]
+    NoTrailingOffset = 0,
+    /// The trailing offset is based on a market price.
+    Price = 1,
+    /// The trailing offset is based on basis points.
+    BasisPoints = 2,
+    /// The trailing offset is based on ticks.
+    Ticks = 3,
+    /// The trailing offset is based on a venue-defined price tier.
+    PriceTier = 4,
+}
+
+impl TrailingOffsetTypeOptional {
+    #[must_use]
+    pub const fn as_option(self) -> Option<TrailingOffsetType> {
+        match self {
+            Self::NoTrailingOffset => None,
+            Self::Price => Some(TrailingOffsetType::Price),
+            Self::BasisPoints => Some(TrailingOffsetType::BasisPoints),
+            Self::Ticks => Some(TrailingOffsetType::Ticks),
+            Self::PriceTier => Some(TrailingOffsetType::PriceTier),
+        }
+    }
+}
+
+impl From<Option<TrailingOffsetType>> for TrailingOffsetTypeOptional {
+    fn from(value: Option<TrailingOffsetType>) -> Self {
+        match value {
+            None => Self::NoTrailingOffset,
+            Some(TrailingOffsetType::Price) => Self::Price,
+            Some(TrailingOffsetType::BasisPoints) => Self::BasisPoints,
+            Some(TrailingOffsetType::Ticks) => Self::Ticks,
+            Some(TrailingOffsetType::PriceTier) => Self::PriceTier,
+        }
+    }
+}
+
+/// The stable zero-inclusive trigger-type representation required by the existing C ABI.
+///
+/// Use [`Option<TriggerType>`] for ordinary Rust optionality.
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Display, Hash, PartialEq, Eq, AsRefStr, EnumString)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+pub enum TriggerTypeOptional {
+    /// Compatibility value for no specified trigger type.
+    ///
+    /// This value may be removed in a future version.
+    #[default]
+    NoTrigger = 0,
+    /// The venue default trigger type.
+    Default = 1,
+    /// The last traded price.
+    LastPrice = 2,
+    /// The mark price.
+    MarkPrice = 3,
+    /// The index price.
+    IndexPrice = 4,
+    /// The bid or ask price.
+    BidAsk = 5,
+    /// Two consecutive last prices.
+    DoubleLast = 6,
+    /// Two consecutive bid or ask prices.
+    DoubleBidAsk = 7,
+    /// The last price or bid or ask price.
+    LastOrBidAsk = 8,
+    /// The midpoint price.
+    MidPoint = 9,
+}
+
+impl TriggerTypeOptional {
+    #[must_use]
+    pub const fn as_option(self) -> Option<TriggerType> {
+        match self {
+            Self::NoTrigger => None,
+            Self::Default => Some(TriggerType::Default),
+            Self::LastPrice => Some(TriggerType::LastPrice),
+            Self::MarkPrice => Some(TriggerType::MarkPrice),
+            Self::IndexPrice => Some(TriggerType::IndexPrice),
+            Self::BidAsk => Some(TriggerType::BidAsk),
+            Self::DoubleLast => Some(TriggerType::DoubleLast),
+            Self::DoubleBidAsk => Some(TriggerType::DoubleBidAsk),
+            Self::LastOrBidAsk => Some(TriggerType::LastOrBidAsk),
+            Self::MidPoint => Some(TriggerType::MidPoint),
+        }
+    }
+}
+
+impl From<Option<TriggerType>> for TriggerTypeOptional {
+    fn from(value: Option<TriggerType>) -> Self {
+        match value {
+            None => Self::NoTrigger,
+            Some(TriggerType::Default) => Self::Default,
+            Some(TriggerType::LastPrice) => Self::LastPrice,
+            Some(TriggerType::MarkPrice) => Self::MarkPrice,
+            Some(TriggerType::IndexPrice) => Self::IndexPrice,
+            Some(TriggerType::BidAsk) => Self::BidAsk,
+            Some(TriggerType::DoubleLast) => Self::DoubleLast,
+            Some(TriggerType::DoubleBidAsk) => Self::DoubleBidAsk,
+            Some(TriggerType::LastOrBidAsk) => Self::LastOrBidAsk,
+            Some(TriggerType::MidPoint) => Self::MidPoint,
         }
     }
 }
@@ -300,7 +460,7 @@ pub unsafe extern "C" fn book_type_from_cstr(ptr: *const c_char) -> BookType {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn contingency_type_to_cstr(value: ContingencyType) -> *const c_char {
+pub extern "C" fn contingency_type_to_cstr(value: ContingencyTypeOptional) -> *const c_char {
     str_to_cstr(value.as_ref())
 }
 
@@ -312,13 +472,13 @@ pub extern "C" fn contingency_type_to_cstr(value: ContingencyType) -> *const c_c
 ///
 /// # Panics
 ///
-/// Panics if the C string does not correspond to a valid `ContingencyType` variant.
+/// Panics if the C string does not correspond to a valid `ContingencyTypeOptional` variant.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn contingency_type_from_cstr(ptr: *const c_char) -> ContingencyType {
+pub unsafe extern "C" fn contingency_type_from_cstr(ptr: *const c_char) -> ContingencyTypeOptional {
     abort_on_panic(|| {
         let value = unsafe { cstr_as_str(ptr) };
-        ContingencyType::from_str(value).unwrap_or_else(|_| {
-            panic!("invalid `ContingencyType` enum string value, was '{value}'")
+        ContingencyTypeOptional::from_str(value).unwrap_or_else(|_| {
+            panic!("invalid `ContingencyTypeOptional` enum string value, was '{value}'")
         })
     })
 }
@@ -724,7 +884,7 @@ pub unsafe extern "C" fn trading_state_from_cstr(ptr: *const c_char) -> TradingS
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn trailing_offset_type_to_cstr(value: TrailingOffsetType) -> *const c_char {
+pub extern "C" fn trailing_offset_type_to_cstr(value: TrailingOffsetTypeOptional) -> *const c_char {
     str_to_cstr(value.as_ref())
 }
 
@@ -736,19 +896,21 @@ pub extern "C" fn trailing_offset_type_to_cstr(value: TrailingOffsetType) -> *co
 ///
 /// # Panics
 ///
-/// Panics if the C string does not correspond to a valid `TrailingOffsetType` variant.
+/// Panics if the C string does not correspond to a valid `TrailingOffsetTypeOptional` variant.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn trailing_offset_type_from_cstr(ptr: *const c_char) -> TrailingOffsetType {
+pub unsafe extern "C" fn trailing_offset_type_from_cstr(
+    ptr: *const c_char,
+) -> TrailingOffsetTypeOptional {
     abort_on_panic(|| {
         let value = unsafe { cstr_as_str(ptr) };
-        TrailingOffsetType::from_str(value).unwrap_or_else(|_| {
-            panic!("invalid `TrailingOffsetType` enum string value, was '{value}'")
+        TrailingOffsetTypeOptional::from_str(value).unwrap_or_else(|_| {
+            panic!("invalid `TrailingOffsetTypeOptional` enum string value, was '{value}'")
         })
     })
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn trigger_type_to_cstr(value: TriggerType) -> *const c_char {
+pub extern "C" fn trigger_type_to_cstr(value: TriggerTypeOptional) -> *const c_char {
     str_to_cstr(value.as_ref())
 }
 
@@ -760,13 +922,14 @@ pub extern "C" fn trigger_type_to_cstr(value: TriggerType) -> *const c_char {
 ///
 /// # Panics
 ///
-/// Panics if the C string does not correspond to a valid `TriggerType` variant.
+/// Panics if the C string does not correspond to a valid `TriggerTypeOptional` variant.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn trigger_type_from_cstr(ptr: *const c_char) -> TriggerType {
+pub unsafe extern "C" fn trigger_type_from_cstr(ptr: *const c_char) -> TriggerTypeOptional {
     abort_on_panic(|| {
         let value = unsafe { cstr_as_str(ptr) };
-        TriggerType::from_str(value)
-            .unwrap_or_else(|_| panic!("invalid `TriggerType` enum string value, was '{value}'"))
+        TriggerTypeOptional::from_str(value).unwrap_or_else(|_| {
+            panic!("invalid `TriggerTypeOptional` enum string value, was '{value}'")
+        })
     })
 }
 
@@ -789,5 +952,65 @@ mod tests {
         assert_eq!(OrderSideOptional::NoOrderSide as u8, 0);
         assert_eq!(OrderSide::Buy as u8, 1);
         assert_eq!(OrderSide::Sell as u8, 2);
+    }
+
+    #[rstest]
+    #[case(None, ContingencyTypeOptional::NoContingency, 0)]
+    #[case(Some(ContingencyType::Oco), ContingencyTypeOptional::Oco, 1)]
+    #[case(Some(ContingencyType::Oto), ContingencyTypeOptional::Oto, 2)]
+    #[case(Some(ContingencyType::Ouo), ContingencyTypeOptional::Ouo, 3)]
+    fn test_contingency_type_optional_preserves_abi_values(
+        #[case] value: Option<ContingencyType>,
+        #[case] ffi_value: ContingencyTypeOptional,
+        #[case] discriminant: u8,
+    ) {
+        assert_eq!(ContingencyTypeOptional::from(value), ffi_value);
+        assert_eq!(ffi_value.as_option(), value);
+        assert_eq!(ffi_value as u8, discriminant);
+    }
+
+    #[rstest]
+    #[case(None, TrailingOffsetTypeOptional::NoTrailingOffset, 0)]
+    #[case(Some(TrailingOffsetType::Price), TrailingOffsetTypeOptional::Price, 1)]
+    #[case(
+        Some(TrailingOffsetType::BasisPoints),
+        TrailingOffsetTypeOptional::BasisPoints,
+        2
+    )]
+    #[case(Some(TrailingOffsetType::Ticks), TrailingOffsetTypeOptional::Ticks, 3)]
+    #[case(
+        Some(TrailingOffsetType::PriceTier),
+        TrailingOffsetTypeOptional::PriceTier,
+        4
+    )]
+    fn test_trailing_offset_type_optional_preserves_abi_values(
+        #[case] value: Option<TrailingOffsetType>,
+        #[case] ffi_value: TrailingOffsetTypeOptional,
+        #[case] discriminant: u8,
+    ) {
+        assert_eq!(TrailingOffsetTypeOptional::from(value), ffi_value);
+        assert_eq!(ffi_value.as_option(), value);
+        assert_eq!(ffi_value as u8, discriminant);
+    }
+
+    #[rstest]
+    #[case(None, TriggerTypeOptional::NoTrigger, 0)]
+    #[case(Some(TriggerType::Default), TriggerTypeOptional::Default, 1)]
+    #[case(Some(TriggerType::LastPrice), TriggerTypeOptional::LastPrice, 2)]
+    #[case(Some(TriggerType::MarkPrice), TriggerTypeOptional::MarkPrice, 3)]
+    #[case(Some(TriggerType::IndexPrice), TriggerTypeOptional::IndexPrice, 4)]
+    #[case(Some(TriggerType::BidAsk), TriggerTypeOptional::BidAsk, 5)]
+    #[case(Some(TriggerType::DoubleLast), TriggerTypeOptional::DoubleLast, 6)]
+    #[case(Some(TriggerType::DoubleBidAsk), TriggerTypeOptional::DoubleBidAsk, 7)]
+    #[case(Some(TriggerType::LastOrBidAsk), TriggerTypeOptional::LastOrBidAsk, 8)]
+    #[case(Some(TriggerType::MidPoint), TriggerTypeOptional::MidPoint, 9)]
+    fn test_trigger_type_optional_preserves_abi_values(
+        #[case] value: Option<TriggerType>,
+        #[case] ffi_value: TriggerTypeOptional,
+        #[case] discriminant: u8,
+    ) {
+        assert_eq!(TriggerTypeOptional::from(value), ffi_value);
+        assert_eq!(ffi_value.as_option(), value);
+        assert_eq!(ffi_value as u8, discriminant);
     }
 }

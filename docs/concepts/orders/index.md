@@ -181,7 +181,8 @@ The trigger type, also known as a
 [trigger method](https://www.interactivebrokers.com/en/software/tws/usersguidebook/configuretws/Modify%20the%20Stop%20Trigger%20Method.htm),
 specifies the market price used to trigger a conditional order.
 
-- `NO_TRIGGER`: Indicates that no trigger is specified; invalid for an order that requires one.
+An absent trigger type is represented by `None` and is invalid for an order that requires one.
+
 - `DEFAULT`: Uses the venue's default trigger type.
 - `LAST_PRICE`: Uses the last traded price.
 - `BID_ASK`: Uses the ask for BUY orders and the bid for SELL orders.
@@ -197,7 +198,8 @@ specifies the market price used to trigger a conditional order.
 The trailing offset type specifies how a trailing order calculates its trigger offset from the
 applicable market price.
 
-- `NO_TRAILING_OFFSET`: Indicates that no offset is specified; invalid for a trailing order.
+An absent trailing offset type is represented by `None` and is invalid for a trailing order.
+
 - `PRICE`: Uses a price difference.
 - `BASIS_POINTS`: Uses a percentage difference in basis points, where 100 basis points equals 1%.
 - `TICKS`: Uses a number of ticks.

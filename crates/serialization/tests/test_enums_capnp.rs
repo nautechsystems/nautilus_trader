@@ -167,28 +167,28 @@ fn test_time_in_force_roundtrip(#[case] value: TimeInForce) {
 }
 
 #[rstest]
-#[case(TriggerType::NoTrigger)]
-#[case(TriggerType::Default)]
-#[case(TriggerType::LastPrice)]
-#[case(TriggerType::MarkPrice)]
-#[case(TriggerType::IndexPrice)]
-#[case(TriggerType::BidAsk)]
-#[case(TriggerType::DoubleLast)]
-#[case(TriggerType::DoubleBidAsk)]
-#[case(TriggerType::LastOrBidAsk)]
-#[case(TriggerType::MidPoint)]
-fn test_trigger_type_roundtrip(#[case] value: TriggerType) {
+#[case(None)]
+#[case(Some(TriggerType::Default))]
+#[case(Some(TriggerType::LastPrice))]
+#[case(Some(TriggerType::MarkPrice))]
+#[case(Some(TriggerType::IndexPrice))]
+#[case(Some(TriggerType::BidAsk))]
+#[case(Some(TriggerType::DoubleLast))]
+#[case(Some(TriggerType::DoubleBidAsk))]
+#[case(Some(TriggerType::LastOrBidAsk))]
+#[case(Some(TriggerType::MidPoint))]
+fn test_trigger_type_roundtrip(#[case] value: Option<TriggerType>) {
     let capnp_value = trigger_type_to_capnp(value);
     let decoded = trigger_type_from_capnp(capnp_value);
     assert_eq!(value, decoded);
 }
 
 #[rstest]
-#[case(ContingencyType::NoContingency)]
-#[case(ContingencyType::Oco)]
-#[case(ContingencyType::Oto)]
-#[case(ContingencyType::Ouo)]
-fn test_contingency_type_roundtrip(#[case] value: ContingencyType) {
+#[case(None)]
+#[case(Some(ContingencyType::Oco))]
+#[case(Some(ContingencyType::Oto))]
+#[case(Some(ContingencyType::Ouo))]
+fn test_contingency_type_roundtrip(#[case] value: Option<ContingencyType>) {
     let capnp_value = contingency_type_to_capnp(value);
     let decoded = contingency_type_from_capnp(capnp_value);
     assert_eq!(value, decoded);
@@ -296,12 +296,12 @@ fn test_bar_aggregation_roundtrip(#[case] value: BarAggregation) {
 }
 
 #[rstest]
-#[case(TrailingOffsetType::NoTrailingOffset)]
-#[case(TrailingOffsetType::Price)]
-#[case(TrailingOffsetType::BasisPoints)]
-#[case(TrailingOffsetType::Ticks)]
-#[case(TrailingOffsetType::PriceTier)]
-fn test_trailing_offset_type_roundtrip(#[case] value: TrailingOffsetType) {
+#[case(None)]
+#[case(Some(TrailingOffsetType::Price))]
+#[case(Some(TrailingOffsetType::BasisPoints))]
+#[case(Some(TrailingOffsetType::Ticks))]
+#[case(Some(TrailingOffsetType::PriceTier))]
+fn test_trailing_offset_type_roundtrip(#[case] value: Option<TrailingOffsetType>) {
     let capnp_value = trailing_offset_type_to_capnp(value);
     let decoded = trailing_offset_type_from_capnp(capnp_value);
     assert_eq!(value, decoded);

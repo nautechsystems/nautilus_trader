@@ -4971,12 +4971,12 @@ impl ExecutionManager {
             report.trigger_type,
             report.limit_offset,
             report.trailing_offset,
-            Some(report.trailing_offset_type),
+            report.trailing_offset_type,
             report.expire_time,
             report.display_qty,
             None, // emulation_trigger
             None, // trigger_instrument_id
-            Some(report.contingency_type),
+            report.contingency_type,
             report.order_list_id,
             report.linked_order_ids.clone(),
             report.parent_order_id,

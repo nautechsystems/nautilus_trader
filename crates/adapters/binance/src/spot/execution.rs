@@ -2481,12 +2481,10 @@ fn spot_oco_leg_position(
 }
 
 fn is_grouped_order(order: &OrderAny) -> bool {
-    matches!(
-        order.contingency_type(),
-        Some(contingency_type) if contingency_type != ContingencyType::NoContingency
-    ) || order
-        .linked_order_ids()
-        .is_some_and(|linked_order_ids| !linked_order_ids.is_empty())
+    order.contingency_type().is_some()
+        || order
+            .linked_order_ids()
+            .is_some_and(|linked_order_ids| !linked_order_ids.is_empty())
 }
 
 fn handle_spot_order_submit_success(client_order_id: ClientOrderId, venue_order_id: VenueOrderId) {

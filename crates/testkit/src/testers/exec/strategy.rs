@@ -2152,8 +2152,6 @@ fn price_tick_offset(increment: Price, ticks: u64, precision: u8) -> Price {
         .unwrap_or_else(|e| panic!("Failed to calculate price tick offset: {e}"))
 }
 
-// `OrderAny::is_contingency` returns true for `Some(NoContingency)` (the factory
-// default on every order), so match the variant directly to distinguish bracket legs.
 fn is_in_contingency_group(order: &OrderAny) -> bool {
     matches!(
         order.contingency_type(),

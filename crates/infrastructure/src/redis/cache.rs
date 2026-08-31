@@ -60,7 +60,6 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, CustomData, DataType, FundingRateUpdate, HasTsInit, QuoteTick, TradeTick},
-    enums::TriggerType,
     events::{
         AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
         position::snapshot::PositionSnapshot,
@@ -1171,11 +1170,7 @@ fn update_order_indexes(pipe: &mut Pipeline, trader_key: &str, order: &OrderAny)
         );
     }
 
-    if order
-        .emulation_trigger()
-        .is_some_and(|trigger| trigger != TriggerType::NoTrigger)
-        && !order.is_closed()
-    {
+    if order.emulation_trigger().is_some() && !order.is_closed() {
         insert_set(
             pipe,
             &full_redis_key(trader_key, INDEX_ORDERS_EMULATED),
@@ -1653,10 +1648,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         self.database
             .insert(INDEX_ORDERS.to_string(), Some(vec![order_id_bytes.clone()]))?;
 
-        if order
-            .emulation_trigger()
-            .is_some_and(|trigger| trigger != TriggerType::NoTrigger)
-        {
+        if order.emulation_trigger().is_some() {
             self.database.insert(
                 INDEX_ORDERS_EMULATED.to_string(),
                 Some(vec![order_id_bytes.clone()]),

@@ -130,7 +130,7 @@ pub struct RestingOrder {
     pub client_order_id: ClientOrderId,
     pub order_side: OrderSide,
     pub order_type: OrderType,
-    pub trigger_type: TriggerType,
+    pub trigger_type: Option<TriggerType>,
     pub trigger_price: Option<Price>,
     pub limit_price: Option<Price>,
     pub is_activated: bool,
@@ -157,7 +157,10 @@ impl RestingOrder {
             client_order_id,
             order_side,
             order_type,
-            TriggerType::Default,
+            match trigger_price {
+                Some(_) => Some(TriggerType::Default),
+                None => None,
+            },
             trigger_price,
             limit_price,
             is_activated,
@@ -169,7 +172,7 @@ impl RestingOrder {
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         order_type: OrderType,
-        trigger_type: TriggerType,
+        trigger_type: Option<TriggerType>,
         trigger_price: Option<Price>,
         limit_price: Option<Price>,
         is_activated: bool,
@@ -205,7 +208,7 @@ impl From<&PassiveOrderAny> for RestingOrder {
                 client_order_id: limit.client_order_id(),
                 order_side: limit.order_side(),
                 order_type: limit.order_type(),
-                trigger_type: TriggerType::NoTrigger,
+                trigger_type: None,
                 trigger_price: None,
                 limit_price: Some(limit.limit_px()),
                 is_activated: true,
@@ -228,7 +231,7 @@ impl From<&PassiveOrderAny> for RestingOrder {
                     client_order_id: stop.client_order_id(),
                     order_side: stop.order_side(),
                     order_type: stop.order_type(),
-                    trigger_type: stop.trigger_type().unwrap_or(TriggerType::Default),
+                    trigger_type: Some(stop.trigger_type().unwrap_or(TriggerType::Default)),
                     trigger_price: stop.stop_px(),
                     limit_price,
                     is_activated,
@@ -590,12 +593,12 @@ impl OrderMatchingCore {
                 .is_touch_triggered_with_trigger_type(
                     order.order_side,
                     trigger_price,
-                    order.trigger_type,
+                    order.trigger_type.unwrap_or(TriggerType::Default),
                 ),
             _ => self.is_stop_matched_with_trigger_type(
                 order.order_side,
                 trigger_price,
-                order.trigger_type,
+                order.trigger_type.unwrap_or(TriggerType::Default),
             ),
         };
 
@@ -1492,7 +1495,7 @@ mod tests {
 
         assert_eq!(info.trigger_price, Some(Price::from("100.00")));
         assert_eq!(info.limit_price, Some(Price::from("99.00")));
-        assert_eq!(info.trigger_type, TriggerType::LastPrice);
+        assert_eq!(info.trigger_type, Some(TriggerType::LastPrice));
         assert!(info.is_activated);
     }
 

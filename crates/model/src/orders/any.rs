@@ -945,7 +945,7 @@ mod tests {
             .quantity(Quantity::from(10))
             .trigger_price(Price::new(100.0, 2))
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build();
 
         // Convert to StopOrderAny
@@ -961,7 +961,7 @@ mod tests {
         assert_eq!(order_any.trailing_offset(), Some(dec!(0.5)));
         assert_eq!(
             order_any.trailing_offset_type(),
-            Some(TrailingOffsetType::NoTrailingOffset)
+            Some(TrailingOffsetType::Price)
         );
     }
 
@@ -975,7 +975,7 @@ mod tests {
             .trigger_price(Price::new(100.0, 2))
             .limit_offset(Decimal::new(10, 1)) // 1.0
             .trailing_offset(Decimal::new(5, 1)) // 0.5
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
+            .trailing_offset_type(TrailingOffsetType::Price)
             .build();
 
         // Convert to LimitOrderAny

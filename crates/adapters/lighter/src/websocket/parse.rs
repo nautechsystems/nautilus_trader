@@ -1308,7 +1308,7 @@ mod tests {
     use std::str::FromStr;
 
     use nautilus_model::{
-        enums::{BarAggregation, ContingencyType, PriceType},
+        enums::{BarAggregation, PriceType},
         identifiers::{InstrumentId, StrategyId, Symbol, Venue},
         instruments::CryptoPerpetual,
         types::{Price, Quantity, currency::Currency},
@@ -1994,7 +1994,7 @@ mod tests {
                 .unwrap();
 
         assert!(report.parent_order_id.is_none());
-        assert_eq!(report.contingency_type, ContingencyType::NoContingency);
+        assert_eq!(report.contingency_type, None);
     }
 
     #[rstest]

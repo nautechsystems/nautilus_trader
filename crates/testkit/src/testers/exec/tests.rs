@@ -3208,8 +3208,7 @@ fn apply_pending_cancel_in_cache(cache: &Rc<RefCell<Cache>>, cid: ClientOrderId)
 }
 
 // Bracket sweep must not hijack a `batch_submit_limit_pair` OrderList, otherwise
-// the configured batch mode is starved. Guards `is_in_contingency_group` against
-// the `NoContingency` false-positive.
+// the configured batch mode is starved.
 #[rstest]
 fn test_batch_submit_limit_pair_flows_through_batch_cancel(
     mut config: ExecTesterConfig,

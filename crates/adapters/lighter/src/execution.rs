@@ -61,7 +61,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, ContingencyType, OmsType, OrderSide, OrderType, PositionSide},
+    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide},
     events::{OrderAccepted, OrderDeniedReason, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId, Venue, VenueOrderId,
@@ -5406,10 +5406,7 @@ fn unsupported_lighter_order_type_reason(order_type: OrderType) -> String {
 }
 
 fn is_grouped_order(order: &OrderAny) -> bool {
-    matches!(
-        order.contingency_type(),
-        Some(contingency) if contingency != ContingencyType::NoContingency
-    )
+    order.contingency_type().is_some()
 }
 
 fn is_lighter_spot_order(order: &OrderAny, instrument: Option<&InstrumentAny>) -> bool {
@@ -6071,7 +6068,7 @@ mod tests {
     };
     use nautilus_model::{
         data::QuoteTick,
-        enums::{LiquiditySide, OrderSide, OrderStatus, TimeInForce},
+        enums::{ContingencyType, LiquiditySide, OrderSide, OrderStatus, TimeInForce},
         events::{OrderCanceled, OrderEventAny, OrderPendingCancel, OrderTriggered},
         identifiers::{
             InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,

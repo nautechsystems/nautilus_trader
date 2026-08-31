@@ -860,9 +860,7 @@ mod tests {
 
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{
-            ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TrailingOffsetType,
-        },
+        enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
         identifiers::{AccountId, ClientOrderId, InstrumentId, VenueOrderId},
         reports::OrderStatusReport,
         types::{Price, Quantity},
@@ -969,7 +967,7 @@ mod tests {
             activation_price: None,
             trigger_price: None,
             trigger_type: None,
-            contingency_type: ContingencyType::NoContingency,
+            contingency_type: None,
             expire_time: None,
             order_list_id: None,
             venue_position_id: None,
@@ -978,7 +976,7 @@ mod tests {
             display_qty: None,
             limit_offset: None,
             trailing_offset: None,
-            trailing_offset_type: TrailingOffsetType::NoTrailingOffset,
+            trailing_offset_type: None,
             post_only: false,
             reduce_only: false,
             cancel_reason: None,

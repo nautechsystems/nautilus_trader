@@ -29,7 +29,6 @@ from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import ExecAlgorithmId
 from nautilus_trader.model import FundingRateUpdate
 from nautilus_trader.model import IndexPriceUpdate
@@ -264,7 +263,7 @@ class SignalHarvest(Strategy):
                 time_in_force=TimeInForce.GTC,
                 reduce_only=False,
                 quote_quantity=False,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
+                contingency_type=None,
             ),
         )
 
@@ -398,7 +397,7 @@ class BookChurn(Strategy):
                 time_in_force=TimeInForce.GTC,
                 reduce_only=False,
                 quote_quantity=False,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
+                contingency_type=None,
             ),
         )
 
@@ -495,7 +494,7 @@ class RoutedOrderProbe(Strategy):
                     time_in_force=TimeInForce.GTC,
                     reduce_only=False,
                     quote_quantity=False,
-                    contingency_type=ContingencyType.NO_CONTINGENCY,
+                    contingency_type=None,
                     exec_algorithm_id=self._exec_algorithm_id,
                     exec_spawn_id=client_order_id,
                 ),
@@ -991,6 +990,6 @@ class StreamingWhipsaw(Strategy):
                 time_in_force=TimeInForce.GTC,
                 reduce_only=False,
                 quote_quantity=False,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
+                contingency_type=None,
             ),
         )

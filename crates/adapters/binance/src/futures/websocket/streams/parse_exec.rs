@@ -133,7 +133,7 @@ pub fn parse_futures_order_update_to_order_status(
         .and_then(parse_trailing_offset_basis_points)
     {
         report.trailing_offset = Some(offset);
-        report.trailing_offset_type = TrailingOffsetType::BasisPoints;
+        report.trailing_offset_type = Some(TrailingOffsetType::BasisPoints);
     }
 
     if let Some(activation_price) = order

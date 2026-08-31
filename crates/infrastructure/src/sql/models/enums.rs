@@ -37,7 +37,7 @@ pub struct BarAggregationPg(pub BarAggregation);
 pub struct AssetClassPg(pub AssetClass);
 
 #[derive(Debug)]
-pub struct TrailingOffsetTypePg(pub TrailingOffsetType);
+pub struct TrailingOffsetTypePg(pub Option<TrailingOffsetType>);
 
 #[derive(Debug)]
 pub struct AggressorSidePg(pub AggressorSide);
@@ -122,26 +122,25 @@ impl sqlx::Encode<'_, sqlx::Postgres> for TrailingOffsetTypePg {
         &self,
         buf: &mut <Postgres as Database>::ArgumentBuffer,
     ) -> Result<IsNull, BoxDynError> {
-        let trailing_offset_type_str = match self.0 {
-            TrailingOffsetType::NoTrailingOffset => "NO_TRAILING_OFFSET",
-            TrailingOffsetType::Price => "PRICE",
-            TrailingOffsetType::BasisPoints => "BASIS_POINTS",
-            TrailingOffsetType::Ticks => "TICKS",
-            TrailingOffsetType::PriceTier => "PRICE_TIER",
-        };
-        <&str as sqlx::Encode<sqlx::Postgres>>::encode(trailing_offset_type_str, buf)
+        let value = self.0.as_ref().map_or("NO_TRAILING_OFFSET", AsRef::as_ref);
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(value, buf)
     }
 }
 
 impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TrailingOffsetTypePg {
     fn decode(value: <Postgres as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
         let trailing_offset_type_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
-        let trailing_offset_type =
-            TrailingOffsetType::from_str(trailing_offset_type_str).map_err(|_| {
-                sqlx::Error::Decode(
-                    format!("Invalid trailing offset type: {trailing_offset_type_str}").into(),
-                )
-            })?;
+        let trailing_offset_type = if trailing_offset_type_str == "NO_TRAILING_OFFSET" {
+            None
+        } else {
+            Some(
+                TrailingOffsetType::from_str(trailing_offset_type_str).map_err(|_| {
+                    sqlx::Error::Decode(
+                        format!("Invalid trailing offset type: {trailing_offset_type_str}").into(),
+                    )
+                })?,
+            )
+        };
         Ok(Self(trailing_offset_type))
     }
 }
@@ -367,7 +366,9 @@ mod tests {
             ("PRICE_TYPE", rust_enum_labels::<PriceType>()),
             (
                 "TRAILING_OFFSET_TYPE",
-                rust_enum_labels::<TrailingOffsetType>(),
+                std::iter::once("NO_TRAILING_OFFSET".to_string())
+                    .chain(rust_enum_labels::<TrailingOffsetType>())
+                    .collect(),
             ),
         ]
     }

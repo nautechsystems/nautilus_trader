@@ -25,7 +25,6 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import OrderSide
@@ -202,7 +201,7 @@ class EMACross(Strategy):
             time_in_force=TimeInForce.GTC,
             reduce_only=False,
             quote_quantity=False,
-            contingency_type=ContingencyType.NO_CONTINGENCY,
+            contingency_type=None,
         )
         self.submit_order(order)
 

@@ -1134,18 +1134,15 @@ impl BitmexHttpClient {
     }
 
     /// Check if the order has a contingency type that requires linking.
-    fn is_contingent_order(contingency_type: ContingencyType) -> bool {
-        matches!(
-            contingency_type,
-            ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo
-        )
+    fn is_contingent_order(contingency_type: Option<ContingencyType>) -> bool {
+        contingency_type.is_some()
     }
 
     /// Check if the order is a parent in contingency relationships.
-    fn is_parent_contingency(contingency_type: ContingencyType) -> bool {
+    fn is_parent_contingency(contingency_type: Option<ContingencyType>) -> bool {
         matches!(
             contingency_type,
-            ContingencyType::Oco | ContingencyType::Oto
+            Some(ContingencyType::Oco | ContingencyType::Oto)
         )
     }
 
@@ -1292,13 +1289,13 @@ impl BitmexHttpClient {
                 report.parent_order_id = None;
             }
 
-            if report.contingency_type == ContingencyType::Oto {
+            if report.contingency_type == Some(ContingencyType::Oto) {
                 log::debug!(
                     "BitMEX OTO order has no linked venue peers; reconciling as standalone: client_order_id={:?}, order_list_id={:?}",
                     report.client_order_id,
                     report.order_list_id,
                 );
-                report.contingency_type = ContingencyType::NoContingency;
+                report.contingency_type = None;
                 report.parent_order_id = None;
             } else if Self::is_contingent_order(report.contingency_type) {
                 log::warn!(
@@ -1307,7 +1304,7 @@ impl BitmexHttpClient {
                     report.order_list_id,
                     report.contingency_type,
                 );
-                report.contingency_type = ContingencyType::NoContingency;
+                report.contingency_type = None;
                 report.parent_order_id = None;
             }
 
@@ -2933,7 +2930,7 @@ mod tests {
     fn build_report(
         client_order_id: &str,
         venue_order_id: &str,
-        contingency_type: ContingencyType,
+        contingency_type: Option<ContingencyType>,
         order_list_id: Option<&str>,
     ) -> OrderStatusReport {
         let mut report = OrderStatusReport::new(
@@ -2957,7 +2954,8 @@ mod tests {
             report = report.with_order_list_id(OrderListId::from(id));
         }
 
-        report.with_contingency_type(contingency_type)
+        report.contingency_type = contingency_type;
+        report
     }
 
     #[rstest]
@@ -3145,9 +3143,9 @@ mod tests {
         let take = format!("{base}-3");
 
         let mut reports = vec![
-            build_report(&entry, "V-1", ContingencyType::Oto, Some("OL-1")),
-            build_report(&stop, "V-2", ContingencyType::Ouo, Some("OL-1")),
-            build_report(&take, "V-3", ContingencyType::Ouo, Some("OL-1")),
+            build_report(&entry, "V-1", Some(ContingencyType::Oto), Some("OL-1")),
+            build_report(&stop, "V-2", Some(ContingencyType::Ouo), Some("OL-1")),
+            build_report(&take, "V-3", Some(ContingencyType::Ouo), Some("OL-1")),
         ];
 
         BitmexHttpClient::populate_linked_order_ids(&mut reports);
@@ -3183,9 +3181,9 @@ mod tests {
         let take = format!("{base}-3");
 
         let mut reports = vec![
-            build_report(&entry, "V-1", ContingencyType::Oto, None),
-            build_report(&stop, "V-2", ContingencyType::Ouo, None),
-            build_report(&take, "V-3", ContingencyType::Ouo, None),
+            build_report(&entry, "V-1", Some(ContingencyType::Oto), None),
+            build_report(&stop, "V-2", Some(ContingencyType::Ouo), None),
+            build_report(&take, "V-3", Some(ContingencyType::Ouo), None),
         ];
 
         BitmexHttpClient::populate_linked_order_ids(&mut reports);
@@ -3220,8 +3218,8 @@ mod tests {
         let passive = format!("{base}-2");
 
         let mut reports = vec![
-            build_report(&entry, "V-1", ContingencyType::NoContingency, None),
-            build_report(&passive, "V-2", ContingencyType::Ouo, None),
+            build_report(&entry, "V-1", None, None),
+            build_report(&passive, "V-2", Some(ContingencyType::Ouo), None),
         ];
 
         BitmexHttpClient::populate_linked_order_ids(&mut reports);
@@ -3231,7 +3229,7 @@ mod tests {
 
         // A contingent order with no other contingent peers should have contingency reset
         assert!(reports[1].linked_order_ids.is_none());
-        assert_eq!(reports[1].contingency_type, ContingencyType::NoContingency);
+        assert_eq!(reports[1].contingency_type, None);
     }
 
     #[rstest]
@@ -3239,14 +3237,14 @@ mod tests {
         let mut reports = vec![build_report(
             "O-20250922-002222-001-000-1",
             "V-1",
-            ContingencyType::Oto,
+            Some(ContingencyType::Oto),
             Some("OL-1"),
         )];
 
         BitmexHttpClient::populate_linked_order_ids(&mut reports);
 
         assert!(reports[0].linked_order_ids.is_none());
-        assert_eq!(reports[0].contingency_type, ContingencyType::NoContingency);
+        assert_eq!(reports[0].contingency_type, None);
         assert_eq!(reports[0].parent_order_id, None);
     }
 }

@@ -12,12 +12,14 @@ a `LIMIT` order after its stop price triggers.
 Set `emulation_trigger` on an order constructor or `OrderFactory` method. The local emulator accepts
 these values:
 
-| Trigger type | Market data used                                       |
-| ------------ | ------------------------------------------------------ |
-| `DEFAULT`    | Quotes, with the same local behavior as `BID_ASK`.     |
-| `BID_ASK`    | Best bid and ask quotes.                               |
-| `LAST_PRICE` | Trades.                                                |
-| `NO_TRIGGER` | No local emulation; submit through the normal pathway. |
+| Trigger type | Market data used                                   |
+| ------------ | -------------------------------------------------- |
+| `DEFAULT`    | Quotes, with the same local behavior as `BID_ASK`. |
+| `BID_ASK`    | Best bid and ask quotes.                           |
+| `LAST_PRICE` | Trades.                                            |
+
+Leave `emulation_trigger` as `None` to disable local emulation and submit through the normal
+pathway.
 
 Other `TriggerType` values describe trigger methods that some venues support, but the local
 `OrderEmulator` does not accept them as `emulation_trigger` values.
@@ -74,8 +76,7 @@ When market data matches an emulated order, release performs these actions:
 
 - It transforms the order into a `MARKET` or `LIMIT` order through another `OrderInitialized`
   event.
-- It sets the order's `emulation_trigger` to `NO_TRIGGER` so components no longer treat it as
-  emulated.
+- It sets the order's `emulation_trigger` to `None` so components no longer treat it as emulated.
 - It sends the transformed order and original `SubmitOrder` command back through the `RiskEngine`.
 - If the risk engine does not deny it, the `ExecutionEngine` routes it to an `ExecutionClient`.
 

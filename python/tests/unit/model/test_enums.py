@@ -21,6 +21,7 @@ import pytest
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BookType
+from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentClass
 from nautilus_trader.model import MarketStatus
 from nautilus_trader.model import OmsType
@@ -30,6 +31,8 @@ from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PoolLiquidityUpdateType
 from nautilus_trader.model import PositionSide
 from nautilus_trader.model import TradingState
+from nautilus_trader.model import TrailingOffsetType
+from nautilus_trader.model import TriggerType
 
 
 def test_model_enum_variants_are_iterable() -> None:
@@ -98,6 +101,66 @@ def test_side_enums_accept_domain_tokens(
     """
     assert enum_type(token) == expected
     assert enum_type.from_str(token) == expected
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "expected"),
+    [
+        (ContingencyType, [ContingencyType.OCO, ContingencyType.OTO, ContingencyType.OUO]),
+        (
+            TrailingOffsetType,
+            [
+                TrailingOffsetType.PRICE,
+                TrailingOffsetType.BASIS_POINTS,
+                TrailingOffsetType.TICKS,
+                TrailingOffsetType.PRICE_TIER,
+            ],
+        ),
+        (
+            TriggerType,
+            [
+                TriggerType.DEFAULT,
+                TriggerType.LAST_PRICE,
+                TriggerType.MARK_PRICE,
+                TriggerType.INDEX_PRICE,
+                TriggerType.BID_ASK,
+                TriggerType.DOUBLE_LAST,
+                TriggerType.DOUBLE_BID_ASK,
+                TriggerType.LAST_OR_BID_ASK,
+                TriggerType.MID_POINT,
+            ],
+        ),
+    ],
+)
+def test_optional_domain_enums_expose_only_domain_states(
+    enum_type: object,
+    expected: object,
+) -> None:
+    """
+    Test optional domain enums expose only valid domain states.
+    """
+    assert list(enum_type.variants()) == expected
+
+
+@pytest.mark.parametrize(
+    ("enum_type", "alias", "token"),
+    [
+        (ContingencyType, "NO_CONTINGENCY", "NO_CONTINGENCY"),
+        (TrailingOffsetType, "NO_TRAILING_OFFSET", "NO_TRAILING_OFFSET"),
+        (TriggerType, "NO_TRIGGER", "NO_TRIGGER"),
+    ],
+)
+def test_optional_domain_enums_retain_none_compatibility(
+    enum_type: object,
+    alias: str,
+    token: str,
+) -> None:
+    """
+    Test optional domain enums retain transitional aliases and parsing.
+    """
+    assert getattr(enum_type, alias) is None
+    assert enum_type(token) is None
+    assert enum_type.from_str(token) is None
 
 
 @pytest.mark.parametrize(

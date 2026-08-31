@@ -3642,7 +3642,7 @@ mod tests {
     fn limit_order(
         id: &str,
         reduce_only: bool,
-        contingency: ContingencyType,
+        contingency: Option<ContingencyType>,
         linked_ids: Option<Vec<&str>>,
         parent_id: Option<&str>,
     ) -> OrderAny {
@@ -3662,7 +3662,7 @@ mod tests {
             None,  // display_qty
             None,  // emulation_trigger
             None,  // trigger_instrument_id
-            Some(contingency),
+            contingency,
             None, // order_list_id
             linked_ids.map(|ids| ids.into_iter().map(ClientOrderId::from).collect()),
             parent_id.map(ClientOrderId::from),
@@ -3678,7 +3678,7 @@ mod tests {
     fn stop_order(
         id: &str,
         reduce_only: bool,
-        contingency: ContingencyType,
+        contingency: Option<ContingencyType>,
         linked_ids: Option<Vec<&str>>,
         parent_id: Option<&str>,
     ) -> OrderAny {
@@ -3698,7 +3698,7 @@ mod tests {
             None,  // display_qty
             None,  // emulation_trigger
             None,  // trigger_instrument_id
-            Some(contingency),
+            contingency,
             None, // order_list_id
             linked_ids.map(|ids| ids.into_iter().map(ClientOrderId::from).collect()),
             parent_id.map(ClientOrderId::from),
@@ -3716,7 +3716,7 @@ mod tests {
             order: limit_order(
                 id,
                 true,
-                ContingencyType::Ouo,
+                Some(ContingencyType::Ouo),
                 Some(vec![sibling_id]),
                 Some("O-PARENT"),
             ),
@@ -3845,72 +3845,72 @@ mod tests {
     #[rstest]
     #[case::independent_orders(
         vec![
-            limit_order("O-001", false, ContingencyType::NoContingency, None, None),
-            limit_order("O-002", false, ContingencyType::NoContingency, None, None),
+            limit_order("O-001", false, None, None, None),
+            limit_order("O-002", false, None, None, None),
         ],
         HyperliquidExchangeGrouping::Na,
     )]
     #[case::bracket_oto(
         vec![
-            limit_order("O-001", false, ContingencyType::Oto, Some(vec!["O-002", "O-003"]), None),
-            limit_order("O-002", true, ContingencyType::Oco, Some(vec!["O-003"]), Some("O-001")),
-            stop_order("O-003", true, ContingencyType::Oco, Some(vec!["O-002"]), Some("O-001")),
+            limit_order("O-001", false, Some(ContingencyType::Oto), Some(vec!["O-002", "O-003"]), None),
+            limit_order("O-002", true, Some(ContingencyType::Oco), Some(vec!["O-003"]), Some("O-001")),
+            stop_order("O-003", true, Some(ContingencyType::Oco), Some(vec!["O-002"]), Some("O-001")),
         ],
         HyperliquidExchangeGrouping::NormalTpsl,
     )]
     #[case::bracket_oto_with_factory_ouo_children(
         vec![
-            limit_order("O-001", false, ContingencyType::Oto, Some(vec!["O-002", "O-003"]), None),
-            limit_order("O-002", true, ContingencyType::Ouo, Some(vec!["O-003"]), Some("O-001")),
-            stop_order("O-003", true, ContingencyType::Ouo, Some(vec!["O-002"]), Some("O-001")),
+            limit_order("O-001", false, Some(ContingencyType::Oto), Some(vec!["O-002", "O-003"]), None),
+            limit_order("O-002", true, Some(ContingencyType::Ouo), Some(vec!["O-003"]), Some("O-001")),
+            stop_order("O-003", true, Some(ContingencyType::Ouo), Some(vec!["O-002"]), Some("O-001")),
         ],
         HyperliquidExchangeGrouping::NormalTpsl,
     )]
     #[case::oto_not_bracket_shaped(
         vec![
-            limit_order("O-001", false, ContingencyType::Oto, Some(vec!["O-002"]), None),
-            limit_order("O-002", false, ContingencyType::Oto, Some(vec!["O-001"]), None),
+            limit_order("O-001", false, Some(ContingencyType::Oto), Some(vec!["O-002"]), None),
+            limit_order("O-002", false, Some(ContingencyType::Oto), Some(vec!["O-001"]), None),
         ],
         HyperliquidExchangeGrouping::Na,
     )]
     #[case::oco_all_reduce_only(
         vec![
-            limit_order("O-001", true, ContingencyType::Oco, Some(vec!["O-002"]), None),
-            stop_order("O-002", true, ContingencyType::Oco, Some(vec!["O-001"]), None),
+            limit_order("O-001", true, Some(ContingencyType::Oco), Some(vec!["O-002"]), None),
+            stop_order("O-002", true, Some(ContingencyType::Oco), Some(vec!["O-001"]), None),
         ],
         HyperliquidExchangeGrouping::PositionTpsl,
     )]
     #[case::oco_not_all_reduce_only(
         vec![
-            limit_order("O-001", false, ContingencyType::Oco, Some(vec!["O-002"]), None),
-            stop_order("O-002", true, ContingencyType::Oco, Some(vec!["O-001"]), None),
+            limit_order("O-001", false, Some(ContingencyType::Oco), Some(vec!["O-002"]), None),
+            stop_order("O-002", true, Some(ContingencyType::Oco), Some(vec!["O-001"]), None),
         ],
         HyperliquidExchangeGrouping::Na,
     )]
     #[case::oto_with_non_oco_children(
         vec![
-            limit_order("O-001", false, ContingencyType::Oto, Some(vec!["O-002", "O-003"]), None),
-            limit_order("O-002", true, ContingencyType::NoContingency, None, None),
-            stop_order("O-003", true, ContingencyType::NoContingency, None, None),
+            limit_order("O-001", false, Some(ContingencyType::Oto), Some(vec!["O-002", "O-003"]), None),
+            limit_order("O-002", true, None, None, None),
+            stop_order("O-003", true, None, None, None),
         ],
         HyperliquidExchangeGrouping::Na,
     )]
     #[case::mixed_oco_and_plain_reduce_only(
         vec![
-            limit_order("O-001", true, ContingencyType::Oco, Some(vec!["O-002"]), None),
-            stop_order("O-002", true, ContingencyType::NoContingency, None, None),
+            limit_order("O-001", true, Some(ContingencyType::Oco), Some(vec!["O-002"]), None),
+            stop_order("O-002", true, None, None, None),
         ],
         HyperliquidExchangeGrouping::Na,
     )]
     #[case::unlinked_oco_reduce_only(
         vec![
-            limit_order("O-001", true, ContingencyType::Oco, Some(vec!["O-099"]), None),
-            stop_order("O-002", true, ContingencyType::Oco, Some(vec!["O-098"]), None),
+            limit_order("O-001", true, Some(ContingencyType::Oco), Some(vec!["O-099"]), None),
+            stop_order("O-002", true, Some(ContingencyType::Oco), Some(vec!["O-098"]), None),
         ],
         HyperliquidExchangeGrouping::Na,
     )]
     #[case::single_order(
-        vec![limit_order("O-001", false, ContingencyType::NoContingency, None, None)],
+        vec![limit_order("O-001", false, None, None, None)],
         HyperliquidExchangeGrouping::Na,
     )]
     fn test_determine_order_list_grouping(
@@ -3997,7 +3997,7 @@ mod tests {
             None,
             None,
             None,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -4932,7 +4932,7 @@ mod tests {
             None,
             None,
             None,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -4962,7 +4962,7 @@ mod tests {
             None,
             None,
             None,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -4992,7 +4992,7 @@ mod tests {
             None,
             None,
             None,
-            Some(ContingencyType::NoContingency),
+            None,
             None,
             None,
             None,
@@ -5007,13 +5007,7 @@ mod tests {
 
     #[rstest]
     fn test_validate_accepts_perp_limit_order() {
-        let order = limit_order(
-            "O-VAL-PERP",
-            false,
-            ContingencyType::NoContingency,
-            None,
-            None,
-        );
+        let order = limit_order("O-VAL-PERP", false, None, None, None);
         validate_order_for_hyperliquid(&order).unwrap();
     }
 

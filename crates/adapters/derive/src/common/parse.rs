@@ -605,7 +605,6 @@ mod tests {
             TriggerType::IndexPrice,
             TriggerType::LastPrice,
             TriggerType::BidAsk,
-            TriggerType::NoTrigger,
         ] {
             let err = trigger_price_type_to_derive(Some(trigger_type))
                 .expect_err("unsupported trigger price type must fail");

@@ -41,7 +41,6 @@ from nautilus_trader.execution import TieredNotionalOptionFeeModel
 from nautilus_trader.execution import TwoTierFillModel
 from nautilus_trader.execution import VolumeSensitiveFillModel
 from nautilus_trader.model import ClientOrderId
-from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import Money
 from nautilus_trader.model import OrderSide
@@ -403,7 +402,7 @@ def test_fixed_fee_model_get_commission_direct_call() -> None:
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
     result = model.get_commission(
@@ -429,7 +428,7 @@ def _make_market_order(instrument: object) -> object:
         time_in_force=TimeInForce.GTC,
         reduce_only=False,
         quote_quantity=False,
-        contingency_type=ContingencyType.NO_CONTINGENCY,
+        contingency_type=None,
     )
 
 

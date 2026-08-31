@@ -539,7 +539,7 @@ impl OrderEmulator {
 
     /// # Panics
     ///
-    /// Panics if the emulation trigger type is `NoTrigger` or if order not in cache.
+    /// Panics if the emulation trigger type is not set or if the order is not in the cache.
     pub fn handle_submit_order(&mut self, command: &SubmitOrder) {
         let client_order_id = command.client_order_id;
 
@@ -560,10 +560,9 @@ impl OrderEmulator {
             self.manager.cache_submit_order_command(command.clone());
         }
 
-        assert_ne!(
-            emulation_trigger,
-            Some(TriggerType::NoTrigger),
-            "order.emulation_trigger must not be TriggerType::NoTrigger"
+        assert!(
+            emulation_trigger.is_some(),
+            "order.emulation_trigger must be set"
         );
 
         if !matches!(
@@ -1130,7 +1129,7 @@ impl OrderEmulator {
         log::info!("Canceling order {}", order.client_order_id());
 
         let mut order = order.clone();
-        order.set_emulation_trigger(Some(TriggerType::NoTrigger));
+        order.set_emulation_trigger(None);
 
         let trigger_instrument_id = order
             .trigger_instrument_id()
@@ -1309,8 +1308,6 @@ impl OrderEmulator {
                 log::debug!("Error deleting order: {e:?}");
             }
 
-            let emulation_trigger = TriggerType::NoTrigger;
-
             // Transform order
             let mut transformed = if let Ok(transformed) = LimitOrder::new_checked(
                 order.trader_id(),
@@ -1326,7 +1323,7 @@ impl OrderEmulator {
                 order.is_reduce_only(),
                 order.is_quote_quantity(),
                 order.display_qty(),
-                Some(emulation_trigger),
+                None,
                 Some(trigger_instrument_id),
                 order.contingency_type(),
                 order.order_list_id(),
@@ -1465,7 +1462,7 @@ impl OrderEmulator {
                 log::debug!("Cannot delete order: {e:?}");
             }
 
-            order.set_emulation_trigger(Some(TriggerType::NoTrigger));
+            order.set_emulation_trigger(None);
 
             // Transform order
             let mut transformed = MarketOrder::new(
@@ -2327,7 +2324,7 @@ mod tests {
             MessagingSwitchboard::risk_engine_queue_execute(),
             handler,
         );
-        let order = create_stop_market_order(&instrument, TriggerType::NoTrigger);
+        let order = create_stop_market_order(&instrument, TriggerType::Default);
         let command = create_submit_order(&instrument, &order);
         let client_order_id = command.client_order_id;
 
@@ -2354,7 +2351,7 @@ mod tests {
         let (handler, messages) =
             get_any_saving_handler::<TradingCommand>(Some(Ustr::from("ALG-001.execute")));
         msgbus::register_any(endpoint.into(), handler);
-        let order = create_stop_market_order(&instrument, TriggerType::NoTrigger);
+        let order = create_stop_market_order(&instrument, TriggerType::Default);
         let command = create_submit_order(&instrument, &order);
         let client_order_id = command.client_order_id;
 

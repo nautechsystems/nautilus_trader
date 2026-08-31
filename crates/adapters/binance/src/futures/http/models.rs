@@ -2533,7 +2533,10 @@ mod tests {
         assert_eq!(report.trigger_price, Some(Price::from("45000.00")));
         assert_eq!(report.trigger_type, Some(TriggerType::MarkPrice));
         assert_eq!(report.trailing_offset, Some(Decimal::from(25)));
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints);
+        assert_eq!(
+            report.trailing_offset_type,
+            Some(TrailingOffsetType::BasisPoints),
+        );
     }
 
     #[rstest]

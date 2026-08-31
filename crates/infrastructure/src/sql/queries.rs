@@ -360,7 +360,11 @@ impl DatabaseQueries {
             .bind(snapshot.trigger_type.map(|x| x.to_string()))
             .bind(snapshot.limit_offset.map(|x| x.to_string()))
             .bind(snapshot.trailing_offset.map(|x| x.to_string()))
-            .bind(snapshot.trailing_offset_type.map(|x| x.to_string()))
+            .bind(
+                snapshot
+                    .trailing_offset_type
+                    .map(|value| TrailingOffsetTypePg(Some(value))),
+            )
             .bind(snapshot.time_in_force.to_string())
             .bind(snapshot.expire_time.map(|x| x.to_string()))
             .bind(snapshot.filled_qty.to_string())
@@ -373,9 +377,16 @@ impl DatabaseQueries {
             .bind(snapshot.is_reduce_only)
             .bind(snapshot.is_quote_quantity)
             .bind(snapshot.display_qty.map(|x| x.to_string()))
-            .bind(snapshot.emulation_trigger.map(|x| x.to_string()))
+            .bind(
+                snapshot
+                    .emulation_trigger
+                    .map_or_else(|| "NO_TRIGGER".to_string(), |value| value.to_string()),
+            )
             .bind(snapshot.trigger_instrument_id.map(|x| x.to_string()))
-            .bind(snapshot.contingency_type.map(|x| x.to_string()))
+            .bind(snapshot.contingency_type.map_or_else(
+                || "NO_CONTINGENCY".to_string(),
+                |value| value.to_string(),
+            ))
             .bind(snapshot.order_list_id.map(|x| x.to_string()))
             .bind(snapshot.linked_order_ids.map(|x| x.iter().map(ToString::to_string).collect::<Vec<String>>()))
             .bind(snapshot.parent_order_id.map(|x| x.to_string()))
@@ -650,12 +661,23 @@ impl DatabaseQueries {
             .bind(order_event.trigger_type().map(|x| x.to_string()))
             .bind(order_event.limit_offset().map(|x| x.to_string()))
             .bind(order_event.trailing_offset().map(|x| x.to_string()))
-            .bind(order_event.trailing_offset_type().map(TrailingOffsetTypePg))
+            .bind(
+                order_event
+                    .trailing_offset_type()
+                    .map(|value| TrailingOffsetTypePg(Some(value))),
+            )
             .bind(order_event.expire_time().map(|x| x.to_string()))
             .bind(order_event.display_qty().map(|x| x.to_string()))
-            .bind(order_event.emulation_trigger().map(|x| x.to_string()))
+            .bind(
+                order_event
+                    .emulation_trigger()
+                    .map_or_else(|| "NO_TRIGGER".to_string(), |value| value.to_string()),
+            )
             .bind(order_event.trigger_instrument_id().map(|x| x.to_string()))
-            .bind(order_event.contingency_type().map(|x| x.to_string()))
+            .bind(order_event.contingency_type().map_or_else(
+                || "NO_CONTINGENCY".to_string(),
+                |value| value.to_string(),
+            ))
             .bind(order_event.order_list_id().map(|x| x.to_string()))
             .bind(order_event.linked_order_ids().map(|x| x.iter().map(ToString::to_string).collect::<Vec<String>>()))
             .bind(order_event.parent_order_id().map(|x| x.to_string()))

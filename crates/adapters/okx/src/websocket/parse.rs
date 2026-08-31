@@ -1608,10 +1608,10 @@ pub fn parse_algo_order_status_report(
             // OKX ratio is e.g. "0.01" for 1%, convert to basis points
             let ratio = Decimal::from_str(&msg.callback_ratio)?;
             report.trailing_offset = Some(ratio * Decimal::new(10_000, 0));
-            report.trailing_offset_type = TrailingOffsetType::BasisPoints;
+            report.trailing_offset_type = Some(TrailingOffsetType::BasisPoints);
         } else if !msg.callback_spread.is_empty() {
             report.trailing_offset = Some(Decimal::from_str(&msg.callback_spread)?);
-            report.trailing_offset_type = TrailingOffsetType::Price;
+            report.trailing_offset_type = Some(TrailingOffsetType::Price);
         }
 
         if !msg.active_px.is_empty() {
@@ -6746,7 +6746,10 @@ mod tests {
 
         assert_eq!(report.order_type, OrderType::TrailingStopMarket);
         assert_eq!(report.trailing_offset, Some(dec!(100)));
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints,);
+        assert_eq!(
+            report.trailing_offset_type,
+            Some(TrailingOffsetType::BasisPoints),
+        );
         assert_eq!(report.trigger_price, Some(Price::from("95000.00")));
     }
 
@@ -6781,7 +6784,7 @@ mod tests {
 
         assert_eq!(report.order_type, OrderType::TrailingStopMarket);
         assert_eq!(report.trailing_offset, Some(dec!(50.5)));
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::Price);
+        assert_eq!(report.trailing_offset_type, Some(TrailingOffsetType::Price),);
     }
 
     #[rstest]

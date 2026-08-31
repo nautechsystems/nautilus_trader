@@ -120,7 +120,7 @@ impl MarketToLimitOrder {
             None,
             expire_time,
             display_qty,
-            Some(TriggerType::NoTrigger),
+            None,
             None,
             contingency_type,
             order_list_id,

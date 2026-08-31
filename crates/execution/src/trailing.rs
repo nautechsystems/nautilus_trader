@@ -74,15 +74,6 @@ pub fn trailing_stop_calculate(
     let trailing_offset_type = order.trailing_offset_type().ok_or_else(|| {
         anyhow::anyhow!("Missing `TrailingOffsetType` for trailing stop calculation")
     })?;
-    anyhow::ensure!(
-        trigger_type != TriggerType::NoTrigger,
-        "Invalid `TriggerType::NoTrigger` for trailing stop calculation"
-    );
-    anyhow::ensure!(
-        trailing_offset_type != TrailingOffsetType::NoTrailingOffset,
-        "Invalid `TrailingOffsetType::NoTrailingOffset` for trailing stop calculation"
-    );
-
     let mut new_trigger_price: Option<Price>;
     let mut new_limit_price: Option<Price> = None;
 
@@ -346,30 +337,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_calculate_with_no_trailing_offset_type_returns_error() {
-        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+    #[should_panic(expected = "Trailing offset type not set")]
+    fn test_build_without_trailing_offset_type_panics() {
+        let _ = OrderTestBuilder::new(OrderType::TrailingStopMarket)
             .instrument_id("BTCUSDT-PERP.BINANCE".into())
             .side(OrderSide::Buy)
             .trigger_price(Price::new(100.0, 2))
-            .trailing_offset_type(TrailingOffsetType::NoTrailingOffset)
             .trailing_offset(dec!(1.0))
             .trigger_type(TriggerType::LastPrice)
             .quantity(Quantity::from(1))
             .build();
-
-        let result = trailing_stop_calculate(
-            Price::new(0.01, 2),
-            None,
-            &order,
-            None,
-            None,
-            Some(Price::new(99.0, 2)),
-        );
-
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Invalid `TrailingOffsetType::NoTrailingOffset` for trailing stop calculation"
-        );
     }
 
     #[rstest]

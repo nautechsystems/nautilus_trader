@@ -1125,7 +1125,7 @@ async fn test_submit_orders_resolves_outcome_response_instrument() {
     // loop, so a separate regression test guards against the two call sites
     // drifting apart.
     use nautilus_model::{
-        enums::{ContingencyType, OrderSide},
+        enums::OrderSide,
         identifiers::{InstrumentId, StrategyId, TraderId},
         orders::{LimitOrder, OrderAny},
         types::{Price, Quantity},
@@ -1170,7 +1170,7 @@ async fn test_submit_orders_resolves_outcome_response_instrument() {
         None,
         None,
         None,
-        Some(ContingencyType::NoContingency),
+        None,
         None,
         None,
         None,

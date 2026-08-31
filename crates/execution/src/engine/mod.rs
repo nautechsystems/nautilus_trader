@@ -69,7 +69,6 @@ use nautilus_model::{
     accounts::Account,
     enums::{
         AccountType, ContingencyType, OmsType, OrderStatus, OrderType, PositionSide, TimeInForce,
-        TrailingOffsetType, TriggerType,
     },
     events::{
         OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
@@ -1227,12 +1226,12 @@ impl ExecutionEngine {
             report.trigger_type,
             report.limit_offset,
             report.trailing_offset,
-            Some(report.trailing_offset_type),
+            report.trailing_offset_type,
             report.expire_time,
             report.display_qty,
             None, // emulation_trigger
             None, // trigger_instrument_id
-            Some(report.contingency_type),
+            report.contingency_type,
             report.order_list_id,
             report.linked_order_ids.clone(),
             report.parent_order_id,
@@ -1324,12 +1323,12 @@ impl ExecutionEngine {
             None, // trigger_type
             None, // limit_offset
             None, // trailing_offset
-            Some(TrailingOffsetType::NoTrailingOffset),
+            None,
             None, // expire_time
             None, // display_qty
             None, // emulation_trigger
             None, // trigger_instrument_id
-            Some(ContingencyType::NoContingency),
+            None,
             None, // order_list_id
             None, // linked_order_ids
             None, // parent_order_id
@@ -2510,10 +2509,7 @@ impl ExecutionEngine {
                         return None;
                     }
 
-                    let is_emulated = order.is_emulated()
-                        || order
-                            .emulation_trigger()
-                            .is_some_and(|trigger| trigger != TriggerType::NoTrigger);
+                    let is_emulated = order.is_emulated() || order.emulation_trigger().is_some();
                     if !is_emulated && order.exec_algorithm_id().is_none() {
                         return None;
                     }
@@ -2547,10 +2543,7 @@ impl ExecutionEngine {
                 continue;
             }
 
-            let is_emulated = order.is_emulated()
-                || order
-                    .emulation_trigger()
-                    .is_some_and(|trigger| trigger != TriggerType::NoTrigger);
+            let is_emulated = order.is_emulated() || order.emulation_trigger().is_some();
             if is_emulated {
                 continue;
             }

@@ -1012,13 +1012,13 @@ pub fn parse_order_status_report(
         }
     }
 
-    if let Some(contingency_type) = order.contingency_type {
-        report = report.with_contingency_type(contingency_type.into());
+    if let Some(contingency_type) = order.contingency_type.and_then(Into::into) {
+        report = report.with_contingency_type(contingency_type);
     }
 
     if matches!(
         report.contingency_type,
-        ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo
+        Some(ContingencyType::Oco | ContingencyType::Oto | ContingencyType::Ouo)
     ) && report.order_list_id.is_none()
     {
         log::debug!(

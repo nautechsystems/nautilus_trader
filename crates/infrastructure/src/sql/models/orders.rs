@@ -200,7 +200,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedRow {
         let trigger_type = row
             .try_get::<Option<&str>, _>("trigger_type")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+            .and_then(parse_trigger_type);
         let limit_offset = row
             .try_get::<Option<&str>, _>("limit_offset")
             .ok()
@@ -212,7 +212,8 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedRow {
         let trailing_offset_type = row
             .try_get::<Option<TrailingOffsetTypePg>, _>("trailing_offset_type")
             .ok()
-            .and_then(|x| x.map(|x| x.0));
+            .flatten()
+            .and_then(|value| value.0);
         let expire_time = row
             .try_get::<Option<&str>, _>("expire_time")
             .ok()
@@ -224,7 +225,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedRow {
         let emulation_trigger = row
             .try_get::<Option<&str>, _>("emulation_trigger")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).unwrap()));
+            .and_then(parse_trigger_type);
         let trigger_instrument_id = row
             .try_get::<Option<&str>, _>("trigger_instrument_id")
             .ok()
@@ -232,7 +233,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedRow {
         let contingency_type = row
             .try_get::<Option<&str>, _>("contingency_type")
             .ok()
-            .and_then(|x| x.map(|x| ContingencyType::from_str(x).unwrap()));
+            .and_then(parse_contingency_type);
         let order_list_id = row
             .try_get::<Option<&str>, _>("order_list_id")
             .ok()
@@ -631,7 +632,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotRow {
         let trigger_type = row
             .try_get::<Option<&str>, _>("trigger_type")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).expect("Invalid `TriggerType`")));
+            .and_then(parse_trigger_type);
         let limit_offset = row
             .try_get::<Option<&str>, _>("limit_offset")
             .ok()
@@ -643,7 +644,8 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotRow {
         let trailing_offset_type = row
             .try_get::<Option<TrailingOffsetTypePg>, _>("trailing_offset_type")
             .ok()
-            .and_then(|x| x.map(|x| x.0));
+            .flatten()
+            .and_then(|value| value.0);
         let time_in_force = row
             .try_get::<&str, _>("time_in_force")
             .map(|x| TimeInForce::from_str(x).expect("Invalid `TimeInForce`"))?;
@@ -676,7 +678,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotRow {
         let emulation_trigger = row
             .try_get::<Option<&str>, _>("emulation_trigger")
             .ok()
-            .and_then(|x| x.map(|x| TriggerType::from_str(x).expect("Invalid `TriggerType`")));
+            .and_then(parse_trigger_type);
         let trigger_instrument_id = row
             .try_get::<Option<&str>, _>("trigger_instrument_id")
             .ok()
@@ -684,9 +686,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotRow {
         let contingency_type = row
             .try_get::<Option<&str>, _>("contingency_type")
             .ok()
-            .and_then(|x| {
-                x.map(|x| ContingencyType::from_str(x).expect("Invalid `ContingencyType`"))
-            });
+            .and_then(parse_contingency_type);
         let order_list_id = row
             .try_get::<Option<&str>, _>("order_list_id")
             .ok()
@@ -781,4 +781,53 @@ fn tags_from_row(row: &PgRow) -> Option<Vec<Ustr>> {
     row.try_get::<Vec<String>, _>("tags")
         .ok()
         .map(|tags| tags.iter().map(|tag| Ustr::from(tag.as_str())).collect())
+}
+
+fn parse_trigger_type(value: Option<&str>) -> Option<TriggerType> {
+    value.and_then(|value| {
+        if value.eq_ignore_ascii_case("NO_TRIGGER") {
+            None
+        } else {
+            Some(TriggerType::from_str(value).expect("Invalid `TriggerType`"))
+        }
+    })
+}
+
+fn parse_contingency_type(value: Option<&str>) -> Option<ContingencyType> {
+    value.and_then(|value| {
+        if value.eq_ignore_ascii_case("NO_CONTINGENCY") {
+            None
+        } else {
+            Some(ContingencyType::from_str(value).expect("Invalid `ContingencyType`"))
+        }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(None, None)]
+    #[case(Some("NO_TRIGGER"), None)]
+    #[case(Some("LAST_PRICE"), Some(TriggerType::LastPrice))]
+    fn test_parse_trigger_type_accepts_legacy_absence(
+        #[case] value: Option<&str>,
+        #[case] expected: Option<TriggerType>,
+    ) {
+        assert_eq!(parse_trigger_type(value), expected);
+    }
+
+    #[rstest]
+    #[case(None, None)]
+    #[case(Some("NO_CONTINGENCY"), None)]
+    #[case(Some("OCO"), Some(ContingencyType::Oco))]
+    fn test_parse_contingency_type_accepts_legacy_absence(
+        #[case] value: Option<&str>,
+        #[case] expected: Option<ContingencyType>,
+    ) {
+        assert_eq!(parse_contingency_type(value), expected);
+    }
 }

@@ -19,7 +19,7 @@ use ahash::AHashMap;
 use nautilus_common::{cache::Cache, clock::Clock, messages::execution::SubmitOrder};
 use nautilus_core::UUID4;
 use nautilus_model::{
-    enums::{ContingencyType, TriggerType},
+    enums::ContingencyType,
     events::{
         OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected, OrderUpdated,
     },
@@ -162,7 +162,7 @@ impl OrderManager {
             correlation_id,
         );
 
-        if matches!(order.emulation_trigger(), Some(trigger) if trigger != TriggerType::NoTrigger) {
+        if order.emulation_trigger().is_some() {
             self.cache_submit_order_command(submit.clone());
             actions.push(OrderManagerAction::SubmitToEmulator(submit));
         } else {
@@ -219,10 +219,7 @@ impl OrderManager {
             return Vec::new();
         };
 
-        if order
-            .contingency_type()
-            .is_some_and(|c| c != ContingencyType::NoContingency)
-        {
+        if order.contingency_type().is_some() {
             self.handle_contingencies(&order)
         } else {
             Vec::new()
@@ -240,10 +237,7 @@ impl OrderManager {
             return Vec::new();
         };
 
-        if order
-            .contingency_type()
-            .is_some_and(|c| c != ContingencyType::NoContingency)
-        {
+        if order.contingency_type().is_some() {
             self.handle_contingencies(&order)
         } else {
             Vec::new()
@@ -261,10 +255,7 @@ impl OrderManager {
             return Vec::new();
         };
 
-        if order
-            .contingency_type()
-            .is_some_and(|c| c != ContingencyType::NoContingency)
-        {
+        if order.contingency_type().is_some() {
             self.handle_contingencies(&order)
         } else {
             Vec::new()
@@ -297,10 +288,7 @@ impl OrderManager {
             self.oto_target_quantities.remove(&updated.client_order_id);
         }
 
-        if order
-            .contingency_type()
-            .is_some_and(|c| c != ContingencyType::NoContingency)
-        {
+        if order.contingency_type().is_some() {
             actions.extend(self.handle_contingencies_update(&order));
         }
 
@@ -860,7 +848,6 @@ mod tests {
             .side(OrderSide::Buy)
             .price(Price::from("1.00000"))
             .quantity(Quantity::from(100_000))
-            .emulation_trigger(TriggerType::NoTrigger)
             .build();
 
         let actions = manager
@@ -915,7 +902,6 @@ mod tests {
             .side(OrderSide::Buy)
             .price(Price::from("1.00000"))
             .quantity(Quantity::from(100_000))
-            .emulation_trigger(TriggerType::NoTrigger)
             .exec_algorithm_id(exec_algorithm_id)
             .exec_spawn_id(client_order_id)
             .build();
@@ -1219,7 +1205,6 @@ mod tests {
             .side(OrderSide::Buy)
             .price(Price::from("1.00000"))
             .quantity(Quantity::from(100_000))
-            .emulation_trigger(TriggerType::NoTrigger)
             .build();
         cache
             .borrow_mut()

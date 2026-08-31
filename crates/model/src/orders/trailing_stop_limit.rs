@@ -707,6 +707,7 @@ mod tests {
             .limit_offset(dec!(5))
             .trigger_price(Price::from("0.68000"))
             .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from(1))
             .build();
 
@@ -851,6 +852,7 @@ mod tests {
             .trigger_price(Price::from("0.68000"))
             .limit_offset(dec!(5))
             .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from(1))
             .build();
 
@@ -874,6 +876,7 @@ mod tests {
             .side(OrderSide::Buy)
             .limit_offset(dec!(5))
             .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
             .quantity(Quantity::from(1))
             .build();
 

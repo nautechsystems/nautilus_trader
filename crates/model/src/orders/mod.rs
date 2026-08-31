@@ -466,9 +466,7 @@ pub trait Order: 'static + Send {
     }
 
     fn is_open(&self) -> bool {
-        if let Some(emulation_trigger) = self.emulation_trigger()
-            && emulation_trigger != TriggerType::NoTrigger
-        {
+        if self.emulation_trigger().is_some() {
             return false;
         }
 
@@ -499,9 +497,7 @@ pub trait Order: 'static + Send {
     }
 
     fn is_inflight(&self) -> bool {
-        if let Some(emulation_trigger) = self.emulation_trigger()
-            && emulation_trigger != TriggerType::NoTrigger
-        {
+        if self.emulation_trigger().is_some() {
             return false;
         }
 
@@ -730,7 +726,9 @@ pub struct OrderCore {
     pub liquidity_side: Option<LiquiditySide>,
     pub is_reduce_only: bool,
     pub is_quote_quantity: bool,
+    #[serde(default, with = "crate::enums::serde_option_trigger_type")]
     pub emulation_trigger: Option<TriggerType>,
+    #[serde(default, with = "crate::enums::serde_option_contingency_type")]
     pub contingency_type: Option<ContingencyType>,
     pub order_list_id: Option<OrderListId>,
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -781,10 +779,8 @@ impl OrderCore {
             liquidity_side: Some(LiquiditySide::NoLiquiditySide),
             is_reduce_only: init.reduce_only,
             is_quote_quantity: init.quote_quantity,
-            emulation_trigger: init.emulation_trigger.or(Some(TriggerType::NoTrigger)),
-            contingency_type: init
-                .contingency_type
-                .or(Some(ContingencyType::NoContingency)),
+            emulation_trigger: init.emulation_trigger,
+            contingency_type: init.contingency_type,
             order_list_id: init.order_list_id,
             linked_order_ids: init.linked_order_ids,
             parent_order_id: init.parent_order_id,
@@ -3607,7 +3603,7 @@ mod tests {
         assert_eq!(report.display_qty, Some(Quantity::from(10_000)));
         assert!(report.post_only);
         assert!(report.reduce_only);
-        assert_eq!(report.contingency_type, ContingencyType::Oto);
+        assert_eq!(report.contingency_type, Some(ContingencyType::Oto));
         assert_eq!(report.order_list_id, Some(OrderListId::from("OL-001")));
         assert_eq!(
             report.linked_order_ids,
@@ -3744,7 +3740,7 @@ mod tests {
         assert_eq!(report.activation_price, Some(Price::from("1.00500")));
         assert_eq!(report.limit_offset, Some(dec!(0.0001)));
         assert_eq!(report.trailing_offset, Some(dec!(0.0002)));
-        assert_eq!(report.trailing_offset_type, TrailingOffsetType::Price);
+        assert_eq!(report.trailing_offset_type, Some(TrailingOffsetType::Price),);
     }
 
     #[rstest]

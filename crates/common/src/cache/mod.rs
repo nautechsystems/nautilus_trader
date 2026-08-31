@@ -72,7 +72,7 @@ use nautilus_model::{
     },
     enums::{
         AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
-        PriceType, TriggerType,
+        PriceType,
     },
     events::{AccountState, OrderEventAny, OrderFilled},
     identifiers::{
@@ -2623,10 +2623,7 @@ impl Cache {
             }
 
             // 14: Build index.orders_emulated -> {ClientOrderId}
-            if let Some(emulation_trigger) = order.emulation_trigger()
-                && emulation_trigger != TriggerType::NoTrigger
-                && !order.is_closed()
-            {
+            if order.emulation_trigger().is_some() && !order.is_closed() {
                 self.index.orders_emulated.insert(*client_order_id);
             }
 
@@ -4616,9 +4613,7 @@ impl Cache {
         }
 
         // Update emulation index
-        if let Some(emulation_trigger) = order.emulation_trigger()
-            && emulation_trigger != TriggerType::NoTrigger
-        {
+        if order.emulation_trigger().is_some() {
             self.index.orders_emulated.insert(client_order_id);
         }
 
@@ -5213,10 +5208,7 @@ impl Cache {
         }
 
         // Update emulation index
-        if let Some(emulation_trigger) = order.emulation_trigger()
-            && emulation_trigger != TriggerType::NoTrigger
-            && !order.is_closed()
-        {
+        if order.emulation_trigger().is_some() && !order.is_closed() {
             self.index.orders_emulated.insert(client_order_id);
         } else {
             self.index.orders_emulated.remove(&client_order_id);

@@ -51,8 +51,7 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter, SocketControlFac
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, ContingencyType, OmsType, OrderType, PositionSide, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        AccountType, OmsType, OrderType, PositionSide, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderModifyRejected,
@@ -1459,12 +1458,10 @@ fn determine_futures_order_lifetime(
 }
 
 fn is_grouped_order(order: &OrderAny) -> bool {
-    matches!(
-        order.contingency_type(),
-        Some(contingency_type) if contingency_type != ContingencyType::NoContingency
-    ) || order
-        .linked_order_ids()
-        .is_some_and(|linked_order_ids| !linked_order_ids.is_empty())
+    order.contingency_type().is_some()
+        || order
+            .linked_order_ids()
+            .is_some_and(|linked_order_ids| !linked_order_ids.is_empty())
 }
 
 fn binance_side_wire(side: BinanceSide) -> &'static str {
