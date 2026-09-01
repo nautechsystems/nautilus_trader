@@ -138,3 +138,67 @@ pub fn shutdown_runtime(wait: Duration) {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+
+    use rstest::rstest;
+
+    use super::*;
+
+    const RUNTIME_CHILD_ENV: &str = "NAUTILUS_COMMON_RUNTIME_CHILD";
+
+    #[rstest]
+    fn test_custom_runtime_installation_and_rejection() {
+        const MARKER: &str = "custom-runtime-installation";
+        if !in_runtime_child(MARKER) {
+            run_runtime_child("test_custom_runtime_installation_and_rejection", MARKER);
+            return;
+        }
+
+        let runtime = Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("custom runtime should build");
+        let installed_id = runtime.handle().id();
+
+        assert!(set_runtime(runtime).is_ok());
+        assert_eq!(get_runtime().handle().id(), installed_id);
+
+        let duplicate = Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("duplicate runtime should build");
+        let duplicate_id = duplicate.handle().id();
+        assert_ne!(duplicate_id, installed_id);
+
+        let rejected = set_runtime(duplicate).expect_err("duplicate runtime should be rejected");
+        assert_eq!(rejected.handle().id(), duplicate_id);
+        assert_eq!(get_runtime().handle().id(), installed_id);
+    }
+
+    fn in_runtime_child(marker: &str) -> bool {
+        std::env::var(RUNTIME_CHILD_ENV).as_deref() == Ok(marker)
+    }
+
+    fn run_runtime_child(test_name: &str, marker: &str) {
+        let output = Command::new(std::env::current_exe().expect("test executable must exist"))
+            .arg(test_name)
+            .arg("--nocapture")
+            .arg("--test-threads=1")
+            .env(RUNTIME_CHILD_ENV, marker)
+            .output()
+            .expect("runtime child process must start");
+
+        assert!(
+            output.status.success(),
+            "runtime child failed with {}\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+}

@@ -151,7 +151,9 @@ mod tests {
             let msg = stream.next().await.expect("No message received");
 
             assert_eq!(msg.topic, "test-topic");
+            assert_eq!(msg.payload_type, BusPayloadType::Custom(Ustr::default()));
             assert_eq!(msg.payload.as_ref(), b"test-payload");
+            assert_eq!(msg.encoding, SerializationEncoding::Json);
             notify_tx.send(()).await.unwrap();
         });
 
@@ -177,11 +179,8 @@ mod tests {
             .get_stream_receiver()
             .expect("Failed to get stream receiver");
 
-        let topics = vec!["topic1", "topic2", "topic3"];
-        let payloads = vec!["payload1", "payload2", "payload3"];
-
-        let topics_clone = topics.clone();
-        let payloads_clone = payloads.clone();
+        let topics = ["topic1", "topic2", "topic3"];
+        let payloads = ["payload1", "payload2", "payload3"];
 
         // Spawn a task to collect messages
         let handle = tokio::spawn(async move {
@@ -194,14 +193,6 @@ mod tests {
                 if let Some(msg) = stream.next().await {
                     received.push((msg.topic, String::from_utf8(msg.payload.to_vec()).unwrap()));
                 }
-            }
-
-            // Verify all messages were received
-            for i in 0..3 {
-                assert!(
-                    received
-                        .contains(&(Ustr::from(topics_clone[i]), payloads_clone[i].to_string()))
-                );
             }
 
             received
@@ -221,7 +212,12 @@ mod tests {
             .expect("Test timed out")
             .expect("Task panicked");
 
-        assert_eq!(result.len(), 3);
+        let expected = topics
+            .iter()
+            .zip(payloads)
+            .map(|(topic, payload)| (Ustr::from(topic), payload.to_string()))
+            .collect::<Vec<_>>();
+        assert_eq!(result, expected);
     }
 
     #[tokio::test]
